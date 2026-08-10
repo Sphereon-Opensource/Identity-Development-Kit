@@ -69,7 +69,6 @@ class HttpAdapterMountBuilder {
     var tenantPathMode: TenantPathMode = TenantPathMode.OFF
     var tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None
     var tenantSegmentPattern: String = HttpAdapterMount.DEFAULT_TENANT_SEGMENT_PATTERN
-    var tenantResolutionPriority: TenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH
 
     internal fun build(): HttpAdapterMount =
         HttpAdapterMount(
@@ -78,7 +77,6 @@ class HttpAdapterMountBuilder {
             tenantPathMode = tenantPathMode,
             tenantPathPolicy = tenantPathPolicy,
             tenantSegmentPattern = tenantSegmentPattern,
-            tenantResolutionPriority = tenantResolutionPriority,
         )
 }
 

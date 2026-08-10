@@ -48,7 +48,7 @@ class MobileCryptoProviderTest {
     fun setUp() {
         val app = staticMinimalTestAppGraph(application = this, appId = "test-app", profile = "test-profile", version = "test-version")
         val user = app.userContextManager.getAnonymous()
-        val session = user.sessionContextManager.createOrGetFromId("test-session")
+        val session = user.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         val providerId = "test-mobile-${Uuid.v4String()}"
         mobileCryptoProvider =

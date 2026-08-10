@@ -22,6 +22,7 @@ import com.sphereon.openid.oid4vci.issuer.config.INSTANCES_NAMESPACE
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
 import com.sphereon.openid.oid4vci.issuer.config.VctTypeMetadataProvider
+import com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver
 import com.sphereon.statuslist.StatusListDefinitionsProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -70,6 +71,7 @@ class RegistryBackedOid4vciIssuerConfigProvider(
     execution: SessionExecution,
     private val instanceIdProvider: Oid4vciIssuerInstanceIdProvider,
     statusListDefinitionsProvider: Provider<StatusListDefinitionsProvider>? = null,
+    keyNameResolver: Provider<IssuerKeyNameResolver>? = null,
 ) : AbstractConfigOid4vciIssuerConfigProvider(
         execution = execution,
         statusListDefinitionsProvider = statusListDefinitionsProvider,
@@ -81,4 +83,6 @@ class RegistryBackedOid4vciIssuerConfigProvider(
                 ?: ConfigDrivenOid4vciIssuerConfigProvider.NAMESPACE
         },
         fallbackToSingularNamespace = false,
+        instanceIdProvider = { instanceIdProvider.currentInstanceId() },
+        keyNameResolver = keyNameResolver,
     )

@@ -44,6 +44,12 @@ import com.sphereon.wallet.unit.WalletProviderAttestationSignerRef
 import com.sphereon.wallet.unit.WalletSecureComponentType
 import com.sphereon.wallet.unit.WalletUserAuthenticationEvidence
 import com.sphereon.wallet.unit.attestation.KeyAttestationIssueRequest
+import com.sphereon.wallet.unit.attestation.LocalWalletProviderAttestationSignerResolver
+import com.sphereon.wallet.unit.attestation.WalletAttestationSigner
+import com.sphereon.wallet.unit.attestation.WalletAttestationSignerProfile
+import com.sphereon.wallet.unit.attestation.WalletAttestationSigningRequest
+import com.sphereon.wallet.unit.attestation.WalletAttestationSigningResult
+import com.sphereon.wallet.unit.attestation.WalletProviderAttestationSignerResolver
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationProfile
 import com.sphereon.wallet.wsca.WscaClientAttestationAuthRequest
 import com.sphereon.wallet.wsca.WscaDpopProofRequest
@@ -64,6 +70,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertContentEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -301,6 +308,7 @@ class LocalWscaTest {
                             WalletProviderAttestationSignerRef(
                                 signerId = "wallet-attest-signer",
                                 issuer = "https://wallet-provider.example",
+                                signerProfile = "LOCAL_EVALUATION",
                                 certificateChain = listOf("leaf-cert", "intermediate-cert"),
                             ),
                         audience = "https://issuer.example.com",
@@ -433,6 +441,7 @@ class LocalWscaTest {
                                 signerId = "wallet-client-auth-signer",
                                 issuer = "https://wallet-provider.example",
                                 signingAlgorithm = "ES384",
+                                signerProfile = "LOCAL_EVALUATION",
                                 certificateChain = listOf("leaf-cert"),
                             ),
                         challenge = "challenge-1",
@@ -464,6 +473,119 @@ class LocalWscaTest {
             assertEquals("https://issuer.example/token", popPayload["aud"]?.jsonPrimitive?.content)
             assertEquals("challenge-1", popPayload["challenge"]?.jsonPrimitive?.content)
             assertTrue(result.value.clientInstanceJwkThumbprint.isNotBlank())
+        }
+
+    @Test
+    fun createClientAttestationAuthUsesConfiguredWalletProviderSignerForAdvertisedX5c() =
+        runTest {
+            val expectedSignature = byteArrayOf(1, 3, 3, 7)
+            var capturedRequest: WalletAttestationSigningRequest? = null
+            val resolver =
+                object : WalletProviderAttestationSignerResolver {
+                    override suspend fun resolve(signer: WalletProviderAttestationSignerRef) =
+                        Ok(
+                            object : WalletAttestationSigner {
+                                override suspend fun sign(request: WalletAttestationSigningRequest) =
+                                    Ok(
+                                        WalletAttestationSigningResult(
+                                            signature = expectedSignature,
+                                            algorithm = request.algorithm,
+                                            signerProfile = request.signerProfile,
+                                            signerId = request.signerId,
+                                            x5c = request.x5c,
+                                            keyId = request.keyId,
+                                        ),
+                                    ).also { capturedRequest = request }
+                            },
+                        )
+                }
+            val wsca = newLocalWsca(signerResolver = resolver).wsca
+            val clientInstanceKey =
+                wsca.ensureKey("wallet-provider-signer", SecureComponentUsage.WALLET_ATTESTATION, SignatureAlgorithm.ECDSA_SHA256).value
+            val signerRef =
+                WalletProviderAttestationSignerRef(
+                    signerId = "production-wallet-provider",
+                    issuer = "https://wallet-provider.example",
+                    keyId = "wallet-provider-x5c-key",
+                    signingAlgorithm = "ES256",
+                    signerProfile = WalletAttestationSignerProfile.REMOTE_WSCD.name,
+                    certificateChain = listOf("production-leaf", "production-ca"),
+                )
+
+            val result =
+                wsca.createClientAttestationAuth(
+                    WscaClientAttestationAuthRequest(
+                        walletUnitId = "wallet-provider-signer",
+                        operationBinding = "test:configured-wallet-provider-signer",
+                        walletAccountId = "wallet-provider-signer",
+                        clientId = "wallet-client",
+                        audience = "https://issuer.example/token",
+                        clientInstanceKey = clientInstanceKey,
+                        walletName = "VDX Test Wallet",
+                        walletVersion = "1.0.0",
+                        signer = signerRef,
+                    ),
+                )
+
+            assertTrue(result.isOk, "createClientAttestationAuth failed: ${if (result.isErr) result.error else ""}")
+            val parts = result.value.clientAttestationJwt.split('.')
+            assertContentEquals(expectedSignature, parts[2].decodeFromBase64Url())
+            val signingRequest = assertNotNull(capturedRequest)
+            assertEquals("production-wallet-provider", signingRequest.signerId)
+            assertEquals("wallet-provider-x5c-key", signingRequest.keyId)
+            assertEquals(listOf("production-leaf", "production-ca"), signingRequest.x5c)
+            assertContentEquals("${parts[0]}.${parts[1]}".encodeToByteArray(), signingRequest.signingInput)
+        }
+
+    @Test
+    fun createClientAttestationAuthUsesTheConfiguredLocalWscdKey() =
+        runTest {
+            val wsca = newLocalWsca().wsca
+            val walletUnitId = "wallet-local-wscd-provider-signer"
+            val providerKey =
+                wsca.ensureKey(
+                    walletUnitId,
+                    SecureComponentUsage.WALLET_ATTESTATION,
+                    SignatureAlgorithm.ECDSA_SHA256,
+                    keyAlias = "wallet-provider-x5c-key",
+                ).value
+            val clientInstanceKey =
+                wsca.ensureKey(
+                    walletUnitId,
+                    SecureComponentUsage.WALLET_ATTESTATION,
+                    SignatureAlgorithm.ECDSA_SHA256,
+                    keyAlias = "wallet-client-instance-key",
+                ).value
+
+            val result =
+                wsca.createClientAttestationAuth(
+                    WscaClientAttestationAuthRequest(
+                        walletUnitId = walletUnitId,
+                        operationBinding = "test:local-wscd-wallet-provider-signer",
+                        walletAccountId = walletUnitId,
+                        clientId = "wallet-client",
+                        audience = "https://issuer.example/token",
+                        clientInstanceKey = clientInstanceKey,
+                        walletName = "VDX Test Wallet",
+                        walletVersion = "1.0.0",
+                        signer =
+                            WalletProviderAttestationSignerRef(
+                                signerId = "local-wallet-provider",
+                                issuer = "https://wallet-provider.example",
+                                keyId = providerKey.keyRef,
+                                signingAlgorithm = "ES256",
+                                signerProfile = WalletAttestationSignerProfile.LOCAL_WSCD.name,
+                                certificateChain = listOf("local-wscd-leaf"),
+                            ),
+                    ),
+                )
+
+            assertTrue(result.isOk, "LOCAL_WSCD client attestation failed: ${if (result.isErr) result.error else ""}")
+            val parts = result.value.clientAttestationJwt.split('.')
+            assertEquals(3, parts.size)
+            val header = Json.parseToJsonElement(parts[0].decodeFromBase64Url().decodeToString()).jsonObject
+            assertEquals("ES256", header["alg"]?.jsonPrimitive?.content)
+            assertEquals("local-wscd-leaf", header["x5c"]?.jsonArray?.single()?.jsonPrimitive?.content)
         }
 
     // ---------------------------------------------------------------------------------------
@@ -918,6 +1040,7 @@ class LocalWscaTest {
         profile: WscdProfile = WscdProfile.Software,
         evidenceOverride: Map<String, String> = emptyMap(),
         userAuthenticator: WalletUserAuthenticator = successfulTestUserAuthenticator(),
+        signerResolver: WalletProviderAttestationSignerResolver = LocalWalletProviderAttestationSignerResolver(),
     ): LocalWscaSetup {
         val sessionId = "wallet-unit-wsca-${Uuid.v4String()}"
         val app =
@@ -928,7 +1051,7 @@ class LocalWscaTest {
                 version = "0.1.0",
             )
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId(sessionId)
+        val session = userContext.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
         val kms = session.graph.asKeyManagerServiceGraph().keyManagerService
         val config =
             SoftwareKmsProviderConfig(
@@ -950,6 +1073,7 @@ class LocalWscaTest {
                 ProfileOverrideWscd(softwareWscd, profile, evidenceOverride),
                 DpopProofAssembly(defaultSecureRandom()),
                 userAuthenticator,
+                signerResolver,
             )
         return LocalWscaSetup(wsca = wsca, kms = kms)
     }

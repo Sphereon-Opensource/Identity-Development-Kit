@@ -157,6 +157,14 @@ class VerifyPushedAuthorizationRequestCommandImpl(
         // Verify redirect_uri (RFC 6749 Section 3.1.2.3)
         val redirectUri = request.redirectUri
 
+        if (configProvider.serverConfig.requireRedirectUriInPushedAuthorizationRequests && redirectUri.isNullOrBlank()) {
+            return Err(
+                AuthorizationServerError.InvalidRequest(
+                    details = "redirect_uri is required in pushed authorization requests by authorization-server policy",
+                ),
+            )
+        }
+
         if (redirectUri.isNullOrBlank()) {
             // redirect_uri is optional if client has exactly ONE registered URI
             if (client.redirectUris.size != 1) {
@@ -186,7 +194,7 @@ class VerifyPushedAuthorizationRequestCommandImpl(
         }
 
         // Determine final redirect_uri
-        val finalRedirectUri = redirectUri ?: client.redirectUris.first()
+        val finalRedirectUri = redirectUri?.takeIf { it.isNotBlank() } ?: client.redirectUris.first()
 
         // Verify PKCE is used if required
         // Public clients MUST use PKCE (RFC 8252)

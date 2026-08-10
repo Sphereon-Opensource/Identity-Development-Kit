@@ -69,7 +69,7 @@ class OAuth2ServerTestContext(
 ) {
     val app: AppGraph = createOAuth2ServerTestAppGraph(testInstance)
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
     val execution = session.asCoreApiServiceGraph().serviceExecution
     val keyManagerService: KeyManagerService = session.graph.asKeyManagerServiceGraph().keyManagerService
     val identifierService: MultiManagedIdentifierService =

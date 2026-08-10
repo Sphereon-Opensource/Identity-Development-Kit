@@ -62,7 +62,7 @@ class WebvhDiGraphCompositionTest {
         app.userContextManager.destroyAll()
 
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("webvh-di-composition-test")
+        val session = userContext.sessionContextManager.createOrGetFromId("webvh-di-composition-test", principalType = com.sphereon.di.context.PrincipalType.USER)
         registry = (session.graph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
     }
 

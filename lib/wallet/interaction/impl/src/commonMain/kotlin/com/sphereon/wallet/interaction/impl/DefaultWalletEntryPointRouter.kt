@@ -25,7 +25,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletEntryPointRouter
 import com.sphereon.wallet.interaction.WalletInteractionClient
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionStatus
@@ -50,7 +50,7 @@ class DefaultWalletEntryPointRouter(
     override suspend fun route(
         uri: String,
         walletUnitId: String,
-        executionMode: WalletInteractionExecutionMode,
+        executionOwner: ProtocolExecutionOwner,
     ): IdkResult<WalletInteractionSessionId, IdkError> {
         val trimmed = uri.trim()
         if (!isUriShaped(trimmed)) {
@@ -63,7 +63,7 @@ class DefaultWalletEntryPointRouter(
                 WalletInteractionInput(
                     walletUnitId = walletUnitId,
                     entryPoint = entryPoint,
-                    executionMode = executionMode,
+                    executionOwner = executionOwner,
                 ),
             )
 

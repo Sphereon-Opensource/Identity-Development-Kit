@@ -16,7 +16,9 @@
 
 package com.sphereon.statuslist.impl
 
+import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.CoseCryptoService
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
@@ -37,6 +39,12 @@ import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
 import com.sphereon.did.capabilities.DidMethodCapabilities
 import com.sphereon.did.manager.DidProvider
 import com.sphereon.did.manager.DidProviderRegistry
+import com.sphereon.did.resolver.DidDereferenceOptions
+import com.sphereon.did.resolver.DidDereferenceResult
+import com.sphereon.did.resolver.DidResolutionOptions
+import com.sphereon.did.resolver.DidResolutionResult
+import com.sphereon.did.resolver.DidResolver
+import com.sphereon.did.resolver.DidResolverRegistry
 import com.sphereon.statuslist.AllocateEntryArgs
 import com.sphereon.statuslist.CreateStatusListArgs
 import com.sphereon.statuslist.CredentialStatusAction
@@ -57,8 +65,10 @@ import com.sphereon.statuslist.impl.envelope.BitstringStatusListEnvelope
 import com.sphereon.statuslist.impl.envelope.TokenStatusListEnvelope
 import com.sphereon.statuslist.impl.sign.CwtStatusListSigner
 import com.sphereon.statuslist.impl.sign.JwsStatusListSigner
+import com.sphereon.statuslist.impl.sign.LocalStatusListJwsSigningService
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -79,7 +89,7 @@ class StatusListE2ETest {
 
     private val app = createJvmStatusListTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("statuslist-e2e")
+    private val session = context.sessionContextManager.createOrGetFromId("statuslist-e2e", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {
@@ -105,9 +115,9 @@ class StatusListE2ETest {
         return InMemoryStatusListDriver(
             InMemoryStatusListStore(),
             JwsStatusListSigner(
-                jwtService,
-                keyManagerService,
+                LocalStatusListJwsSigningService(jwtService, keyManagerService),
                 NoopDidProviderRegistry,
+                NoopDidResolverRegistry,
                 CwtStatusListSigner(coseCryptoService, CoseSign1CborCodecImpl(), keyManagerService, NoopDidProviderRegistry),
             ),
             (session.graph as SessionExecution.Graph).sessionExecution,
@@ -165,10 +175,14 @@ class StatusListE2ETest {
                             length = 256,
                             bitsPerStatus = 1,
                             signingKeyAlias = alias,
+                            signingKeyMode = "jwk",
                         ),
                     ).getOrElse { fail("create: $it") }
             // The token is a genuinely signed compact JWS.
             assertEquals(3, created.signedToken.split(".").size)
+            val protectedHeader = JwsUtils.decodeBase64UrlToJson(created.signedToken.substringBefore('.'))
+            val publicJwk = assertNotNull(protectedHeader["jwk"]?.jsonObject, "jwk mode must embed the public verification key")
+            assertFalse("d" in publicJwk, "embedded JWK must not expose private key material")
 
             driver
                 .allocateEntry(
@@ -236,6 +250,64 @@ class StatusListE2ETest {
             val revokedToken = tokenFor(driver, correlationId)
             assertEquals(StatusValues.INVALID, decodeBit(revokedToken, StatusListSpec.BITSTRING_STATUS_LIST, 1, 9000))
             assertEquals(StatusValues.VALID, decodeBit(revokedToken, StatusListSpec.BITSTRING_STATUS_LIST, 1, 0))
+        }
+
+    /** A REST-driven definition change must re-sign in place without losing operational state. */
+    @Test
+    fun refreshDefinitionPreservesIdentityEntriesAndBitsWhileChangingKeyPublication() =
+        runTest {
+            val (driver, alias) = newDriverWithKey()
+            val correlationId = "e2e-refresh-definition"
+            val originalArgs =
+                CreateStatusListArgs(
+                    correlationId = correlationId,
+                    spec = StatusListSpec.TOKEN_STATUS_LIST,
+                    purposes = listOf(StatusPurpose.REVOCATION),
+                    proofFormat = StatusProofFormat.JWT,
+                    issuer = "https://issuer.example",
+                    statusListUri = "https://issuer.example/statuslists/$correlationId",
+                    length = 256,
+                    bitsPerStatus = 1,
+                    signingKeyAlias = alias,
+                )
+            val created = driver.createStatusList(originalArgs).getOrElse { fail("create: $it") }
+            val allocated =
+                driver
+                    .allocateEntry(
+                        AllocateEntryArgs(
+                            StatusListRef(correlationId = correlationId),
+                            explicitIndex = 42,
+                            credentialId = "cred-refresh-42",
+                        ),
+                    ).getOrElse { fail("allocate: $it") }
+            driver
+                .updateEntryStatus(
+                    UpdateEntryStatusArgs(
+                        EntryRef(correlationId = correlationId, credentialId = "cred-refresh-42"),
+                        StatusValues.INVALID,
+                    ),
+                ).getOrElse { fail("revoke: $it") }
+
+            val refreshed =
+                driver
+                    .refreshStatusListDefinition(originalArgs.copy(signingKeyMode = "jwk", ttlSeconds = 300))
+                    .getOrElse { fail("refresh: $it") }
+
+            assertEquals(created.id, refreshed.id, "definition refresh must preserve the status-list resource")
+            val preservedEntry =
+                driver
+                    .getEntry(EntryRef(correlationId = correlationId, credentialId = "cred-refresh-42"))
+                    .getOrElse { fail("get entry: $it") }
+            assertEquals(allocated.statusListId, assertNotNull(preservedEntry).statusListId)
+            assertEquals(42, preservedEntry.statusListIndex)
+            assertEquals(StatusValues.INVALID, preservedEntry.value)
+            assertEquals(
+                StatusValues.INVALID,
+                decodeBit(refreshed.signedToken, StatusListSpec.TOKEN_STATUS_LIST, 1, 42),
+            )
+            val protectedHeader = JwsUtils.decodeBase64UrlToJson(refreshed.signedToken.substringBefore('.'))
+            val publicJwk = assertNotNull(protectedHeader["jwk"]?.jsonObject, "refresh must apply the configured JWK mode")
+            assertFalse("d" in publicJwk, "refreshed embedded JWK must not expose private key material")
         }
 
     /** The ergonomic [RevokeCredentialStatusCommand] — the simple IDK entry point for an example issuer. */
@@ -330,4 +402,24 @@ internal object NoopDidProviderRegistry : DidProviderRegistry {
     override fun getCapabilities(method: String): DidMethodCapabilities? = null
 
     override fun getSupportedMethods(): List<String> = emptyList()
+}
+
+internal object NoopDidResolverRegistry : DidResolverRegistry {
+    override fun getResolver(method: String): DidResolver? = null
+
+    override fun getCapabilities(method: String): DidMethodCapabilities? = null
+
+    override fun getSupportedMethods(): List<String> = emptyList()
+
+    override suspend fun resolve(
+        did: String,
+        options: DidResolutionOptions,
+    ): IdkResult<DidResolutionResult, IdkError> = error("DID resolution is not used by this test")
+
+    override suspend fun dereference(
+        didUrl: String,
+        options: DidDereferenceOptions,
+    ): IdkResult<DidDereferenceResult, IdkError> = error("DID dereferencing is not used by this test")
+
+    override fun hasResolver(method: String): Boolean = false
 }

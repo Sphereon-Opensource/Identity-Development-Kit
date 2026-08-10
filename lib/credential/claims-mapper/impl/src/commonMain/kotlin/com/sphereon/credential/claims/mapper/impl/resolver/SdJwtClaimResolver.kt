@@ -37,22 +37,22 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
- * Claim resolver for SD-JWT-VC (Selective Disclosure JWT Verifiable Credential) credentials.
+ * Claim resolver for credentials secured using SD-JWT.
  *
  * This resolver uses the existing IDK SD-JWT infrastructure to parse the credential
  * and extract claims using ClaimPathUtils.
  *
  * Supported formats:
- * - SD_JWT_DC (dc+sd-jwt) - recommended format
- * - SD_JWT_VC (vc+sd-jwt) - older format
+ * - SD_JWT_VC (`dc+sd-jwt`) - IETF SD-JWT VC
+ * - W3C_VC_SD_JWT (`vc+sd-jwt`) - W3C VCDM credential secured using SD-JWT
  */
 @Inject
 @ContributesIntoSet(AppScope::class, binding = binding<CredentialClaimResolver>())
 class SdJwtClaimResolver : CredentialClaimResolver {
     override val supportedFormats: Set<CredentialFormat> =
         setOf(
-            CredentialFormat.SD_JWT_DC,
             CredentialFormat.SD_JWT_VC,
+            CredentialFormat.W3C_VC_SD_JWT,
         )
 
     override suspend fun extractAllClaims(

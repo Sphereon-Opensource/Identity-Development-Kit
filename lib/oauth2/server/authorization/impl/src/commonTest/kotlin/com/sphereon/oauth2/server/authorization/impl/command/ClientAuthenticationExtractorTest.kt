@@ -19,6 +19,7 @@ package com.sphereon.oauth2.server.authorization.impl.command
 import com.sphereon.core.api.encodeToBase64
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import io.ktor.http.encodeURLParameter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -34,7 +35,14 @@ class ClientAuthenticationExtractorTest {
     private fun basicHeader(
         user: String,
         pass: String,
-    ): Map<String, String> = mapOf("Authorization" to "Basic " + "$user:$pass".encodeToByteArray().encodeToBase64())
+    ): Map<String, String> =
+        mapOf(
+            "Authorization" to
+                "Basic " +
+                "${user.encodeURLParameter()}:${pass.encodeURLParameter()}"
+                    .encodeToByteArray()
+                    .encodeToBase64(),
+        )
 
     // ========================================================================
     // multi-method rejection
@@ -122,6 +130,18 @@ class ClientAuthenticationExtractorTest {
         val extracted = result.value
         assertTrue(extracted.clientAuthentication is ClientAuthenticationConfig.Basic)
         assertEquals("client1", extracted.clientId)
+    }
+
+    @Test
+    fun clientAuth_basicDecodesTenantScopedClientId() {
+        val clientId = "tenant-as-service:tenant-123"
+        val result = extractClientAuthentication(emptyMap(), basicHeader(clientId, "secret:value"))
+
+        assertTrue(result.isOk)
+        val basic = result.value.clientAuthentication as ClientAuthenticationConfig.Basic
+        assertEquals(clientId, result.value.clientId)
+        assertEquals(clientId, basic.credentials.clientId)
+        assertEquals("secret:value", basic.credentials.clientSecret)
     }
 
     @Test

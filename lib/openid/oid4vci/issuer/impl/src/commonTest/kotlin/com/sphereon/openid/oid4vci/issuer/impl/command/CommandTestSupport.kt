@@ -247,7 +247,12 @@ internal class NoOpOfferStore : CredentialOfferStore {
 
 /** Minimal AS bridge for tests that do not exercise the bridge layer. */
 internal class NoOpAsBridge : Oid4vciAuthorizationServerBridge {
-    override suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError> = Ok(RegisteredPreAuthCode(code = "pre-auth-code", txCode = null))
+    var lastRegisterPreAuthCodeArgs: RegisterPreAuthCodeArgs? = null
+
+    override suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError> {
+        lastRegisterPreAuthCodeArgs = args
+        return Ok(RegisteredPreAuthCode(code = "pre-auth-code", txCode = null))
+    }
 
     override suspend fun createAuthorizationContext(args: CreateAuthContextArgs): IdkResult<AuthorizationContextRef, IdkError> =
         Ok(AuthorizationContextRef(issuerState = args.issuerState, sessionId = args.issuerState))

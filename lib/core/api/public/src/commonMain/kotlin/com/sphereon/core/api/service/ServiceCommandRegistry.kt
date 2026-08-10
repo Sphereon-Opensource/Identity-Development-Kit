@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.service
 
+import com.sphereon.core.api.session.CommandId
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.AppScope
@@ -52,12 +53,14 @@ interface RegistrableServiceCommandDescriptor {
         fun of(
             commandId: String,
             factory: () -> ServiceCommand<*, *, *>,
-        ): RegistrableServiceCommandDescriptor =
-            object : RegistrableServiceCommandDescriptor {
-                override val commandId: String = commandId
+        ): RegistrableServiceCommandDescriptor {
+            val canonicalCommandId = CommandId(commandId).value
+            return object : RegistrableServiceCommandDescriptor {
+                override val commandId: String = canonicalCommandId
 
                 override fun create(): ServiceCommand<*, *, *> = factory()
             }
+        }
     }
 }
 
@@ -95,6 +98,16 @@ interface ServiceCommandRegistry {
  */
 interface SessionScopedCommandRegistry {
     fun get(commandId: String): ServiceCommand<*, *, *>?
+
+    /**
+     * Resolves a command against the routing configuration that is current at call time.
+     *
+     * Most injected commands intentionally use [get] and remain stable for the lifetime of the
+     * session graph. A small number of late-bound consumers (for example tenant configuration
+     * loaded after graph construction) must re-evaluate the route before executing. Standalone
+     * registries without dynamic routing safely use the normal lookup.
+     */
+    fun getCurrent(commandId: String): ServiceCommand<*, *, *>? = get(commandId)
 
     fun has(commandId: String): Boolean = get(commandId) != null
 

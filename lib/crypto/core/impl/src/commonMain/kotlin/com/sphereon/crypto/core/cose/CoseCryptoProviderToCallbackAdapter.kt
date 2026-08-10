@@ -36,7 +36,11 @@ import com.sphereon.crypto.core.interop.x509CertificateFromDer
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KeyResolverService
+import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
+import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.core.sign.SimpleSignatureService
+import com.sphereon.crypto.core.toKeyReferenceOrNull
+import com.sphereon.crypto.core.toSigningKeyReferenceOrNull
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -78,6 +82,7 @@ class CoseCryptoProviderToCallbackAdapter(
     private val rawSignatureServiceProvider: dev.zacsweers.metro.Provider<SimpleSignatureService>? = null,
     private val publicKeyResolverServiceProvider: dev.zacsweers.metro.Provider<KeyResolverService>? = null,
     private val coseHeaderCborCodec: CoseHeaderCborCodec = CoseHeaderCborCodecImpl(),
+    private val createRawSignatureCommandProvider: dev.zacsweers.metro.Provider<CreateRawSignatureCommand>? = null,
 ) : CoseCryptoCallbackCoroutinesMarker,
     Scoped {
     private val keyManagerService: KeyManagerService? by lazy {
@@ -104,6 +109,14 @@ class CoseCryptoProviderToCallbackAdapter(
         }
     }
 
+    private val createRawSignatureCommand: CreateRawSignatureCommand? by lazy {
+        try {
+            createRawSignatureCommandProvider?.invoke()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     init {
         // Note: We cannot validate providers in init block as that would trigger the circular dependency.
         // Validation is deferred to actual usage time via the lazy properties and assertion methods.
@@ -114,14 +127,14 @@ class CoseCryptoProviderToCallbackAdapter(
         DefaultCallbacks.setCoseCryptoDefault(this)
     }
 
-    private fun assertedSignatureProvider(
+    private suspend fun assertedSignatureProvider(
         alg: SignatureAlgorithm? = null,
         kms: String? = null,
     ): SimpleSignatureService =
         (keyManagerService?.getProvider(providerId = kms, alg = alg) ?: rawSignatureService)
             ?: throw PKIException("No signature provider available. Either keyManager or rawSignatureService must be provided.")
 
-    private fun assertedPublicKeyProvider(keyInfo: KeyInfoType<*>): KeyResolverService {
+    private suspend fun assertedPublicKeyProvider(keyInfo: KeyInfoType<*>): KeyResolverService {
         val kms = keyManagerService
         val keyType = keyInfo.keyType
         // If the key has a provider ID, check if that KMS provider also implements KeyResolverService
@@ -160,6 +173,17 @@ class CoseCryptoProviderToCallbackAdapter(
     ): ByteArray {
         val keyInfo = input.keyInfo
         val alg = keyInfo.signatureAlgorithm ?: input.alg
+        createRawSignatureCommand?.let { command ->
+            val result =
+                command.execute(
+                    CreateRawSignatureArgs(
+                        keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                        input = input.value,
+                        requireX5Chain = requireX5Chain == true,
+                    ),
+                )
+            return result.getOrElse { throw PKIException(it.message.defaultMessage ?: "COSE signature creation failed") }.signature
+        }
         keyManagerService?.let {
             return it.createRawSignature(keyInfo, input.value, requireX5Chain == true)
         }

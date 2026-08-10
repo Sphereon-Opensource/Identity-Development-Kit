@@ -32,6 +32,7 @@ import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationResult
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import io.ktor.http.encodeURLParameter
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -103,10 +104,13 @@ class ApplyClientAuthenticationCommandImpl(
     /**
      * Applies HTTP Basic authentication (RFC 6749 Section 2.3.1)
      *
-     * Encodes credentials as: Authorization: Basic base64(clientId:clientSecret)
+     * Encodes credentials as required by RFC 6749 section 2.3.1: each component
+     * is form-encoded before joining them with the Basic-auth colon separator.
      */
     private fun applyBasicAuth(config: ClientAuthenticationConfig.Basic): ClientAuthenticationResult {
-        val credentials = "${config.credentials.clientId}:${config.credentials.clientSecret}"
+        val credentials =
+            "${config.credentials.clientId.encodeURLParameter()}:" +
+                config.credentials.clientSecret.encodeURLParameter()
         val encodedBytes = credentials.encodeToByteArray()
         val base64Credentials = encodedBytes.encodeToBase64(urlSafe = false)
 

@@ -75,7 +75,7 @@ the second positional argument and translate it into the right
 |---|---|---|---|
 | _omitted_ / `default` | `did:jwk` | plain | Regular demo. |
 | `did-jwk` | `did:jwk` (explicit) | plain | OID4VP plan with `did:jwk` cells; identical to default. |
-| `x509-san-dns` | `x509_san_dns` | plain | OID4VP plan with `x509_san_dns` cells. Requires a fresh keystore baked with the SAN — delete `keystores/oid4vp-verifier/keystore.p12` and rerun if you've used a previous keystore that didn't have the SAN. |
+| `x509-san-dns` | `x509_san_dns` | plain | OID4VP plan with `x509_san_dns` cells. Requires a fresh keystore baked with the SAN — delete `keystores/oid4vp-verifier/default/keystore.p12` and rerun if you've used a previous keystore that didn't have the SAN. |
 | `x509-hash` | `x509_hash` | plain | OID4VP plan with `x509_hash` cells. The keystore script auto-syncs the cert thumbprint into `profiles/conformance-x509-hash.env`. |
 | `haip` | `x509_hash` | HAIP-shaped | OID4VP HAIP test plan + OID4VCI HAIP test plan. Layers the verifier x509_hash profile and a HAIP-shaped AS profile that switches `token_endpoint_auth_methods_supported` to `attest_jwt_client_auth` (the IANA-registered name for OAuth Attestation-based Client Authentication), sets `dpop=REQUIRED` + `dpop_nonce_required=true`, and turns attestation-based client auth on. |
 

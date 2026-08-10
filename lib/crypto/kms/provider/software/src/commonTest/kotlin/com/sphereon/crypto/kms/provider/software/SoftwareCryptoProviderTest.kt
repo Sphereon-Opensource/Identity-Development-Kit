@@ -100,6 +100,31 @@ class SoftwareCryptoProviderTest {
         }
 
     @Test
+    fun automaticCertificateIsReturnedInTheGeneratedPublicJwk() =
+        runTest {
+            val certificateEnabledProvider =
+                ctx.softwareKmsProviderFactory.create(
+                    SoftwareKmsProviderConfig(
+                        id = "test-ecdsa-auto-cert",
+                        cryptographyProvider = CryptographyProvider.Default.name,
+                        autoCreateCertificate = true,
+                    ),
+                    ctx.session.sessionExecution,
+                )
+
+            val generated =
+                certificateEnabledProvider.generateKeyAsync(
+                    alias = "issuer-signing",
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                )
+
+            assertTrue(
+                !generated.jose.publicJwk.x5c.isNullOrEmpty(),
+                "a generated certificate must accompany the public JWK returned to materialization",
+            )
+        }
+
+    @Test
     fun testValidEcdsaRawSignatureAndVerification() =
         runTest {
             val managedKeyPair = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)

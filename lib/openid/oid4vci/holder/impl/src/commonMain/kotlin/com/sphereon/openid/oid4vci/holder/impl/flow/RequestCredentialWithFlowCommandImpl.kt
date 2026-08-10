@@ -220,6 +220,8 @@ class RequestCredentialWithFlowCommandImpl(
     ): IdkResult<com.sphereon.openid.oid4vci.holder.CreatedProof, IdkError> =
         createCredentialRequestProofCommand.execute(
             CreateCredentialRequestProofArgs(
+                walletUnitId = args.walletUnitId,
+                operationBinding = args.operationBinding,
                 issuerUrl = args.issuerUrl,
                 cNonce = cNonce,
                 signingKeyIds = listOf(args.signingKeyId),

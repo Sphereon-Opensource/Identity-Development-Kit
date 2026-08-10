@@ -16,8 +16,10 @@ import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KmsProvider
 import com.sphereon.crypto.core.kms.KmsProviderCapabilities
 import com.sphereon.crypto.core.kms.KmsProviderOperation
@@ -26,6 +28,7 @@ import com.sphereon.crypto.core.kms.TestKmsMock
 import com.sphereon.crypto.core.kms.TestKmsProviderMock
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyArgs
 import com.sphereon.crypto.core.kms.command.EcdhDeriveArgs
+import com.sphereon.crypto.core.kms.command.PerformKeyAgreementArgs
 import com.sphereon.crypto.core.kms.command.SignDigestArgs
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.command.VerifyDigestArgs
@@ -34,10 +37,49 @@ import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ScdsaPrimitiveCommandImplTest {
+    @Test
+    fun performKeyAgreementDispatchesOpaquePrivateKeyHandleToSelectedProvider() =
+        runTest {
+            val providerRegistry = TestKmsMock()
+            var capturedPrivateKeyInfo: KeyInfoType<*>? = null
+            val expectedSecret = byteArrayOf(9, 8, 7, 6)
+            val provider =
+                object : KmsProvider by TestKmsProviderMock() {
+                    override val id: String = "tenant-rest-kms"
+
+                    override suspend fun performKeyAgreement(
+                        privateKeyInfo: KeyInfoType<*>,
+                        publicKeyInfo: KeyInfoType<*>,
+                        algorithm: KeyAgreementAlgorithm,
+                        keyDataLen: Int?,
+                    ): ByteArray {
+                        capturedPrivateKeyInfo = privateKeyInfo
+                        return expectedSecret
+                    }
+                }
+            providerRegistry.registerProvider(provider, makeDefaultKms = false)
+            val command = PerformKeyAgreementCommandImpl(TestSessionExecution(), providerRegistry)
+            val privateHandle = KeyInfo<KeyType>(providerId = provider.id, alias = "jarm-ephemeral-key")
+
+            val result =
+                command.execute(
+                    PerformKeyAgreementArgs(
+                        privateKeyInfo = privateHandle,
+                        publicKeyInfo = KeyInfo<KeyType>(alias = "wallet-ephemeral-public-key"),
+                        algorithm = KeyAgreementAlgorithm.ECDH_ES,
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(privateHandle, capturedPrivateKeyInfo)
+            assertContentEquals(expectedSecret, result.value.sharedSecret)
+        }
+
     @Test
     fun signDigestFailsFastWhenProviderDoesNotAdvertiseCapability() =
         runTest {

@@ -51,7 +51,7 @@ class JwksUrlExternalIdentifierResolutionTest {
 
     val app = createJvmCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("jwks-url-test")
+    val session = context.sessionContextManager.createOrGetFromId("jwks-url-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

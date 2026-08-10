@@ -24,6 +24,7 @@ import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommand
+import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.holder.JarmOptions
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder.Commands
@@ -77,6 +78,14 @@ class Oid4vpHolderServiceImpl(
         requestUri: String,
         walletConfig: WalletConfig?,
     ): IdkResult<AuthorizationRequest, IdkError> = parseAuthorizationRequestCommand.execute(ParseAuthorizationRequestArgs(requestUri, walletConfig))
+
+    override suspend fun parseDigitalCredentialsAuthorizationRequest(
+        request: DigitalCredentialsAuthorizationRequest,
+        walletConfig: WalletConfig?,
+    ): IdkResult<AuthorizationRequest, IdkError> =
+        parseAuthorizationRequestCommand.execute(
+            ParseAuthorizationRequestArgs(walletConfig = walletConfig, digitalCredentialsRequest = request),
+        )
 
     override suspend fun resolveAuthorizationRequest(request: AuthorizationRequest): IdkResult<ResolvedOid4vpRequest, IdkError> = resolveAuthorizationRequestCommand.execute(request)
 

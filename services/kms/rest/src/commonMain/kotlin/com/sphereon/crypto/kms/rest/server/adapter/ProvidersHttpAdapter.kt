@@ -42,6 +42,7 @@ import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toRest
 import com.sphereon.crypto.kms.rest.api.mapper.toRestResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toSdk
+import com.sphereon.crypto.kms.rest.server.service.KeyProviderPresentationSource
 import com.sphereon.crypto.kms.rest.server.service.ProvidersRestService
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
@@ -70,6 +71,7 @@ import com.sphereon.crypto.kms.rest.api.generated.models.KeyOperations as KeyOpe
 @ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
 class ProvidersHttpAdapter(
     private val providersService: ProvidersRestService,
+    private val presentation: KeyProviderPresentationSource,
 ) : RoutedHttpAdapter() {
     companion object {
         const val ID = "KMS-PROVIDERS"
@@ -138,7 +140,10 @@ class ProvidersHttpAdapter(
     private suspend fun handleListProviders(request: GenericHttpRequest): GenericHttpResponse {
         val providers =
             try {
-                providersService.listKeyProviders().map { it.toRest() }.toTypedArray()
+                providersService
+                    .listKeyProviders()
+                    .map { it.toRest(presentation.presentationFor(it)) }
+                    .toTypedArray()
             } catch (expected: Exception) {
                 return errorResponse(expected)
             }
@@ -151,13 +156,14 @@ class ProvidersHttpAdapter(
             req.pathParams["providerId"]
                 ?: return errorResponse(400, "Missing path parameter: providerId")
 
-        val provider =
+        val rendered =
             try {
-                providersService.getKeyProvider(providerId)
+                val provider = providersService.getKeyProvider(providerId)
+                provider.toRest(presentation.presentationFor(provider))
             } catch (expected: Exception) {
                 return errorResponse(expected)
             }
-        return jsonResponse(200, json.encodeToString<KeyProvider>(provider.toRest()))
+        return jsonResponse(200, json.encodeToString<KeyProvider>(rendered))
     }
 
     private suspend fun handleListKeys(request: GenericHttpRequest): GenericHttpResponse {

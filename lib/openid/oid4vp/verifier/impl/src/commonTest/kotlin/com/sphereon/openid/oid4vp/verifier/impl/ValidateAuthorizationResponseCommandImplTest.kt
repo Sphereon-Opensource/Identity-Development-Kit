@@ -27,10 +27,12 @@ import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.vpTokenOf
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
-import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetOption
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.mdocMeta
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
@@ -45,6 +47,8 @@ import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -70,10 +74,11 @@ class ValidateAuthorizationResponseCommandImplTest {
                             DcqlCredentialQuery(
                                 id = "identity_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:identity"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("first_name")),
-                                        DcqlClaimQuery(path = listOf("last_name")),
+                                        DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("first_name")))),
+                                        DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("last_name")))),
                                     ),
                             ),
                         ),
@@ -123,7 +128,7 @@ class ValidateAuthorizationResponseCommandImplTest {
             val trustValidator = CapturingTrustValidator()
             val dcqlQuery =
                 DcqlQuery(
-                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt")),
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
                 )
             val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             val args =
@@ -161,11 +166,133 @@ class ValidateAuthorizationResponseCommandImplTest {
         }
 
     @Test
+    fun `credential trust validation receives explicit templateId from args`() =
+        runTest {
+            val trustValidator = CapturingTrustValidator()
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
+                )
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val args =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse =
+                        ParsedAuthorizationResponse(
+                            vpToken = vpTokenOf("identity_credential", sdJwt),
+                            state = "state-template-explicit",
+                            rawVpToken = """{"identity_credential":["$sdJwt"]}""",
+                        ),
+                    originalRequest =
+                        AuthorizationRequest(
+                            clientId = "https://verifier.example.com",
+                            redirectUri = "https://verifier.example.com/callback",
+                            state = "state-template-explicit",
+                        ),
+                    dcqlQuery = dcqlQuery,
+                    expectedNonce = "nonce123",
+                    templateId = "template-a",
+                )
+            val result =
+                validateWithPersistedSession(
+                    args = args,
+                    instanceId = "verifier-instance-template-explicit",
+                    credentialTrustValidators = setOf(trustValidator),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid)
+            val validationArgs = assertNotNull(trustValidator.lastArgs)
+            assertEquals("template-a", validationArgs.templateId)
+        }
+
+    @Test
+    fun `credential trust validation falls back to the session templateId when args omit one`() =
+        runTest {
+            val trustValidator = CapturingTrustValidator()
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
+                )
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            // args.templateId is deliberately left null — the wallet direct_post response never
+            // carries a templateId. Only the session (persisted at request-creation time from the
+            // template) knows it.
+            val args =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse =
+                        ParsedAuthorizationResponse(
+                            vpToken = vpTokenOf("identity_credential", sdJwt),
+                            state = "state-template-fallback",
+                            rawVpToken = """{"identity_credential":["$sdJwt"]}""",
+                        ),
+                    originalRequest =
+                        AuthorizationRequest(
+                            clientId = "https://verifier.example.com",
+                            redirectUri = "https://verifier.example.com/callback",
+                            state = "state-template-fallback",
+                        ),
+                    dcqlQuery = dcqlQuery,
+                    expectedNonce = "nonce123",
+                )
+            val result =
+                validateWithPersistedSession(
+                    args = args,
+                    instanceId = "verifier-instance-template-fallback",
+                    credentialTrustValidators = setOf(trustValidator),
+                    sessionTemplateId = "template-from-session",
+                )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid)
+            val validationArgs = assertNotNull(trustValidator.lastArgs)
+            assertEquals("template-from-session", validationArgs.templateId)
+        }
+
+    @Test
+    fun `credential trust validation leaves templateId null when neither args nor session carry one`() =
+        runTest {
+            val trustValidator = CapturingTrustValidator()
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
+                )
+            val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
+            val args =
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse =
+                        ParsedAuthorizationResponse(
+                            vpToken = vpTokenOf("identity_credential", sdJwt),
+                            state = "state-template-none",
+                            rawVpToken = """{"identity_credential":["$sdJwt"]}""",
+                        ),
+                    originalRequest =
+                        AuthorizationRequest(
+                            clientId = "https://verifier.example.com",
+                            redirectUri = "https://verifier.example.com/callback",
+                            state = "state-template-none",
+                        ),
+                    dcqlQuery = dcqlQuery,
+                    expectedNonce = "nonce123",
+                )
+            val result =
+                validateWithPersistedSession(
+                    args = args,
+                    instanceId = "verifier-instance-template-none",
+                    credentialTrustValidators = setOf(trustValidator),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.valid)
+            val validationArgs = assertNotNull(trustValidator.lastArgs)
+            assertEquals(null, validationArgs.templateId)
+        }
+
+    @Test
     fun `test revoked credential is rejected by default status policy`() =
         runTest {
             val dcqlQuery =
                 DcqlQuery(
-                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt")),
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
                 )
             val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~WyJhYmMxMjMiLCJmaXJzdF9uYW1lIiwiSm9obiJd~eyJhbGciOiJFUzI1NiJ9.kb.sig"
             val args =
@@ -226,6 +353,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                             DcqlCredentialQuery(
                                 id = "mdl_credential",
                                 format = "mso_mdoc",
+                                meta = mdocMeta("org.iso.18013.5.1.mDL"),
                             ),
                         ),
                 )
@@ -272,7 +400,7 @@ class ValidateAuthorizationResponseCommandImplTest {
         runTest {
             val dcqlQuery =
                 DcqlQuery(
-                    credentials = listOf(DcqlCredentialQuery(id = "test")),
+                    credentials = listOf(DcqlCredentialQuery(id = "test", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
                 )
 
             val sdjwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~disclosure~kb"
@@ -315,8 +443,8 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials =
                         listOf(
-                            DcqlCredentialQuery(id = "identity_cred", format = "dc+sd-jwt"),
-                            DcqlCredentialQuery(id = "mdl_cred", format = "mso_mdoc"),
+                            DcqlCredentialQuery(id = "identity_cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity")),
+                            DcqlCredentialQuery(id = "mdl_cred", format = "mso_mdoc", meta = mdocMeta("org.iso.18013.5.1.mDL")),
                         ),
                 )
 
@@ -368,8 +496,8 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials =
                         listOf(
-                            DcqlCredentialQuery(id = "eu_pid", format = "dc+sd-jwt"),
-                            DcqlCredentialQuery(id = "mdl", format = "mso_mdoc"),
+                            DcqlCredentialQuery(id = "eu_pid", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:eu-pid")),
+                            DcqlCredentialQuery(id = "mdl", format = "mso_mdoc", meta = mdocMeta("org.iso.18013.5.1.mDL")),
                         ),
                     credential_sets =
                         listOf(
@@ -377,8 +505,8 @@ class ValidateAuthorizationResponseCommandImplTest {
                                 required = true,
                                 options =
                                     listOf(
-                                        DcqlCredentialSetOption(credential_ids = listOf("eu_pid")),
-                                        DcqlCredentialSetOption(credential_ids = listOf("mdl")),
+                                        listOf("eu_pid"),
+                                        listOf("mdl"),
                                     ),
                             ),
                         ),
@@ -427,7 +555,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials =
                         listOf(
-                            DcqlCredentialQuery(id = "required_cred", format = "dc+sd-jwt"),
+                            DcqlCredentialQuery(id = "required_cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:required")),
                         ),
                 )
 
@@ -471,7 +599,7 @@ class ValidateAuthorizationResponseCommandImplTest {
             // Given: Original request without state
             val dcqlQuery =
                 DcqlQuery(
-                    credentials = listOf(DcqlCredentialQuery(id = "test")),
+                    credentials = listOf(DcqlCredentialQuery(id = "test", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
                 )
 
             val sdjwt = "eyJhbGciOiJFUzI1NiJ9.payload.sig~disc~kb"
@@ -504,55 +632,6 @@ class ValidateAuthorizationResponseCommandImplTest {
         }
 
     @Test
-    fun `test validate response with format any match`() =
-        runTest {
-            // Given: DCQL query without specific format (any format accepted)
-            val dcqlQuery =
-                DcqlQuery(
-                    credentials =
-                        listOf(
-                            DcqlCredentialQuery(
-                                id = "any_format_cred",
-                                format = null, // Accept any format
-                            ),
-                        ),
-                )
-
-            // And: Response with JWT VP
-            val jwtVp = "eyJhbGciOiJFUzI1NiJ9.vp_payload.signature"
-            val parsedResponse =
-                ParsedAuthorizationResponse(
-                    vpToken = vpTokenOf("any_format_cred", jwtVp),
-                    state = "state_any",
-                    rawVpToken = """{"any_format_cred":["$jwtVp"]}""",
-                )
-
-            val originalRequest =
-                AuthorizationRequest(
-                    clientId = "https://verifier.example.com",
-                    redirectUri = "https://verifier.example.com/callback",
-                    state = "state_any",
-                )
-
-            val args =
-                ValidateAuthorizationResponseArgs(
-                    parsedResponse = parsedResponse,
-                    originalRequest = originalRequest,
-                    dcqlQuery = dcqlQuery,
-                    expectedNonce = "nonce_any",
-                )
-
-            val result = validateWithPersistedSession(args, instanceId = "verifier-instance-any-format-validation")
-
-            assertIs<Ok<*>>(result)
-            val validation = result.value
-
-            assertTrue(validation.valid)
-            assertEquals(1, validation.matchedCredentials.size)
-            assertEquals("any_format_cred", validation.matchedCredentials[0].credentialQueryId)
-        }
-
-    @Test
     fun testValidateResponseRejectsVcLdJsonJwtPresentationContainingVocab() =
         runTest {
             // VCDM 2.0 JWT body whose @context contains an embedded @vocab. The
@@ -570,7 +649,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials =
                         listOf(
-                            DcqlCredentialQuery(id = "dpp", format = "vc+ld+json+jwt"),
+                            DcqlCredentialQuery(id = "dpp", format = "vc+ld+json+jwt", meta = JsonObject(emptyMap())),
                         ),
                 )
             val parsedResponse =
@@ -616,7 +695,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 DcqlQuery(
                     credentials =
                         listOf(
-                            DcqlCredentialQuery(id = "id", format = "dc+sd-jwt"),
+                            DcqlCredentialQuery(id = "id", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")),
                         ),
                 )
             val parsedResponse =
@@ -710,6 +789,10 @@ class ValidateAuthorizationResponseCommandImplTest {
         instanceId: String,
         credentialStatusVerifiers: Set<com.sphereon.statuslist.spi.CredentialStatusVerifier> = emptySet(),
         credentialTrustValidators: Set<Oid4vpCredentialTrustValidator> = emptySet(),
+        // Defaults to mirroring args.templateId (as verifierId/dcqlQueryId already do below) so
+        // existing callers are unaffected; tests exercising the session-fallback path pass a
+        // value here while leaving args.templateId null.
+        sessionTemplateId: String? = args.templateId,
     ): IdkResult<com.sphereon.openid.oid4vp.verifier.ValidationResult, IdkError> {
         val correlationState = requireNotNull(args.originalRequest.state) { "Test authorization request must have correlation state" }
         val authorizationSessionStore = TestAuthorizationSessionStore()
@@ -722,6 +805,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                 dcqlQuery = args.dcqlQuery,
                 dcqlQueryId = args.dcqlQueryId,
                 verifierId = args.verifierId,
+                templateId = sessionTemplateId,
                 authorizationRequest = args.originalRequest,
                 status = AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_RECEIVED,
                 parsedResponse = args.parsedResponse,

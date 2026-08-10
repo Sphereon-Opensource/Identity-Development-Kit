@@ -24,6 +24,7 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.generateJwkThumbprintUri
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.x509.x5cWithoutTerminalSelfSignedRoot
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
@@ -144,14 +145,26 @@ class JwtVcJsonFormatHandler(
                 }
             }
 
-        // Resolve the issuer signing key. Prefer the per-credential `signingKeyAlias` from the
-        // issuer configuration; fall back to the configuration ID for embedders that key the
-        // signing key by config id. The signing-key identifier header (kid / x5c) is derived
-        // from `signingKeyMode` so verifiers can discover the public key — mirrors
-        // SdJwtDcFormatHandler.
-        val keyAlias = context.signingKeyAlias ?: context.credentialConfigurationId
+        // Server-resolved signing key; a credential is never signed under a name derived from a
+        // caller-visible identifier. The signing-key identifier header (kid / x5c) is derived from
+        // `signingKeyMode` so verifiers can discover the public key — mirrors SdJwtVcFormatHandler.
+        val keyAlias = context.requireSigningKeyName().getOrElse { return Err(it) }
         val issuerKey = ManagedOptsAlias(identifier = keyAlias)
-        val keyIdentifierHeader = resolveSigningHeader(keyAlias, context.signingKeyMode)
+        val signingVerificationMethodId =
+            if (context.signingKeyMode is SigningKeyMode.Did) {
+                val selected =
+                    context.signingVerificationMethodId
+                        ?: return Err(
+                            IdkError.fromString(
+                                code = "invalid_signing_verification_method",
+                                message = "DID signing requires an exact assertionMethod verification method",
+                            ),
+                        )
+                issuerKeyIdResolver.validateDidVerificationMethodId(keyAlias, selected).getOrElse { return Err(it) }
+            } else {
+                null
+            }
+        val keyIdentifierHeader = resolveSigningHeader(keyAlias, context.signingKeyMode, signingVerificationMethodId, context.issuerIdentifier)
 
         val result =
             jwtService
@@ -183,11 +196,15 @@ class JwtVcJsonFormatHandler(
     private suspend fun resolveSigningHeader(
         keyAlias: String,
         mode: SigningKeyMode,
+        signingVerificationMethodId: String?,
+        issuerIdentifier: String,
     ): JsonObject? =
         when (mode) {
             is SigningKeyMode.None -> null
 
-            is SigningKeyMode.Did -> resolveDidKid(keyAlias, mode.method)
+            is SigningKeyMode.Did -> buildJsonObject {
+                put("kid", JsonPrimitive(requireNotNull(signingVerificationMethodId)))
+            }
 
             is SigningKeyMode.X5c -> resolveX5cHeader(keyAlias)
 
@@ -201,10 +218,15 @@ class JwtVcJsonFormatHandler(
     private suspend fun resolveDidKid(
         keyAlias: String,
         method: String,
+        issuerIdentifier: String,
     ): JsonObject? {
         val vmId =
             issuerKeyIdResolver
-                .resolveDidVerificationMethodId(keyAlias = keyAlias, didMethod = method)
+                .resolveDidVerificationMethodId(
+                    keyAlias = keyAlias,
+                    didMethod = method,
+                    issuerIdentifier = issuerIdentifier,
+                )
                 .getOrElse { return null }
         return buildJsonObject { put("kid", JsonPrimitive(vmId)) }
     }
@@ -212,8 +234,8 @@ class JwtVcJsonFormatHandler(
     private suspend fun resolveX5cHeader(keyAlias: String,): JsonObject? {
         val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyAlias))
         if (keyResult.isErr) return null
-        val jwk = keyResult.value.key as? Jwk ?: return null
-        val chain = jwk.x5c ?: return null
+        val jwk = keyResult.value.key?.key as? Jwk ?: return null
+        val chain = jwk.x5c?.let(::x5cWithoutTerminalSelfSignedRoot) ?: return null
         return buildJsonObject {
             put("x5c", JsonArray(chain.map { JsonPrimitive(it) }))
         }
@@ -222,7 +244,7 @@ class JwtVcJsonFormatHandler(
     private suspend fun resolveJwkThumbprintKid(keyAlias: String): JsonObject? {
         val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyAlias))
         if (keyResult.isErr) return null
-        val jwk = keyResult.value.key as? Jwk ?: return null
+        val jwk = keyResult.value.key?.key as? Jwk ?: return null
         val publicJwk = jwk.toPublicKey()
         val thumbprintUri = generateJwkThumbprintUri(publicJwk)
         return buildJsonObject {

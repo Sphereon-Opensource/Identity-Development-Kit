@@ -593,14 +593,33 @@ fun Jwk.toPkcs8PrivateKeyInfo(): Pkcs8PrivateKeyInfo {
                     parameters = curveOid,
                     publicKey = publicKey,
                 )
-            Pkcs8PrivateKeyInfo.ec(ecKey, curveOid)
+            // awesn1's Pkcs8PrivateKeyInfo.ec helper resolves the SEC1
+            // serializer from KType at runtime. That works on the JVM but is
+            // unavailable in a GraalVM native image. Build the same RFC 5208
+            // structure with the generated serializer passed explicitly.
+            ecKey.toPkcs8PrivateKeyInfo(curveOid)
         }
 
         else -> {
             throw IllegalArgumentException("Unsupported key type: $kty")
         }
     }
-}
+    }
+
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+private fun Sec1EcPrivateKeyInfo.toPkcs8PrivateKeyInfo(curveOid: ObjectIdentifier): Pkcs8PrivateKeyInfo =
+    Pkcs8PrivateKeyInfo(
+        version = Pkcs8PrivateKeyInfo.Version.V1,
+        privateKeyAlgorithm =
+            X509AlgorithmIdentifier(
+                EC_PUBLIC_KEY_OID,
+                listOf(curveOid.encodeToTlv()),
+            ),
+        privateKey =
+            Asn1.OctetStringEncapsulating {
+                +DER.encodeToTlv(Sec1EcPrivateKeyInfo.serializer(), this@toPkcs8PrivateKeyInfo)
+            },
+    )
 
 // ============================================================================
 // X509 Signature Algorithm ↔ SignatureAlgorithm

@@ -28,7 +28,6 @@ import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.HttpRoute
 import com.sphereon.core.api.http.describe.TenantPathMode
-import com.sphereon.core.api.http.describe.TenantResolutionPriority
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -93,6 +92,31 @@ class DefaultHttpAdapterDispatcherTest {
     ): DefaultHttpAdapterDispatcher = DefaultHttpAdapterDispatcher(catalog, adapters, descriptorProviders)
 
     // ========== Path normalization tests (TenantPathMode.OFF) ==========
+
+    @Test
+    fun dispatchMatchesRootMountedAbsolutePatternAdapter() =
+        runTest {
+            // The command transport mounts at the server root with an absolute endpoint
+            // pattern (serverPrefix "", basePath "", pattern "/api/commands").
+            val adapter =
+                TestAdapter(
+                    id = "transport-command-http",
+                    adapterMount = HttpAdapterMount(serverPrefix = "", adapterBasePath = ""),
+                    routeSpecs = listOf(HttpMethod.POST to "/api/commands"),
+                )
+            val provider =
+                TestDescriptorProvider(
+                    id = "transport-command-http",
+                    mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = ""),
+                    endpoints = listOf(HttpEndpointDescriptor(HttpMethod.POST, "/api/commands")),
+                )
+            val catalog = createCatalog(setOf(provider))
+            val dispatcher = createDispatcher(catalog, setOf(adapter))
+
+            val response = dispatcher.dispatch(GenericHttpRequest(method = "POST", path = "/api/commands"))
+
+            assertEquals(200, response.statusCode)
+        }
 
     @Test
     fun dispatchNormalizesPathByStrippingServerPrefix() =
@@ -395,10 +419,10 @@ class DefaultHttpAdapterDispatcherTest {
             assertTrue(response.body?.contains("tenantId=afterTenant") == true)
         }
 
-    // ========== Tenant resolution precedence tests ==========
+    // ========== Tenant authority tests ==========
 
     @Test
-    fun dispatchUsesHeaderTenantWhenPrecedenceIsHeaderThenPath() =
+    fun dispatchUsesAuthenticatedTenantInsteadOfPathTenant() =
         runTest {
             val adapter =
                 TestAdapter(
@@ -408,7 +432,6 @@ class DefaultHttpAdapterDispatcherTest {
                             serverPrefix = "/api/kms",
                             adapterBasePath = "/keys",
                             tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX,
-                            tenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH,
                         ),
                     routeSpecs = listOf(HttpMethod.GET to "/"),
                 )
@@ -427,17 +450,16 @@ class DefaultHttpAdapterDispatcherTest {
                     GenericHttpRequest(
                         method = "GET",
                         path = "/t/pathTenant/api/kms/keys",
-                        pathParameters = mapOf("tenantId" to "headerTenant"),
+                        resolvedTenantId = "jwtTenant",
                     ),
                 )
 
             assertEquals(200, response.statusCode)
-            // Header tenant should win
-            assertTrue(response.body?.contains("tenantId=headerTenant") == true)
+            assertTrue(response.body?.contains("tenantId=jwtTenant") == true)
         }
 
     @Test
-    fun dispatchUsesPathTenantWhenPrecedenceIsPathThenHeader() =
+    fun dispatchUsesPathTenantOnlyWhenAuthenticatedTenantIsAbsent() =
         runTest {
             val adapter =
                 TestAdapter(
@@ -447,7 +469,6 @@ class DefaultHttpAdapterDispatcherTest {
                             serverPrefix = "/api/kms",
                             adapterBasePath = "/keys",
                             tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX,
-                            tenantResolutionPriority = TenantResolutionPriority.PATH_THEN_HEADER,
                         ),
                     routeSpecs = listOf(HttpMethod.GET to "/"),
                 )
@@ -466,51 +487,10 @@ class DefaultHttpAdapterDispatcherTest {
                     GenericHttpRequest(
                         method = "GET",
                         path = "/t/pathTenant/api/kms/keys",
-                        pathParameters = mapOf("tenantId" to "headerTenant"),
                     ),
                 )
 
             assertEquals(200, response.statusCode)
-            // Path tenant should win
-            assertTrue(response.body?.contains("tenantId=pathTenant") == true)
-        }
-
-    @Test
-    fun dispatchUsesPathTenantWhenHeaderIsAbsentAndPrecedenceIsHeaderThenPath() =
-        runTest {
-            val adapter =
-                TestAdapter(
-                    id = "KMS_KEYS",
-                    adapterMount =
-                        HttpAdapterMount(
-                            serverPrefix = "/api/kms",
-                            adapterBasePath = "/keys",
-                            tenantPathMode = TenantPathMode.BEFORE_SERVER_PREFIX,
-                            tenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH,
-                        ),
-                    routeSpecs = listOf(HttpMethod.GET to "/"),
-                )
-            val provider =
-                TestDescriptorProvider(
-                    id = "KMS_KEYS",
-                    mount = adapter.describe().mount,
-                    endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys")),
-                )
-
-            val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
-
-            val response =
-                dispatcher.dispatch(
-                    GenericHttpRequest(
-                        method = "GET",
-                        path = "/t/pathTenant/api/kms/keys",
-                        // No header tenant provided
-                    ),
-                )
-
-            assertEquals(200, response.statusCode)
-            // Path tenant should be used as fallback
             assertTrue(response.body?.contains("tenantId=pathTenant") == true)
         }
 
@@ -756,11 +736,11 @@ class DefaultHttpAdapterDispatcherTest {
         }
 
     @Test
-    fun dispatchReturns404WhenDescriptorHasNoRuntimeAdapter() =
+    fun dispatchFailsLoudlyWhenDescriptorHasNoRuntimeAdapter() =
         runTest {
-            // Catalog has a descriptor but no runtime adapter with that id. The descriptor
-            // advertises a route nothing can serve, so dispatch hides the wiring detail behind
-            // the same 404 shape as any other unserved route.
+            // Catalog has a descriptor but no runtime adapter with that id. That is a wiring
+            // defect, not an unserved route: it answers 500 and names the descriptor, so it can
+            // never be mistaken for an ordinary route-not-found.
             val provider =
                 TestDescriptorProvider(
                     id = "MISSING_ADAPTER",
@@ -773,8 +753,8 @@ class DefaultHttpAdapterDispatcherTest {
             val dispatcher = createDispatcher(catalog, emptySet())
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/missing"))
 
-            assertEquals(404, response.statusCode)
-            assertTrue(response.body?.contains("Not found") == true, "unexpected body: ${response.body}")
+            assertEquals(500, response.statusCode)
+            assertTrue(response.body?.contains("MISSING_ADAPTER") == true, "unexpected body: ${response.body}")
         }
 
     @Test

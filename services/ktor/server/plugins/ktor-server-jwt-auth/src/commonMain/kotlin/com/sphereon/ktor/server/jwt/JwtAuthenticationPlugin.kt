@@ -130,13 +130,7 @@ val JwtAuthentication =
             }
             val validated = validationResult.value
 
-            val input =
-                IdentityResolutionInput(
-                    headers = collectHeaders(call),
-                    tokenClaims = validated.claims,
-                    hostHeader = call.request.header(HttpHeaders.Host),
-                    pathPrefix = path,
-                )
+            val input = IdentityResolutionInput(tokenClaims = validated.claims)
             val resolution = config.identityResolutionPipeline(call).resolve(input)
 
             val sessionId = Uuid.random().toString()
@@ -154,26 +148,11 @@ private suspend fun bindAnonymousSession(
 ) {
     val resolution =
         pipeline.resolve(
-            IdentityResolutionInput(
-                headers = collectHeaders(call),
-                tokenClaims = null,
-                hostHeader = call.request.header(HttpHeaders.Host),
-                pathPrefix = call.request.path(),
-            ),
+            IdentityResolutionInput(tokenClaims = null),
         )
     val sessionId = Uuid.random().toString()
     val correlationId = call.request.header(AuthHeaders.X_CORRELATION_ID) ?: Uuid.random().toString()
     call.attributes.put(SessionContextAttributeKey, factory.create(sessionId, correlationId, resolution, emptyMap()))
-}
-
-private fun collectHeaders(call: ApplicationCall): Map<String, String> {
-    val headers = call.request.headers
-    val result = mutableMapOf<String, String>()
-    for (name in headers.names()) {
-        val value = headers[name] ?: continue
-        result[name] = value
-    }
-    return result
 }
 
 /**

@@ -21,14 +21,26 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.openid.oid4vp.common.store.StoreMetadata
 import com.sphereon.openid.oid4vp.common.store.StoredEntry
+import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
+import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
+import com.sphereon.openid.oid4vp.verifier.config.DEFAULT_OID4VP_VERIFIER_INSTANCE_ID
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCreateArgs
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionError
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import kotlin.time.Clock
+
+private fun missingSessionQuery() =
+    DcqlQuery(
+        credentials =
+            listOf(
+                DcqlCredentialQuery(id = "missing", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:missing")),
+            ),
+    )
 
 /**
  * Minimal in-memory [AuthorizationSessionStore] for E2E tests in the services module.
@@ -53,6 +65,7 @@ internal class TestAuthorizationSessionStore : AuthorizationSessionStore {
     ): IdkResult<AuthorizationSession, IdkError> =
         Ok(
             AuthorizationSession(
+                instanceId = args.instanceId,
                 sessionId = correlationId ?: "test",
                 correlationId = correlationId ?: "test",
                 queryId = args.queryId,
@@ -80,11 +93,10 @@ internal class TestAuthorizationSessionStore : AuthorizationSessionStore {
         val existing =
             entries[correlationId] ?: return Ok(
                 AuthorizationSession(
+                    instanceId = DEFAULT_OID4VP_VERIFIER_INSTANCE_ID,
                     sessionId = correlationId,
                     correlationId = correlationId,
-                    dcqlQuery =
-                        com.sphereon.openid.oid4vp.dcql
-                            .DcqlQuery(credentials = emptyList()),
+                    dcqlQuery = missingSessionQuery(),
                     authorizationRequest =
                         com.sphereon.oauth2.common.model.AuthorizationRequest(
                             clientId = "test",
@@ -109,11 +121,10 @@ internal class TestAuthorizationSessionStore : AuthorizationSessionStore {
         val existing =
             entries[correlationId] ?: return Ok(
                 AuthorizationSession(
+                    instanceId = DEFAULT_OID4VP_VERIFIER_INSTANCE_ID,
                     sessionId = correlationId,
                     correlationId = correlationId,
-                    dcqlQuery =
-                        com.sphereon.openid.oid4vp.dcql
-                            .DcqlQuery(credentials = emptyList()),
+                    dcqlQuery = missingSessionQuery(),
                     authorizationRequest =
                         com.sphereon.oauth2.common.model.AuthorizationRequest(
                             clientId = "test",
@@ -143,11 +154,10 @@ internal class TestAuthorizationSessionStore : AuthorizationSessionStore {
         val existing =
             entries[correlationId] ?: return Ok(
                 AuthorizationSession(
+                    instanceId = DEFAULT_OID4VP_VERIFIER_INSTANCE_ID,
                     sessionId = correlationId,
                     correlationId = correlationId,
-                    dcqlQuery =
-                        com.sphereon.openid.oid4vp.dcql
-                            .DcqlQuery(credentials = emptyList()),
+                    dcqlQuery = missingSessionQuery(),
                     authorizationRequest =
                         com.sphereon.oauth2.common.model.AuthorizationRequest(
                             clientId = "test",

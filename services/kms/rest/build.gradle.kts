@@ -76,7 +76,6 @@ kotlin {
             dependencies {
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)
-                implementation(projects.libCryptoKmsProviderRest)
                 // Ktor testing
                 implementation(projects.ktorServerKotlinInject)
                 implementation(sphereonlib.io.ktor.server.core)
@@ -97,16 +96,4 @@ kotlin {
 
 tasks.named("jvmTest") {
     dependsOn("compileTestKotlinJvm")
-}
-
-tasks.register<JavaExec>("runKtorServer") {
-    group = "application"
-    description = "Run the KMS REST server using Ktor Server with CIO engine"
-    dependsOn("compileKotlinJvm")
-
-    val mainCompilation = kotlin.jvm().compilations.getByName("main")
-
-    classpath =
-        mainCompilation.output.allOutputs
-    mainClass.set("com.sphereon.crypto.kms.rest.server.KmsKtorServerKt")
 }

@@ -39,8 +39,10 @@ import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.common.clientMetadata
+import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseArgs
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseCommand
+import com.sphereon.openid.oid4vp.verifier.config.ResponseEncryptionKeyConfig
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -91,6 +93,7 @@ class DirectPostResponseEndpointCommandImpl(
     execution: SessionExecution,
     private val handleDirectPostCommand: HandleDirectPostResponseCommand,
     private val authorizationSessionStore: AuthorizationSessionStore,
+    private val responseEncryptionKeyConfig: ResponseEncryptionKeyConfig,
 ) : HttpEndpointCommandAdapter(
         id = DirectPostResponseEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -138,29 +141,34 @@ class DirectPostResponseEndpointCommandImpl(
             authorizationSessionStore.getByCorrelationId(correlationId).getOrNull()
                 ?: return Err(IdkError.NOT_FOUND_ERROR(message = "Authorization session not found: $correlationId"))
 
-        // Resolve the redirect_uri for the direct_post response.
-        // Per OID4VP Section 7.2, redirect_uri is OPTIONAL in the response.
-        // If configured on the session's authorization request, the wallet navigates there.
-        // Otherwise, omit it — the wallet stays on its current screen.
-        val sessionRedirectUri = session.authorizationRequest.redirectUri ?: ""
+        // This response-endpoint redirect is distinct from the authorization request's
+        // `redirect_uri`: direct_post uses `response_uri` for wallet submission, while this
+        // optional session value controls the subsequent browser navigation.
+        val sessionRedirectUri = session.directPostResponseRedirectUri.orEmpty()
 
-        // For direct_post.jwt sessions the universal command stashed the KMS reference
-        // (alias + providerId) for the ephemeral encryption keypair on the session.
-        // Resolve it back to a `KeyInfo` here so the JARM decryption command (deeper in
-        // ParseAuthorizationResponseCommandImpl → VerifyJarmResponseCommandImpl) can ask
-        // the KMS to perform the ECDH-ES key agreement. No JWK strings on the wire — the
-        // private half stays inside the `ephemeral` KMS provider for its lifetime.
-        // Explicitly request the PRIVATE half: KeyInfo defaults keyVisibility=PUBLIC, which makes
-        // the keystore strip the private scalar (`d`) on read. Without this, the JWE decrypter
-        // fails with "Decryptor key must be a private key (must have 'd' parameter)" because
-        // ECDH-ES key agreement needs our private scalar to derive the shared secret.
+        // A `direct_post.jwt` session decrypts under the key the server holds for its verifier
+        // instance. The session carries the instance, never a key selector, so a stored session
+        // cannot steer decryption at any raw alias, provider, or key id. The resolved name builds
+        // the opaque `KeyInfo` handle the JARM decryption command (deeper in
+        // ParseAuthorizationResponseCommandImpl → VerifyJarmResponseCommandImpl) hands the KMS for
+        // the ECDH key agreement. PRIVATE expresses the intended operation; it does not request key
+        // export, and no key material crosses this boundary.
+        val encryptedResponse = session.authorizationRequest.responseMode == ResponseMode.DIRECT_POST_JWT.value
+        val jarmDecryptionKeyName =
+            if (encryptedResponse) {
+                responseEncryptionKeyConfig.resolveEncryptionKeyName(session.instanceId)
+                    ?: return Err(
+                        IdkError.UNKNOWN_ERROR(message = ResponseEncryptionKeyConfig.RESPONSE_ENCRYPTION_KEY_UNAVAILABLE),
+                    )
+            } else {
+                null
+            }
         val jarmDecryptionKey =
-            session.jarmEncryptionKeyAlias?.let { alias ->
+            jarmDecryptionKeyName?.let { keyName ->
                 ManagedOptsKeyInfo(
                     identifier =
                         KeyInfo<Nothing>(
-                            alias = alias,
-                            providerId = session.jarmEncryptionKeyProviderId,
+                            alias = keyName,
                             keyVisibility = KeyVisibility.PRIVATE,
                         ),
                 )
@@ -174,7 +182,7 @@ class DirectPostResponseEndpointCommandImpl(
         // universal command sets equal to the session correlationId) and hash it. Raw
         // 32-byte digest (the spec mandates the bytes, not the base64url encoding).
         val verifierEncryptionJwkThumbprint =
-            if (session.jarmEncryptionKeyAlias != null) {
+            if (encryptedResponse) {
                 val jwks =
                     session.authorizationRequest.clientMetadata
                         ?.jwks
@@ -200,6 +208,7 @@ class DirectPostResponseEndpointCommandImpl(
                 verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
                 verifierId = session.verifierId,
                 dcqlQueryId = session.dcqlQueryId,
+                templateId = session.templateId,
             )
 
         // Delegate to the service command

@@ -35,6 +35,14 @@ actual class MultiplatformSettings actual constructor(
     internal var settings: Settings = StorageSettings()
 
     fun keyWithNS(key: String) = propKeyNormalizer.normalize("$namespace.$key")
+    private val namespaceRevisionKey: String
+        get() = keyWithNS(SETTINGS_NAMESPACE_REVISION_KEY)
+    private val namespaceStoragePrefix: String
+        get() = propKeyNormalizer.normalize("$namespace.").trimEnd('.') + "."
+    private val namespacedTypeStoragePrefix: String
+        get() = keyWithNS(SETTINGS_TYPE_KEY_PREFIX).trimEnd('.') + "."
+
+    private fun namespacedTypeStorageKey(normalizedUserKey: String): String = keyWithNS(settingsTypeStorageKey(normalizedUserKey))
 
     /**
      * Retrieves the value of a property corresponding to the specified name with type safety.
@@ -49,6 +57,7 @@ actual class MultiplatformSettings actual constructor(
         key: String,
         defaultValue: T?,
     ): T? {
+        requirePublicSettingsKey(propKeyNormalizer.normalize(key))
         val keyWithNS = keyWithNS(key)
         return if (settings.hasKey(keyWithNS)) {
             when (T::class) {
@@ -72,11 +81,12 @@ actual class MultiplatformSettings actual constructor(
      * @return the value as a String if the key exists, or null if not found.
      */
     actual fun getAsString(key: String): String? {
+        requirePublicSettingsKey(propKeyNormalizer.normalize(key))
         val keyWithNS = keyWithNS(key)
 
         val value =
             settings.getStringOrNull(keyWithNS) ?: settings.getIntOrNull(keyWithNS)
-                ?: settings.getDoubleOrNull(keyWithNS) ?: settings.getFloatOrNull(keyWithNS)
+                ?: settings.getLongOrNull(keyWithNS) ?: settings.getDoubleOrNull(keyWithNS) ?: settings.getFloatOrNull(keyWithNS)
                 ?: settings.getBooleanOrNull(keyWithNS) ?: return null
         return "$value"
     }
@@ -94,9 +104,12 @@ actual class MultiplatformSettings actual constructor(
         targetType: KClass<T>,
         value: T?,
     ) {
+        requirePublicSettingsKey(propKeyNormalizer.normalize(key))
         val keyWithNS = keyWithNS(key)
         if (value == null) {
             settings.remove(keyWithNS)
+            settings.remove(namespacedTypeStorageKey(propKeyNormalizer.normalize(key)))
+            advanceNamespaceRevision()
             return
         }
 
@@ -109,6 +122,11 @@ actual class MultiplatformSettings actual constructor(
             is Boolean -> settings.putBoolean(keyWithNS, value)
             else -> throw UnsupportedOperationException("Unsupported settings type: ${value::class}. Supported types: Int, Long, String, Float, Double, Boolean")
         }
+        settings.putString(
+            namespacedTypeStorageKey(propKeyNormalizer.normalize(key)),
+            storedSettingsTypeTag(value),
+        )
+        advanceNamespaceRevision()
     }
 
     /**
@@ -117,8 +135,11 @@ actual class MultiplatformSettings actual constructor(
      * @param key the name of the property to remove.
      */
     actual fun remove(key: String) {
+        requirePublicSettingsKey(propKeyNormalizer.normalize(key))
         val keyWithNS = keyWithNS(key)
         settings.remove(keyWithNS)
+        settings.remove(namespacedTypeStorageKey(propKeyNormalizer.normalize(key)))
+        advanceNamespaceRevision()
     }
 
     /**
@@ -126,10 +147,28 @@ actual class MultiplatformSettings actual constructor(
      *
      * @return a set containing all property names.
      */
-    actual fun getKeys(): Set<String> = settings.keys.map { it.replace("$namespace/", "") }.toSet()
+    actual fun getKeys(): Set<String> =
+        projectNamespacedSettingsUserKeys(
+            storageKeys = settings.keys,
+            namespaceStoragePrefix = namespaceStoragePrefix,
+            exactRevisionStorageKey = namespaceRevisionKey,
+            exactTypeStoragePrefix = namespacedTypeStoragePrefix,
+        )
 
     /**
      * Checks whether MultiplatformSettings is supported on the current platform
      */
     actual val isPlatformSupported: Boolean = true
+    actual val mutationRevision: Long
+        get() = settings.getLongOrNull(namespaceRevisionKey) ?: 0L
+
+    actual internal fun getStoredTypeTag(key: String): String? {
+        val normKey = propKeyNormalizer.normalize(key)
+        requirePublicSettingsKey(normKey)
+        return settings.getStringOrNull(namespacedTypeStorageKey(normKey))
+    }
+
+    private fun advanceNamespaceRevision() {
+        settings.putLong(namespaceRevisionKey, mutationRevision + 1L)
+    }
 }

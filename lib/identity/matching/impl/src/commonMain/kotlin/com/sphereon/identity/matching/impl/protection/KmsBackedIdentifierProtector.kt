@@ -25,19 +25,31 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.json.jcs.Jcs
 import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
-import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.kms.command.DecryptArgs
+import com.sphereon.crypto.core.kms.command.DecryptCommand
+import com.sphereon.crypto.core.kms.command.EncryptArgs
+import com.sphereon.crypto.core.kms.command.EncryptCommand
+import com.sphereon.crypto.core.kms.command.GenerateKeyArgs
+import com.sphereon.crypto.core.kms.command.GenerateKeyCommand
 import com.sphereon.crypto.core.kms.command.GenerateMacArgs
 import com.sphereon.crypto.core.kms.command.GenerateMacCommand
+import com.sphereon.crypto.core.kms.command.ListKeysArgs
+import com.sphereon.crypto.core.kms.command.ListKeysCommand
 import com.sphereon.data.store.party.model.IdentifierProtectionMode
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.data.store.party.model.ProtectedIdentifierValue
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicy
 import com.sphereon.identity.matching.protection.IdentifierProtector
 import com.sphereon.identity.matching.protection.normalizeIdentifier
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -46,7 +58,7 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * Reuses the platform KMS for every cryptographic operation: blind indexing is a
  * domain-separated HMAC-SHA256 via [GenerateMacCommand] and reversible encryption is
- * AES-256-GCM via [KeyManagerService]. No new algorithms are introduced.
+ * AES-256-GCM via [EncryptCommand] and [DecryptCommand]. No new algorithms are introduced.
  *
  * Key references are tenant-scoped aliases:
  * - blind-index HMAC key alias  = "idfr:bi:<tenantId>"
@@ -55,15 +67,22 @@ import kotlinx.serialization.json.JsonPrimitive
  * Both the blind-index message and the encryption AAD are canonicalized with RFC 8785 JCS
  * ([Jcs]) so the same logical input always yields identical bytes across calls and platforms.
  *
- * @param generateMacCommand KMS MAC command used for blind indexing.
- * @param keyManagerService KMS service used for AES-256-GCM encrypt/decrypt.
- * @param providerId KMS provider id (e.g. "software").
+ * All key lifecycle and cryptographic work uses commands, not the process-local KMS service. This
+ * keeps resolve, generate, MAC, encryption, and decryption on the same routed KMS owner in split
+ * deployments. Key discovery uses metadata-only references and never returns private key material.
+ *
+ * @param providerId KMS provider id; null lets the KMS search its providers for the one
+ *   holding (or able to hold) the key, so the same protector works whether keys live on a
+ *   local software provider or a routed tenant KMS with per-tenant provider ids.
  * @param keyVersion Current key-version label recorded in the protected envelope.
  */
 class KmsBackedIdentifierProtector(
+    private val generateKeyCommand: GenerateKeyCommand,
+    private val listKeysCommand: ListKeysCommand,
     private val generateMacCommand: GenerateMacCommand,
-    private val keyManagerService: KeyManagerService,
-    private val providerId: String = "software",
+    private val encryptCommand: EncryptCommand,
+    private val decryptCommand: DecryptCommand,
+    private val providerId: String? = null,
     private val keyVersion: String = "v1",
 ) : IdentifierProtector {
     private companion object {
@@ -74,6 +93,17 @@ class KmsBackedIdentifierProtector(
         const val TAG_LENGTH = 16
         const val PURPOSE_BI = "identifier-bi"
         const val PURPOSE_ENC = "identifier-enc"
+
+        /**
+         * Coordinates lazy identifier-key creation across protector instances in this process.
+         *
+         * Protector instances are session-scoped, while their KMS aliases are tenant-scoped. Without
+         * process-wide coordination, two first-use sessions can both observe a missing alias and each
+         * generate a different key. Software PKCS12 stores allow alias replacement by default, so the
+         * second write can make blind indexes or ciphertext created with the first key unreadable after
+         * the in-process key cache is lost on restart.
+         */
+        val tenantKeyProvisioningMutex = Mutex()
     }
 
     override suspend fun protect(
@@ -191,12 +221,14 @@ class KmsBackedIdentifierProtector(
      * derive blind indexes without a separate provisioning step. Idempotent and concurrency-tolerant:
      * a key created by a racing caller is treated as success.
      */
-    private suspend fun ensureBlindIndexKey(tenantId: String): IdkResult<Unit, IdkError> =
+    private suspend fun ensureBlindIndexKey(tenantId: String): IdkResult<KeyInfoType<*>, IdkError> =
         ensureTenantKey(BI_KEY_PREFIX + tenantId, "blind-index", tenantId) { alias ->
-            keyManagerService.generateKeyResult(
+            GenerateKeyArgs(
                 providerId = providerId,
                 alias = alias,
+                use = JwkUse.sig,
                 alg = SignatureAlgorithm.HMAC_SHA256,
+                keyVisibility = KeyVisibility.PRIVATE,
             )
         }
 
@@ -208,16 +240,60 @@ class KmsBackedIdentifierProtector(
         alias: String,
         label: String,
         tenantId: String,
-        generate: suspend (alias: String) -> IdkResult<*, IdkError>,
-    ): IdkResult<Unit, IdkError> {
-        val keyInfo = KeyInfo<Nothing>(alias = alias, providerId = providerId)
-        if (keyManagerService.getKeyResult(keyInfo).isOk) return Ok(Unit)
-        val generated = generate(alias)
-        return if (generated.isOk || keyManagerService.getKeyResult(keyInfo).isOk) {
-            Ok(Unit)
-        } else {
-            Err(generated.errorOrNull() ?: unknown("$label key provisioning failed for tenant $tenantId"))
+        generate: (alias: String) -> GenerateKeyArgs,
+    ): IdkResult<KeyInfoType<*>, IdkError> {
+        resolveTenantKey(alias, label, tenantId).getOrNull()?.let { return Ok(it) }
+
+        return tenantKeyProvisioningMutex.withLock {
+            // Another session may have provisioned the alias while this caller waited.
+            resolveTenantKey(alias, label, tenantId).getOrNull()?.let { return@withLock Ok(it) }
+
+            val generated = generateKeyCommand.execute(generate(alias))
+            resolveTenantKey(alias, label, tenantId).fold(
+                success = { Ok(it) },
+                failure = {
+                    Err(generated.errorOrNull() ?: it)
+                },
+            )
         }
+    }
+
+    /**
+     * Resolve [alias] to the provider that actually owns the key. Listing returns metadata-only
+     * references, so the caller learns the provider selection needed for the next routed command
+     * without receiving symmetric key material.
+     */
+    private suspend fun resolveTenantKey(
+        alias: String,
+        label: String,
+        tenantId: String,
+    ): IdkResult<KeyInfoType<*>, IdkError> {
+        val lookup = listKeysCommand.execute(ListKeysArgs(providerId))
+        val references =
+            lookup.getOrNull()?.keys
+                ?: return Err(
+                    lookup.errorOrNull()
+                        ?: unknown("$label key resolution failed for tenant $tenantId"),
+                )
+        val matching =
+            references.filter { reference ->
+                reference.alias == alias && (providerId == null || reference.providerId == providerId)
+            }
+        val resolved =
+            matching.singleOrNull()
+                ?: return Err(
+                    unknown(
+                        if (matching.isEmpty()) {
+                            "$label key resolution failed for tenant $tenantId"
+                        } else {
+                            "$label key provider resolution was ambiguous for tenant $tenantId"
+                        },
+                    ),
+                )
+        if (resolved.providerId.isBlank()) {
+            return Err(unknown("$label key provider resolution failed for tenant $tenantId"))
+        }
+        return Ok(resolved)
     }
 
     /**
@@ -230,8 +306,7 @@ class KmsBackedIdentifierProtector(
         normalized: String,
         scope: String,
     ): IdkResult<String, IdkError> {
-        ensureBlindIndexKey(tenantId).getOrElse { return Err(it) }
-
+        val keyAlias = BI_KEY_PREFIX + tenantId
         val message =
             Jcs.canonicalize(
                 JsonObject(
@@ -245,10 +320,23 @@ class KmsBackedIdentifierProtector(
                 ),
             )
 
+        val resolvedKeyInfo = ensureBlindIndexKey(tenantId).getOrElse { return Err(it) }
+        // A null providerId means that the managed key store may search across multiple
+        // configured providers. Carry the provider discovered by the successful key lookup into
+        // the local MAC call so an upgraded multi-provider registry cannot select a new default.
+        val resolvedProviderId = requireNotNull(resolvedKeyInfo.providerId)
+        return generateBlindIndexMac(keyAlias, message, resolvedProviderId)
+    }
+
+    private suspend fun generateBlindIndexMac(
+        keyAlias: String,
+        message: ByteArray,
+        providerId: String?,
+    ): IdkResult<String, IdkError> {
         val result =
             generateMacCommand.execute(
                 GenerateMacArgs(
-                    keyId = BI_KEY_PREFIX + tenantId,
+                    keyId = keyAlias,
                     message = message,
                     digestAlgorithm = DigestAlg.SHA256,
                     providerId = providerId,
@@ -262,16 +350,19 @@ class KmsBackedIdentifierProtector(
      * Ensure the tenant's AES-256 value-encryption key exists before first use. Like the
      * blind-index key, per-tenant identifier keys are provisioned lazily so any tenant
      * (including the platform tenant during bootstrap) can protect identifiers without a
-     * separate provisioning step. Generating with `use=enc` and no signature algorithm mints
-     * a 256-bit symmetric AES key on the software provider (the natural AES-GCM shape).
+     * separate provisioning step. AES has no [SignatureAlgorithm], so the encryption key keeps
+     * `alg` unset and is constrained by `use=enc` plus the encrypt/decrypt key operations. The
+     * software provider then mints the generic 256-bit oct key required by AES-GCM.
      * Idempotent and concurrency-tolerant: a key created by a racing caller is treated as success.
      */
-    private suspend fun ensureEncryptionKey(tenantId: String): IdkResult<Unit, IdkError> =
+    private suspend fun ensureEncryptionKey(tenantId: String): IdkResult<KeyInfoType<*>, IdkError> =
         ensureTenantKey(ENC_KEY_PREFIX + tenantId, "encryption", tenantId) { alias ->
-            keyManagerService.generateKeyResult(
+            GenerateKeyArgs(
                 providerId = providerId,
                 alias = alias,
                 use = JwkUse.enc,
+                keyOperations = arrayOf(KeyOperations.ENCRYPT, KeyOperations.DECRYPT),
+                keyVisibility = KeyVisibility.PRIVATE,
             )
         }
 
@@ -285,17 +376,17 @@ class KmsBackedIdentifierProtector(
         type: IdentifierType,
         normalized: String,
     ): IdkResult<String, IdkError> {
-        ensureEncryptionKey(tenantId).getOrElse { return Err(it) }
-
-        val keyInfo = KeyInfo<Nothing>(alias = ENC_KEY_PREFIX + tenantId, providerId = providerId)
+        val keyInfo = ensureEncryptionKey(tenantId).getOrElse { return Err(it) }
         val aad = encryptionAad(tenantId, identityId, type)
 
         val result =
-            keyManagerService.encryptResult(
-                keyInfo = keyInfo,
-                plaintext = normalized.encodeToByteArray(),
-                algorithm = ContentEncryptionAlgorithm.A256GCM,
-                additionalAuthenticatedData = aad,
+            encryptCommand.execute(
+                EncryptArgs(
+                    keyInfo = keyInfo,
+                    plaintext = normalized.encodeToByteArray(),
+                    algorithm = ContentEncryptionAlgorithm.A256GCM,
+                    additionalAuthenticatedData = aad,
+                ),
             )
         val encryptResult = result.getOrNull() ?: return Err(result.errorOrNull() ?: unknown("encryption failed"))
 
@@ -325,17 +416,24 @@ class KmsBackedIdentifierProtector(
         val authTag = combined.copyOfRange(IV_LENGTH, IV_LENGTH + TAG_LENGTH)
         val ciphertext = combined.copyOfRange(IV_LENGTH + TAG_LENGTH, combined.size)
 
-        val keyInfo = KeyInfo<Nothing>(alias = ENC_KEY_PREFIX + tenantId, providerId = providerId)
+        val keyInfo =
+            resolveTenantKey(
+                alias = ENC_KEY_PREFIX + tenantId,
+                label = "encryption",
+                tenantId = tenantId,
+            ).getOrElse { return Err(it) }
         val aad = encryptionAad(tenantId, identityId, type)
 
         val result =
-            keyManagerService.decryptResult(
-                keyInfo = keyInfo,
-                ciphertext = ciphertext,
-                algorithm = ContentEncryptionAlgorithm.A256GCM,
-                iv = iv,
-                authTag = authTag,
-                additionalAuthenticatedData = aad,
+            decryptCommand.execute(
+                DecryptArgs(
+                    keyInfo = keyInfo,
+                    ciphertext = ciphertext,
+                    algorithm = ContentEncryptionAlgorithm.A256GCM,
+                    iv = iv,
+                    authTag = authTag,
+                    additionalAuthenticatedData = aad,
+                ),
             )
         val decryptResult = result.getOrNull() ?: return Err(result.errorOrNull() ?: unknown("decryption failed"))
         return Ok(decryptResult.plaintext.decodeToString())

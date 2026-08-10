@@ -50,7 +50,7 @@ class DpopCommandTest {
 
     val app = createOAuth2ClientTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("dpop-test")
+    val session = context.sessionContextManager.createOrGetFromId("dpop-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     val execution = session.asCoreApiServiceGraph().serviceExecution
 
     @BeforeTest

@@ -75,8 +75,8 @@ object StatusListHostingApiConstants {
 
     /** Command ids for the simple by-index admin endpoints. */
     object AdminCommandIds {
-        const val ENTRY_GET = "statuslist.admin.entry.get"
-        const val ENTRY_REVOKE = "statuslist.admin.entry.revoke"
+        const val ENTRY_GET = "statuslist.admin.entry-get"
+        const val ENTRY_REVOKE = "statuslist.admin.entry-revoke"
         const val CLEAR = "statuslist.admin.clear"
     }
 }

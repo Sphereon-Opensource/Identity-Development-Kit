@@ -178,7 +178,7 @@ class OidfOpParTest {
 
             // Replay the same request_uri after the code mint has consumed it. RFC 9126 §2.2
             // single-use guarantee: the URN MUST now resolve to "not found / consumed" → the
-            // AS surfaces invalid_request as a top-level error response (no redirect because
+            // AS surfaces invalid_request_uri as a top-level error response (no redirect because
             // the saved request that carried the redirect_uri is gone).
             val replay =
                 client.get(
@@ -188,7 +188,7 @@ class OidfOpParTest {
             assertEquals(
                 HttpStatusCode.BadRequest,
                 replay.status,
-                "Replaying a consumed PAR request_uri must yield invalid_request (400)",
+                "Replaying a consumed PAR request_uri must yield invalid_request_uri (400)",
             )
             // The /authorize endpoint surfaces pre-redirect errors as the friendly HTML error
             // page (no `redirect_uri` is trustable once the PAR-stored request is gone), not as
@@ -196,8 +196,8 @@ class OidfOpParTest {
             // classify it. JSON envelopes are reserved for token-style endpoints (RFC 6749 §5.2).
             val replayBody = replay.bodyAsText()
             assertTrue(
-                replayBody.contains("invalid_request"),
-                "Replay error page must mention invalid_request; got: ${replayBody.take(200)}",
+                replayBody.contains("invalid_request_uri"),
+                "Replay error page must mention invalid_request_uri; got: ${replayBody.take(200)}",
             )
         }
 
@@ -229,7 +229,7 @@ class OidfOpParTest {
             assertEquals(
                 HttpStatusCode.BadRequest,
                 expired.status,
-                "Expired PAR request_uri must yield invalid_request (400)",
+                "Expired PAR request_uri must yield invalid_request_uri (400)",
             )
         }
 

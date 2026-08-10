@@ -60,7 +60,7 @@ annotation class Oid4vciDsl
  * ```kotlin
  * val metadata = issuerMetadata("https://issuer.example.com") {
  *     authorizationServer("https://auth.example.com")
- *     credentialConfiguration("MyCredential", CredentialFormat.SD_JWT_DC) {
+ *     credentialConfiguration("MyCredential", CredentialFormat.SD_JWT_VC) {
  *         vct = "https://credentials.example.com/my"
  *         display { name = "My Credential" }
  *     }
@@ -192,9 +192,9 @@ class CredentialConfigurationBuilder(
     var scope: String? = null
 
     /**
-     * Verifiable Credential Type (for SD-JWT DC / vc+sd-jwt formats).
+     * Verifiable Credential Type for the IETF SD-JWT VC `dc+sd-jwt` format.
      *
-     * Maps to `vct` in the wire format.
+     * W3C `vc+sd-jwt` credentials use the VCDM `type` property instead.
      */
     var vct: String? = null
 

@@ -18,6 +18,17 @@ package com.sphereon.wallet.credential.store
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class WalletCredentialProtectedDocumentRole {
+    CREDENTIAL_INSTANCE_BODY,
+    CREDENTIAL_RECORD_ENVELOPE,
+    CREDENTIAL_TOMBSTONE,
+    ISSUANCE_SESSION,
+    DEFERRED_ACCESS_TOKEN,
+    ISSUANCE_SESSION_TOMBSTONE,
+}
 
 interface WalletCredentialBodyProtector {
     suspend fun protect(
@@ -25,6 +36,7 @@ interface WalletCredentialBodyProtector {
         credentialRecordId: String,
         credentialInstanceId: String,
         plaintext: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole = WalletCredentialProtectedDocumentRole.CREDENTIAL_INSTANCE_BODY,
     ): IdkResult<ByteArray, IdkError>
 
     suspend fun open(
@@ -32,5 +44,24 @@ interface WalletCredentialBodyProtector {
         credentialRecordId: String,
         credentialInstanceId: String,
         protectedBody: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole = WalletCredentialProtectedDocumentRole.CREDENTIAL_INSTANCE_BODY,
     ): IdkResult<ByteArray, IdkError>
+
+    /** Validates envelope structure and exact context binding without returning plaintext. */
+    suspend fun validate(
+        walletUnitId: String,
+        credentialRecordId: String,
+        credentialInstanceId: String,
+        protectedBody: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole = WalletCredentialProtectedDocumentRole.CREDENTIAL_INSTANCE_BODY,
+    ): IdkResult<Unit, IdkError> = open(
+        walletUnitId,
+        credentialRecordId,
+        credentialInstanceId,
+        protectedBody,
+        documentRole,
+    ).map { plaintext ->
+        plaintext.fill(0)
+        Unit
+    }
 }

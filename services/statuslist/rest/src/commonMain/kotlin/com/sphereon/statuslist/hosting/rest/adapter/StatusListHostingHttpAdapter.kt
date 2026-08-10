@@ -59,6 +59,6 @@ class StatusListHostingHttpAdapter(
         )
 
     companion object {
-        const val ID = "statuslist-hosting"
+        const val ID = "statuslist.hosting.http"
     }
 }

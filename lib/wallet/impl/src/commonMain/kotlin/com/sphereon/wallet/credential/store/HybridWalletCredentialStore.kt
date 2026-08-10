@@ -22,7 +22,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.Uuid
-import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.credential.CredentialMetadata
 import com.sphereon.wallet.credential.CredentialMetadataFilter
 import com.sphereon.wallet.credential.CredentialRecord
@@ -35,10 +34,7 @@ import com.sphereon.wallet.credential.WalletDeviceIdProvider
 import com.sphereon.wallet.credential.WalletOperation
 import com.sphereon.wallet.credential.WalletOperationQueue
 import com.sphereon.wallet.credential.WalletOperationType
-import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 import kotlin.time.Clock
 
 /**
@@ -48,8 +44,6 @@ import kotlin.time.Clock
  * records a wallet operation under `wallet-units/{walletUnitId}/ops/{operationId}`,
  * then attempts remote replication with a base-revision check.
  */
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<HybridWalletCredentialStoreDelegate>())
 class HybridWalletCredentialStore private constructor(
     private val localStore: WalletCredentialStore,
     private val remoteStore: WalletCredentialStore,

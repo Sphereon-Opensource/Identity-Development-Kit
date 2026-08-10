@@ -6,7 +6,9 @@
 
 package com.sphereon.wallet.interaction.protocol.oid4vci
 
+import com.sphereon.openid.oid4vci.common.model.AuthorizationCodeOfferGrant
 import com.sphereon.openid.oid4vci.common.model.CredentialOffer
+import com.sphereon.openid.oid4vci.common.model.CredentialOfferGrants
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.holder.Oid4vciHolderService
 import com.sphereon.wallet.interaction.WalletCounterpartyRole
@@ -44,14 +46,16 @@ import com.sphereon.wallet.interaction.validateFor
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
 import com.sphereon.wallet.interaction.WalletTxCodeSpec
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
 class Oid4vciWalletInteractionProtocolAdapter(
     private val holder: Oid4vciHolderService? = null,
-    private val issuanceExecutor: Oid4vciIssuanceExecutor = Oid4vciIssuanceExecutor.notConfigured,
+    private val issuanceExecutor: Oid4vciIssuanceExecutor,
     priority: Int = 100,
 ) : WalletInteractionProtocolAdapter {
     override val capability: WalletProtocolCapability =
@@ -64,8 +68,14 @@ class Oid4vciWalletInteractionProtocolAdapter(
         )
 
     override suspend fun canHandle(entryPoint: WalletEntryPoint): WalletProtocolMatch {
+        if (entryPoint.kind == WalletEntryPointKind.PARSED_OBJECT && entryPoint.parsedType == ISSUE_PARSED_TYPE) {
+            return WalletProtocolMatch.strong(capability.priority, "oid4vci.match.wallet_initiated_issuance")
+        }
         if (entryPoint.kind == WalletEntryPointKind.PARSED_OBJECT && entryPoint.parsedType == REFRESH_PARSED_TYPE) {
             return WalletProtocolMatch.strong(capability.priority, "oid4vci.match.credential_refresh")
+        }
+        if (entryPoint.kind == WalletEntryPointKind.PARSED_OBJECT && entryPoint.parsedType == DIGITAL_CREDENTIAL_PROTOCOL) {
+            return WalletProtocolMatch.strong(capability.priority, "oid4vci.match.digital_credentials_api")
         }
         val raw = entryPoint.raw ?: return WalletProtocolMatch.none
         val lower = raw.lowercase()
@@ -95,9 +105,22 @@ class Oid4vciWalletInteractionProtocolAdapter(
         if (entryPoint.kind == WalletEntryPointKind.PARSED_OBJECT && entryPoint.parsedType == REFRESH_PARSED_TYPE) {
             return startRefresh(context, entryPoint)
         }
-        context.updateOid4vciState { it.copy(entryPointRaw = entryPoint.raw) }
+        val walletInitiatedOffer =
+            if (entryPoint.kind == WalletEntryPointKind.PARSED_OBJECT && entryPoint.parsedType == ISSUE_PARSED_TYPE) {
+                entryPoint.parsed.walletInitiatedCredentialOfferOrNull()
+                    ?: return invalidWalletInitiatedIssuance(context, entryPoint)
+            } else {
+                null
+            }
+        val rawOffer =
+            walletInitiatedOffer?.let { Json.encodeToString(CredentialOffer.serializer(), it) }
+                ?: entryPoint.raw
+                ?: entryPoint.parsed
+                    ?.takeIf { entryPoint.parsedType == DIGITAL_CREDENTIAL_PROTOCOL }
+                    ?.toString()
+        context.updateOid4vciState { it.copy(entryPointRaw = rawOffer) }
         context.storePrivate(mapOf("entry_point.fingerprint" to entryPoint.summary().fingerprint.orEmpty()))
-        val parsed = entryPoint.raw?.let { raw -> holder?.parseCredentialOffer(raw) }
+        val parsed = rawOffer?.let { raw -> holder?.parseCredentialOffer(raw) }
         val offer = parsed?.takeIf { it.isOk }?.value
         val resolved = offer?.let { holder?.resolveCredentialOffer(it) }?.takeIf { it.isOk }?.value
 
@@ -197,6 +220,30 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 )
         return WalletInteractionSession(context.sessionId, state)
     }
+
+    private fun invalidWalletInitiatedIssuance(
+        context: WalletInteractionContext,
+        entryPoint: WalletEntryPoint,
+    ): WalletInteractionSession =
+        WalletInteractionSession(
+            context.sessionId,
+            context
+                .baseState(
+                    status = WalletInteractionStatus.Failed,
+                    flowKind = WalletInteractionFlowKind.CredentialReceive,
+                    protocol = WalletProtocol.OID4VCI,
+                    adapterId = capability.adapterId,
+                    entryPoint = entryPoint,
+                ).copy(
+                    terminal = true,
+                    error =
+                        WalletInteractionError(
+                            code = "oid4vci.wallet_initiated_input_invalid",
+                            messageKey = "wallet.interaction.error.oid4vci_wallet_initiated_input_invalid",
+                            retryable = false,
+                        ),
+                ),
+        )
 
     /**
      * Wallet-initiated credential refresh: a "normal engine session" per the
@@ -765,6 +812,13 @@ class Oid4vciWalletInteractionProtocolAdapter(
     companion object {
         const val ADAPTER_ID: String = "oid4vci"
         const val SECURITY_OPERATION_BINDING_PRIVATE_KEY: String = "security_operation_binding"
+        const val DIGITAL_CREDENTIAL_PROTOCOL: String = "openid4vci-v1"
+
+        /**
+         * `WalletEntryPointKind.PARSED_OBJECT` type for normal wallet-initiated issuance:
+         * `parsed = {"credentialIssuer":"...","credentialConfigurationIds":["..."]}`.
+         */
+        const val ISSUE_PARSED_TYPE: String = "com.sphereon.wallet.credential.issue"
 
         /**
          * `WalletEntryPointKind.PARSED_OBJECT` type claimed for a wallet-initiated credential
@@ -772,6 +826,33 @@ class Oid4vciWalletInteractionProtocolAdapter(
          */
         const val REFRESH_PARSED_TYPE: String = "com.sphereon.wallet.credential.refresh"
     }
+}
+
+private fun JsonElement?.walletInitiatedCredentialOfferOrNull(): CredentialOffer? {
+    val input = this as? JsonObject ?: return null
+    val credentialIssuer =
+        (input["credentialIssuer"] as? JsonPrimitive)
+            ?.contentOrNull
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+    val credentialConfigurationIds =
+        (input["credentialConfigurationIds"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
+            ?.distinct()
+            ?.takeIf(List<String>::isNotEmpty)
+            ?: return null
+    val authorizationServer =
+        (input["authorizationServer"] as? JsonPrimitive)
+            ?.contentOrNull
+            ?.takeIf(String::isNotBlank)
+    return CredentialOffer(
+        credentialIssuer = credentialIssuer,
+        credentialConfigurationIds = credentialConfigurationIds,
+        grants =
+            CredentialOfferGrants(
+                authorizationCode = AuthorizationCodeOfferGrant(authorizationServer = authorizationServer),
+            ),
+    )
 }
 
 private fun WalletInteractionContext.securityAttribute(key: String): String? = attributes[key]?.takeIf { it.isNotBlank() }

@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.conf
 
+import com.sphereon.core.api.context.ContextConfig
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -265,4 +266,146 @@ class CommandScopedConfigBinderResultTest {
         val result = binder.getConfigResult<TestHttpConfig>("nonexistent")
         assertTrue(result.isErr)
     }
+}
+
+class CommandScopedConfigBinderAuthorizationTest {
+    @Test
+    fun interpolateFalseServiceBinderHidesProtectedAppAndDelegatedEnvironmentSources() {
+        val app =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProtectedProperty("http.client.base.url", "server-owned", PropertyProtection.PROTECTED)
+            }
+        val delegatedEnvironment =
+            ScopedPropertySourceWrapper(
+                MapPropertySource(
+                    "environment",
+                    mapOf("http.client.logging.tag" to "environment-owned"),
+                ),
+                ConfigLevel.APP,
+            )
+        val tenant =
+            ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT).apply {
+                addProperty("http.client.timeout.connect.ms", "1500")
+            }
+        val environment =
+            TestConfigEnvironment(
+                level = ConfigLevel.TENANT,
+                propertySources =
+                    DefaultPropertySources(
+                        mutableListOf(
+                            delegatedEnvironment,
+                            tenant,
+                            app,
+                        ),
+                    ),
+            )
+        val service = TestConfigService(environment)
+
+        val binder =
+            service.toCommandScopedBinder(
+                scope = CommandConfigScope.GLOBAL,
+                interpolate = false,
+            )
+        val config = binder.getConfig<TestHttpConfig>("http.client")
+
+        assertNotNull(config)
+        assertEquals(1500L, config.timeout?.connectMs)
+        assertNull(config.baseUrl)
+        assertNull(config.logging?.tag)
+    }
+}
+
+class CommandScopedConfigBinderPolicyPropagationTest {
+    private fun environment(): TestConfigEnvironment {
+        val source =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProperty("feature.value", "\${env:PATH}")
+            }
+        return TestConfigEnvironment(
+            level = ConfigLevel.APP,
+            propertySources = DefaultPropertySources(mutableListOf(source)),
+            interpolationPolicyProvider =
+                DefaultInterpolationPolicyProvider(
+                    mapOf("feature.value" to InterpolationPolicy.APP_ENVIRONMENT),
+                ),
+        )
+    }
+
+    @Test
+    fun configServiceCommandBinderUsesEnvironmentPolicyProvider() {
+        val service = TestConfigService(environment())
+
+        val config =
+            service
+                .toCommandScopedBinder(CommandConfigScope.GLOBAL)
+                .getConfig<SimpleConfig>("feature")
+
+        assertNotNull(config)
+        assertTrue(config.value.isNotBlank())
+        assertTrue(!config.value.contains("\${env:"))
+    }
+
+    @Test
+    fun contextCommandBinderUsesPrincipalEnvironmentPolicyProvider() {
+        val delegate = TestConfigService(environment())
+        val app = BinderPolicyTestAppConfigService(delegate)
+        val tenant = BinderPolicyTestTenantConfigService(delegate, app)
+        val principal = BinderPolicyTestPrincipalConfigService(delegate, tenant)
+        val context =
+            object : ContextConfig {
+                override val app: AppConfigService = app
+                override val tenant: TenantConfigService = tenant
+                override val principal: PrincipalConfigService = principal
+
+                override fun conf(level: ConfigLevel): ConfigService =
+                    when (level) {
+                        ConfigLevel.APP -> app
+                        ConfigLevel.TENANT -> tenant
+                        ConfigLevel.PRINCIPAL -> principal
+                    }
+            }
+
+        val config =
+            context
+                .toCommandScopedBinder(CommandConfigScope.GLOBAL)
+                .getConfig<SimpleConfig>("feature")
+
+        assertNotNull(config)
+        assertTrue(config.value.isNotBlank())
+        assertTrue(!config.value.contains("\${env:"))
+    }
+}
+
+private class BinderPolicyTestAppConfigService(
+    delegate: ConfigService,
+) : AppConfigService,
+    ConfigService by delegate {
+    override val parent: ConfigService?
+        get() = null
+    override val level: ConfigLevel
+        get() = ConfigLevel.APP
+    override val configLevel: ConfigLevel
+        get() = ConfigLevel.APP
+}
+
+private class BinderPolicyTestTenantConfigService(
+    delegate: ConfigService,
+    override val parent: AppConfigService,
+) : TenantConfigService,
+    ConfigService by delegate {
+    override val level: ConfigLevel
+        get() = ConfigLevel.TENANT
+    override val configLevel: ConfigLevel
+        get() = ConfigLevel.TENANT
+}
+
+private class BinderPolicyTestPrincipalConfigService(
+    delegate: ConfigService,
+    override val parent: TenantConfigService,
+) : PrincipalConfigService,
+    ConfigService by delegate {
+    override val level: ConfigLevel
+        get() = ConfigLevel.PRINCIPAL
+    override val configLevel: ConfigLevel
+        get() = ConfigLevel.PRINCIPAL
 }

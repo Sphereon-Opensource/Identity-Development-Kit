@@ -69,10 +69,8 @@ import com.sphereon.openid.oid4vci.issuer.proof.KeyAttestationEvidenceEnforcer a
  *  3. When [KeyAttesterTrustConfig.trustedIssuers] is non-empty, also enforce that the
  *     JWT's `iss` claim is in the list.
  *
- * Per-config X.509 anchor *paths* on [KeyAttesterTrustConfig.x509TrustAnchorPaths] are
- * not yet wired in: the conformance flow we target uses JWK-pinned trust, and the global
- * anchor loader covers everything else. When that field is needed, plumb a per-config
- * loader through here without changing the public surface.
+ * Per-config X.509 anchor paths on [KeyAttesterTrustConfig.x509TrustAnchorPaths] are
+ * loaded in addition to global and runtime-managed anchors.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -102,7 +100,6 @@ class KeyAttestationVerifier(
         keyAttestationJwt: String,
         trustConfig: KeyAttesterTrustConfig?,
         policy: KeyAttestationsRequired?,
-        expectedAudience: String? = null,
         expectedNonce: String? = null,
         clockSkewSeconds: Long = DEFAULT_CLOCK_SKEW_SECONDS,
     ): IdkResult<ValidatedKeyAttestation, IdkError> {
@@ -118,9 +115,7 @@ class KeyAttestationVerifier(
             return invalidProof("key attestation JWT typ must be '$KEY_ATTESTATION_TYP', got '$typ'")
         }
 
-        // 2. Resolve attester key into a JWKS that verifyJws will treat as the only
-        //    acceptable signers. x5c first; then JWK pinning by kid (or thumbprint when no
-        //    kid is present); falls through to a precise error if no trust source matches.
+        // 2. Resolve the attester key through the explicitly configured trust mode.
         val x5cHeader =
             headerJson["x5c"]?.let { it as? JsonArray }
                 ?: headerJson["x5c"]?.let { el ->
@@ -128,25 +123,34 @@ class KeyAttestationVerifier(
                 }
         val kid = headerJson["kid"]?.jsonPrimitive?.contentOrNull
 
-        val pinnedJwks = trustConfig?.trustedJwks?.takeIf { it.isNotEmpty() }
+        val mode =
+            trustConfig?.mode?.lowercase()
+                ?: return invalidProof("key attester trust mode is not configured (expected 'x5c' or 'jwks')")
+        val pinnedJwks = trustConfig.trustedJwks?.takeIf { it.isNotEmpty() }
         val trustedJwks: JsonObject =
-            when {
-                x5cHeader != null && x5cHeader.isNotEmpty() -> {
-                    resolveAttesterViaX5c(x5cHeader, kid).getOrElse { return Err(it) }
+            when (mode) {
+                "x5c" -> {
+                    if (x5cHeader == null || x5cHeader.isEmpty()) {
+                        return invalidProof("key attestation trust mode 'x5c' requires a non-empty x5c header")
+                    }
+                    resolveAttesterViaX5c(
+                        x5c = x5cHeader,
+                        kid = kid,
+                        additionalTrustAnchorPaths = trustConfig.x509TrustAnchorPaths.orEmpty(),
+                    ).getOrElse { return Err(it) }
                 }
 
-                pinnedJwks != null -> {
+                "jwks" -> {
+                    if (pinnedJwks == null) {
+                        return invalidProof("key attestation trust mode 'jwks' requires configured attester JWKS")
+                    }
                     pinAttesterJwks(pinnedJwks, kid)
                         ?: return invalidProof(
                             "key attestation kid '$kid' does not match any pinned attester JWK",
                         )
                 }
 
-                else -> {
-                    return invalidProof(
-                        "key attestation JWT has no resolvable trust source (no x5c, no pinned attester JWK)",
-                    )
-                }
+                else -> return invalidProof("unsupported key attester trust mode '$mode' (expected 'x5c' or 'jwks')")
             }
 
         // 3. Cryptographic signature verification, pinned to the resolved attester JWKS.
@@ -179,10 +183,6 @@ class KeyAttestationVerifier(
             return invalidProof("key attestation has expired")
         }
 
-        if (expectedAudience != null && !claims.audienceContains(expectedAudience)) {
-            return invalidProof("key attestation 'aud' does not match expected audience '$expectedAudience'")
-        }
-
         val attestedKeysJson = claims["attested_keys"] as? JsonArray
         if (attestedKeysJson == null || attestedKeysJson.isEmpty()) {
             return invalidProof("key attestation JWT 'attested_keys' must be a non-empty array")
@@ -195,7 +195,8 @@ class KeyAttestationVerifier(
         val attestationNonce =
             claims["c_nonce"]?.jsonPrimitive?.contentOrNull
                 ?: claims["nonce"]?.jsonPrimitive?.contentOrNull
-        if (expectedNonce != null && policy != null && attestationNonce == null) {
+        val requireWalletUnitEvidence = trustConfig?.requireWalletUnitEvidence == true
+        if (expectedNonce != null && requireWalletUnitEvidence && attestationNonce == null) {
             return invalidProof("production key attestation must carry 'c_nonce' matching the credential proof nonce")
         }
         if (attestationNonce != null && expectedNonce != null && attestationNonce != expectedNonce) {
@@ -212,14 +213,23 @@ class KeyAttestationVerifier(
             )
         }
 
-        // 6. Policy check: every level the credential config requires MUST appear in the
-        //    attestation's claim. Set membership per §11.2.3 (no ISO 18045 ordinal inference).
+        // 6. Generic protocol policy and the optional VDX Wallet Unit evidence profile are
+        // separate contracts; key_attestations_required alone must not activate TS03 checks.
+        if (!requireWalletUnitEvidence) {
+            validateGenericKeyAttestationPolicy(claims, policy).getOrElse { return Err(it) }
+        }
         val genericKeyAttestationEvidence =
             evidenceEnforcer
-                .enforce(header = headerJson, claims = claims, policy = policy, attestedKeyCount = attestedKeys.size)
+                .enforce(
+                    header = headerJson,
+                    claims = claims,
+                    policy = policy,
+                    attestedKeyCount = attestedKeys.size,
+                    requireWalletUnitEvidence = requireWalletUnitEvidence,
+                )
                 .getOrElse { return Err(it) }
         val keyAttestationEvidence =
-            if (policy != null && genericKeyAttestationEvidence != null) {
+            if (requireWalletUnitEvidence && genericKeyAttestationEvidence != null) {
                 val enforcer =
                     persistedEvidenceEnforcer
                         ?: return invalidProof("production key attestation requires persisted Wallet Unit evidence enforcement")
@@ -253,13 +263,14 @@ class KeyAttestationVerifier(
     private suspend fun resolveAttesterViaX5c(
         x5c: JsonArray,
         kid: String?,
+        additionalTrustAnchorPaths: List<String>,
     ): IdkResult<JsonObject, IdkError> {
         val x5cStrings =
             x5c.map { entry ->
                 (entry as? JsonPrimitive)?.contentOrNull
                     ?: return invalidProof("key attestation x5c entries must be strings")
             }
-        val trustedAnchors = x509TrustAnchorLoader.loadTrustedCerts()
+        val trustedAnchors = x509TrustAnchorLoader.loadTrustedCerts(additionalTrustAnchorPaths)
         val opts =
             ExternalIdentifierX5cOpts(
                 identifier = x5cStrings,
@@ -388,13 +399,6 @@ class KeyAttestationVerifier(
             }
         }
 
-    private fun JsonObject.audienceContains(expectedAudience: String): Boolean =
-        when (val aud = this["aud"]) {
-            is JsonArray -> aud.any { (it as? JsonPrimitive)?.contentOrNull == expectedAudience }
-            is JsonPrimitive -> aud.contentOrNull == expectedAudience
-            else -> false
-        }
-
     private fun invalidProof(message: String): IdkResult<Nothing, IdkError> = Err(IdkError.fromString(code = Oid4vciErrors.INVALID_PROOF, message = message))
 
     companion object {
@@ -403,6 +407,40 @@ class KeyAttestationVerifier(
         private const val THREE_JWS_SEGMENTS = 3
         private const val DEFAULT_CLOCK_SKEW_SECONDS = 300L
     }
+}
+
+internal fun validateGenericKeyAttestationPolicy(
+    claims: JsonObject,
+    policy: KeyAttestationsRequired?,
+): IdkResult<Unit, IdkError> {
+    if (policy == null) return Ok(Unit)
+
+    fun validateClaim(
+        claimName: String,
+        requiredValues: List<String>?,
+    ): IdkResult<Unit, IdkError> {
+        if (requiredValues.isNullOrEmpty()) return Ok(Unit)
+        val values =
+            (claims[claimName] as? JsonArray)
+                ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                ?.toSet()
+                .orEmpty()
+        requiredValues.forEach { required ->
+            if (required !in values) {
+                return Err(
+                    IdkError.fromString(
+                        code = Oid4vciErrors.INVALID_PROOF,
+                        message = "key attestation '$claimName' does not include required value '$required' (got $values)",
+                    ),
+                )
+            }
+        }
+        return Ok(Unit)
+    }
+
+    validateClaim("key_storage", policy.keyStorage).getOrElse { return Err(it) }
+    validateClaim("user_authentication", policy.userAuthentication).getOrElse { return Err(it) }
+    return Ok(Unit)
 }
 
 /**

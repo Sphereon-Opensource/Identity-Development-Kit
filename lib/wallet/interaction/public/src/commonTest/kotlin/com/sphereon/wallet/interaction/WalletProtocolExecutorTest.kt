@@ -25,10 +25,10 @@ class WalletProtocolExecutorTest {
                     requiredAssurance = WalletSecurityAssurance.BIOMETRIC,
                 )
 
-            val decision = WalletProtocolExecutor.split.plan(request)
+            val decision = WalletProtocolExecutor.walletApp.plan(request)
 
-            assertEquals(WalletInteractionExecutionMode.SPLIT, decision.executionMode)
-            assertEquals(WalletProtocolExecutionPlacement.SPLIT_LOCAL_SECURITY, decision.placement)
+            assertEquals(ProtocolExecutionOwner.WALLET_APP, decision.executionOwner)
+            assertEquals(WalletProtocolExecutionPlacement.WALLET_APP, decision.placement)
             assertEquals(true, decision.securityGateRequired)
             assertEquals(WalletSecurityOperation.PRESENTATION_SHARING, decision.securityOperation)
             assertEquals(WalletSecurityAssurance.BIOMETRIC, decision.requiredAssurance)
@@ -43,12 +43,12 @@ class WalletProtocolExecutorTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.SPLIT,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     protocolExecutor =
                         StaticDecisionProtocolExecutor(
                             WalletProtocolExecutionDecision(
-                                executionMode = WalletInteractionExecutionMode.SPLIT,
-                                placement = WalletProtocolExecutionPlacement.SPLIT_LOCAL_SECURITY,
+                                executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                                placement = WalletProtocolExecutionPlacement.WALLET_APP,
                                 securityOperation = WalletSecurityOperation.LOCAL_HSM_UNLOCK,
                                 requiredAssurance = WalletSecurityAssurance.HARDWARE_BACKED,
                                 audience = "verifier-overridden",
@@ -96,7 +96,7 @@ class WalletProtocolExecutorTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "session-wallet-unit",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     securityGate = gate,
                     sensitiveInputAuthority = RejectingSensitiveInputAuthority,
                 )
@@ -144,7 +144,7 @@ private object RejectingSensitiveInputAuthority : WalletInteractionSensitiveInpu
 private class StaticDecisionProtocolExecutor(
     private val decision: WalletProtocolExecutionDecision,
 ) : WalletProtocolExecutor {
-    override val executionMode: WalletInteractionExecutionMode = decision.executionMode
+    override val executionOwner: ProtocolExecutionOwner = decision.executionOwner
 
     override suspend fun plan(request: WalletProtocolExecutionRequest): WalletProtocolExecutionDecision = decision
 }

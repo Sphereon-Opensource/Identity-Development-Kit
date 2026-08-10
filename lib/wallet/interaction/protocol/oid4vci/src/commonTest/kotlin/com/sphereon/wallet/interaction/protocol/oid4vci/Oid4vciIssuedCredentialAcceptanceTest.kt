@@ -17,7 +17,6 @@ import com.sphereon.wallet.credential.CredentialTypeRefKind
 import com.sphereon.wallet.credential.CredentialTypeRefSource
 import com.sphereon.wallet.credential.IssuanceDiagnosticCode
 import com.sphereon.wallet.impl.CredentialSubjectExtractorImpl
-import com.sphereon.wallet.impl.NoOpWalletIdentityResolver
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,7 +40,7 @@ class Oid4vciIssuedCredentialAcceptanceTest {
                 Oid4vciIssuedCredentialAcceptance(
                     verifySdJwtVcCommand = verify,
                     subjectExtractor = CredentialSubjectExtractorImpl(),
-                    identityResolver = NoOpWalletIdentityResolver(),
+                    identityResolver = TestPassThroughWalletIdentityResolver,
                 )
             val instance = testInstance(raw = "mdoc-raw-does-not-matter", format = CredentialFormat.MSO_MDOC)
 
@@ -180,5 +179,5 @@ private fun testAcceptance(): Oid4vciIssuedCredentialAcceptance =
     Oid4vciIssuedCredentialAcceptance(
         verifySdJwtVcCommand = FakeVerifySdJwtVcCommand(accept = true),
         subjectExtractor = CredentialSubjectExtractorImpl(),
-        identityResolver = NoOpWalletIdentityResolver(),
+        identityResolver = TestPassThroughWalletIdentityResolver,
     )

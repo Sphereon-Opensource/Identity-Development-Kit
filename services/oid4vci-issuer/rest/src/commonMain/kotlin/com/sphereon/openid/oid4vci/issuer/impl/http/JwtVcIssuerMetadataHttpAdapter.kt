@@ -67,7 +67,7 @@ class JwtVcIssuerMetadataHttpAdapter(
     override val resolvedTenantIdProvider: MutableResolvedTenantIdProvider = tenantIdProvider
 
     companion object {
-        const val ID: String = "OID4VCI_JWT_VC_ISSUER_METADATA"
+        const val ID: String = "oid4vci.jwt-vc-metadata.http"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> = listOf(rootCommand, scopedCommand)

@@ -115,7 +115,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                 ).also { it.initRootScopeProvider() }
 
         val userContext = app.userContextManager.getAnonymous()
-        val sessionContext = userContext.sessionContextManager.createOrGetFromId("verifier-mdoc-${Uuid.v4String()}")
+        val sessionContext = userContext.sessionContextManager.createOrGetFromId("verifier-mdoc-${Uuid.v4String()}", principalType = com.sphereon.di.context.PrincipalType.USER)
         val execution: SessionExecution = sessionContext.asCoreApiServiceGraph().serviceExecution
         val kms: KeyManagerService = sessionContext.graph.asKeyManagerServiceGraph().keyManagerService
         val certificateService: CertificateServiceImpl
@@ -269,6 +269,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                         ),
                     deviceResponseCborCodec = DeviceResponseCborCodecImpl(),
                     credentialStatusVerifiers = emptySet(),
+                    credentialTrustValidators = emptySet(),
                 )
 
             val claims = command.extractDisclosedClaims(presentation, CredentialFormat.MSO_MDOC)
@@ -307,6 +308,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                         ),
                     deviceResponseCborCodec = DeviceResponseCborCodecImpl(),
                     credentialStatusVerifiers = emptySet(),
+                    credentialTrustValidators = emptySet(),
                 )
 
             // Valid base64url ("notcbor") but not a CBOR DeviceResponse -> graceful empty map.

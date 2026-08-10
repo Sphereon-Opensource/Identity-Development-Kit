@@ -71,7 +71,7 @@ class WebvhVerifierBuildSmokeTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("verifier-smoke")
+                .createOrGetFromId("verifier-smoke", principalType = com.sphereon.di.context.PrincipalType.USER)
         registry = (session.graph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
     }
 

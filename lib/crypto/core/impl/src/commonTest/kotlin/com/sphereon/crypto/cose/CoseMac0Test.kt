@@ -429,7 +429,7 @@ class CoseMac0Test {
             // Setup DI components for key generation
             val app = createCryptoTestAppGraph(this@CoseMac0Test)
             val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("mac0-ecdh-test")
+            val session = context.sessionContextManager.createOrGetFromId("mac0-ecdh-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val config =
                 SoftwareKmsProviderConfig(
@@ -502,7 +502,7 @@ class CoseMac0Test {
             // Setup DI components for key generation
             val app = createCryptoTestAppGraph(this@CoseMac0Test)
             val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("mac0-ecdh-null-provider")
+            val session = context.sessionContextManager.createOrGetFromId("mac0-ecdh-null-provider", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val config =
                 SoftwareKmsProviderConfig(

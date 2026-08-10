@@ -42,6 +42,34 @@ object StatusListErrors {
             category = ErrorCategory.CONFLICT,
         )
 
+    fun incompatibleDefinitionRefresh(
+        correlationId: String,
+        field: String,
+    ): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_INCOMPATIBLE_DEFINITION_REFRESH",
+            message =
+                "Status list '$correlationId' cannot change structural field '$field' after creation; " +
+                    "create a new status-list resource instead",
+            category = ErrorCategory.CONFLICT,
+        )
+
+    /** Structural fields cannot be changed without invalidating already-issued references/bits. */
+    fun validateDefinitionRefresh(
+        existing: StatusListResult,
+        requested: CreateStatusListArgs,
+    ): IdkError? =
+        when {
+            existing.correlationId != requested.correlationId -> incompatibleDefinitionRefresh(existing.correlationId, "correlationId")
+            existing.spec != requested.spec -> incompatibleDefinitionRefresh(existing.correlationId, "spec")
+            existing.proofFormat != requested.proofFormat -> incompatibleDefinitionRefresh(existing.correlationId, "proofFormat")
+            existing.purposes != requested.purposes -> incompatibleDefinitionRefresh(existing.correlationId, "purposes")
+            existing.bitsPerStatus != requested.bitsPerStatus -> incompatibleDefinitionRefresh(existing.correlationId, "bitsPerStatus")
+            existing.length != requested.length -> incompatibleDefinitionRefresh(existing.correlationId, "length")
+            existing.statusListUri != requested.statusListUri -> incompatibleDefinitionRefresh(existing.correlationId, "statusListUri")
+            else -> null
+        }
+
     fun indexInUse(index: Int): IdkError =
         IdkError.fromString(
             code = "STATUSLIST_INDEX_IN_USE",
@@ -151,6 +179,21 @@ object StatusListErrors {
                 "Credential configuration '$credentialConfigurationId' declares status list '$statusListId' " +
                     "but the binding cannot be resolved: $reason; refusing to issue a credential that could " +
                     "never be revoked",
+            category = ErrorCategory.UNAVAILABLE,
+        )
+
+    /**
+     * Single, uniform refusal raised by a signer that signs with a KMS key and was handed no key
+     * name: no binding, a binding that cannot be honoured, or no configured key on a deployment that
+     * manages its own. The wording never varies by cause, so the caller learns nothing about which
+     * status lists hold which key material.
+     */
+    fun signingKeyUnresolvable(statusListRef: String): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_SIGNING_KEY_UNRESOLVABLE",
+            message =
+                "Status list '$statusListRef' has no usable signing key binding; refusing to sign it " +
+                    "rather than signing under a derived or defaulted key",
             category = ErrorCategory.UNAVAILABLE,
         )
 

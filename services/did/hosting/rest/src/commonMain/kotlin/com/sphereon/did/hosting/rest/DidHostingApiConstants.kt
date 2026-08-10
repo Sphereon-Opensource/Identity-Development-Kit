@@ -65,7 +65,7 @@ object DidHostingApiConstants {
     }
 
     object CommandIds {
-        // <domain>.<capability>.<resource>.<action>
-        const val HTTP_GET_DID_JSON: String = "did.hosting.document.get"
+        // <module>.<service>.<command>
+        const val HTTP_GET_DID_JSON: String = "did.hosting.document-get"
     }
 }

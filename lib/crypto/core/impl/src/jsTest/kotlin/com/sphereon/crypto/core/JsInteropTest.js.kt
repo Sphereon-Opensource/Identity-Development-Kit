@@ -46,7 +46,7 @@ import kotlin.test.assertTrue
 class JsInteropTest {
     val app = createJsCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("js-interop-test")
+    val session = context.sessionContextManager.createOrGetFromId("js-interop-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @Test
     fun testJwkCreationAndSerialization(): TestResult =

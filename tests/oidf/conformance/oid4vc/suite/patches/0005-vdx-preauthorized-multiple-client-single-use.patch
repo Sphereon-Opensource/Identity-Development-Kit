@@ -1,0 +1,27 @@
+diff --git a/src/main/java/net/openid/conformance/vci10issuer/AbstractVCIIssuerMultipleClient.java b/src/main/java/net/openid/conformance/vci10issuer/AbstractVCIIssuerMultipleClient.java
+index b4893c15c..9f1f5239e 100644
+--- a/src/main/java/net/openid/conformance/vci10issuer/AbstractVCIIssuerMultipleClient.java
++++ b/src/main/java/net/openid/conformance/vci10issuer/AbstractVCIIssuerMultipleClient.java
+@@ -9,6 +9,7 @@ import net.openid.conformance.condition.client.RedirectQueryTestDisabled;
+ import net.openid.conformance.vci10issuer.condition.VCIEnsureCredentialTimeClaimsNotLinkable;
+ import net.openid.conformance.variant.ConfigurationFields;
+ import net.openid.conformance.variant.ClientAuthType;
++import net.openid.conformance.variant.VCIGrantType;
+ import net.openid.conformance.variant.VariantHidesConfigurationFields;
+ 
+ @ConfigurationFields({"client2.client_id", "client2.jwks"})
+@@ -53,6 +53,14 @@ public abstract class AbstractVCIIssuerMultipleClient extends AbstractVCIIssuerT
+ 			generateClientAttestationKeys();
+ 		}
+ 
++		// A pre-authorized code is single use (OID4VCI 1.0 Final section 4.1.1).
++		// The second client therefore needs a second issuer-created Credential Offer;
++		// reusing the first offer would test non-conformant replay acceptance.
++		if (vciGrantType == VCIGrantType.PRE_AUTHORIZATION_CODE) {
++			waitForCredentialOffer();
++			return;
++		}
++
+ 		Integer redirectQueryDisabled = env.getInteger("config", "disableRedirectQueryTest");
+ 
+ 		if (redirectQueryDisabled != null && redirectQueryDisabled.intValue() != 0) {

@@ -79,7 +79,7 @@ class ConcurrentEngagementMockedTest {
         )
         appGraph as AndroidBlePlatformClient.Graph
         val contextGraph = appGraph.userContextManager.getAnonymous()
-        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test")
+        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         sessionGraph as SessionExecution.Graph
         sessionGraph as KeyManagerService.KmsGraph
@@ -143,7 +143,7 @@ class ConcurrentEngagementMockedTest {
         )
         appGraph as AndroidBlePlatformClient.Graph
         val contextGraph = appGraph.userContextManager.getAnonymous()
-        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test")
+        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         sessionGraph as SessionExecution.Graph
         sessionGraph as KeyManagerService.KmsGraph
@@ -208,7 +208,7 @@ class ConcurrentEngagementMockedTest {
         )
         appGraph as AndroidBlePlatformClient.Graph
         val contextGraph = appGraph.userContextManager.getAnonymous()
-        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test")
+        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         sessionGraph as SessionExecution.Graph
         sessionGraph as KeyManagerService.KmsGraph
@@ -270,7 +270,7 @@ class ConcurrentEngagementMockedTest {
         )
         appGraph as AndroidBlePlatformClient.Graph
         val contextGraph = appGraph.userContextManager.getAnonymous()
-        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test")
+        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         sessionGraph as SessionExecution.Graph
         sessionGraph as KeyManagerService.KmsGraph
@@ -336,7 +336,7 @@ class ConcurrentEngagementMockedTest {
         )
         appGraph as AndroidBlePlatformClient.Graph
         val contextGraph = appGraph.userContextManager.getAnonymous()
-        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test")
+        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         sessionGraph as SessionExecution.Graph
         sessionGraph as KeyManagerService.KmsGraph
@@ -400,7 +400,7 @@ class ConcurrentEngagementMockedTest {
         )
         appGraph as AndroidBlePlatformClient.Graph
         val contextGraph = appGraph.userContextManager.getAnonymous()
-        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test")
+        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         sessionGraph as SessionExecution.Graph
         sessionGraph as KeyManagerService.KmsGraph
@@ -450,7 +450,7 @@ class ConcurrentEngagementMockedTest {
         )
         appGraph as AndroidBlePlatformClient.Graph
         val contextGraph = appGraph.userContextManager.getAnonymous()
-        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test")
+        val sessionGraph = contextGraph.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         sessionGraph as SessionExecution.Graph
         sessionGraph as KeyManagerService.KmsGraph

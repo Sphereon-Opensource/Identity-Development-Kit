@@ -18,6 +18,7 @@
 package com.sphereon.core.defaults.context
 
 import com.sphereon.di.context.SecuredTenantContextDetails
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.UserContext
 import kotlin.experimental.ExperimentalObjCName
@@ -35,6 +36,7 @@ import kotlin.native.ObjCName
 data class UserContextImpl(
     override val tenant: TenantContextData,
     override val principal: Any?,
+    override val principalType: PrincipalType,
     override val secureDetails: SecuredTenantContextDetails? = null,
     override val id: String = "${tenant.tenantId}:$principal:default",
 ) : UserContext {
@@ -57,6 +59,9 @@ data class UserContextImpl(
         if (secureDetails != other.secureDetails) {
             return false
         }
+        if (principalType != other.principalType) {
+            return false
+        }
 
         return true
     }
@@ -65,6 +70,7 @@ data class UserContextImpl(
         var result = tenant.hashCode()
         result = 31 * result + principal.hashCode()
         result = 31 * result + (secureDetails?.hashCode() ?: 0)
+        result = 31 * result + principalType.hashCode()
         return result
     }
 

@@ -52,9 +52,15 @@ internal const val THEME_API_BASE_PATH: String = "/api/theme/v1"
  */
 internal val THEME_CLIENT_REVALIDATE_AFTER: Duration = 30.seconds
 
+/**
+ * Decoder for theme service representations. `classDiscriminator` mirrors the theme API
+ * contract, which pins `kind` as the discriminator of the sealed `ElementValue` and
+ * `DesignElement` hierarchies carried inside a `ResolvedFeature`.
+ */
 internal val themeClientJson: Json =
     Json {
         ignoreUnknownKeys = true
+        classDiscriminator = "kind"
     }
 
 /**

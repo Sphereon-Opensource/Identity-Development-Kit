@@ -82,6 +82,8 @@ data class ConsumedPreAuthCode(
     val subject: String?,
     val credentialConfigurationIds: List<String>,
     val credentialIdentifiers: List<String>? = null,
+    /** Exact token-response credential_identifier to credential_configuration_id mapping. */
+    val credentialIdentifierMappings: Map<String, String> = emptyMap(),
 )
 
 @JsExportCompat
@@ -142,6 +144,15 @@ data class ValidatedTokenContext(
     val scope: String?,
     val credentialConfigurationIds: List<String>,
     val credentialIdentifiers: List<String>? = null,
+    /** Exact token-response credential_identifier to credential_configuration_id mapping. */
+    val credentialIdentifierMappings: Map<String, String> = emptyMap(),
+    /**
+     * Opaque offer correlation recovered from AS-internal token metadata. For an authorization-
+     * code offer it carries the OID4VCI `issuer_state`; for a pre-authorized offer it carries the
+     * matching server-side session correlation. Neither value is exposed in the access-token JWT
+     * or added to the pre-authorized Credential Offer.
+     */
+    val issuerState: String? = null,
     /**
      * RFC 9449 §6: when the access token carries `cnf.jkt`, it is bound to a DPoP key.
      * Surfaced so callers know whether the token MUST be presented with a matching DPoP proof,

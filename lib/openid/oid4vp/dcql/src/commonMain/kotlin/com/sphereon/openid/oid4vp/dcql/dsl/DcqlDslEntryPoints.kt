@@ -59,8 +59,6 @@ import kotlin.contracts.contract
  *         // Type-safe format with metadata
  *         sdJwtVc {
  *             vctValues("https://credentials.example.com/pid")
- *             sdJwtAlgorithms("ES256", "ES384")
- *             kbJwtAlgorithms("ES256")
  *         }
  *
  *         // Simple claims
@@ -74,11 +72,6 @@ import kotlin.contracts.contract
  *         // Claim with value constraint
  *         claim(listOf("over_18")) {
  *             values(true)
- *         }
- *
- *         // Claim with intent to retain
- *         claim(listOf("email")) {
- *             intentToRetain()
  *         }
  *
  *         // Trusted authorities
@@ -109,11 +102,12 @@ import kotlin.contracts.contract
  *     credential("mdl") {
  *         mDoc {
  *             mDL()  // Convenience: sets doctype to "org.iso.18013.5.1.mDL"
- *             namespaces("org.iso.18013.5.1", "org.iso.18013.5.1.aamva")
  *         }
- *         claim("family_name")
- *         claim("given_name")
- *         claim("portrait")
+ *         claim(listOf("org.iso.18013.5.1", "family_name")) {
+ *             intentToRetain(false)
+ *         }
+ *         claim(listOf("org.iso.18013.5.1", "given_name"))
+ *         claim(listOf("org.iso.18013.5.1", "portrait"))
  *     }
  * }
  * ```

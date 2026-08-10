@@ -96,10 +96,10 @@ import com.sphereon.wallet.credential.SecretRef
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
 import com.sphereon.wallet.credential.store.BlobWalletCredentialStore
 import com.sphereon.wallet.credential.store.WalletCredentialBodyProtector
+import com.sphereon.wallet.credential.store.WalletCredentialProtectedDocumentRole
 import com.sphereon.wallet.impl.CredentialSubjectExtractorImpl
-import com.sphereon.wallet.impl.NoOpWalletIdentityResolver
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
@@ -185,14 +185,14 @@ internal fun buildTestMdocCredential(doctype: String): String {
 
 /**
  * Real [Oid4vciIssuedCredentialAcceptance] backed by the real [CredentialSubjectExtractorImpl] and
- * [NoOpWalletIdentityResolver] (both reached via the module's commonTest-only lib-wallet-impl
- * dependency) plus a caller-supplied verification command (defaults to an always-accepting fake).
+ * [TestPassThroughWalletIdentityResolver], plus a caller-supplied verification command which
+ * defaults to an always-accepting fake.
  */
 private fun testAcceptance(verify: VerifySdJwtVcCommand = FakeVerifySdJwtVcCommand(accept = true)): Oid4vciIssuedCredentialAcceptance =
     Oid4vciIssuedCredentialAcceptance(
         verifySdJwtVcCommand = verify,
         subjectExtractor = CredentialSubjectExtractorImpl(),
-        identityResolver = NoOpWalletIdentityResolver(),
+        identityResolver = TestPassThroughWalletIdentityResolver,
     )
 
 class WalletStoreOid4vciCredentialResponseReceiverTest {
@@ -231,7 +231,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -259,7 +259,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
 
             assertEquals(1, previews.size)
             assertEquals("Employee Credential", previews.single().name)
-            assertEquals(CredentialFormat.SD_JWT_DC.value, previews.single().format)
+            assertEquals(CredentialFormat.SD_JWT_VC.value, previews.single().format)
             assertEquals("#003399", previews.single().branding?.backgroundColor)
             assertEquals("#FFFFFF", previews.single().branding?.textColor)
 
@@ -277,7 +277,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
             assertEquals(1, metadata.activeInstanceCount)
             assertTrue(
                 metadata.credentialTypeRefs.any { ref ->
-                    ref.format == CredentialFormat.SD_JWT_DC &&
+                    ref.format == CredentialFormat.SD_JWT_VC &&
                         ref.kind == CredentialTypeRefKind.SD_JWT_VCT &&
                         // credentialTypeRefs holds the ACTUAL (payload-derived) set, not the
                         // expected (issuer-metadata) set.
@@ -336,7 +336,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -436,7 +436,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -515,7 +515,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -602,7 +602,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -662,7 +662,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -732,7 +732,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -780,7 +780,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                                 mapOf(
                                     CREDENTIAL_CONFIGURATION_ID to
                                         CredentialConfigurationSupported(
-                                            format = CredentialFormat.SD_JWT_DC.value,
+                                            format = CredentialFormat.SD_JWT_VC.value,
                                             vct = EMPLOYEE_VCT,
                                             doctype = MDOC_DOCTYPE,
                                             credentialDefinition = CredentialDefinition(type = listOf("VerifiableCredential", "WrongCredential")),
@@ -814,7 +814,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -881,7 +881,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -912,7 +912,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
             assertEquals(1, stored.subjectRefs.size, "expected one subject extracted from credential")
             assertEquals(IdentifierType.DID, stored.subjectRefs[0].type)
             assertEquals(subjectDid, stored.subjectRefs[0].value)
-            // NoOpWalletIdentityResolver returns the ref unchanged - identityIdentifierId stays null.
+            // The test-only resolver returns the ref unchanged, so identityIdentifierId stays null.
             assertEquals(null, stored.subjectRefs[0].identityIdentifierId)
         }
 
@@ -948,7 +948,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -1043,7 +1043,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                     id = originalInstanceId,
                     walletUnitId = WALLET_UNIT_ID,
                     credentialRecordId = recordId,
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     raw = originalRaw,
                     bodyStorageRef = BodyStorageRef(kind = BodyStorageKind.WALLET_STORE, path = "placeholder"),
                     holderKeyRef = KeyRef(alias = "wallet-holder-key-refresh"),
@@ -1056,11 +1056,11 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                     id = recordId,
                     walletUnitId = WALLET_UNIT_ID,
                     issuerRef = IdentifierRef(type = IdentifierType("https"), value = "https://issuer.example"),
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     credentialTypeRefs =
                         setOf(
                             CredentialTypeRef(
-                                format = CredentialFormat.SD_JWT_DC,
+                                format = CredentialFormat.SD_JWT_VC,
                                 kind = CredentialTypeRefKind.SD_JWT_VCT,
                                 value = EMPLOYEE_VCT,
                                 source = CredentialTypeRefSource.CREDENTIAL_PAYLOAD,
@@ -1104,7 +1104,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = WALLET_UNIT_ID,
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -1174,7 +1174,7 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                         mapOf(
                             CREDENTIAL_CONFIGURATION_ID to
                                 CredentialConfigurationSupported(
-                                    format = CredentialFormat.SD_JWT_DC.value,
+                                    format = CredentialFormat.SD_JWT_VC.value,
                                     vct = EMPLOYEE_VCT,
                                     display = listOf(DisplayProperties(name = "Offer metadata must not drive the received result")),
                                     credentialMetadata =
@@ -1311,6 +1311,7 @@ private object ReceiverTestCredentialBodyProtector : WalletCredentialBodyProtect
         credentialRecordId: String,
         credentialInstanceId: String,
         plaintext: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole,
     ): IdkResult<ByteArray, IdkError> = Ok("receiver-test-protected:${plaintext.decodeToString().reversed()}".encodeToByteArray())
 
     override suspend fun open(
@@ -1318,6 +1319,7 @@ private object ReceiverTestCredentialBodyProtector : WalletCredentialBodyProtect
         credentialRecordId: String,
         credentialInstanceId: String,
         protectedBody: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole,
     ): IdkResult<ByteArray, IdkError> {
         val envelope = protectedBody.decodeToString()
         if (!envelope.startsWith("receiver-test-protected:")) {

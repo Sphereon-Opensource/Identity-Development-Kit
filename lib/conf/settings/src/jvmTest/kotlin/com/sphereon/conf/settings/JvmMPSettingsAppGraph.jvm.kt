@@ -16,17 +16,61 @@
 
 package com.sphereon.conf.settings
 
+import com.sphereon.core.api.conf.DefaultInterpolationPolicyProvider
+import com.sphereon.core.api.conf.DefaultPropertyInterpolator
+import com.sphereon.core.api.conf.InterpolationPolicy
+import com.sphereon.core.api.conf.InterpolationPolicyCatalog
+import com.sphereon.core.api.conf.InterpolationPolicyProvider
+import com.sphereon.core.api.conf.PropertyInterpolator
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
+import com.sphereon.core.defaults.conf.ConfigPipelineModule
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
+import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.createGraphFactory
+
+/**
+ * Test product catalog. The production settings property sources consume the core configuration
+ * graph's policy; they do not create an ambient resolver or a second catalog.
+ */
+@ContributesTo(AppScope::class, replaces = [ConfigPipelineModule::class])
+interface SettingsTestConfigPipelineModule {
+    @Provides
+    @SingleIn(AppScope::class)
+    fun providePropertyInterpolator(): PropertyInterpolator = DefaultPropertyInterpolator()
+
+    @Provides
+    fun provideNullablePropertyInterpolator(interpolator: PropertyInterpolator): PropertyInterpolator? = interpolator
+
+    @Provides
+    @SingleIn(AppScope::class)
+    fun provideInterpolationPolicyCatalog(): InterpolationPolicyCatalog =
+        InterpolationPolicyCatalog(
+            exactPolicies =
+                mapOf(
+                    "users.endpoint" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY,
+                    "api.endpoint" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY,
+                    "env.ref" to InterpolationPolicy.APP_ENVIRONMENT,
+                    "env.missing" to InterpolationPolicy.APP_ENVIRONMENT,
+                    "complex.value" to InterpolationPolicy.APP_ENVIRONMENT,
+                ),
+        )
+
+    @Provides
+    @SingleIn(AppScope::class)
+    fun provideInterpolationPolicyProvider(catalog: InterpolationPolicyCatalog): InterpolationPolicyProvider =
+        DefaultInterpolationPolicyProvider(catalog)
+}
 
 @DependencyGraph(AppScope::class)
 abstract class JvmMPSettingsAppGraph : AbstractAppGraph() {
+    abstract val interpolationPolicyCatalog: InterpolationPolicyCatalog
+
     @DependencyGraph.Factory
     fun interface Factory {
         fun create(

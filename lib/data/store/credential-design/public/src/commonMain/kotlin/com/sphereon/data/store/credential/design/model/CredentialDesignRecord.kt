@@ -64,4 +64,11 @@ data class CredentialDesignRecord
         val createdAt: Instant,
         val updatedAt: Instant,
         val credentialType: CredentialTypeDescriptor? = null,
+        /**
+         * Config-level default deferred-issuance policy for credentials built from this design.
+         * Lowest-precedence layer of the config < template < offer merge resolved by
+         * `com.sphereon.credential.issuance.pipeline.DeferralPolicyResolver`. Null means this
+         * design sets no default (falls through entirely to the template/offer levels).
+         */
+        val deferral: CredentialDesignDeferralPolicy? = null,
     )

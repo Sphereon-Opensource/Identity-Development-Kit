@@ -20,6 +20,7 @@ import com.sphereon.core.api.service.ServiceCommandGroupDescription
 import com.sphereon.core.api.service.ServiceCommandGroupDescriptorProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -60,6 +61,30 @@ class DefaultServiceCommandGroupCatalogTest {
 
         // Then
         assertTrue(catalog.groups.isEmpty())
+    }
+
+    @Test
+    fun catalogRevalidatesCommandIdsBeforeIndexing() {
+        val mutableCommandIds = mutableListOf("did.hosting.document-get")
+        val description =
+            ServiceCommandGroupDescription(
+                groupId = "did.hosting",
+                module = "did",
+                service = "hosting",
+                displayName = "DID Hosting",
+                commandIds = mutableCommandIds,
+            )
+        mutableCommandIds[0] = "did.hosting.document--get"
+        val provider =
+            object : ServiceCommandGroupDescriptorProvider {
+                override val groupId = description.groupId
+
+                override fun describe() = description
+            }
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultServiceCommandGroupCatalog(setOf(provider))
+        }
     }
 
     // ========== findByModule ==========

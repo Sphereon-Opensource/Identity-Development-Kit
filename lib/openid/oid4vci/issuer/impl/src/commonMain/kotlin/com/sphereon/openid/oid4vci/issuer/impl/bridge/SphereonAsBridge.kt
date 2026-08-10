@@ -232,6 +232,13 @@ class SphereonAsBridge(
                 val detailObj = detail.jsonObject
                 detailObj["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
             } ?: emptyList()
+        val credentialIdentifierMappings =
+            authDetailsArray?.flatMap { detail ->
+                val detailObj = detail.jsonObject
+                val configId = detailObj["credential_configuration_id"]?.jsonPrimitive?.contentOrNull
+                if (configId == null) emptyList()
+                else detailObj["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content to configId }.orEmpty()
+            }?.toMap().orEmpty()
 
         val additionalClaims = introspection.additionalClaims
 
@@ -259,6 +266,8 @@ class SphereonAsBridge(
                 scope = introspection.scope,
                 credentialConfigurationIds = credentialConfigurationIds,
                 credentialIdentifiers = credentialIdentifiers.ifEmpty { null },
+                credentialIdentifierMappings = credentialIdentifierMappings,
+                issuerState = additionalClaims[INTERNAL_OID4VCI_ISSUER_STATE_CLAIM]?.jsonPrimitive?.contentOrNull,
                 cnfJkt = cnfJkt,
                 userinfoClaims = userinfoClaims,
                 acr = acr,
@@ -400,6 +409,7 @@ class SphereonAsBridge(
         const val TX_CODE_NUMERIC = "0123456789"
         const val TX_CODE_ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         const val SURFACE_LOCAL_USERINFO_KEY = "oid4vci.issuer.surface-local-userinfo-to-issuance"
+        const val INTERNAL_OID4VCI_ISSUER_STATE_CLAIM = "oid4vci.internal.issuer_state"
         val PROTOCOL_CLAIM_KEYS =
             setOf(
                 "authorization_details",

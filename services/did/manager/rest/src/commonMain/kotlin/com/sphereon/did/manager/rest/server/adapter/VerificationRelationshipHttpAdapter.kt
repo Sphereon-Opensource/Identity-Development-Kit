@@ -45,7 +45,7 @@ class VerificationRelationshipHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-VERIFICATION-RELATIONSHIP"
+        const val ID: String = "did.manager.verification-relationship"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

@@ -24,6 +24,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vc.common.DisplayProperties
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataCommand
@@ -90,7 +91,11 @@ class BuildIssuerMetadataCommandImpl(
                 notificationEndpoint = "$baseUrl/notification",
                 nonceEndpoint = "$baseUrl/nonce",
                 credentialConfigurationsSupported = applied.credentialConfigurations,
-                display = applied.display,
+                // The top-level Credential Issuer metadata display object is narrower than the
+                // credential-configuration display object. Keep richer branding in production
+                // configuration/testing-console models, but do not leak extension-only fields
+                // (description/background/text/background image) into the OID4VCI metadata.
+                display = applied.display?.map { it.toIssuerMetadataDisplay() },
                 credentialResponseEncryption = applied.credentialResponseEncryption,
                 credentialRequestEncryption = applied.credentialRequestEncryption,
                 batchCredentialIssuance = applied.batchCredentialIssuance,
@@ -100,6 +105,13 @@ class BuildIssuerMetadataCommandImpl(
     }
 
     companion object {
+        private fun DisplayProperties.toIssuerMetadataDisplay() =
+            DisplayProperties(
+                name = name,
+                locale = locale,
+                logo = logo,
+            )
+
         private val privateNetworkPrefixes =
             listOf(
                 "http://localhost",

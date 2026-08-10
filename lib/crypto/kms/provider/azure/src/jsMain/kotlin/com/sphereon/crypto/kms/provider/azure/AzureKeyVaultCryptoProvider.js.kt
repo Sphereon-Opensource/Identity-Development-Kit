@@ -159,7 +159,8 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
             ClientSecretCredential(
                 config.tenantId,
                 config.credentialOpts.secretCredentialOpts.clientId,
-                config.credentialOpts.secretCredentialOpts.clientSecret
+                config.credentialOpts.secretCredentialOpts.clientSecretMaterial
+                    ?: error("Client secret material was not resolved by the server-owned secret runtime")
             )
         keyClient = KeyClient(config.keyvaultUrl, clientSecretCredential)
     }

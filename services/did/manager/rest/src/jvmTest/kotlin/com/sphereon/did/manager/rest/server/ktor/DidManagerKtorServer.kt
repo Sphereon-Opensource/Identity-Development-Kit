@@ -18,6 +18,8 @@ import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
+import com.sphereon.ktor.server.inject.resolver.DefaultPrincipalResolver
+import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
@@ -69,10 +71,12 @@ fun main() {
 fun Application.configureDidManager(
     appGraph: AppGraph,
     tenantResolver: TenantResolver = FixedTenantResolver("default"),
+    principalResolver: PrincipalResolver = DefaultPrincipalResolver(),
 ) {
     install(KotlinInjectPlugin) {
         this.appGraph = appGraph
         this.tenantResolver = tenantResolver
+        this.principalResolver = principalResolver
     }
     log.info("KotlinInject plugin installed - full DI enabled")
 

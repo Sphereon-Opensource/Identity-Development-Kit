@@ -124,10 +124,12 @@ class SessionStatusEventEmitterImpl(
                             instanceId = session.instanceId,
                             oldState = previousStatus?.name,
                             newState = session.status.name,
+                            templateId = session.templateId,
                             creationSnapshot = if (previousStatus == null) {
                                 buildJsonObject {
                                     put("correlationId", session.correlationId)
                                     session.queryId?.let { put("queryId", it) }
+                                    session.templateId?.let { put("templateId", it) }
                                     put("createdAt", session.createdAt)
                                 }
                             } else null,

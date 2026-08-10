@@ -57,7 +57,7 @@ class DidLifecycleHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-DID-LIFECYCLE"
+        const val ID: String = "did.manager.lifecycle"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

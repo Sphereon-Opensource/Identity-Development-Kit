@@ -29,7 +29,7 @@ class AttributePredicateEvaluatorTest {
     private fun bagOf(vararg pairs: Pair<String, String>): AttributeBag =
         AttributeBag.of(
             values = pairs.associate { (key, value) -> AttributePath(key) to JsonPrimitive(value) },
-            sourceId = AttributeProvenanceRef("test"),
+            producerId = AttributeProvenanceRef("test"),
             timestamp = Instant.fromEpochSeconds(0),
         )
 

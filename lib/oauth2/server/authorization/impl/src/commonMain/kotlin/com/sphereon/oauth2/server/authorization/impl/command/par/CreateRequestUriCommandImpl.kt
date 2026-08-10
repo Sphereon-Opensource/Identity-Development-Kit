@@ -30,7 +30,9 @@ import com.sphereon.oauth2.server.authorization.command.RequestUriData
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.storage.PushedAuthorizationRequestStorage
+import com.sphereon.oauth2.server.authorization.impl.time.OAUTH2_ARTIFACT_CLOCK
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -76,7 +78,7 @@ class CreateRequestUriCommandImpl(
     execution: SessionExecution,
     private val secureRandom: SecureRandom,
     private val pushedAuthorizationRequestStorage: PushedAuthorizationRequestStorage,
-    private val clock: Clock,
+    @param:Named(OAUTH2_ARTIFACT_CLOCK) private val clock: Clock,
     // 60 seconds default (RFC 9126 §2.2 recommends a short lifetime; harness-friendly).
     private val requestUriLifetimeSeconds: Int = 60,
 ) : TypedServiceCommandAdapter<VerifiedAuthorizationRequest, RequestUriData, IdkError>(

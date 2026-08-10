@@ -44,5 +44,9 @@ class YamlAppPropertySourceContribution(
 
     override fun getPropertySource(): PropertySource<*> = yamlSource
 
-    override fun getOrder(): Int = Order.LOW.orderValue
+    // File-backed bootstrap configuration must be registered before providers whose own
+    // construction depends on it (for example the PostgreSQL settings property source).
+    // The source itself still keeps YamlPropertySourceImpl's LOW precedence, so this changes
+    // bootstrap sequencing only; environment and higher-precedence sources continue to win.
+    override fun getOrder(): Int = Order.HIGH.orderValue
 }

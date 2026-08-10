@@ -28,6 +28,7 @@ import com.sphereon.crypto.core.x509.KeyUsageFlag
 import com.sphereon.crypto.core.x509.certificateFromPem
 import com.sphereon.crypto.core.x509.toX500
 import com.sphereon.crypto.core.x509.wrapX509CertificatePem
+import com.sphereon.crypto.core.x509.x5cWithoutTerminalSelfSignedRoot
 import kotlinx.serialization.encodeToByteArray
 import org.kotlincrypto.hash.sha1.SHA1
 import kotlin.test.Test
@@ -206,6 +207,17 @@ INYu69YIwTpPO4RKcaXVys9MLz1MhcHvEWwGp14=
             "MIIE+TCCAuECFGAsUUW/e7N0/+8074MJpSjqucJ+MA0GCSqGSIb3DQEBCwUAMDkxFTATBgNVBAMMDFRlc3QgUm9vdCBDQTETMBEGA1UECgwKTXkgQ29tcGFueTELMAkGA1UEBhMCVVMwHhcNMjUwNDIyMTEyMjEyWhcNMjYwNDIyMTEyMjEyWjA5MRUwEwYDVQQDDAxUZXN0IFJvb3QgQ0ExEzARBgNVBAoMCk15IENvbXBhbnkxCzAJBgNVBAYTAlVTMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA9ocLBg0gXJws7DRindzw/YGT6k34oIenIFo8hqXdf1XR0Ncz6aItTVR8OQZ9zXoSmobwR1jFFGeLyHyzFDCIAYMHomzpGJGQPogzQqD19AgfIxxX2gNwR4yXU+5b2PFyaWtg348luPBuWAeO4HfRxrN53aCVxSh1zBF2kvZSCstof04s+gCzsoGfuCs4AkE4DOrn0e3Pu/kf/+BElqm4hS88KMOs8uwT41aNVmR6vJ8gNYjXjbv4uxnJKY1+W7GTmvTbZW75BuBVOnOPGDPhoEd5aRmDvCMKazAZRErpKYH586XmvxaQfS4AD8OfDsdrXT34Rv3zQRQw2mZyX3V52/RMlV4sK17EdDya8omqYuDYmuzQpbY2D64ij+QRn1HndOmhXdegGwWPKrjLovMsi5R9wH/zMaN67crthb61+wB3vGiKknf8MpajJI3FHeWyrwnt0zMjbfO8aKyn5Q2fzh8Z2jvt0FenqjUK8yineaKP5X1gvIc67tb1gqe4oS4bb0zwv9ebT4l+bcvlu4nBVFtoeV6Izk1RuJA48pjIyZjWxeC9PfX/yz5HBABTysa6E9J/WVPvyuuma6fbRJ9INmdHmsYYYt9OEHXyr0pjDx5fRdY0zM9qQj2+5K1PbC38Lr6lliznj7NNWO0xlFMqNDazTBXniR0fV8AeRilQU3ECAwEAATANBgkqhkiG9w0BAQsFAAOCAgEAXCNNDKOhejtymjy8gXQa/fl6fH4K4OLeJ4IAk5GUNu1yKMfoyXD4QXp70E5Q87DKaysxx9LXjcTnaF2YU0h+YVEMdQRu3HUic+qrjgeJChfXiUsnbpmicuJqe0XI9Og9bGyQke05Ia0vEbYcWF+kqauSOy99CkTXsn/GymUh/K0ZAuJMFs0fftRQQS5hatJ0Muigs4ZemopMp5/aVtOC85Bi077M488V7C0zCKuBO/8bLFGM2eHVekzoqLlfKxvEEbgGCSuqL6eTHycIQ+f5pd21+UKk7GSMy/J9Gxaw/G2bZMGnbRN0HRh1auCxOtp1xwrm4i2KXMJAQCgHvMMfvWIregkJ2eCUPeh1vyE1LSyHDuZSrODRO9+aV7SgqEK5BccOCGJdSu3A+Q6l8fpyz6qSXQu9OGdn7XGkGGoA/M0+vK/bf9cSFwNQ4yt9vyDaETAtVliKkgLYsFuCkaalRzFTPFpnpoY7tnotlzL+A6BXsLfWcFkZalX40tbZEGN16Ngbw1hs5GftEhpEDGWObW55jNwnUu78sahZ4hQN/4fWvN8dWsZ/I/1KTmTKDlCN8efvOcoCWG47pw1oR9TYBij2NoX2LcM+pBIjM51F7yarSVrhAtjk7cYooOFBPqtJbsmSINYu69YIwTpPO4RKcaXVys9MLz1MhcHvEWwGp14=",
             x5c[1],
         )
+    }
+
+    @Test
+    fun emittedX5cOmitsTerminalSelfSignedRootButKeepsLeaf() {
+        val stored = x509CertificateChainToX5c(x509CertificateChainFromPem(testPemChain))
+
+        val emitted = x5cWithoutTerminalSelfSignedRoot(stored)
+
+        assertEquals(1, emitted.size)
+        assertEquals(stored.first(), emitted.single())
+        assertEquals(arrayOf(stored.last()).toList(), x5cWithoutTerminalSelfSignedRoot(arrayOf(stored.last())).toList())
     }
 
     @Test

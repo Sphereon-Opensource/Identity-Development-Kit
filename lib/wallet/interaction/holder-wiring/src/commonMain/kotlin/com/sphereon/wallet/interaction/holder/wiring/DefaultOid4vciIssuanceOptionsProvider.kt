@@ -24,6 +24,7 @@ import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceOptions
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuanceOptionsProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciWalletInteractionProtocolAdapter
+import com.sphereon.wallet.interaction.protocol.oid4vci.withLaunchAttributes
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.unit.WalletAttestedKeyRef
 import com.sphereon.wallet.wsca.Wsca
@@ -78,7 +79,7 @@ class DefaultOid4vciIssuanceOptionsProvider(
                     ?: resolvedOffer.offer.credentialConfigurationIds
                         .firstOrNull(),
             haipTokenProofs = null,
-        )
+        ).withLaunchAttributes(context.attributes)
     }
 
     private suspend fun mintCredentialKey(walletUnitId: String): WalletAttestedKeyRef =

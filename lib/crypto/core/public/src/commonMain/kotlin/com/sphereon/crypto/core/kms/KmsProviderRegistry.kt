@@ -34,6 +34,10 @@ import kotlin.native.ObjCName
  *
  * The registry is session-scoped, meaning providers are created per-session from
  * tenant/principal configuration, maintaining proper tenant isolation.
+ *
+ * Resolving a provider suspends. An implementation may have to reach an authority before it knows
+ * what the provider it is about to hand back can do, and a provider whose capabilities are only
+ * discovered after construction would answer capability questions from an incomplete picture.
  */
 @JsExportCompat
 @OptIn(ExperimentalObjCName::class)
@@ -60,7 +64,7 @@ interface KmsProviderRegistry {
      * @return The KmsProvider corresponding to the specified ID.
      * @throws PKIException if no provider is found for the given ID.
      */
-    fun getProviderById(id: String = defaultProviderId()): KmsProvider
+    suspend fun getProviderById(id: String = defaultProviderId()): KmsProvider
 
     /**
      * Retrieves a KMS provider by provider ID or signature algorithm.
@@ -73,7 +77,7 @@ interface KmsProviderRegistry {
      * @return The matching KmsProvider.
      * @throws PKIException if no matching provider is found.
      */
-    fun getProvider(
+    suspend fun getProvider(
         providerId: String? = null,
         alg: SignatureAlgorithm? = null,
     ): KmsProvider
@@ -85,7 +89,7 @@ interface KmsProviderRegistry {
      * @return The KmsProvider that supports the specified signature algorithm.
      * @throws PKIException if no provider supports the algorithm.
      */
-    fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider
+    suspend fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider
 
     /**
      * Registers a new KMS provider with the registry.

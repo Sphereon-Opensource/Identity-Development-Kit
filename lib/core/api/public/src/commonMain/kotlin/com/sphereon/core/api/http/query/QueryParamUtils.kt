@@ -18,7 +18,6 @@
 
 package com.sphereon.core.api.http.query
 
-import com.sphereon.core.api.auth.AuthHeaders
 import com.sphereon.core.api.http.util.RequestUtils
 import kotlin.time.Instant
 import kotlin.uuid.ExperimentalUuidApi
@@ -67,12 +66,6 @@ object QueryParamUtils {
         headers: Map<String, String>,
         name: String
     ): String? = RequestUtils.extractHeaderValue(headers, name)
-
-    /**
-     * Extract tenant ID from headers.  (backwards compatibility link)
-     * Uses the canonical [AuthHeaders.X_TENANT_ID] header with case-insensitive fallback.
-     */
-    fun extractTenantId(headers: Map<String, String>): String? = RequestUtils.extractTenantId(headers)
 
     /**
      * Parse an enum value from string (case-insensitive).

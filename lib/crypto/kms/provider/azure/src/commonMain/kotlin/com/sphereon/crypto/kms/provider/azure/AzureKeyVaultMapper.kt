@@ -27,6 +27,10 @@ internal const val KEY_NAME_VERSION_SEP = ":"
  * @return A Pair containing the key name and version (empty string if no version)
  */
 fun kidToKVKeyName(kid: String): Pair<String, String> {
+    val versioned = AZURE_VERSIONED_KEY_ID.matchEntire(kid)
+    if (versioned != null) {
+        return versioned.groupValues[1] to versioned.groupValues[2]
+    }
     if (!kid.contains(KEY_NAME_VERSION_SEP)) {
         return Pair(kid, "")
     }
@@ -40,3 +44,6 @@ fun kidToKVKeyName(kid: String): Pair<String, String> {
     }
     return Pair(name, version)
 }
+
+private val AZURE_VERSIONED_KEY_ID =
+    Regex("^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?/keys/([A-Za-z0-9-]{1,127})/([A-Za-z0-9]{1,128})$")

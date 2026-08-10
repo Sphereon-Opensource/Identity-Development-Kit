@@ -86,7 +86,7 @@ kms:
         type: pkcs12
         id: software
         password: "${env:KEYSTORE_PASSWORD}"
-        path: /app/keystore/keystore.p12
+        path: "${env:KEYSTORE_PATH:/app/keystore/keystore.p12}"
     # Ephemeral KMS — JARM response-encryption keypairs (one per direct_post.jwt session).
     # Memory-backed so keys never touch disk; scopeBinding=APP because the request-creation
     # session and the wallet's response-POST session are different sessions — APP scope

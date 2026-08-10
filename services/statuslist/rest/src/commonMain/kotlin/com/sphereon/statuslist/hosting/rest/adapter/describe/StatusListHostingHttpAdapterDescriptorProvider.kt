@@ -33,7 +33,7 @@ import dev.zacsweers.metro.binding
 class StatusListHostingHttpAdapterDescriptorProvider(
     private val hostingConfig: StatusListHostingConfig,
 ) : HttpAdapterDescriptorProvider {
-    override val id: String = "statuslist-hosting"
+    override val id: String = "statuslist.hosting.http"
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(

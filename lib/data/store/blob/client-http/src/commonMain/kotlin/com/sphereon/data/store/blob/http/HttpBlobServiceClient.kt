@@ -19,6 +19,7 @@ package com.sphereon.data.store.blob.http
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.OpaqueSecretResolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.error.IdkError
@@ -76,6 +77,7 @@ class HttpBlobServiceClient(
     private val config: HttpBlobServiceClientConfig,
     private val http: HttpClient,
     private val execution: SessionExecution?,
+    private val opaqueSecretResolver: OpaqueSecretResolver,
 ) : BlobService {
     private val jsonParser = Json { ignoreUnknownKeys = true }
 
@@ -96,10 +98,8 @@ class HttpBlobServiceClient(
         }
     }
 
-    private fun io.ktor.client.request.HttpRequestBuilder.applyAuth() {
-        val authConfig = config.auth
-
-        when (authConfig.mode) {
+    private suspend fun resolveAuthorizationToken(): IdkResult<String?, IdkError> =
+        when (config.auth.mode) {
             HttpBlobAuthMode.BEARER -> {
                 val jwt =
                     try {
@@ -112,34 +112,34 @@ class HttpBlobServiceClient(
                         // Ignored: session context not available for JWT extraction
                         null
                     }
-                if (jwt != null) {
-                    header("Authorization", "Bearer $jwt")
+                if (jwt.isNullOrBlank()) {
+                    Err(IdkError.FORBIDDEN_ERROR(message = "Authenticated session token is unavailable"))
+                } else {
+                    Ok(jwt)
                 }
             }
 
             HttpBlobAuthMode.STATIC_TOKEN -> {
-                val token = authConfig.token
-                if (token != null) {
-                    header("Authorization", "Bearer $token")
+                val secretId = config.auth.tokenSecretId
+                if (secretId == null) {
+                    Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "HTTP blob tokenSecretId is required"))
+                } else {
+                    secretId.requireOpaqueSecretId("tokenSecretId")
+                    val result = opaqueSecretResolver.resolve(secretId)
+                    if (result.isErr || result.value.isBlank()) {
+                        Err(IdkError.SERVICE_UNAVAILABLE_ERROR(message = "HTTP blob credential is unavailable"))
+                    } else {
+                        Ok(result.value)
+                    }
                 }
             }
 
-            HttpBlobAuthMode.CLIENT_CREDENTIALS -> {
-                // Ktor Auth plugin handles token acquisition automatically
-            }
+            HttpBlobAuthMode.CLIENT_CREDENTIALS -> Ok(null)
         }
 
-        // Fallback tenant header for dev/anonymous mode
-        val tenantHeader = authConfig.tenantHeader
-        if (tenantHeader != null && execution != null) {
-            try {
-                val tenantId = execution.sessionContext.context.tenant.tenantId
-                if (tenantId.isNotBlank() && tenantId != "<anonymous>") {
-                    header(tenantHeader, tenantId)
-                }
-            } catch (_: Exception) {
-                // Ignored: no session context available for tenant header
-            }
+    private fun io.ktor.client.request.HttpRequestBuilder.applyAuth(authorizationToken: String?) {
+        if (authorizationToken != null) {
+            header("Authorization", "Bearer $authorizationToken")
         }
     }
 
@@ -152,6 +152,8 @@ class HttpBlobServiceClient(
     ): IdkResult<BlobDescriptor, IdkError> {
         val path = target.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for storeBlob"))
         val metadata = target.toBlobMetadata()
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.put(blobsUrl(target.storeId, path)) {
@@ -165,7 +167,7 @@ class HttpBlobServiceClient(
                             options = options,
                         ),
                     )
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, path))
@@ -182,10 +184,12 @@ class HttpBlobServiceClient(
         }
         val blobInfo = info.toBlobInfo()
         val path = blobInfo.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for getBlob"))
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.get("${blobsUrl(blobInfo.storeId, path)}/content") {
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, path))
@@ -211,10 +215,12 @@ class HttpBlobServiceClient(
     override suspend fun getBlobInfo(info: BlobInfoType): IdkResult<BlobDescriptor, IdkError> {
         val blobInfo = info.toBlobInfo()
         val path = blobInfo.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for getBlobInfo"))
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.get("${blobsUrl(blobInfo.storeId, path)}/stat") {
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, path))
@@ -228,10 +234,12 @@ class HttpBlobServiceClient(
     override suspend fun deleteBlob(info: BlobInfoType): IdkResult<Boolean, IdkError> {
         val blobInfo = info.toBlobInfo()
         val path = blobInfo.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for deleteBlob"))
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.delete(blobsUrl(blobInfo.storeId, path)) {
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (response.status == HttpStatusCode.NotFound) {
                 return Ok(false)
@@ -250,6 +258,8 @@ class HttpBlobServiceClient(
         info: BlobInfo,
         options: ListOptions,
     ): IdkResult<ListResult, IdkError> {
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.get(blobsUrl(info.storeId)) {
@@ -259,7 +269,7 @@ class HttpBlobServiceClient(
                     if (options.recursive) {
                         parameter("recursive", true)
                     }
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, "list"))
@@ -277,12 +287,14 @@ class HttpBlobServiceClient(
         val sourceInfo = source.toBlobInfo()
         val sourcePath = sourceInfo.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Source BlobInfo.path is required for copyBlob"))
         val destinationPath = destination.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Destination BlobInfo.path is required for copyBlob"))
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.post("${blobsUrl(sourceInfo.storeId, sourcePath)}/copy") {
                     contentType(ContentType.Application.Json)
                     setBody(BlobCopyMoveBody(destination = destinationPath))
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, sourcePath))
@@ -300,12 +312,14 @@ class HttpBlobServiceClient(
         val sourceInfo = source.toBlobInfo()
         val sourcePath = sourceInfo.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Source BlobInfo.path is required for moveBlob"))
         val destinationPath = destination.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Destination BlobInfo.path is required for moveBlob"))
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.post("${blobsUrl(sourceInfo.storeId, sourcePath)}/move") {
                     contentType(ContentType.Application.Json)
                     setBody(BlobCopyMoveBody(destination = destinationPath))
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, sourcePath))
@@ -323,6 +337,8 @@ class HttpBlobServiceClient(
         data: ByteArray,
         algorithm: DigestAlg,
     ): IdkResult<ContentAddressDescriptor, IdkError> {
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.post("${config.baseUrl}/api/commands/blob.cas.store") {
@@ -336,7 +352,7 @@ class HttpBlobServiceClient(
                             metadata = info.toBlobMetadata(),
                         ),
                     )
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, "cas.store"))
@@ -351,6 +367,8 @@ class HttpBlobServiceClient(
         info: BlobInfo,
         address: ContentAddress,
     ): IdkResult<ResolvedBlobInfo, IdkError> {
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.post("${config.baseUrl}/api/commands/blob.cas.get") {
@@ -362,7 +380,7 @@ class HttpBlobServiceClient(
                             storeId = info.storeId,
                         ),
                     )
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, "cas.get"))
@@ -377,6 +395,8 @@ class HttpBlobServiceClient(
         info: BlobInfo,
         address: ContentAddress,
     ): IdkResult<Boolean, IdkError> {
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.post("${config.baseUrl}/api/commands/blob.cas.verify") {
@@ -388,7 +408,7 @@ class HttpBlobServiceClient(
                             storeId = info.storeId,
                         ),
                     )
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, "cas.verify"))
@@ -406,12 +426,14 @@ class HttpBlobServiceClient(
         info: BlobInfo,
         query: MetadataSearchQuery,
     ): IdkResult<List<BlobDescriptor>, IdkError> {
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.post("${config.baseUrl}/api/commands/blob.metadata.search") {
                     contentType(ContentType.Application.Json)
                     setBody(MetadataSearchBody(tenantId = info.tenantId ?: "default", query = query))
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, "metadata.search"))
@@ -430,12 +452,14 @@ class HttpBlobServiceClient(
     ): IdkResult<TempUrlResult, IdkError> {
         val blobInfo = info.toBlobInfo()
         val path = blobInfo.path ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "BlobInfo.path is required for createTempUrl"))
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.post("${blobsUrl(blobInfo.storeId, path)}/temp-url") {
                     contentType(ContentType.Application.Json)
                     setBody(TempUrlBody(tenantId = blobInfo.tenantId ?: "default", options = options))
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response, path))

@@ -70,7 +70,16 @@ object ResponseBuilder {
             body = body,
         )
 
-    /** Build a 200 OK response with a JSON-serialised entity. */
+    /**
+     * Build a 200 OK response with a JSON-serialised entity.
+     *
+     * Encodes with this object's own [Json], which uses kotlinx's default polymorphic discriminator
+     * `type`. A caller whose API contract pins a different discriminator (for example the theme API,
+     * whose OpenAPI schema declares `propertyName: kind`) will silently emit `type` through here and
+     * disagree with its own generated clients. Such callers must serialise with their own configured
+     * [Json] and pass the result to [ok] instead. Changing the default here is not an option: many
+     * modules depend on `type`.
+     */
     inline fun <reified T> okWithData(data: T): GenericHttpResponse = ok(toJson(data))
 
     /** Build a 201 Created response with a raw JSON body. */
@@ -82,6 +91,12 @@ object ResponseBuilder {
         )
 
     /** Build a 201 Created response with a JSON-serialised entity. */
+    /**
+     * Build a 201 Created response with a JSON-serialised entity.
+     *
+     * Carries the same polymorphic-discriminator caveat as [okWithData]: it encodes with this
+     * object's own [Json] and emits `type`, regardless of what the caller's contract pins.
+     */
     inline fun <reified T> createdWithData(data: T): GenericHttpResponse = created(toJson(data))
 
     /** Build a 201 Created response with a `Location` header and a JSON-serialised entity. */

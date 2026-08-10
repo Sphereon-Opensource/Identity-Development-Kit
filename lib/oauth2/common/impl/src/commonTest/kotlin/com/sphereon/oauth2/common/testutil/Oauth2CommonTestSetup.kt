@@ -33,7 +33,7 @@ class Oauth2CommonTestContext(
 ) {
     val app: AppGraph = createOauth2CommonTestAppGraph(testInstance)
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
     val keyManagerService: KeyManagerService = session.graph.asKeyManagerServiceGraph().keyManagerService
 
     init {

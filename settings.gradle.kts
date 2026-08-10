@@ -196,7 +196,7 @@ dependencyResolutionManagement {
         }
         // TODO: Move aws sdk to our bom
         create("awssdk") {
-            from("aws.sdk.kotlin:version-catalog:1.4.31" as String)
+            from("aws.sdk.kotlin:version-catalog:1.6.107" as String)
         }
 
     }
@@ -402,6 +402,7 @@ includeProject("lib-wallet-party-local", "lib/wallet/party/local")
 // Wallet Interaction API (protocol-neutral headless wallet runtime)
 includeProject("lib-wallet-interaction-public", "lib/wallet/interaction/public")
 includeProject("lib-wallet-interaction-impl", "lib/wallet/interaction/impl")
+includeProject("lib-wallet-interaction-test-fixtures", "lib/wallet/interaction/test-fixtures")
 includeProject("lib-wallet-interaction-client-rest", "lib/wallet/interaction/client-rest")
 includeProject("lib-wallet-interaction-presenter", "lib/wallet/interaction/presenter")
 includeProject("lib-wallet-interaction-presenter-contracts", "lib/wallet/interaction/presenter-contracts")
@@ -605,6 +606,9 @@ includeProject("examples-service-byo-oidc", "examples/service-byo-oidc")
 includeProject("tests-oid4vc-integration", "tests/oid4vc-integration")
 includeProject("tests-oauth2-integration", "tests/oauth2-integration")
 includeProject("tests-oidf-conformance-oidc-op", "tests/oidf/conformance/oidc/op")
+includeProject("tests-oidf-conformance-oid4vc", "tests/oidf/conformance/oid4vc")
+includeProject("tests-oidf-conformance-oid4vc-services", "tests/oidf/conformance/oid4vc-services")
+includeProject("tests-oidf-conformance-oid4vc-wallet", "tests/oidf/conformance/oid4vc-wallet")
 
 
 // ===========================================

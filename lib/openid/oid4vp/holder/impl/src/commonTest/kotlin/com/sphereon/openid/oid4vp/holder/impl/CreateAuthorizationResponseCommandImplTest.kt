@@ -17,11 +17,7 @@
 package com.sphereon.openid.oid4vp.holder.impl
 
 import com.sphereon.core.api.Err
-import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
-import com.sphereon.core.api.binary.TypeToken
-import com.sphereon.core.api.binary.typeToken
-import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.CoseCryptoServiceImpl
 import com.sphereon.mdoc.MdocSignServiceImpl
 import com.sphereon.mdoc.SessionTranscriptCborCodecImpl
@@ -31,15 +27,16 @@ import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodecImpl
 import com.sphereon.mdoc.oid4vp.MdocOid4vpServiceImpl
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.ParsedTransactionDataEntry
+import com.sphereon.openid.oid4vp.common.TransactionDataEntry
 import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.vpToken
+import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
+import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
-import com.sphereon.sdjwt.PresentSdJwtArgs
-import com.sphereon.sdjwt.PresentSdJwtResult
-import com.sphereon.sdjwt.command.PresentSdJwtCommand
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -301,6 +298,182 @@ class CreateAuthorizationResponseCommandImplTest {
         }
 
     @Test
+    fun dcqlExplicitlyDisablingHolderBindingCreatesSelectiveSdJwtWithoutKb() =
+        runTest {
+            val command = createCommand()
+            val resolvedRequest =
+                createResolvedRequest().copy(
+                    dcqlQuery =
+                        DcqlQuery(
+                            credentials =
+                                listOf(
+                                    DcqlCredentialQuery(
+                                        id = "identity_credential_query",
+                                        format = "dc+sd-jwt",
+                                        meta =
+                                            JsonObject(
+                                                mapOf(
+                                                    "vct_values" to JsonArray(listOf(JsonPrimitive("https://credentials.example/identity"))),
+                                                ),
+                                            ),
+                                        require_cryptographic_holder_binding = false,
+                                    ),
+                                ),
+                        ),
+                )
+            val selectedCredential =
+                SelectedCredential(
+                    credentialQueryId = "identity_credential_query",
+                    credentialId = "sdjwt-1",
+                    presentation =
+                        "eyJhbGciOiJFUzI1NiJ9." +
+                            "eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlL2lkZW50aXR5In0.signature~",
+                    format = "dc+sd-jwt",
+                    holderKeyRef = "opaque-holder-key-ref",
+                )
+
+            val result = command.execute(CreateAuthorizationResponseArgs(resolvedRequest, listOf(selectedCredential)))
+
+            assertIs<Ok<*>>(result)
+            assertEquals(
+                selectedCredential.presentation,
+                result.value.vpToken?.getSinglePresentation("identity_credential_query"),
+            )
+        }
+
+    @Test
+    fun `DCQL default holder binding rejects SD-JWT without holder key`() =
+        runTest {
+            val command = createCommand()
+            val resolvedRequest =
+                createResolvedRequest().copy(
+                    dcqlQuery =
+                        DcqlQuery(
+                            credentials =
+                                listOf(
+                                    DcqlCredentialQuery(
+                                        id = "identity_credential_query",
+                                        format = "dc+sd-jwt",
+                                        meta =
+                                            JsonObject(
+                                                mapOf(
+                                                    "vct_values" to JsonArray(listOf(JsonPrimitive("https://credentials.example/identity"))),
+                                                ),
+                                            ),
+                                    ),
+                                ),
+                        ),
+                )
+            val selectedCredential =
+                SelectedCredential(
+                    credentialQueryId = "identity_credential_query",
+                    credentialId = "sdjwt-1",
+                    presentation = "issuer.jwt.signature~disclosure~",
+                    format = "dc+sd-jwt",
+                )
+
+            val result = command.execute(CreateAuthorizationResponseArgs(resolvedRequest, listOf(selectedCredential)))
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("has not been prepared by the holder signing surface"))
+        }
+
+    @Test
+    fun dcqlDefaultHolderBindingAcceptsSdJwtPreparedByHolderSigningDelegate() =
+        runTest {
+            val command = createCommand()
+            val resolvedRequest =
+                createResolvedRequest().let { base ->
+                    base.copy(
+                        request = base.request.copy(nonce = "test-nonce"),
+                        dcqlQuery =
+                            DcqlQuery(
+                                credentials =
+                                    listOf(
+                                        DcqlCredentialQuery(
+                                            id = "identity_credential_query",
+                                            format = "dc+sd-jwt",
+                                            meta =
+                                                JsonObject(
+                                                    mapOf(
+                                                        "vct_values" to JsonArray(listOf(JsonPrimitive("https://credentials.example/identity"))),
+                                                    ),
+                                                ),
+                                        ),
+                                    ),
+                            ),
+                    )
+                }
+            val preparedPresentation =
+                "eyJhbGciOiJFUzI1NiJ9.e30.signature~" +
+                    "eyJhbGciOiJFUzI1NiJ9." +
+                    "eyJhdWQiOiJ0ZXN0LWNsaWVudCIsIm5vbmNlIjoidGVzdC1ub25jZSIsImlhdCI6MSwic2RfaGFzaCI6IngifQ.signature"
+            val selectedCredential =
+                SelectedCredential(
+                    credentialQueryId = "identity_credential_query",
+                    credentialId = "sdjwt-1",
+                    presentation = preparedPresentation,
+                    format = "dc+sd-jwt",
+                    sdJwtKeyBindingApplied = true,
+                )
+
+            val result = command.execute(CreateAuthorizationResponseArgs(resolvedRequest, listOf(selectedCredential)))
+
+            assertIs<Ok<*>>(result, result.toString())
+            assertEquals(preparedPresentation, result.value.vpToken?.getSinglePresentation("identity_credential_query"))
+        }
+
+    @Test
+    fun transactionDataRejectsCredentialQueryThatDisablesHolderBinding() =
+        runTest {
+            val command = createCommand()
+            val resolvedRequest =
+                createResolvedRequest().copy(
+                    dcqlQuery =
+                        DcqlQuery(
+                            credentials =
+                                listOf(
+                                    DcqlCredentialQuery(
+                                        id = "identity_credential_query",
+                                        format = "dc+sd-jwt",
+                                        meta =
+                                            JsonObject(
+                                                mapOf(
+                                                    "vct_values" to JsonArray(listOf(JsonPrimitive("https://credentials.example/identity"))),
+                                                ),
+                                            ),
+                                        require_cryptographic_holder_binding = false,
+                                    ),
+                                ),
+                        ),
+                    transactionData =
+                        listOf(
+                            ParsedTransactionDataEntry(
+                                transactionData =
+                                    TransactionDataEntry(
+                                        type = "payment",
+                                        credentialIds = listOf("identity_credential_query"),
+                                    ),
+                                transactionDataIndex = 0,
+                                encoded = "encoded-transaction-data",
+                            ),
+                        ),
+                )
+            val selectedCredential =
+                SelectedCredential(
+                    credentialQueryId = "identity_credential_query",
+                    credentialId = "sdjwt-1",
+                    presentation = "issuer.jwt.signature~disclosure~",
+                    format = "dc+sd-jwt",
+                )
+
+            val result = command.execute(CreateAuthorizationResponseArgs(resolvedRequest, listOf(selectedCredential)))
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("Transaction data references Credential Query"))
+        }
+
+    @Test
     fun `test create response with mixed non-mdoc credential formats`() =
         runTest {
             // SD-JWT (no holder key -> pass-through) + JWT VP pass-through. The mso_mdoc format is
@@ -356,7 +529,6 @@ class CreateAuthorizationResponseCommandImplTest {
             )
         return CreateAuthorizationResponseCommandImpl(
             execution = execution,
-            presentSdJwtCommand = FakePresentSdJwtCommand,
             mdocOid4vpService =
                 MdocOid4vpServiceImpl(
                     signService = mdocSignService,
@@ -369,16 +541,4 @@ class CreateAuthorizationResponseCommandImplTest {
         )
     }
 
-    /**
-     * Fake SD-JWT present command. These tests never set [SelectedCredential.holderKeyAlias], so
-     * the holder skips KB-JWT production and this fake is never invoked. It fails loudly if a test
-     * ever does request a Key Binding JWT, so the no-op path stays honest.
-     */
-    private object FakePresentSdJwtCommand : PresentSdJwtCommand {
-        override val isEnabled: Boolean = true
-        override val inputTypeToken: TypeToken<PresentSdJwtArgs> = typeToken<PresentSdJwtArgs>()
-        override val outputTypeToken: TypeToken<PresentSdJwtResult> = typeToken<PresentSdJwtResult>()
-
-        override suspend fun execute(args: PresentSdJwtArgs): IdkResult<PresentSdJwtResult, IdkError> = error("FakePresentSdJwtCommand should not be called: no test sets holderKeyAlias")
-    }
 }

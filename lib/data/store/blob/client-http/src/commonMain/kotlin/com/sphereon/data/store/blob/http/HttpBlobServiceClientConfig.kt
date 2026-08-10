@@ -45,23 +45,54 @@ enum class HttpBlobAuthMode {
 @Serializable
 data class HttpBlobAuthConfig(
     val mode: HttpBlobAuthMode = HttpBlobAuthMode.BEARER,
-    /** Static bearer token (STATIC_TOKEN mode — use ${secret:@env:BLOB_TOKEN} in config) */
-    val token: String? = null,
+    /** Opaque ID for the static bearer token. The token itself is never serialized. */
+    @SerialName("tokenSecretId")
+    val tokenSecretId: String? = null,
     /** OAuth2 token endpoint URL (CLIENT_CREDENTIALS mode) */
     @SerialName("tokenUri")
     val tokenUri: String? = null,
     /** OAuth2 client ID (CLIENT_CREDENTIALS mode) */
     @SerialName("clientId")
     val clientId: String? = null,
-    /** OAuth2 client secret (CLIENT_CREDENTIALS mode — use ${secret:@env:BLOB_CLIENT_SECRET} in config) */
-    @SerialName("clientSecret")
-    val clientSecret: String? = null,
+    /** Opaque ID for the OAuth2 client secret. The secret itself is never serialized. */
+    @SerialName("clientSecretId")
+    val clientSecretId: String? = null,
     /** OAuth2 scopes to request */
     val scopes: List<String> = emptyList(),
-    /** Fallback tenant header (only used when auth is disabled / JWT has no tenant claim) */
-    @SerialName("tenantHeader")
-    val tenantHeader: String? = "X-Tenant-Id",
-)
+) {
+    init {
+        tokenSecretId?.requireOpaqueSecretId("tokenSecretId")
+        clientSecretId?.requireOpaqueSecretId("clientSecretId")
+
+        when (mode) {
+            HttpBlobAuthMode.BEARER -> {
+                require(tokenSecretId == null && clientSecretId == null) {
+                    "BEARER authentication derives credentials from the authenticated session"
+                }
+            }
+
+            HttpBlobAuthMode.STATIC_TOKEN -> {
+                require(tokenSecretId != null && clientSecretId == null) {
+                    "STATIC_TOKEN authentication requires only tokenSecretId"
+                }
+            }
+
+            HttpBlobAuthMode.CLIENT_CREDENTIALS -> {
+                require(clientSecretId != null && tokenSecretId == null) {
+                    "CLIENT_CREDENTIALS authentication requires only clientSecretId"
+                }
+            }
+        }
+    }
+}
+
+internal fun String.requireOpaqueSecretId(fieldName: String) {
+    require(OPAQUE_SECRET_ID_PATTERN.matches(this)) {
+        "$fieldName must be an opaque server-generated secret ID"
+    }
+}
+
+private val OPAQUE_SECRET_ID_PATTERN = Regex("""^sec_[A-Za-z0-9_-]{16,128}$""")
 
 /**
  * Configuration for an HTTP blob service client connecting to service-data's blob REST API.

@@ -222,10 +222,6 @@ data class ProfileMetadata(
      */
     val profile: String = "default",
     /**
-     * Whether this setting is a secret reference.
-     */
-    val isSecretRef: Boolean = false,
-    /**
      * Additional metadata for the setting.
      */
     val additionalMetadata: Map<String, String> = emptyMap(),

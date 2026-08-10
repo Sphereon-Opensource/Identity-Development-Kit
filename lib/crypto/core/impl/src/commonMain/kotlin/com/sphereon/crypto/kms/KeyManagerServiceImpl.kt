@@ -59,7 +59,7 @@ import com.sphereon.crypto.core.kms.QueryProvidersArgs
 import com.sphereon.crypto.core.kms.QueryProvidersCommand
 import com.sphereon.crypto.core.kms.QueryProvidersResult
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
-import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
+import com.sphereon.crypto.kms.command.CreateRawSignatureCommandImpl
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureResult
 import com.sphereon.crypto.core.kms.command.DecryptArgs
 import com.sphereon.crypto.core.kms.command.DecryptCommand
@@ -148,7 +148,10 @@ open class KeyManagerServiceImpl
         private val queryProvidersCommand: QueryProvidersCommand,
         private val getAllCapabilitiesCommand: GetAllCapabilitiesCommand,
         // Signature commands
-        private val createRawSignatureCommand: CreateRawSignatureCommand,
+        // KeyManagerService is the LOCAL crypto implementation. Its internal delegation
+        // must not re-enter config routing for the same command, otherwise a remotely
+        // routed signature command can cycle through service-token creation back here.
+        private val createRawSignatureCommand: CreateRawSignatureCommandImpl,
         private val verifyRawSignatureCommand: VerifyRawSignatureCommand,
         private val signDigestCommand: SignDigestCommand,
         private val verifyDigestCommand: VerifyDigestCommand,
@@ -180,14 +183,15 @@ open class KeyManagerServiceImpl
 
         override fun getProviderIds() = providerRegistry.getProviderIds()
 
-        override fun getProviderById(id: String) = providerRegistry.getProviderById(id)
+        override suspend fun getProviderById(id: String) = providerRegistry.getProviderById(id)
 
-        override fun getProvider(
+        override suspend fun getProvider(
             providerId: String?,
             alg: SignatureAlgorithm?,
         ) = providerRegistry.getProvider(providerId, alg)
 
-        override fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm) = providerRegistry.getKmsBySignatureAlgorithm(signatureAlgorithm)
+        override suspend fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm) =
+            providerRegistry.getKmsBySignatureAlgorithm(signatureAlgorithm)
 
         override fun registerProvider(
             provider: KmsProvider,

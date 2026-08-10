@@ -50,6 +50,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -61,6 +62,13 @@ import kotlin.test.assertTrue
  * - Disabled endpoints are excluded from routing and metadata
  */
 class CommandBackedHttpAdapterTest {
+    @Test
+    fun malformedAdapterIdIsRejectedDuringConstruction() {
+        assertFailsWith<IllegalArgumentException> {
+            TestUnavailableAdapter(TestSessionExecution(), id = "legacy-adapter")
+        }
+    }
+
     @Test
     fun endpointCommandMatchesRequestBasedOnEndpointDescriptor() =
         runTest {
@@ -296,8 +304,9 @@ class CommandBackedHttpAdapterTest {
      */
     private class TestUnavailableAdapter(
         execution: SessionExecution,
+        id: String = "test.http.unavailable",
     ) : CommandBackedHttpAdapter(
-            id = "test-unavailable-adapter",
+            id = id,
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
         ) {
@@ -323,7 +332,7 @@ class CommandBackedHttpAdapterTest {
     private class TestGenericFailureAdapter(
         execution: SessionExecution,
     ) : CommandBackedHttpAdapter(
-            id = "test-generic-failure-adapter",
+            id = "test.http.generic-failure",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
         ) {

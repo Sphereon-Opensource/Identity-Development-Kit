@@ -30,6 +30,7 @@ import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
+import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
@@ -97,6 +98,7 @@ class VerifyJwtCommandImpl(
             authorizationServer = applied.authorizationServer,
             expectedAudience = applied.expectedAudience,
             jwksUri = applied.jwksUri,
+            trustedIdentifier = applied.trustedIdentifier,
             clockSkewSeconds = applied.clockSkewSeconds ?: configuredClockSkewSeconds,
         ).mapError { IdkError.fromDTO(it) }
     }
@@ -115,8 +117,16 @@ class VerifyJwtCommandImpl(
         authorizationServer: String,
         expectedAudience: String?,
         jwksUri: String? = null,
+        trustedIdentifier: IdentifierOptsOrResult? = null,
         clockSkewSeconds: Long = VerifyJwtArgs.DEFAULT_CLOCK_SKEW_SECONDS,
     ): IdkResult<TokenPayload.Jwt, ResourceServerError> {
+        if (jwksUri != null && trustedIdentifier != null) {
+            return Err(
+                ResourceServerError.InvalidToken.Malformed(
+                    reason = "jwksUri and trustedIdentifier are mutually exclusive verification anchors",
+                ),
+            )
+        }
         // Parse the header once up front — used for kid-scoped JWKS lookup below, then reused
         // after signature verification for typ validation (avoids the second decode).
         val parts = jwt.split(".")
@@ -135,7 +145,9 @@ class VerifyJwtCommandImpl(
             }
 
         val identifier =
-            if (jwksUri != null) {
+            if (trustedIdentifier != null) {
+                trustedIdentifier
+            } else if (jwksUri != null) {
                 val kid = protectedHeader["kid"]?.jsonPrimitive?.content
                 ExternalIdentifierJwksUrlOpts(
                     identifier = jwksUri,

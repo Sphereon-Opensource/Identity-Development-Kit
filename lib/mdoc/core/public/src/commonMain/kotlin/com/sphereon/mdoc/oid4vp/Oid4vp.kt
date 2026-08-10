@@ -181,9 +181,8 @@ sealed interface IOid4VPFormat {
     @SerialName("mso_mdoc")
     val mso_mdoc: IOid4VPSupportedAlgorithm?
 
-    // SPHEREON Funke: Experimental credential format extension
-    @SerialName("vc+sd-jwt")
-    val vc_sd_jwt: IOid4VPSupportedAlgorithm?
+    @SerialName("dc+sd-jwt")
+    val dc_sd_jwt: IOid4VPSupportedAlgorithm?
 }
 
 @Serializable
@@ -192,22 +191,21 @@ sealed interface IOid4VPFormat {
 @ObjCName("Oid4VPFormat", exact = true)
 data class Oid4VPFormat(
     @SerialName("mso_mdoc") override val mso_mdoc: Oid4VPSupportedAlgorithm? = null,
-    // SPHEREON Funke: Experimental credential format extension
     @EncodeDefault(EncodeDefault.Mode.NEVER)
-    @SerialName("vc+sd-jwt") override val vc_sd_jwt: Oid4VPSupportedAlgorithm? = null,
+    @SerialName("dc+sd-jwt") override val dc_sd_jwt: Oid4VPSupportedAlgorithm? = null,
 ) : IOid4VPFormat {
     init {
-        require(mso_mdoc == null || vc_sd_jwt == null) { "requires that either mso_mdoc or vc+sd_jwt is present, but both are present" }
-        require(mso_mdoc != null || vc_sd_jwt != null) { "requires that either mso_mdoc or vc+sd_jwt is present, but both are absent" }
+        require(mso_mdoc == null || dc_sd_jwt == null) { "requires that either mso_mdoc or dc+sd-jwt is present, but both are present" }
+        require(mso_mdoc != null || dc_sd_jwt != null) { "requires that either mso_mdoc or dc+sd-jwt is present, but both are absent" }
         require(mso_mdoc == null || mso_mdoc.algorithmObjects.isNotEmpty()) { "ISO 18015-7 requires that mso_mdoc contains at least one algorithm" }
-        require(vc_sd_jwt == null || vc_sd_jwt.algorithmObjects.isNotEmpty()) { "requires that vc+sd_jwt contains at least one algorithm" }
+        require(dc_sd_jwt == null || dc_sd_jwt.algorithmObjects.isNotEmpty()) { "requires that dc+sd-jwt contains at least one algorithm" }
     }
 
     fun validateAlgorithms(): Boolean {
         if (mso_mdoc != null) {
             return mso_mdoc.algorithmObjects.isNotEmpty()
-        } else if (vc_sd_jwt != null) {
-            return vc_sd_jwt.algorithmObjects.isNotEmpty()
+        } else if (dc_sd_jwt != null) {
+            return dc_sd_jwt.algorithmObjects.isNotEmpty()
         }
         return false
     }
@@ -221,8 +219,7 @@ data class Oid4VPFormat(
             with(dto) {
                 Oid4VPFormat(
                     mso_mdoc = mso_mdoc?.let { Oid4VPSupportedAlgorithm.fromDTO(it) },
-                    // SPHEREON Funke: Experimental credential format extension
-                    vc_sd_jwt = vc_sd_jwt?.let { Oid4VPSupportedAlgorithm.fromDTO(it) },
+                    dc_sd_jwt = dc_sd_jwt?.let { Oid4VPSupportedAlgorithm.fromDTO(it) },
                 )
             }
     }
@@ -442,10 +439,9 @@ enum class Oid4VPFormatIdentifier(
     @SerialName("mso_mdoc")
     MSO_MDOC("mso_mdoc"),
 
-    // SPHEREON Funke: Experimental credential format extension
     @JsName("SD_JWT_VC")
-    @SerialName("vc+sd-jwt")
-    SD_JWT_VC("vc+sd-jwt"),
+    @SerialName("dc+sd-jwt")
+    SD_JWT_VC("dc+sd-jwt"),
     ;
 
     companion object {
@@ -556,7 +552,7 @@ data class Oid4vpSubmissionDescriptor(
         fun fromInputDescriptor(descriptor: IOid4VPInputDescriptor): Oid4vpSubmissionDescriptor =
             with(descriptor) {
                 val formatId =
-                    if (format.vc_sd_jwt?.alg?.isNotEmpty() == true) {
+                    if (format.dc_sd_jwt?.alg?.isNotEmpty() == true) {
                         Oid4VPFormatIdentifier.SD_JWT_VC
                     } else {
                         Oid4VPFormatIdentifier.MSO_MDOC

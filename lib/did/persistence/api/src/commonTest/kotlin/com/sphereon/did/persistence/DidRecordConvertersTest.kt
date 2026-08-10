@@ -21,6 +21,9 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.did.manager.DidRole
 import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.DidService
@@ -299,13 +302,38 @@ class DidRecordConvertersTest {
     }
 
     @Test
-    fun missingKmsBindingRejected() {
+    fun directPublicJwkDoesNotRequireKmsBinding() {
         val vm =
             VerificationMethod(
                 id = "did:example:123#key-1",
                 type = "JsonWebKey2020",
                 controller = "did:example:123",
-                publicKeyMultibase = "z",
+                publicKeyJwk =
+                    Jwk(
+                        kty = JwaKeyType.EC,
+                        crv = JwaCurve.P_256,
+                        x = "x-coordinate",
+                        y = "y-coordinate",
+                        kid = "public-key-1",
+                    ),
+            )
+        val doc = DidDocument(id = "did:example:123", verificationMethod = listOf(vm))
+
+        val detail = (doc.toDidDetail(ctx()) as Ok).value
+
+        val record = detail.verificationMethod.single()
+        assertNotNull(record.publicKeyJwkJson)
+        assertNull(record.kmsProviderId)
+        assertNull(record.kmsKeyAlias)
+    }
+
+    @Test
+    fun keylessManagedVmWithoutKmsBindingRejected() {
+        val vm =
+            VerificationMethod(
+                id = "did:example:123#key-1",
+                type = "JsonWebKey2020",
+                controller = "did:example:123",
             )
         val doc = DidDocument(id = "did:example:123", verificationMethod = listOf(vm))
         val result = doc.toDidDetail(ctx()) // no bindings supplied

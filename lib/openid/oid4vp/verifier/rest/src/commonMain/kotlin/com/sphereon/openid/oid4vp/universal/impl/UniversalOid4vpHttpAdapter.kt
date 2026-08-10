@@ -25,6 +25,9 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.universal.CreateAuthRequestEndpointCommand
 import com.sphereon.openid.oid4vp.universal.DeleteAuthRequestEndpointCommand
 import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusEndpointCommand
+import com.sphereon.openid.oid4vp.verifier.config.MutableOid4vpVerifierInstanceIdProvider
+import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceResolver
+import com.sphereon.openid.oid4vp.verifier.impl.http.AbstractOid4vpVerifierHttpAdapter
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.ContributesTo
@@ -59,10 +62,12 @@ import dev.zacsweers.metro.binding
 @ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
 class UniversalOid4vpHttpAdapter(
     execution: SessionExecution,
+    verifierInstanceResolver: Oid4vpVerifierInstanceResolver,
+    verifierInstanceIdProvider: MutableOid4vpVerifierInstanceIdProvider,
     private val createCommand: CreateAuthRequestEndpointCommand,
     private val getStatusCommand: GetAuthRequestStatusEndpointCommand,
     private val deleteCommand: DeleteAuthRequestEndpointCommand,
-) : CommandBackedHttpAdapter(
+) : AbstractOid4vpVerifierHttpAdapter(
         id = ID,
         execution = execution,
         mount =
@@ -70,9 +75,11 @@ class UniversalOid4vpHttpAdapter(
                 serverPrefix = "",
                 adapterBasePath = "/oid4vp",
             ),
+        verifierInstanceResolver = verifierInstanceResolver,
+        verifierInstanceIdProvider = verifierInstanceIdProvider,
     ) {
     companion object {
-        const val ID: String = "UNIVERSAL_OID4VP"
+        const val ID: String = "oid4vp.universal.http"
 
         /**
          * Base path for Universal OID4VP backend endpoints.

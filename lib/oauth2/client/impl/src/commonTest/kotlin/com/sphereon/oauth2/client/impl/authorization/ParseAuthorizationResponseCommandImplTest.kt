@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
 class ParseAuthorizationResponseCommandImplTest {
     private val app = createOAuth2ClientTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("parse-auth-response-test")
+    private val session = context.sessionContextManager.createOrGetFromId("parse-auth-response-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     private val execution = session.asCoreApiServiceGraph().serviceExecution
     private val command = ParseAuthorizationResponseCommandImpl(execution)
 
@@ -43,6 +43,76 @@ class ParseAuthorizationResponseCommandImplTest {
             assertTrue(parsed is ParsedAuthorizationResponse.Success)
             assertEquals("abc123", parsed.response.code)
             assertEquals("xyz789", parsed.response.state)
+        }
+
+    @Test
+    fun parse_fapiResponse_capturesAndValidatesIssuerAndState() =
+        runTest {
+            val result =
+                command.execute(
+                    ParseAuthorizationResponseArgs(
+                        redirectUrl = "https://rp.example.com/callback?code=abc123&state=expected&iss=https%3A%2F%2Fas.example.com",
+                        expectedState = "expected",
+                        expectedIssuer = "https://as.example.com",
+                        requireIssuer = true,
+                    ),
+                )
+
+            assertTrue(result.isOk, "expected success: ${if (result.isErr) result.error else ""}")
+            val parsed = result.value as ParsedAuthorizationResponse.Success
+            assertEquals("\"https://as.example.com\"", parsed.response.additionalParameters["iss"].toString())
+        }
+
+    @Test
+    fun parse_fapiResponse_rejectsMissingOrMismatchedIssuerBeforeTokenExchange() =
+        runTest {
+            val missing =
+                command.execute(
+                    ParseAuthorizationResponseArgs(
+                        redirectUrl = "https://rp.example.com/callback?code=abc123&state=expected",
+                        expectedState = "expected",
+                        expectedIssuer = "https://as.example.com",
+                        requireIssuer = true,
+                    ),
+                )
+            assertTrue(missing.isErr)
+            assertEquals("invalid_grant", missing.error.code)
+
+            val mismatch =
+                command.execute(
+                    ParseAuthorizationResponseArgs(
+                        redirectUrl = "https://rp.example.com/callback?code=abc123&state=expected&iss=https%3A%2F%2Fother.example.com",
+                        expectedState = "expected",
+                        expectedIssuer = "https://as.example.com",
+                        requireIssuer = true,
+                    ),
+                )
+            assertTrue(mismatch.isErr)
+            assertEquals("invalid_grant", mismatch.error.code)
+        }
+
+    @Test
+    fun parse_boundResponse_rejectsMissingOrMismatchedState() =
+        runTest {
+            val missing =
+                command.execute(
+                    ParseAuthorizationResponseArgs(
+                        redirectUrl = "https://rp.example.com/callback?code=abc123",
+                        expectedState = "expected",
+                    ),
+                )
+            assertTrue(missing.isErr)
+            assertEquals("invalid_grant", missing.error.code)
+
+            val mismatch =
+                command.execute(
+                    ParseAuthorizationResponseArgs(
+                        redirectUrl = "https://rp.example.com/callback?code=abc123&state=other",
+                        expectedState = "expected",
+                    ),
+                )
+            assertTrue(mismatch.isErr)
+            assertEquals("invalid_grant", mismatch.error.code)
         }
 
     @Test

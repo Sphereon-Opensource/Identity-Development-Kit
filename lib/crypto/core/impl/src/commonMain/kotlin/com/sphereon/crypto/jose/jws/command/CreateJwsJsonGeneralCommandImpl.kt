@@ -24,7 +24,8 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.crypto.core.sign.SignatureService
+import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
+import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.jose.jws.JwsJsonGeneral
 import com.sphereon.crypto.jose.jws.assembleGeneral
 import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
@@ -48,7 +49,7 @@ import kotlin.native.ObjCName
 class CreateJwsJsonGeneralCommandImpl(
     execution: SessionExecution,
     private val prepareJwsCommand: PrepareJwsCommand,
-    private val signatureService: SignatureService,
+    private val createRawSignatureCommand: CreateRawSignatureCommand,
 ) : TypedServiceCommandAdapter<CreateJwsJsonArgs, JwsJsonGeneral, IdkError>(
         commandId = CreateJwsJsonGeneralCommand.COMMAND_ID,
         execution = execution,
@@ -73,16 +74,31 @@ class CreateJwsJsonGeneralCommandImpl(
         val prepared = prepareResult.value
 
         // Sign the input
-        val signatureBytes =
+        // Execute through the public KMS command binding. That binding resolves via the
+        // session-scoped command registry, so route-only workloads (for example tenant-AS)
+        // honor transport.routing.modules.kms.services.signature instead of accidentally
+        // selecting an in-process software provider from SignatureService/KeyManagerService.
+        val signatureResult =
             try {
-                signatureService.createRawSignature(
-                    keyInfo = (prepared.identifier as ManagedIdentifierKeyResult).keyInfo,
-                    input = prepared.signingInput,
-                    requireX5Chain = false,
+                createRawSignatureCommand.execute(
+                    CreateRawSignatureArgs(
+                        keyInfo = (prepared.identifier as ManagedIdentifierKeyResult).keyInfo,
+                        input = prepared.signingInput,
+                        requireX5Chain = false,
+                    ),
                 )
             } catch (expected: Exception) {
                 return IdkResult.err(IdkError.fromString("Failed to create signature: ${expected.message}", exception = expected))
             }
+        val signatureBytes =
+            signatureResult.getOrElse { error ->
+                return IdkResult.err(
+                    IdkError.fromString(
+                        "Failed to create signature: ${error.message.defaultMessage}",
+                        exception = error.exception as? Exception,
+                    ),
+                )
+            }.signature
 
         return prepared.assembleGeneral(signatureBytes).asOkResult()
     }

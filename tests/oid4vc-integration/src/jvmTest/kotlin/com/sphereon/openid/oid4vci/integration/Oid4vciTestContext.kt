@@ -71,7 +71,7 @@ class Oid4vciTestContext(
 
     val app: AppGraph = createOid4vciTestAppGraph(application = testInstance)
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId("oid4vci-e2e-test")
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId("oid4vci-e2e-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     val execution = session.asCoreApiServiceGraph().serviceExecution
     val signingKeyStore: SigningKeyStore = (app as Oid4vciSigningKeyStoreGraph).signingKeyStore
 

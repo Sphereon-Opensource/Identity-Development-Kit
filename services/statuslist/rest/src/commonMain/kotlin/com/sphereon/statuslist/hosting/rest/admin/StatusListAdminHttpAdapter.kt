@@ -64,6 +64,6 @@ class StatusListAdminHttpAdapter(
         )
 
     companion object {
-        const val ID = "statuslist-admin"
+        const val ID = "statuslist.admin.http"
     }
 }

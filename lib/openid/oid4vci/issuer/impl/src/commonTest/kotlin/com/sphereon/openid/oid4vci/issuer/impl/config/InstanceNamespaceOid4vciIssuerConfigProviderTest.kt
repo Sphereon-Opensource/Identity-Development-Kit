@@ -93,7 +93,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     }
 
     @Test
-    fun registryProviderReadsInstanceSignedMetadataSettings() {
+    fun registryProviderReadsInstanceSignedMetadataSettings() = runTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuer.signed-metadata.enabled" to "false",
@@ -106,7 +106,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val (provider, holder) = newRegistryProvider(properties)
         holder.setCurrentInstanceId("acme")
 
-        assertNotNull(provider.signingKey, "signed metadata should be enabled from the active issuer instance")
+        assertNotNull(provider.signingKey(), "signed metadata should be enabled from the active issuer instance")
     }
 
     @Test
@@ -197,7 +197,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     }
 
     @Test
-    fun registryProviderDoesNotFallBackToSingularCredentialMechanicsWhenInstanceOmitsThem() {
+    fun registryProviderDoesNotFallBackToSingularCredentialMechanicsWhenInstanceOmitsThem() = runTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuer.identifier" to "https://singular.example.com",
@@ -221,11 +221,11 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         assertEquals("https://acme.example.com", provider.issuerIdentifier)
         assertNull(provider.authorizationServers)
         assertEquals(emptySet(), provider.credentialConfigurations.keys)
-        assertEquals(emptySet(), provider.credentialSigningConfigs.keys)
+        assertEquals(emptySet(), provider.credentialSigningConfigs().keys)
     }
 
     @Test
-    fun registryProviderFallsBackToSingularNamespaceWhenHolderEmpty() {
+    fun registryProviderFallsBackToSingularNamespaceWhenHolderEmpty() = runTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuer.identifier" to "https://singular.example.com",
@@ -279,7 +279,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     }
 
     @Test
-    fun credentialSigningConfigFallsBackToIssuerSigningAlias() {
+    fun credentialSigningConfigFallsBackToIssuerSigningAlias() = runTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuer.signingKeyAlias" to "issuer-signing-tenant-default",
@@ -291,12 +291,12 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
 
         assertEquals(
             "issuer-signing-tenant-default",
-            provider.credentialSigningConfigs["EuPid"]?.signingKeyAlias,
+            provider.credentialSigningConfigs()["EuPid"]?.signingKeyAlias,
         )
     }
 
     @Test
-    fun credentialSigningConfigReadsDesignBoundExpirationAndFlatStatusListAlias() {
+    fun credentialSigningConfigReadsDesignBoundExpirationAndFlatStatusListAlias() = runTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
@@ -310,7 +310,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val (provider, holder) = newRegistryProvider(properties)
         holder.setCurrentInstanceId("acme")
 
-        assertEquals(365, provider.credentialSigningConfigs["EuPid"]?.expirationInDays)
+        assertEquals(365, provider.credentialSigningConfigs()["EuPid"]?.expirationInDays)
         val binding = provider.statusListBindingFor("EuPid")
         assertTrue(binding.isErr, "flat statusListId must be treated as a configured status binding")
         assertTrue(
@@ -321,7 +321,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     }
 
     @Test
-    fun registryProviderPublishesEncryptionMetadataFromInstanceDefaults() {
+    fun registryProviderPublishesEncryptionMetadataFromInstanceDefaults() = runTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuers.acme.encryption.response.mode" to "supported",
@@ -345,7 +345,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val request = assertNotNull(provider.credentialRequestEncryption)
         assertEquals(listOf("A256GCM", "A128GCM"), request.encValuesSupported)
         assertEquals(false, request.encryptionRequired)
-        val decryptor = assertNotNull(provider.credentialRequestDecryptionKey) as ManagedOptsKeyInfo
+        val decryptor = assertNotNull(provider.credentialRequestDecryptionKey()) as ManagedOptsKeyInfo
         assertEquals("issuer-request-decryption-acme", decryptor.identifier.alias)
         assertEquals("software", decryptor.identifier.providerId)
     }

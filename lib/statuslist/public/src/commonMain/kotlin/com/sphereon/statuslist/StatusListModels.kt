@@ -330,18 +330,26 @@ data class CreateStatusListArgs(
     val statusListUri: String,
     val length: Int = DEFAULT_STATUS_LIST_LENGTH,
     val bitsPerStatus: Int = 1,
+    /**
+     * KMS key alias for a deployment that manages its own signing keys. Ignored outright where a
+     * [com.sphereon.statuslist.spi.StatusListSigningKeyNameResolver] is bound, since the server then
+     * owns the key. Where none is bound it is required: a list with no key is refused rather than
+     * signed under a name derived from [correlationId].
+     */
     val signingKeyAlias: String? = null,
     /**
      * How the signing key is referenced in the token's JOSE header: `did:<method>` (emit the DID
      * verification-method id as `kid`), `x5c` (embed the certificate chain), `jwk-thumbprint`, or null
-     * (let the KMS decide). Set this to MATCH how the credentials that reference this list are signed —
-     * many wallets reject a status list whose trust anchor / mechanism differs from the credential's.
+     * (let the KMS decide). This selects the verification material published for the status-list
+     * token itself. It is
+     * independent from the key and publication mode used to sign credentials that reference it.
      */
     val signingKeyMode: String? = null,
     /**
      * For DID signing modes, the verification-method URL used as the token's `kid`. Required to pin
      * the kid for did:web/did:webvh (not derivable from the key); a full DID URL is used verbatim, and
-     * if omitted web/webvh default to `did:web:<host>#<signingKeyAlias>`. did:jwk/did:key derive it.
+     * if omitted web/webvh default to `did:web:<host>#<resolved signing key name>`. did:jwk/did:key
+     * derive it.
      */
     val signingVerificationMethodId: String? = null,
     /** Optional PEM cert-chain path for `x5c` mode when the KMS key carries no embedded chain. */

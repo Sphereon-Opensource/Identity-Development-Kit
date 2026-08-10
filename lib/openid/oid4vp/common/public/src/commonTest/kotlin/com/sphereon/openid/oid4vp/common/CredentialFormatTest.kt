@@ -34,8 +34,8 @@ class CredentialFormatTest {
 
     @Test
     fun `fromValue returns correct enum for exact match`() {
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.fromValue("dc+sd-jwt"))
-        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.fromValue("vc+sd-jwt"))
+        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.fromValue("dc+sd-jwt"))
+        assertEquals(CredentialFormat.W3C_VC_SD_JWT, CredentialFormat.fromValue("vc+sd-jwt"))
         assertEquals(CredentialFormat.MSO_MDOC, CredentialFormat.fromValue("mso_mdoc"))
         assertEquals(CredentialFormat.JWT_VC_JSON, CredentialFormat.fromValue("jwt_vc_json"))
         assertEquals(CredentialFormat.JWT_VP_JSON, CredentialFormat.fromValue("jwt_vp_json"))
@@ -54,15 +54,17 @@ class CredentialFormatTest {
 
     @Test
     fun `fromValueLenient returns correct enum for exact match`() {
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.fromValueLenient("dc+sd-jwt"))
+        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.fromValueLenient("dc+sd-jwt"))
         assertEquals(CredentialFormat.MSO_MDOC, CredentialFormat.fromValueLenient("mso_mdoc"))
     }
 
     @Test
-    fun `fromValueLenient handles partial SD-JWT matches`() {
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.fromValueLenient("sd-jwt"))
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.fromValueLenient("SD-JWT"))
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.fromValueLenient("some-sd-jwt-variant"))
+    fun `fromValueLenient keeps SD-JWT media types distinct`() {
+        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.fromValueLenient("application/dc+sd-jwt"))
+        assertEquals(CredentialFormat.W3C_VC_SD_JWT, CredentialFormat.fromValueLenient("application/vc+sd-jwt"))
+        assertNull(CredentialFormat.fromValueLenient("sd-jwt"))
+        assertNull(CredentialFormat.fromValueLenient("SD-JWT"))
+        assertNull(CredentialFormat.fromValueLenient("some-sd-jwt-variant"))
     }
 
     @Test
@@ -91,7 +93,7 @@ class CredentialFormatTest {
     @Test
     fun `detectFormat identifies SD-JWT by tilde separator`() {
         val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~disclosure1~disclosure2~kbjwt"
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.detectFormat(sdJwt))
+        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.detectFormat(sdJwt))
     }
 
     @Test
@@ -119,8 +121,8 @@ class CredentialFormatTest {
 
     @Test
     fun `isSdJwt property works correctly`() {
-        assertTrue(CredentialFormat.SD_JWT_DC.isSdJwt)
         assertTrue(CredentialFormat.SD_JWT_VC.isSdJwt)
+        assertTrue(CredentialFormat.W3C_VC_SD_JWT.isSdJwt)
         assertFalse(CredentialFormat.MSO_MDOC.isSdJwt)
         assertFalse(CredentialFormat.JWT_VC_JSON.isSdJwt)
         assertFalse(CredentialFormat.JWT_VP_JSON.isSdJwt)
@@ -128,8 +130,8 @@ class CredentialFormatTest {
 
     @Test
     fun `isJwt property works correctly`() {
-        assertFalse(CredentialFormat.SD_JWT_DC.isJwt)
         assertFalse(CredentialFormat.SD_JWT_VC.isJwt)
+        assertFalse(CredentialFormat.W3C_VC_SD_JWT.isJwt)
         assertFalse(CredentialFormat.MSO_MDOC.isJwt)
         assertTrue(CredentialFormat.JWT_VC_JSON.isJwt)
         assertTrue(CredentialFormat.JWT_VP_JSON.isJwt)
@@ -137,8 +139,8 @@ class CredentialFormatTest {
 
     @Test
     fun `isMdoc property works correctly`() {
-        assertFalse(CredentialFormat.SD_JWT_DC.isMdoc)
         assertFalse(CredentialFormat.SD_JWT_VC.isMdoc)
+        assertFalse(CredentialFormat.W3C_VC_SD_JWT.isMdoc)
         assertTrue(CredentialFormat.MSO_MDOC.isMdoc)
         assertFalse(CredentialFormat.JWT_VC_JSON.isMdoc)
         assertFalse(CredentialFormat.JWT_VP_JSON.isMdoc)
@@ -146,8 +148,8 @@ class CredentialFormatTest {
 
     @Test
     fun `value property returns correct string`() {
-        assertEquals("dc+sd-jwt", CredentialFormat.SD_JWT_DC.value)
-        assertEquals("vc+sd-jwt", CredentialFormat.SD_JWT_VC.value)
+        assertEquals("dc+sd-jwt", CredentialFormat.SD_JWT_VC.value)
+        assertEquals("vc+sd-jwt", CredentialFormat.W3C_VC_SD_JWT.value)
         assertEquals("mso_mdoc", CredentialFormat.MSO_MDOC.value)
         assertEquals("jwt_vc_json", CredentialFormat.JWT_VC_JSON.value)
         assertEquals("jwt_vp_json", CredentialFormat.JWT_VP_JSON.value)
@@ -160,14 +162,17 @@ class CredentialFormatTest {
     @Test
     fun `detectCredentialFormat extension works`() {
         val sdJwt = "header.payload.sig~disc~kb"
-        assertEquals(CredentialFormat.SD_JWT_DC, sdJwt.detectCredentialFormat())
+        assertEquals(CredentialFormat.SD_JWT_VC, sdJwt.detectCredentialFormat())
     }
 
     @Test
     fun `matchesCredentialFormat extension works`() {
-        assertTrue("dc+sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_DC))
-        assertTrue("sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_DC))
-        assertFalse("mso_mdoc".matchesCredentialFormat(CredentialFormat.SD_JWT_DC))
+        assertTrue("dc+sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_VC))
+        assertFalse("sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_VC))
+        assertTrue("vc+sd-jwt".matchesCredentialFormat(CredentialFormat.W3C_VC_SD_JWT))
+        assertFalse("dc+sd-jwt".matchesCredentialFormat(CredentialFormat.W3C_VC_SD_JWT))
+        assertFalse("vc+sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_VC))
+        assertFalse("mso_mdoc".matchesCredentialFormat(CredentialFormat.SD_JWT_VC))
     }
 
     // ============================================================================
@@ -187,8 +192,8 @@ class CredentialFormatTest {
     @Test
     fun `serialization produces correct JSON strings through typealias`() {
         val json = Json { ignoreUnknownKeys = true }
-        assertEquals("\"dc+sd-jwt\"", json.encodeToString(CredentialFormat.SD_JWT_DC))
-        assertEquals("\"vc+sd-jwt\"", json.encodeToString(CredentialFormat.SD_JWT_VC))
+        assertEquals("\"dc+sd-jwt\"", json.encodeToString(CredentialFormat.SD_JWT_VC))
+        assertEquals("\"vc+sd-jwt\"", json.encodeToString(CredentialFormat.W3C_VC_SD_JWT))
         assertEquals("\"mso_mdoc\"", json.encodeToString(CredentialFormat.MSO_MDOC))
         assertEquals("\"jwt_vc_json\"", json.encodeToString(CredentialFormat.JWT_VC_JSON))
         assertEquals("\"jwt_vp_json\"", json.encodeToString(CredentialFormat.JWT_VP_JSON))
@@ -197,7 +202,7 @@ class CredentialFormatTest {
     @Test
     fun `deserialization from JSON string works through typealias`() {
         val json = Json { ignoreUnknownKeys = true }
-        assertEquals(CredentialFormat.SD_JWT_DC, json.decodeFromString<CredentialFormat>("\"dc+sd-jwt\""))
+        assertEquals(CredentialFormat.SD_JWT_VC, json.decodeFromString<CredentialFormat>("\"dc+sd-jwt\""))
         assertEquals(CredentialFormat.MSO_MDOC, json.decodeFromString<CredentialFormat>("\"mso_mdoc\""))
     }
 }

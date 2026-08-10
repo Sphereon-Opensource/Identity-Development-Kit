@@ -97,6 +97,20 @@ fun wrapX509CertificatePem(input: String): String {
 
 fun certificateChainToX5c(chain: Array<Certificate>): Array<String> = chain.map { it.derToBase64() }.toTypedArray()
 
+/**
+ * Returns the certificates that belong in an emitted `x5c`/`x5chain` header.
+ *
+ * KMS storage keeps the complete validation chain, including its terminal trust anchor. JOSE and
+ * COSE messages carry the leaf and any intermediate certificates; the independently configured
+ * trust anchor is deliberately omitted. A single self-signed certificate is retained because it
+ * is the only signing certificate rather than a redundant terminal certificate.
+ */
+fun x5cWithoutTerminalSelfSignedRoot(x5c: Array<String>): Array<String> {
+    if (x5c.size <= 1) return x5c
+    val terminal = certificateFromBase64Der(x5c.last())
+    return if (terminal.subjectDN == terminal.issuerDN) x5c.dropLast(1).toTypedArray() else x5c
+}
+
 fun certificateFromDer(input: ByteArray): Certificate {
     val x509 = x509CertificateFromDer(input)
     return certificateFromX509Certificate(x509, input)

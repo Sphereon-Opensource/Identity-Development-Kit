@@ -93,6 +93,7 @@ interface GrantHandler {
 data class GrantContext(
     val tokenRequest: TokenRequestData,
     val resolvedClientId: String,
+    val clientInstanceKeyJkt: String? = null,
     val proofJkt: String?,
     val certThumbprintS256: String?,
     val applied: HandleTokenRequestArgs,

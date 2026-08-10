@@ -35,7 +35,7 @@ import kotlin.test.assertTrue
 class PkceCommandTest {
     val app = createOAuth2ClientTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("pkce-command-test")
+    val session = context.sessionContextManager.createOrGetFromId("pkce-command-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     val execution = session.asCoreApiServiceGraph().serviceExecution
 
     @Test

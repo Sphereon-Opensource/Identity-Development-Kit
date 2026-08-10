@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1.7
+
+ARG RUNTIME_IMAGE
+FROM ${RUNTIME_IMAGE}
+
+# The upstream config declares Docker's embedded DNS resolver but uses a
+# literal upstream hostname, which nginx resolves eagerly and rejects when the
+# suite server starts later. A variable makes the lookup occur per request.
+RUN sed -i 's#proxy_pass http://server:8080;#set $suite_server server:8080; proxy_pass http://$suite_server;#g' /etc/nginx/nginx.conf \
+    && sed -i '/^http {/a\    map $http_host $external_port {\n        ~:(?<mapped_port>[0-9]+)$ $mapped_port;\n        default 443;\n    }' /etc/nginx/nginx.conf \
+    && sed -i 's#proxy_set_header Host $host#proxy_set_header Host $http_host#g; s#X-Forwarded-Host $host#X-Forwarded-Host $http_host#g; /X-Forwarded-Port [0-9][0-9]*;/d; /proxy_set_header Forwarded /d; /proxy_set_header X-Forwarded-Proto $scheme;/a\            proxy_set_header X-Forwarded-Port $external_port;' /etc/nginx/nginx.conf \
+    && nginx -t
+
+# The upstream development certificate has no subjectAltName. Regenerate it
+# with every hostname used by the local and CI topology so chain and hostname
+# verification both remain enabled.
+RUN openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+        -keyout /etc/ssl/private/nginx-selfsigned.key \
+        -out /etc/ssl/certs/nginx-selfsigned.crt \
+        -subj "/CN=host.docker.internal" \
+        -addext "subjectAltName=DNS:host.docker.internal,DNS:host.testcontainers.internal,DNS:localhost.emobix.co.uk,DNS:localhost,IP:127.0.0.1"
+
+LABEL com.sphereon.oidf.patch-set="vdx-10"

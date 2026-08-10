@@ -12,19 +12,20 @@ package com.sphereon.did.manager.rest.server
 
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.http.GenericHttpRequest
-import com.sphereon.core.defaults.context.DefaultTenantInputString
-import com.sphereon.di.context.TenantInput
+import com.sphereon.core.defaults.context.DefaultPrincipalInputString
+import com.sphereon.di.context.PrincipalInput
 import com.sphereon.di.session.SessionInstance
 import com.sphereon.did.manager.rest.server.adapter.DidManagerHttpAdapter
 import com.sphereon.did.manager.rest.server.ktor.configureDidManager
 import com.sphereon.did.manager.rest.server.ktor.createDidManagerAppGraph
-import com.sphereon.ktor.server.inject.resolver.TenantResolver
+import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
+import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.sessionInstance
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -38,34 +39,21 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * VDX-infra-ubb: Ktor-level integration test for X-Tenant-ID / X-User-ID forwarding through
- * `KotlinInjectPlugin` into the DID manager endpoint commands. The adapter contract on
- * [DidManagerHttpAdapter] documents that header extraction is the host's responsibility — this
- * test boots the bundled Ktor host (`configureDidManager`) and verifies that requests carrying
- * the standard headers reach a handler that exposes `sessionInstance.graph.didManagerHttpAdapter`
- * with the tenant + principal already resolved on `execution.tenantId` / `execution.principalId`.
- *
- * The test deliberately uses an in-process probe route rather than the universal adapter
- * catch-all because [DidManagerHttpAdapter] is `SessionScope`-bound; the probe forwards the
- * `GenericHttpRequest` through `adapter.handleRequest` *under* the plugin-resolved session, so
- * `execution.tenantId` reflects the inbound `X-Tenant-ID` exactly as it would in production.
+ * Ktor-level integration tests for the DID manager session boundary. Legacy identity
+ * headers are deliberately sent as spoofing inputs and must not affect the tenant or
+ * principal already established by the authenticated request pipeline.
  */
 class DidManagerKtorTenantHeaderTest {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /**
-     * In-test resolver that reads `X-Tenant-ID` per call, falling back to "anonymous" when the
-     * header is absent. Header-based tenant resolution was deliberately removed from the
-     * production plugin (client headers cannot be trusted), but this test exists specifically
-     * to verify the wire-level forwarding contract through KotlinInjectPlugin — so we install
-     * a trusted-header resolver locally to exercise the path.
-     */
-    private class HeaderTenantResolver : TenantResolver {
-        override fun resolve(call: ApplicationCall): TenantInput = DefaultTenantInputString(call.request.headers["X-Tenant-ID"] ?: "anonymous")
+    private class ValidatedPrincipalResolver(
+        private val principalId: String,
+    ) : PrincipalResolver {
+        override fun resolve(call: ApplicationCall): PrincipalInput = DefaultPrincipalInputString(principalId)
     }
 
     @Test
-    fun listDids_underTenantHeaders_routesUnderResolvedTenant() =
+    fun identityHeaders_cannotOverrideResolvedTenantOrPrincipal() =
         testApplication {
             DefaultPrincipalMapPropertySource.addProperties(
                 mapOf(
@@ -79,7 +67,11 @@ class DidManagerKtorTenantHeaderTest {
             val appGraph = createDidManagerAppGraph(application = this, appId = "did-manager-ktor-tenant")
             try {
                 application {
-                    configureDidManager(appGraph, tenantResolver = HeaderTenantResolver())
+                    configureDidManager(
+                        appGraph,
+                        tenantResolver = FixedTenantResolver("jwt-tenant"),
+                        principalResolver = ValidatedPrincipalResolver("jwt-principal"),
+                    )
                     routing {
                         // Probe route forwards the inbound Ktor call to the session-bound DID
                         // manager adapter; this is the same dispatch path the
@@ -110,12 +102,12 @@ class DidManagerKtorTenantHeaderTest {
                 assertEquals(HttpStatusCode.OK, responseAlpha.status, "probe must reach the handler under tenant-alpha")
                 val bodyA = responseAlpha.bodyAsText()
                 assertTrue(
-                    "tenant=tenant-alpha" in bodyA,
-                    "X-Tenant-ID must reach the session context as 'tenant-alpha' (got: $bodyA)",
+                    "tenant=jwt-tenant" in bodyA,
+                    "resolved tenant must remain authoritative despite spoofed headers (got: $bodyA)",
                 )
                 assertTrue(
-                    "principal=user-1" in bodyA,
-                    "X-User-ID must reach the session context as 'user-1' (got: $bodyA)",
+                    "principal=jwt-principal" in bodyA && "principal=user-1" !in bodyA,
+                    "spoofed X-User-ID must not reach the session context (got: $bodyA)",
                 )
                 assertTrue(
                     "status=200" in bodyA,
@@ -135,8 +127,8 @@ class DidManagerKtorTenantHeaderTest {
                     }
                 assertEquals(HttpStatusCode.OK, responseBeta.status)
                 val bodyB = responseBeta.bodyAsText()
-                assertTrue("tenant=tenant-beta" in bodyB, "tenant-beta header must reach context (got: $bodyB)")
-                assertTrue("principal=user-2" in bodyB, "user-2 header must reach context (got: $bodyB)")
+                assertTrue("tenant=jwt-tenant" in bodyB, "resolved tenant must be stable (got: $bodyB)")
+                assertTrue("principal=jwt-principal" in bodyB && "principal=user-2" !in bodyB, "spoofed principal must be ignored (got: $bodyB)")
             } finally {
                 appGraph.userContextManager.destroyAll()
             }
@@ -157,7 +149,11 @@ class DidManagerKtorTenantHeaderTest {
             val appGraph = createDidManagerAppGraph(application = this, appId = "did-manager-ktor-anon")
             try {
                 application {
-                    configureDidManager(appGraph, tenantResolver = HeaderTenantResolver())
+                    configureDidManager(
+                        appGraph,
+                        tenantResolver = FixedTenantResolver("anonymous"),
+                        principalResolver = ValidatedPrincipalResolver("anonymous"),
+                    )
                     routing {
                         get("/probe/list-dids") {
                             val session: SessionInstance = call.sessionInstance
@@ -213,7 +209,11 @@ class DidManagerKtorTenantHeaderTest {
             val appGraph = createDidManagerAppGraph(application = this, appId = "did-manager-ktor-universal")
             try {
                 application {
-                    configureDidManager(appGraph, tenantResolver = HeaderTenantResolver())
+                    configureDidManager(
+                        appGraph,
+                        tenantResolver = FixedTenantResolver("jwt-tenant"),
+                        principalResolver = ValidatedPrincipalResolver("jwt-principal"),
+                    )
                 }
 
                 // Send the full OpenAPI listDids query payload, including the typed-enum
@@ -225,10 +225,7 @@ class DidManagerKtorTenantHeaderTest {
                 // OR an @SerialName on the case. Pin every documented param so a future
                 // OpenAPI-vs-enum drift fails this test rather than only failing in production.
                 val response =
-                    client.get("/api/did/v1/identifiers?includeDeactivated=false&includeDeleted=false&page=0&size=20&sort=createdAt&sortDirection=DESC") {
-                        headers.append("X-Tenant-ID", "tenant-universal")
-                        headers.append("X-User-ID", "user-universal")
-                    }
+                    client.get("/api/did/v1/identifiers?includeDeactivated=false&includeDeleted=false&page=0&size=20&sort=createdAt&sortDirection=DESC")
                 assertEquals(
                     HttpStatusCode.OK,
                     response.status,

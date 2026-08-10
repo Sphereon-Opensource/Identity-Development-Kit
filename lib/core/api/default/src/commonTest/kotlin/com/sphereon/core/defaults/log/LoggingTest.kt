@@ -158,7 +158,7 @@ class LoggingTest {
                         DefaultTenantInputString("test-tenant"),
                         DefaultPrincipalInputString("test-user"),
                     )
-                val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-session")
+                val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
                 val sessionLogger = sessionGraph.asCoreApiServiceGraph().logger()
                 assertNotNull(sessionLogger, "Session logger should not be null")
             } finally {
@@ -176,7 +176,7 @@ class LoggingTest {
                         DefaultTenantInputString("test-tenant"),
                         DefaultPrincipalInputString("test-user"),
                     )
-                val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-session")
+                val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
                 val sessionLogger = sessionGraph.asCoreApiServiceGraph().logger()
                 // This should not throw
                 sessionLogger.info("Test log message from session logger")
@@ -195,7 +195,7 @@ class LoggingTest {
                         DefaultTenantInputString("test-tenant"),
                         DefaultPrincipalInputString("test-user"),
                     )
-                val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-session")
+                val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
                 val sessionLogger = sessionGraph.asCoreApiServiceGraph().logger()
 
                 // Test all log levels - these should not throw
@@ -232,7 +232,7 @@ class LoggingTest {
                         DefaultTenantInputString("test-tenant"),
                         DefaultPrincipalInputString("test-user"),
                     )
-                val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-session")
+                val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
                 // Session log manager is accessed via the graph
                 assertNotNull(sessionGraph.graph.logManager)

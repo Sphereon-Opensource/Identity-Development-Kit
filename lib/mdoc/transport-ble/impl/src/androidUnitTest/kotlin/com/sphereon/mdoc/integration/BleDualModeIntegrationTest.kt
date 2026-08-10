@@ -92,8 +92,8 @@ class BleDualModeIntegrationTest {
     )
 
     private val userContext = app.userContextManager.getAnonymous()
-    private val holderSession = userContext.sessionContextManager.createOrGetFromId("holder-session")
-    private val readerSession = userContext.sessionContextManager.createOrGetFromId("reader-session")
+    private val holderSession = userContext.sessionContextManager.createOrGetFromId("holder-session", principalType = com.sphereon.di.context.PrincipalType.USER)
+    private val readerSession = userContext.sessionContextManager.createOrGetFromId("reader-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     // Access services
 //    private val holderKms = (holderSession.graph as KeyManagerService.KmsGraph).kms

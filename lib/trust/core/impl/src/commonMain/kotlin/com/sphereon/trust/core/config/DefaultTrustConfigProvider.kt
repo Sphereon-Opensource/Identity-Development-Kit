@@ -6,7 +6,8 @@
 
 package com.sphereon.trust.core.config
 
-import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
@@ -50,16 +51,12 @@ class DefaultTrustConfigProvider(
         const val DEFAULT_MAX_CHAIN_DEPTH = 5
     }
 
-    private val configService: AppConfigService
-        get() = execution.conf.app
-
-    private var cachedConfig: TrustConfig? = null
+    private val configService: PrincipalConfigService
+        get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
     override fun getTrustConfig(): TrustConfig {
-        cachedConfig?.let { return it }
         val p = "trust"
-        val config =
-            TrustConfig(
+        return TrustConfig(
                 validation =
                     TrustValidationConfig(
                         enabled = configService.getProperty("$p.validation.enabled", Boolean::class, true) ?: true,
@@ -87,8 +84,6 @@ class DefaultTrustConfigProvider(
                         oidfedEntityTtlMinutes = configService.getProperty("$p.cache.oidfed-entity-ttl-minutes", Long::class, DEFAULT_OIDFED_ENTITY_TTL_MINUTES) ?: DEFAULT_OIDFED_ENTITY_TTL_MINUTES,
                     ),
             )
-        cachedConfig = config
-        return config
     }
 
     private fun readX509Config(prefix: String): X509TrustConfig =
@@ -149,6 +144,17 @@ class DefaultTrustConfigProvider(
             result.add(value)
             i++
         }
-        return result
+        if (result.isNotEmpty()) return result
+
+        // The production platform-config REST API stores list-valued fields as one
+        // comma-delimited property at the exact key. Indexed keys remain supported
+        // for deployment/bootstrap sources, while REST-authored tenant policy is the
+        // authoritative runtime path.
+        return configService
+            .getPropertyAsString(prefix, null)
+            ?.split(',')
+            ?.map(String::trim)
+            ?.filter(String::isNotEmpty)
+            .orEmpty()
     }
 }

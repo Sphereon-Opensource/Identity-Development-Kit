@@ -53,6 +53,7 @@ import com.azure.security.keyvault.keys.KeyAsyncClient
 import com.azure.security.keyvault.keys.KeyClientBuilder
 import com.azure.security.keyvault.keys.KeyServiceVersion
 import com.azure.security.keyvault.keys.models.CreateEcKeyOptions
+import com.azure.security.keyvault.keys.models.CreateOctKeyOptions
 import com.azure.security.keyvault.keys.models.CreateRsaKeyOptions
 import com.azure.security.keyvault.keys.models.ImportKeyOptions
 import com.azure.security.keyvault.keys.models.JsonWebKey
@@ -60,16 +61,22 @@ import com.azure.security.keyvault.keys.models.KeyCurveName
 import com.azure.security.keyvault.keys.models.KeyOperation
 import com.azure.security.keyvault.keys.models.KeyProperties
 import com.azure.security.keyvault.keys.models.KeyType
+import com.azure.security.keyvault.keys.models.KeyVaultKey
 import com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm as AzureSignatureAlgorithm
 import com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm as AzureKeyWrapAlgorithm
 import com.azure.security.keyvault.keys.cryptography.models.EncryptParameters
 import com.azure.security.keyvault.keys.cryptography.models.DecryptParameters
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
+import com.sphereon.crypto.core.kms.BackendKeyOperationProofProvider
+import com.sphereon.crypto.core.kms.BackendKeyProvedDecryption
+import com.sphereon.crypto.core.kms.BackendKeyProvedEncryption
+import com.sphereon.crypto.core.kms.BackendSymmetricKmsKeyLifecycle
 import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.toKeyReference
 import com.sphereon.crypto.core.kms.EncryptionResult
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
 import java.security.SecureRandom
+import java.security.MessageDigest
 import java.time.Duration
 import java.util.concurrent.TimeoutException
 import kotlinx.coroutines.async
@@ -119,7 +126,9 @@ import com.sphereon.crypto.core.x509.Certificate
 actual class AzureKeyVaultCryptoProvider actual constructor(
     config: AzureKmsProviderConfig,
 //    settings: KeyProviderSettings
-) : BaseAzureKeyvaultCryptoProvider(config/*, settings*/) {
+) : BaseAzureKeyvaultCryptoProvider(config/*, settings*/),
+    BackendKeyOperationProofProvider,
+    BackendSymmetricKmsKeyLifecycle {
 
     private val keyClient: KeyAsyncClient = KeyClientBuilder()
         .serviceVersion(KeyServiceVersion.V7_3)
@@ -249,7 +258,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         val keyVaultKey = keyClient.getKey(keyInfo.alias).awaitSingleOrNull()
             ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.alias}")
 
-        val cryptoClient = keyClient.getCryptographyAsyncClient(keyInfo.alias)
+        val cryptoClient = cryptographyClientFor(keyInfo)
         val signResult = cryptoClient.sign(keyVaultKey.toSignatureAlgorithm(), hash(keyInfo, input)).awaitSingleOrNull()
             ?: throw SignClientException("Failed to create raw signature for key: ${keyInfo.alias}")
 
@@ -285,7 +294,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         val keyVaultKey = keyClient.getKey(keyInfo.alias).awaitSingleOrNull()
             ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.alias}")
 
-        val cryptoClient = keyClient.getCryptographyAsyncClient(keyInfo.alias)
+        val cryptoClient = cryptographyClientFor(keyInfo)
 
         val algorithm = keyVaultKey.toSignatureAlgorithm()
         val verifyResult = cryptoClient.verify(algorithm, hash(keyInfo, input), signature).awaitSingleOrNull()
@@ -425,11 +434,18 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
      * @throws SignClientException if the key cannot be found in Azure Key Vault
      */
     override suspend fun getKey(keyInfo: KeyInfoType<*>): ManagedKeyInfoType<*> {
-        val kvNames = kidToKVKeyName(keyInfo.kid!!)
+        val reference = keyInfo.kid ?: keyInfo.alias
+            ?: throw IllegalArgumentException("Either alias or kid must be provided")
+        val kvNames = kidToKVKeyName(reference)
         // Try the certificate first if available
         val keyEntry = if (hasCertsApi && certClient != null) {
             try {
-                certClient.getCertificateVersion(kvNames.first, kvNames.second)
+                val certificate = if (kvNames.second.isBlank()) {
+                    certClient.getCertificate(kvNames.first)
+                } else {
+                    certClient.getCertificateVersion(kvNames.first, kvNames.second)
+                }
+                certificate
                     .awaitSingleOrNull()?.toManagedCertInfo()
             } catch (_: ResourceNotFoundException) {
                 null
@@ -438,9 +454,14 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
 
         // Fall back to key if certificate not found
         try {
-            return keyEntry ?: keyClient.getKey(kvNames.first, kvNames.second)
+            val key = if (kvNames.second.isBlank()) {
+                keyClient.getKey(kvNames.first)
+            } else {
+                keyClient.getKey(kvNames.first, kvNames.second)
+            }
+            return keyEntry ?: key
                 .awaitSingleOrNull()?.toManagedKeyInfo()
-            ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.kid}")
+            ?: throw SignClientException("Key not found in Azure Key Vault for reference: $reference")
         } catch (expected: Exception) {
             throw SignClientException("keyClient.getKey failed for ${kvNames.first}", expected)
         }
@@ -651,6 +672,101 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         return decryptResult.plainText
     }
 
+    override suspend fun encryptWithBackendKeyProof(
+        keyInfo: KeyInfoType<*>,
+        plaintext: ByteArray,
+        algorithm: ContentEncryptionAlgorithm,
+        additionalAuthenticatedData: ByteArray?,
+    ): BackendKeyProvedEncryption {
+        val immutableIdentity = requireImmutableAzureKeyIdentity(keyInfo)
+        val metadata = getVersionedSymmetricNonExportableKey(immutableIdentity)
+        val cryptoClient = cryptographyClientFor(keyInfo)
+        val parameters = azureEncryptParameters(plaintext, algorithm, additionalAuthenticatedData)
+        val result =
+            cryptoClient.encrypt(parameters).awaitSingleOrNull()
+                ?: throw SignClientException("Azure Key Vault encryption failed")
+        require(result.keyId == metadata.id) { "Azure Key Vault encryption key identity mismatch" }
+        return BackendKeyProvedEncryption(
+            encryption =
+                EncryptionResult(
+                    ciphertext = result.cipherText,
+                    iv = result.iv ?: ByteArray(algorithm.ivLength),
+                    authTag = result.authenticationTag ?: ByteArray(algorithm.tagLength),
+                ),
+            backendKeyIdentityDigest = azureBackendKeyIdentityDigest(metadata.id),
+        )
+    }
+
+    override suspend fun decryptWithBackendKeyProof(
+        keyInfo: KeyInfoType<*>,
+        ciphertext: ByteArray,
+        algorithm: ContentEncryptionAlgorithm,
+        iv: ByteArray,
+        authTag: ByteArray,
+        additionalAuthenticatedData: ByteArray?,
+        expectedBackendKeyIdentityDigest: String,
+    ): BackendKeyProvedDecryption {
+        val immutableIdentity = requireImmutableAzureKeyIdentity(keyInfo)
+        val metadata = getVersionedSymmetricNonExportableKey(immutableIdentity)
+        val digest = azureBackendKeyIdentityDigest(metadata.id)
+        require(digest == expectedBackendKeyIdentityDigest) {
+            "Azure Key Vault backend key identity digest mismatch"
+        }
+        val result =
+            cryptographyClientFor(keyInfo)
+                .decrypt(azureDecryptParameters(ciphertext, algorithm, iv, authTag, additionalAuthenticatedData))
+                .awaitSingleOrNull()
+                ?: throw SignClientException("Azure Key Vault decryption failed")
+        require(result.keyId == metadata.id) { "Azure Key Vault decryption key identity mismatch" }
+        return BackendKeyProvedDecryption(
+            plaintext = result.plainText,
+            backendKeyIdentityDigest = digest,
+        )
+    }
+
+    override suspend fun resolveImmutableBackendKeyIdentity(bindingAlias: String): String? {
+        val keyName = requireAzureBindingAlias(bindingAlias)
+        return try {
+            requireSymmetricNonExportableAzureKey(keyClient.getKey(keyName).awaitSingle()).id
+        } catch (_: ResourceNotFoundException) {
+            null
+        }
+    }
+
+    override suspend fun createSymmetricNonExportableKey(bindingAlias: String): String {
+        val keyName = requireAzureBindingAlias(bindingAlias)
+        resolveImmutableBackendKeyIdentity(bindingAlias)?.let { return it }
+        val key =
+            keyClient.createOctKey(
+                CreateOctKeyOptions(keyName)
+                    .setHardwareProtected(true)
+                    .setExportable(false)
+                    .setEnabled(true)
+                    .setKeyOperations(KeyOperation.ENCRYPT, KeyOperation.DECRYPT),
+            ).awaitSingle()
+        return requireSymmetricNonExportableAzureKey(key).id
+    }
+
+    override suspend fun revokeSymmetricNonExportableKey(bindingAlias: String) {
+        val keyName = requireAzureBindingAlias(bindingAlias)
+        val present =
+            try {
+                keyClient.getKey(keyName).awaitSingle()
+                true
+            } catch (_: ResourceNotFoundException) {
+                false
+            }
+        if (!present) {
+            try {
+                keyClient.getDeletedKey(keyName).awaitSingle()
+            } catch (_: ResourceNotFoundException) {
+                // Exact binding is absent: revocation is already complete or creation never committed.
+            }
+            return
+        }
+        keyClient.beginDeleteKey(keyName).last().awaitSingle()
+    }
+
     /**
      * Wraps (encrypts) a key using the specified wrapping key and algorithm.
      *
@@ -667,7 +783,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         keyToWrap: ByteArray,
         algorithm: KeyWrapAlgorithm
     ): ByteArray {
-        val cryptoClient = keyClient.getCryptographyAsyncClient(wrappingKeyInfo.alias)
+        val cryptoClient = cryptographyClientFor(wrappingKeyInfo)
         val azureAlgorithm = algorithm.toAzureKeyWrapAlgorithm()
 
         val wrapResult = cryptoClient.wrapKey(azureAlgorithm, keyToWrap).awaitSingleOrNull()
@@ -690,13 +806,48 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         wrappedKey: ByteArray,
         algorithm: KeyWrapAlgorithm
     ): ByteArray {
-        val cryptoClient = keyClient.getCryptographyAsyncClient(unwrappingKeyInfo.alias)
+        val cryptoClient = cryptographyClientFor(unwrappingKeyInfo)
         val azureAlgorithm = algorithm.toAzureKeyWrapAlgorithm()
 
         val unwrapResult = cryptoClient.unwrapKey(azureAlgorithm, wrappedKey).awaitSingleOrNull()
             ?: throw SignClientException("Failed to unwrap key with key: ${unwrappingKeyInfo.alias}")
 
         return unwrapResult.key
+    }
+
+    /**
+     * Binds cryptographic operations to the immutable Azure key version when a kid is supplied.
+     * Falling back to an unversioned alias is retained for legacy callers; envelope encryption
+     * always persists and supplies the resolved kid.
+     */
+    private fun cryptographyClientFor(keyInfo: KeyInfoType<*>): com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient {
+        val reference = keyInfo.kid ?: keyInfo.alias
+            ?: throw SignClientException("A key id or alias is required for key wrapping")
+        val (name, version) = kidToKVKeyName(reference)
+        return if (version.isBlank()) {
+            keyClient.getCryptographyAsyncClient(name)
+        } else {
+            keyClient.getCryptographyAsyncClient(name, version)
+        }
+    }
+
+    private fun requireImmutableAzureKeyIdentity(keyInfo: KeyInfoType<*>): String {
+        val kid = keyInfo.kid ?: throw SignClientException("A versioned Azure key id is required")
+        require(keyInfo.alias == null || keyInfo.alias == kid) {
+            "Azure current-version aliases are not accepted for attested operations"
+        }
+        require(AZURE_VERSIONED_KEY_ID.matches(kid)) { "A versioned Azure key id is required" }
+        val configuredVault = config.keyvaultUrl.trimEnd('/')
+        require(kid.startsWith("$configuredVault/keys/")) {
+            "Azure key identity does not belong to the configured provider"
+        }
+        return kid
+    }
+
+    private suspend fun getVersionedSymmetricNonExportableKey(immutableIdentity: String): KeyVaultKey {
+        val (name, version) = kidToKVKeyName(immutableIdentity)
+        require(version.isNotBlank()) { "A versioned Azure key id is required" }
+        return requireSymmetricNonExportableAzureKey(keyClient.getKey(name, version).awaitSingle())
     }
 
     private fun SignatureAlgorithm.toAzureSignatureAlgorithm(): AzureSignatureAlgorithm =
@@ -789,3 +940,73 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
     }
 
 }
+
+private fun requireSymmetricNonExportableAzureKey(key: KeyVaultKey): KeyVaultKey {
+    require(key.keyType == KeyType.OCT_HSM) { "Azure key is not hardware-protected symmetric key material" }
+    require(key.properties.isEnabled == true && key.properties.isExportable != true) {
+        "Azure key is disabled or exportable"
+    }
+    require(
+        key.keyOperations?.containsAll(listOf(KeyOperation.ENCRYPT, KeyOperation.DECRYPT)) == true,
+    ) {
+        "Azure key does not permit encrypt/decrypt"
+    }
+    require(AZURE_VERSIONED_KEY_ID.matches(key.id)) { "Azure key metadata does not include a versioned identity" }
+    return key
+}
+
+private fun requireAzureBindingAlias(bindingAlias: String): String {
+    require(AZURE_BINDING_ALIAS.matches(bindingAlias)) { "Azure key binding alias is invalid" }
+    return bindingAlias
+}
+
+private fun azureBackendKeyIdentityDigest(immutableIdentity: String): String =
+    "sha256:" +
+        MessageDigest.getInstance("SHA-256")
+            .digest("azure-key-vault\u0000$immutableIdentity".encodeToByteArray())
+            .joinToString(separator = "") { "%02x".format(it) }
+
+private fun azureEncryptParameters(
+    plaintext: ByteArray,
+    algorithm: ContentEncryptionAlgorithm,
+    additionalAuthenticatedData: ByteArray?,
+): EncryptParameters =
+    when (algorithm) {
+        ContentEncryptionAlgorithm.A128GCM ->
+            additionalAuthenticatedData?.let { EncryptParameters.createA128GcmParameters(plaintext, it) }
+                ?: EncryptParameters.createA128GcmParameters(plaintext)
+        ContentEncryptionAlgorithm.A192GCM ->
+            additionalAuthenticatedData?.let { EncryptParameters.createA192GcmParameters(plaintext, it) }
+                ?: EncryptParameters.createA192GcmParameters(plaintext)
+        ContentEncryptionAlgorithm.A256GCM ->
+            additionalAuthenticatedData?.let { EncryptParameters.createA256GcmParameters(plaintext, it) }
+                ?: EncryptParameters.createA256GcmParameters(plaintext)
+        else -> throw SignClientException("Attested Azure encryption requires an AES-GCM algorithm")
+    }
+
+private fun azureDecryptParameters(
+    ciphertext: ByteArray,
+    algorithm: ContentEncryptionAlgorithm,
+    iv: ByteArray,
+    authTag: ByteArray,
+    additionalAuthenticatedData: ByteArray?,
+): DecryptParameters =
+    when (algorithm) {
+        ContentEncryptionAlgorithm.A128GCM ->
+            additionalAuthenticatedData?.let {
+                DecryptParameters.createA128GcmParameters(ciphertext, iv, authTag, it)
+            } ?: DecryptParameters.createA128GcmParameters(ciphertext, iv, authTag)
+        ContentEncryptionAlgorithm.A192GCM ->
+            additionalAuthenticatedData?.let {
+                DecryptParameters.createA192GcmParameters(ciphertext, iv, authTag, it)
+            } ?: DecryptParameters.createA192GcmParameters(ciphertext, iv, authTag)
+        ContentEncryptionAlgorithm.A256GCM ->
+            additionalAuthenticatedData?.let {
+                DecryptParameters.createA256GcmParameters(ciphertext, iv, authTag, it)
+            } ?: DecryptParameters.createA256GcmParameters(ciphertext, iv, authTag)
+        else -> throw SignClientException("Attested Azure decryption requires an AES-GCM algorithm")
+    }
+
+private val AZURE_VERSIONED_KEY_ID =
+    Regex("^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?/keys/[A-Za-z0-9-]{1,127}/[A-Za-z0-9]{1,128}$")
+private val AZURE_BINDING_ALIAS = Regex("^[A-Za-z0-9][A-Za-z0-9-]{0,126}$")

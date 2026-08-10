@@ -47,7 +47,7 @@ import kotlin.test.assertTrue
 class ValidateIdTokenJwksBindingTest {
     private val app = createOauth2CommonTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("validate-id-token-jwks-binding")
+    private val session = context.sessionContextManager.createOrGetFromId("validate-id-token-jwks-binding", principalType = com.sphereon.di.context.PrincipalType.USER)
     private val execution = session.asCoreApiServiceGraph().serviceExecution
     private val jwtService: JwtService = (session.graph as JwtServiceImpl.Graph).jwtService
     private val command: ValidateIdTokenCommand = ValidateIdTokenCommandImpl(execution, jwtService)

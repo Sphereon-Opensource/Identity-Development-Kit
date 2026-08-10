@@ -29,10 +29,8 @@ import com.sphereon.ktor.server.inject.resolver.TenantResolver
  * - [appGraph]: The root kotlin-inject AppGraph instance
  *
  * **Optional:**
- * - [tenantResolver]: Strategy for extracting tenant information from requests (default: header-based)
- * - [principalResolver]: Strategy for extracting principal information from requests (default: header-based)
- * - [tenantHeader]: HTTP header name for tenant ID (default: "X-Tenant-ID")
- * - [principalHeader]: HTTP header name for principal/user ID (default: "X-User-ID")
+ * - [tenantResolver]: Required strategy backed by validated JWT claims
+ * - [principalResolver]: Strategy backed by validated JWT authentication
  *
  * **Example:**
  * ```kotlin
@@ -43,9 +41,6 @@ import com.sphereon.ktor.server.inject.resolver.TenantResolver
  *     tenantResolver = JwtTenantResolver()
  *     principalResolver = JwtPrincipalResolver()
  *
- *     // Or configure default header-based resolvers
- *     tenantHeader = "X-Tenant-ID"
- *     principalHeader = "X-User-ID"
  * }
  * ```
  */
@@ -57,13 +52,6 @@ class KotlinInjectConfiguration {
      * **Required** - must be set in the configuration.
      */
     var appGraph: AppGraph? = null
-
-    /**
-     * HTTP header name for extracting principal/user ID.
-     * Used by the default principal resolver.
-     * Default: "X-User-ID"
-     */
-    var principalHeader: String = "X-User-ID"
 
     /**
      * Custom tenant resolver implementation.
@@ -78,7 +66,7 @@ class KotlinInjectConfiguration {
 
     /**
      * Custom principal resolver implementation.
-     * If not set, a default header-based resolver will be used.
+     * If not set, the validated-JWT resolver is used.
      */
     private var _principalResolver: PrincipalResolver? = null
 
@@ -105,10 +93,10 @@ class KotlinInjectConfiguration {
 
     /**
      * The principal resolver to use for extracting principal information from requests.
-     * Defaults to header-based resolver using [principalHeader].
+     * Defaults to the validated-JWT resolver.
      */
     var principalResolver: PrincipalResolver
-        get() = _principalResolver ?: DefaultPrincipalResolver(principalHeader)
+        get() = _principalResolver ?: DefaultPrincipalResolver()
         set(value) {
             _principalResolver = value
         }

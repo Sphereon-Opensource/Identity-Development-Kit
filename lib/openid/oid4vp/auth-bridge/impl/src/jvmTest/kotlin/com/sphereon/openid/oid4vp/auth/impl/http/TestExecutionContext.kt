@@ -35,7 +35,7 @@ object TestExecutionContext {
     fun createExecution(): SessionExecution {
         val app = createOid4vpAuthTestAppGraph(Unit)
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("oid4vp-auth-test")
+        val session = userContext.sessionContextManager.createOrGetFromId("oid4vp-auth-test", principalType = com.sphereon.di.context.PrincipalType.USER)
         return session.asCoreApiServiceGraph().serviceExecution
     }
 
@@ -54,7 +54,7 @@ object TestExecutionContext {
     fun createTestSession(): TestSession {
         val app = createOid4vpAuthTestAppGraph(Unit)
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("oid4vp-auth-test")
+        val session = userContext.sessionContextManager.createOrGetFromId("oid4vp-auth-test", principalType = com.sphereon.di.context.PrincipalType.USER)
         val execution = session.asCoreApiServiceGraph().serviceExecution
         return TestSession(execution, session.graph)
     }

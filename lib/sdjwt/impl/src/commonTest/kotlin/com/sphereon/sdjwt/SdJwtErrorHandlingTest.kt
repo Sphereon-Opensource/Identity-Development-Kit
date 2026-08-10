@@ -52,7 +52,7 @@ class SdJwtErrorHandlingTest {
 
     val app = createSdJwtTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("sdjwt-error-test")
+    val session = context.sessionContextManager.createOrGetFromId("sdjwt-error-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

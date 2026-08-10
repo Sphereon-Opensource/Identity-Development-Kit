@@ -45,6 +45,7 @@ import kotlin.native.ObjCName
 interface AwsKmsProviderConfigType : KmsProviderConfigBase {
     val applicationId: String
     val region: String
+    val endpointUrl: String?
     val credentialOpts: CredentialOpts
     val exponentialBackoffRetryOpts: ExponentialBackoffRetryOpts?
 }
@@ -75,6 +76,9 @@ data class AwsKmsProviderConfig(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     @SerialName("region")
     override val region: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("endpointUrl")
+    override val endpointUrl: String? = null,
     @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     @SerialName("credentialOpts")
     override val credentialOpts: CredentialOpts,

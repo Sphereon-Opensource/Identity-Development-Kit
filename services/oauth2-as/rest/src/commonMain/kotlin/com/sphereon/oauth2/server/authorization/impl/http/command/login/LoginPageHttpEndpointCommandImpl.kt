@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.http.command.login
 
+import com.sphereon.conf.theme.core.model.AssetElementValue
 import com.sphereon.conf.theme.core.model.ProductType
 import com.sphereon.conf.theme.core.model.ResolvedFeature
 import com.sphereon.conf.theme.core.model.ResolvedTheme
@@ -41,6 +42,7 @@ import com.sphereon.oauth2.server.authorization.impl.http.ResponseCategory
 import com.sphereon.oauth2.server.authorization.impl.http.effectiveScheme
 import com.sphereon.oauth2.server.authorization.impl.http.isSameOriginCallback
 import com.sphereon.oauth2.server.authorization.impl.http.loginCsrfCookieHeader
+import com.sphereon.oauth2.server.authorization.impl.http.loginCsrfCookiePath
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
 import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
@@ -178,7 +180,7 @@ class LoginPageHttpEndpointCommandImpl(
                         "Content-Type" to response.contentType,
                         "Cache-Control" to "no-store",
                         "Pragma" to "no-cache",
-                        "Set-Cookie" to loginCsrfCookieHeader(csrf.tabId, secure),
+                        "Set-Cookie" to loginCsrfCookieHeader(csrf.tabId, secure, loginCsrfCookiePath(trustedBase)),
                     ),
                 body = response.html,
             ).withSecurityHeaders(
@@ -261,7 +263,7 @@ class LoginPageHttpEndpointCommandImpl(
             buildList {
                 for (feature in listOfNotNull(theming.loginFeature, theming.loginFeatureDark)) {
                     for (elementId in THEMED_IMAGE_ELEMENT_IDS) {
-                        feature.elements[elementId]?.asset?.uri?.let(::add)
+                        (feature.elements[elementId]?.value as? AssetElementValue)?.asset?.uri?.let(::add)
                     }
                 }
                 for (theme in listOfNotNull(theming.light, theming.dark)) {

@@ -112,8 +112,8 @@ generate_keystore() {
     shift 2
     local keystores_dir="${KEYSTORES_DIR:-keystores}"
     local password="${KEYSTORE_PASSWORD:-e2e-keystore-pass}"
-    local keystore="${keystores_dir}/${name}/keystore.p12"
-    mkdir -p "${keystores_dir}/${name}"
+    local keystore="${keystores_dir}/${name}/default/keystore.p12"
+    mkdir -p "${keystores_dir}/${name}/default"
     generate_ca_if_missing
     if [ -f "$keystore" ]; then
         echo "Keystore $keystore exists; adding any missing aliases."
@@ -132,8 +132,8 @@ generate_ecdh_alias() {
     local alias="$2"
     local keystores_dir="${KEYSTORES_DIR:-keystores}"
     local password="${KEYSTORE_PASSWORD:-e2e-keystore-pass}"
-    local keystore="${keystores_dir}/${name}/keystore.p12"
-    mkdir -p "${keystores_dir}/${name}"
+    local keystore="${keystores_dir}/${name}/default/keystore.p12"
+    mkdir -p "${keystores_dir}/${name}/default"
     generate_ca_if_missing
     _generate_keystore_aliases "$keystore" "$password" "" "keyAgreement" "$alias"
 }
@@ -181,9 +181,9 @@ generate_all_keystores() {
     if [ ! -f "${ca_dir}/ca.crt" ] || [ ! -f "${ca_dir}/ca.key" ]; then
         local name
         for name in oauth2-as oid4vci-issuer oid4vp-verifier; do
-            if [ -f "${keystores_dir}/${name}/keystore.p12" ]; then
-                echo "CA missing — discarding stale leaf keystore ${keystores_dir}/${name}/keystore.p12"
-                rm -f "${keystores_dir}/${name}/keystore.p12"
+            if [ -f "${keystores_dir}/${name}/default/keystore.p12" ]; then
+                echo "CA missing — discarding stale leaf keystore ${keystores_dir}/${name}/default/keystore.p12"
+                rm -f "${keystores_dir}/${name}/default/keystore.p12"
             fi
         done
         # Also purge the wallet-attester JWKS — it would still verify against the new CA
@@ -207,8 +207,8 @@ generate_all_keystores() {
     # issuer serves can publish the verifier's authentication key (#key-2) alongside the issuer's
     # assertionMethod key (#key-1) — one DID, both keys. Idempotent.
     local share_pw="${KEYSTORE_PASSWORD:-e2e-keystore-pass}"
-    local issuer_ks="${keystores_dir}/oid4vci-issuer/keystore.p12"
-    local verifier_ks="${keystores_dir}/oid4vp-verifier/keystore.p12"
+    local issuer_ks="${keystores_dir}/oid4vci-issuer/default/keystore.p12"
+    local verifier_ks="${keystores_dir}/oid4vp-verifier/default/keystore.p12"
     if [ -f "$issuer_ks" ] && [ -f "$verifier_ks" ]; then
         if keytool -list -keystore "$issuer_ks" -storepass "$share_pw" -alias "oid4vp-verifier-signing" -storetype PKCS12 >/dev/null 2>&1; then
             echo "  Alias 'oid4vp-verifier-signing' already shared into issuer keystore, skipping"

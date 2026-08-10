@@ -27,8 +27,12 @@ import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.core.compat.JsExportCompat
+import kotlinx.coroutines.withContext
 import software.amazon.app.platform.scope.Scope
 import software.amazon.app.platform.scope.Scoped
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.coroutines.cancellation.CancellationException
 
 fun interface CommandSupports {
     suspend fun supports(args: Any): Boolean
@@ -485,7 +489,7 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
             )
         }
 
-        // ── Structural input validation (if args implements ValidatableInput) ──
+        // Structural input validation when args implements ValidatableInput.
         if (args is com.sphereon.core.api.service.ValidatableInput) {
             val validationResult = (args as com.sphereon.core.api.service.ValidatableInput).validate()
             if (validationResult.isErr) {
@@ -494,7 +498,7 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
             }
         }
 
-        // ── Command-level validation (if this is a ServiceCommand with validateInput) ──
+        // Command-level validation for ServiceCommand input.
         if (this is com.sphereon.core.api.service.ServiceCommand<*, *, *>) {
             @Suppress("UNCHECKED_CAST")
             val svc = this as com.sphereon.core.api.service.ServiceCommand<Arg, *, IdkErrorType>
@@ -505,48 +509,48 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
             }
         }
 
-        val interceptors = interceptorChain.interceptors
+        val interceptors = interceptorChain.interceptors.sortedBy { it.order }
         val context = commandExecutionContext()
 
         val startTimeMs = currentTimeMillis()
         var commandResult: IdkResult<SuccessResult, ErrorResult>? = null
         var firstDenial: InterceptorVerdict.Deny? = null
+        var executionCoroutineContext: CoroutineContext = EmptyCoroutineContext
+        var contextSetupCancellation: CancellationException? = null
 
-        try {
-            // ── PHASE 1: beforeExecute (all interceptors, order ASC, NO break on deny) ──
-            for (interceptor in interceptors.sortedBy { it.order }) {
-                try {
-                    val verdict = interceptor.beforeExecute(context, args)
-                    if (verdict is InterceptorVerdict.Deny && firstDenial == null) {
-                        firstDenial = verdict
-                    }
-                } catch (expected: Exception) {
-                    // Interceptor errors fail closed: treat as denial to prevent silent policy bypass.
-                    // This satisfies LD#7 (command execution doesn't crash) while ensuring
-                    // security interceptors can't be bypassed by throwing.
-                    if (firstDenial == null) {
-                        firstDenial =
-                            InterceptorVerdict.Deny(
-                                reason = "Interceptor '${interceptor.name}' failed: ${expected.message ?: "unknown error"}",
-                                errorCode = "INTERCEPTOR_ERROR",
-                            )
-                    }
+        // Phase 1: compose the invocation context before entering the lifecycle.
+        for (interceptor in interceptors) {
+            try {
+                executionCoroutineContext += interceptor.executionCoroutineContext(context, args)
+            } catch (cancelled: CancellationException) {
+                contextSetupCancellation = cancelled
+                break
+            } catch (expected: Exception) {
+                if (firstDenial == null) {
+                    firstDenial =
+                        InterceptorVerdict.Deny(
+                            reason = "Interceptor '${interceptor.name}' failed: ${expected.message ?: "unknown error"}",
+                            errorCode = "INTERCEPTOR_ERROR",
+                        )
                 }
             }
+        }
 
-            // ── PHASE 2: command execution (SKIPPED if any Deny) ──
-            if (firstDenial != null) {
-                commandResult =
+        suspend fun executeBody(): IdkResult<SuccessResult, ErrorResult> {
+            val denial = firstDenial
+            if (denial != null) {
+                val deniedResult: IdkResult<SuccessResult, ErrorResult> =
                     IdkResult.err(
                         errorMapper.notAuthorized(
                             commandId = CommandId(id),
-                            reason = firstDenial.reason,
+                            reason = denial.reason,
                         ),
                     )
-                return commandResult
+                commandResult = deniedResult
+                return deniedResult
             }
 
-            // Process enhanced extensions first (they can short-circuit)
+            // Process enhanced extensions first because they can short-circuit.
             var currentArgs = args
             for (ext in enhancedExecutionExtensions) {
                 when (val beforeResult = ext.beforeExecute(this, currentArgs)) {
@@ -555,16 +559,17 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
                     }
 
                     is BeforeExecuteResult.Skip -> {
-                        commandResult =
+                        val skippedResult: IdkResult<SuccessResult, ErrorResult> =
                             IdkResult.err(
                                 errorMapper.commandSkipped(commandId = id),
                             )
-                        return commandResult
+                        commandResult = skippedResult
+                        return skippedResult
                     }
 
                     is BeforeExecuteResult.ShortCircuit<*, *> -> {
                         val shortCircuitResult = beforeResult.result as IdkResult<SuccessResult, ErrorResult>
-                        // Still call afterExecute for short-circuited results
+                        // Still call afterExecute for short-circuited results.
                         var finalResult = shortCircuitResult
                         for (afterExt in enhancedExecutionExtensions.reversed()) {
                             finalResult = afterExt.afterExecute(this, args, finalResult)
@@ -575,22 +580,22 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
                 }
             }
 
-            // Process regular (sync) extensions beforeExecute
+            // Process regular synchronous extensions beforeExecute.
             executionExtensions.forEach { it.beforeExecute(this, currentArgs) }
 
-            // Execute the command with during callbacks
+            // Execute the command with during callbacks.
             val result =
                 doExecute(currentArgs) { argDuring ->
                     var modified = argDuring
-                    // Apply regular extensions during
+                    // Apply regular extensions during execution.
                     executionExtensions.forEach { modified = it.duringExecute(this, modified) }
                     modified
                 }
 
-            // Process regular extensions afterExecute
+            // Process regular extensions afterExecute.
             executionExtensions.forEach { it.afterExecute(this, currentArgs, result) }
 
-            // Process enhanced extensions afterExecute (in reverse order)
+            // Process enhanced extensions afterExecute in reverse order.
             var finalResult = result
             for (ext in enhancedExecutionExtensions.reversed()) {
                 finalResult = ext.afterExecute(this, args, finalResult)
@@ -598,10 +603,54 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
 
             commandResult = finalResult
             return finalResult
-        } finally {
-            // ── PHASE 3: afterExecute (ALL interceptors, order DESC, always runs) ──
+        }
+
+        return withContext(executionCoroutineContext) {
+            var lifecycleFailure: Throwable? = null
+            var lifecycleResult: IdkResult<SuccessResult, ErrorResult>? = null
+            try {
+                val setupCancellation = contextSetupCancellation
+                if (setupCancellation != null) {
+                    throw setupCancellation
+                }
+
+                // Phase 2: run all before hooks in the invocation context.
+                for (interceptor in interceptors) {
+                    var verdict: InterceptorVerdict? = null
+                    var beforeFailure: Throwable? = null
+                    try {
+                        verdict = interceptor.beforeExecute(context, args)
+                    } catch (failure: Throwable) {
+                        beforeFailure = failure
+                    }
+                    val failure = beforeFailure
+                    if (failure is CancellationException || (failure != null && failure !is Exception)) {
+                        throw failure
+                    }
+                    if (failure is Exception) {
+                        // Interceptor errors fail closed to prevent silent policy bypass.
+                        if (firstDenial == null) {
+                            firstDenial =
+                                InterceptorVerdict.Deny(
+                                    reason = "Interceptor '${interceptor.name}' failed: ${failure.message ?: "unknown error"}",
+                                    errorCode = "INTERCEPTOR_ERROR",
+                                )
+                        }
+                    } else if (verdict is InterceptorVerdict.Deny && firstDenial == null) {
+                        firstDenial = verdict
+                    }
+                }
+
+                lifecycleResult = executeBody()
+            } catch (failure: Throwable) {
+                lifecycleFailure = failure
+            }
+
+            // Phase 3: attempt every after hook in reverse order.
             val durationMs = currentTimeMillis() - startTimeMs
-            for (interceptor in interceptors.sortedByDescending { it.order }) {
+            var afterCancellation: CancellationException? = null
+            for (interceptor in interceptors.asReversed()) {
+                var afterFailure: Throwable? = null
                 try {
                     interceptor.afterExecute(
                         context = context,
@@ -610,16 +659,37 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
                         denied = firstDenial,
                         durationMs = durationMs,
                     )
-                } catch (_: Exception) {
-                    // Ignored: afterExecute is observational (audit, telemetry) — failure must not affect command result
+                } catch (failure: Throwable) {
+                    afterFailure = failure
+                }
+                val failure = afterFailure
+                when {
+                    failure is CancellationException && afterCancellation == null -> {
+                        afterCancellation = failure
+                    }
+
+                    failure != null && failure !is Exception -> throw failure
+                    else -> {
+                        // Ordinary observational failures do not replace the command result.
+                    }
                 }
             }
+
+            val originalFailure = lifecycleFailure
+            if (originalFailure != null) {
+                throw originalFailure
+            }
+            val observationalCancellation = afterCancellation
+            if (observationalCancellation != null) {
+                throw observationalCancellation
+            }
+            requireNotNull(lifecycleResult) { "Command lifecycle produced no result" }
         }
     }
 }
 
 @JsExportCompat
-abstract class ExecutionScopedCommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType>(
+abstract class ExecutionScopedAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType>(
     override val id: String,
     /**
      * Command enabled state. Defaults to true (permissive).
@@ -674,3 +744,33 @@ abstract class ExecutionScopedCommandAdapter<Arg : Any, SuccessResult : Any, Err
         execution.getSessionContextManager().addService(id, this)
     }*/
 }
+
+/**
+ * Session-scoped adapter for executable commands.
+ *
+ * Unlike non-command session adapters, every instance must carry a canonical
+ * [CommandId]. Validation happens while the superclass arguments are evaluated,
+ * before the adapter can be initialized or registered in a session scope.
+ */
+@JsExportCompat
+abstract class ExecutionScopedCommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkErrorType>(
+    id: String,
+    isEnabled: Boolean = true,
+    initExtensions: Array<ICommandInitExtension<Arg, SuccessResult, ErrorResult>> = emptyArray(),
+    executionExtensions: Array<ICommandExecutionExtension<Arg, SuccessResult, ErrorResult>> = emptyArray(),
+    execution: SessionExecution,
+    log: SessionLogService = execution.log,
+    conf: ContextConfig = execution.conf,
+    errorMapper: CommandErrorMapper<ErrorResult> = defaultCommandErrorMapper(),
+    enhancedExecutionExtensions: Array<IEnhancedCommandExecutionExtension<Arg, SuccessResult, ErrorResult>> = emptyArray(),
+) : ExecutionScopedAdapter<Arg, SuccessResult, ErrorResult>(
+        id = CommandId(id).value,
+        isEnabled = isEnabled,
+        initExtensions = initExtensions,
+        executionExtensions = executionExtensions,
+        execution = execution,
+        log = log,
+        conf = conf,
+        errorMapper = errorMapper,
+        enhancedExecutionExtensions = enhancedExecutionExtensions,
+    )

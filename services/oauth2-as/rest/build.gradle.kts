@@ -3,6 +3,10 @@ plugins {
     alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
     alias(sphereonplug.plugins.com.google.devtools.ksp.com.google.devtools.ksp.gradle.plugin)
     alias(sphereonplug.plugins.dev.zacsweers.metro)
+    // Maven coordinates for consumers (OIDFed PLATFORM e2e, hosts). service-deployable only
+    // builds fatJar/runServer — it does not register publishToMavenLocal / nexus publications.
+    // Same pattern as services-kms-rest, services-statuslist-rest, services-did-*-rest.
+    alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
     id("com.sphereon.gradle.plugin.service-deployable")
 }
 metro {
@@ -47,11 +51,9 @@ kotlin {
                 // application identity (instance slug -> software party UUID) for theming.
                 implementation(projects.libSoftwareRegistryPublic)
 
-                // JWT validation: the internal signing-key provisioning endpoint authenticates the
-                // platform's east-west bearer (signature vs the platform JWKS + per-tenant audience)
-                // via the IDK JwtValidationService + IdpRegistry, mirroring the operator bearer path.
-                // The -impl module supplies the SessionScope JwtValidationService + AppScope IdpRegistry
-                // bindings the provisioning command injects.
+                // JWT validation: the -api module carries JwtValidationService/IdpRegistry/JwtValidationConfig
+                // and the -impl module supplies the SessionScope JwtValidationService + AppScope IdpRegistry
+                // bindings, so an AS assembly can validate bearers against a configured issuer's JWKS.
                 implementation(projects.libOauth2JwtValidationApi)
                 implementation(projects.libOauth2JwtValidationImpl)
 

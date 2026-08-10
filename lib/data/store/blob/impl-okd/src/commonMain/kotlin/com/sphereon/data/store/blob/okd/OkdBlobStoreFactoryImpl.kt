@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob.okd
 
+import com.sphereon.core.api.conf.OpaqueSecretResolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.data.store.blob.BlobStore
 import com.sphereon.data.store.blob.BlobStoreConfigBase
@@ -45,7 +46,8 @@ import kotlin.native.ObjCName
  * Factory for creating [OkdBlobStore] instances that talk to external OKD-compliant DMS systems.
  *
  * Auth modes:
- * - **PASSTHROUGH**: User's bearer token forwarded from session context per-request.
+ * - **BEARER**: User's bearer token forwarded from authenticated session context per-request.
+ * - **STATIC_TOKEN**: Opaque token handle resolved immediately before each request.
  * - **CLIENT_CREDENTIALS**: Ktor Auth plugin acquires tokens from the configured token endpoint.
  */
 @Inject
@@ -53,7 +55,9 @@ import kotlin.native.ObjCName
 @ContributesIntoSet(AppScope::class, binding = binding<BlobStoreFactory>())
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdBlobStoreFactoryImpl", exact = true)
-class OkdBlobStoreFactoryImpl : BlobStoreFactory {
+class OkdBlobStoreFactoryImpl(
+    private val opaqueSecretResolver: OpaqueSecretResolver,
+) : BlobStoreFactory {
     override val backendId: String = OkdBlobStoreConfig.BACKEND_ID
 
     override fun create(
@@ -76,14 +80,19 @@ class OkdBlobStoreFactoryImpl : BlobStoreFactory {
         }
 
         val httpClient = createHttpClient(typedConfig)
-        return OkdBlobStore(config = typedConfig, http = httpClient, execution = execution)
+        return OkdBlobStore(
+            config = typedConfig,
+            http = httpClient,
+            execution = execution,
+            opaqueSecretResolver = opaqueSecretResolver,
+        )
     }
 
     private fun createHttpClient(config: OkdBlobStoreConfig): HttpClient {
         val jsonConfig = Json { ignoreUnknownKeys = true }
 
         return when (config.auth.mode) {
-            OkdAuthMode.PASSTHROUGH -> {
+            OkdAuthMode.BEARER, OkdAuthMode.STATIC_TOKEN -> {
                 HttpClient {
                     install(ContentNegotiation) { json(jsonConfig) }
                 }
@@ -96,9 +105,9 @@ class OkdBlobStoreFactoryImpl : BlobStoreFactory {
                 val clientId =
                     config.auth.clientId
                         ?: throw IllegalArgumentException("OKD client credentials requires 'auth.clientId'")
-                val clientSecret =
-                    config.auth.clientSecret
-                        ?: throw IllegalArgumentException("OKD client credentials requires 'auth.clientSecret'")
+                val clientSecretId =
+                    config.auth.clientSecretId
+                        ?: throw IllegalArgumentException("OKD client credentials requires 'auth.clientSecretId'")
                 val scopes = config.auth.scopes
 
                 HttpClient {
@@ -106,10 +115,10 @@ class OkdBlobStoreFactoryImpl : BlobStoreFactory {
                     install(Auth) {
                         bearer {
                             loadTokens {
-                                fetchToken(tokenUri, clientId, clientSecret, scopes)
+                                fetchToken(tokenUri, clientId, clientSecretId, scopes)
                             }
                             refreshTokens {
-                                fetchToken(tokenUri, clientId, clientSecret, scopes)
+                                fetchToken(tokenUri, clientId, clientSecretId, scopes)
                             }
                         }
                     }
@@ -121,9 +130,10 @@ class OkdBlobStoreFactoryImpl : BlobStoreFactory {
     private suspend fun fetchToken(
         tokenUri: String,
         clientId: String,
-        clientSecret: String,
+        clientSecretId: String,
         scopes: List<String>,
     ): BearerTokens {
+        val clientSecret = resolveCredential(clientSecretId)
         val tokenClient =
             HttpClient {
                 install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -151,5 +161,14 @@ class OkdBlobStoreFactoryImpl : BlobStoreFactory {
         } finally {
             tokenClient.close()
         }
+    }
+
+    private suspend fun resolveCredential(secretId: String): String {
+        secretId.requireOkdOpaqueSecretId("clientSecretId")
+        val result = opaqueSecretResolver.resolve(secretId)
+        if (result.isErr || result.value.isBlank()) {
+            throw IllegalStateException("OKD credential is unavailable")
+        }
+        return result.value
     }
 }

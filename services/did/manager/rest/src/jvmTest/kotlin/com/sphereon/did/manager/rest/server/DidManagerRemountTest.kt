@@ -57,7 +57,7 @@ class DidManagerRemountTest {
         app = createDidManagerAppGraph(application = this, appId = "did-manager-rest-remount")
         app.userContextManager.destroyAll()
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("rest-remount")
+        val session = userContext.sessionContextManager.createOrGetFromId("rest-remount", principalType = com.sphereon.di.context.PrincipalType.USER)
         adapter = TestSessionGraph.fromSession(session).adapter
     }
 

@@ -9,22 +9,18 @@ package com.sphereon.wallet.interaction.protocol.oid4vp
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
-import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
-import com.sphereon.crypto.core.generic.hash
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
-import com.sphereon.sdjwt.SdJwt
 import com.sphereon.sdjwt.SdJwtCodec
+import com.sphereon.openid.oid4vp.holder.credentialDisclosurePathOptions
+import com.sphereon.sdjwt.SdJwtPresentation
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.wsca.Wsca
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Clock
@@ -42,41 +38,27 @@ data class Oid4vpSdJwtHolderBindingRequest(
  * [com.sphereon.openid.oid4vp.holder.Oid4vpHolderService]. Kept as an injectable seam - mirroring
  * the OID4VCI credential-request-proof seam
  * ([com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciCredentialRequestProofProvider]) -
- * because WHERE [SelectedCredential.holderKeyAlias] resolves to key material differs by
+ * because where [SelectedCredential.holderKeyRef] is resolved differs by
  * composition root:
  * - [passthrough] leaves credentials untouched, so the generic Oid4vpHolderService signs the Key
- *   Binding JWT itself via its own managed-KMS-identifier path (correct for a standalone consumer
- *   that provisions holder keys directly in a KeyManagerService).
- * - [SecureComponentOid4vpSdJwtHolderBindingProvider] pre-signs the Key Binding JWT here via
- *   [Wsca] and clears [SelectedCredential.holderKeyAlias] on the credentials it handled, so the
- *   downstream generic command treats them as already-final (its no-holder-key fast path). This
- *   is the wallet product's path: a Wscd-custodied key (e.g. non-extractable browser WebCrypto
- *   keys on the js target) does not round-trip through the KMS, so the generic path cannot
- *   resolve it.
+ *   Binding JWT through its configured holder-key resolver.
+ * - [SecureComponentOid4vpSdJwtHolderBindingProvider] delegates Key Binding JWT signing to [Wsca].
+ *   The selected WSCD resolves the alias and uses its configured KMS for the key operation. Which
+ *   KMS implementation and route the WSCD uses remains a WSCD/deployment concern. After signing,
+ *   the provider clears [SelectedCredential.holderKeyRef] and marks the prepared presentation so
+ *   the downstream generic command validates it without signing it a second time.
  *
- * Every composition root MUST wire exactly one of the two.
+ * Every wallet composition root MUST wire the WSCA-backed implementation explicitly.
  */
-interface Oid4vpSdJwtHolderBindingProvider {
+fun interface Oid4vpSdJwtHolderBindingProvider {
     suspend fun applyHolderBinding(request: Oid4vpSdJwtHolderBindingRequest): IdkResult<List<SelectedCredential>, IdkError>
-
-    companion object {
-        /** Safe default: preserves today's behavior (KB-JWT signing stays inside the generic holder). */
-        val passthrough: Oid4vpSdJwtHolderBindingProvider =
-            object : Oid4vpSdJwtHolderBindingProvider {
-                override suspend fun applyHolderBinding(
-                    request: Oid4vpSdJwtHolderBindingRequest,
-                ): IdkResult<List<SelectedCredential>, IdkError> = Ok(request.selectedCredentials)
-            }
-    }
 }
 
 /**
- * WSCA/WSCD-backed SD-JWT holder binding. Reuses [SdJwtCodec] (parsing, presentation
- * serialization) exactly as the generic holder's own `PresentSdJwtCommandImpl` does, but signs the
- * Key Binding JWT through [Wsca.sign] instead of a KMS-managed-identifier lookup: the signing key
- * is resolved via [Wsca.ensureKey] using [SelectedCredential.holderKeyAlias] as the stable alias -
- * the same idempotent alias-based resolution [Oid4vciKeyAttestationProvider][com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciKeyAttestationProvider]
- * implementations already use to re-resolve a previously-minted holder key.
+ * WSCA/WSCD-backed SD-JWT holder binding. Reuses [SdJwtCodec] for parsing and presentation
+ * serialization, then delegates the signature to [Wsca]. The selected WSCD resolves
+ * [SelectedCredential.holderKeyRef] and performs the key operation with its configured KMS.
+ * The KMS implementation and local or remote routing remain hidden behind the WSCA/WSCD boundary.
  */
 class SecureComponentOid4vpSdJwtHolderBindingProvider(
     private val secureComponentCryptoSurface: Wsca,
@@ -88,7 +70,7 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
         val audience = request.request.verifierInfo.clientId
         val bound = mutableListOf<SelectedCredential>()
         for (credential in request.selectedCredentials) {
-            val holderKeyAlias = credential.holderKeyAlias
+            val holderKeyAlias = credential.holderKeyRef
             val format = CredentialFormat.fromValueLenient(credential.format)
             if (format?.isSdJwt != true || holderKeyAlias.isNullOrBlank() || nonce.isNullOrBlank()) {
                 // Nothing for this seam to add (no holder key, not an SD-JWT format), or the
@@ -100,6 +82,8 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
             val presentation =
                 signKeyBinding(
                     walletUnitId = request.walletUnitId,
+                    resolvedRequest = request.request,
+                    credentialQueryId = credential.credentialQueryId,
                     operationBinding =
                         request.operationBinding?.takeIf { it.isNotBlank() }
                             ?: return Err(
@@ -112,21 +96,26 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
                     nonce = nonce,
                     holderKeyAlias = holderKeyAlias,
                 ).getOrElse { return Err(it) }
-            bound += credential.copy(presentation = presentation, holderKeyAlias = null)
+            bound +=
+                credential.copy(
+                    presentation = presentation,
+                    holderKeyRef = null,
+                    sdJwtKeyBindingApplied = true,
+                )
         }
         return Ok(bound)
     }
 
     /**
-     * Builds and signs the RFC 9901 Section 4.3 Key Binding JWT, mirroring
-     * `PresentSdJwtCommandImpl.createKeyBindingJwt`'s header/payload shape exactly (JWK-mode
-     * identifier header, aud/nonce/iat/sd_hash payload, no explicit `typ` - matching the generic
-     * path's actual output, not just the RFC's `kb+jwt` recommendation, since this codebase's own
-     * verifier does not check `typ`) so a verifier sees the identical shape regardless of which
-     * provider produced it.
+     * Signs the RFC 9901 Section 4.3 input prepared by the shared SD-JWT module. This adapter only
+     * delegates key resolution and signing to WSCA/WSCD; the selected WSCD uses its configured KMS.
+     * Disclosure selection, `typ=kb+jwt`, payload construction, and `sd_hash` remain standards logic
+     * in `lib/sdjwt`.
      */
     private suspend fun signKeyBinding(
         walletUnitId: String,
+        resolvedRequest: ResolvedOid4vpRequest,
+        credentialQueryId: String,
         operationBinding: String,
         sdJwtPresentation: String,
         audience: String,
@@ -134,11 +123,19 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
         holderKeyAlias: String,
     ): IdkResult<String, IdkError> {
         val sdJwt = SdJwtCodec.parse(sdJwtPresentation).getOrElse { return Err(it) }
-        val presentationWithoutKb = SdJwtCodec.serialize(sdJwt, includeKeyBinding = false, forPresentation = true)
-        val digestAlg = digestAlgorithm(sdJwt.payload.undisclosedPayload)
-        val sdHash =
-            hash(dataInput = presentationWithoutKb.encodeToByteArray(), digestAlgorithm = digestAlg)
-                .encodeToBase64Url()
+        val selection =
+            runCatching {
+                SdJwtPresentation.select(
+                    compact = sdJwtPresentation,
+                    disclosurePaths =
+                        SdJwtPresentation.firstSatisfiableDisclosurePaths(
+                            compact = sdJwtPresentation,
+                            options = resolvedRequest.credentialDisclosurePathOptions(credentialQueryId),
+                        ),
+                )
+            }.getOrElse {
+                return Err(IdkError.fromString(code = "oid4vp.disclosure_selection_failed", message = it.message ?: "Disclosure selection failed"))
+            }
 
         val keyRef =
             secureComponentCryptoSurface
@@ -158,34 +155,24 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
                 )
         verifyCredentialHolderKey(sdJwt.payload.undisclosedPayload, publicJwk).getOrElse { return Err(it) }
 
-        // JWK-mode identifier header, matching PresentSdJwtCommandImpl's
-        // CreateJwsArgs(mode = JwsIdentifierMode.JWK, opts = CreateJwsOpts(noIdentifierInHeader = false)).
-        val header =
-            buildJsonObject {
-                put("alg", JsonPrimitive(keyRef.algorithm))
-                put("jwk", Json.parseToJsonElement(publicJwk))
-            }
-        val payload =
-            buildJsonObject {
-                put("aud", JsonPrimitive(audience))
-                put("nonce", JsonPrimitive(nonce))
-                put("iat", JsonPrimitive(Clock.System.now().epochSeconds))
-                put("sd_hash", JsonPrimitive(sdHash))
-            }
-        val encodedHeader = json.encodeToString(header).encodeToByteArray().encodeToBase64Url()
-        val encodedPayload = json.encodeToString(payload).encodeToByteArray().encodeToBase64Url()
-        val signingInput = "$encodedHeader.$encodedPayload".encodeToByteArray()
+        val keyBindingInput =
+            SdJwtPresentation.keyBindingInput(
+                selection = selection,
+                audience = audience,
+                nonce = nonce,
+                algorithm = keyRef.algorithm,
+                issuedAtEpochSeconds = Clock.System.now().epochSeconds,
+            )
         val signature =
             secureComponentCryptoSurface
                 .sign(
                     walletUnitId = walletUnitId,
                     keyRef = keyRef,
-                    signingInput = signingInput,
+                    signingInput = keyBindingInput.signingInput,
                     operationBinding = operationBinding,
                 )
                 .getOrElse { return Err(it) }
-        val kbJwt = "$encodedHeader.$encodedPayload.${signature.encodeToBase64Url()}"
-        return Ok("$presentationWithoutKb$kbJwt")
+        return Ok(keyBindingInput.complete(signature))
     }
 
     /**
@@ -226,24 +213,6 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
         return Ok(Unit)
     }
 
-    /**
-     * Mirrors `PresentSdJwtCommandImpl.getDigestAlgorithm`: reads the SD-JWT's `_sd_alg` claim from
-     * the undisclosed payload, falling back to RFC 9901's SHA-256 default.
-     */
-    private fun digestAlgorithm(undisclosedPayload: JsonObject): DigestAlg {
-        val algClaim = undisclosedPayload[SdJwt.SD_ALG_CLAIM]?.jsonPrimitive?.contentOrNull
-        return algClaim
-            ?.let { claim -> DigestAlg.entries.find { it.httpHeaderId?.equals(claim, ignoreCase = true) == true } }
-            ?: SdJwt.DEFAULT_HASH_ALG
-    }
-
-    private companion object {
-        val json =
-            Json {
-                encodeDefaults = false
-                explicitNulls = false
-            }
-    }
 }
 
 internal fun samePublicKey(

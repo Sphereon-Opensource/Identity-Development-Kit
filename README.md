@@ -64,7 +64,7 @@ Each item links to its guide on the documentation site.
 **[Cryptographic Services](https://docs.sphereon.com/idk/guides/crypto/key-management)**
 - [JOSE / COSE](https://docs.sphereon.com/idk/guides/crypto/cose-jose) (JWS, JWE, JWT)
 - [Signing and verification](https://docs.sphereon.com/idk/guides/crypto/signing-verification)
-- Pluggable [KMS providers](https://docs.sphereon.com/idk/guides/crypto/kms-providers): AWS, Azure, mobile keystores, REST
+- Pluggable [KMS providers](https://docs.sphereon.com/idk/guides/crypto/kms-providers): software, AWS, Azure, mobile keystores
 - [Identifier resolution](https://docs.sphereon.com/idk/guides/crypto/identifier-resolution) (DID, x5c, JWK)
 
 **[Trust Management](https://docs.sphereon.com/idk/guides/trust/overview)**
@@ -225,8 +225,7 @@ Full module reference: [docs.sphereon.com/idk/guides/modules](https://docs.spher
 | `lib-crypto-kms-provider-aws` | AWS KMS integration |
 | `lib-crypto-kms-provider-azure` | Azure Key Vault / HSM integration |
 | `lib-crypto-kms-provider-mobile` | iOS Keychain / Android Keystore |
-| `lib-crypto-kms-provider-rest` | Remote KMS via REST API |
-| `lib-crypto-kms-rest-server` | KMS REST server implementation |
+| `services-kms-rest` | Ktor wiring a KMS host embeds; the hosting assembly mounts the tenant typed KMS resource surface |
 
 </details>
 
@@ -373,7 +372,7 @@ IDK ships reference services that wrap the core libraries with HTTP adapters. Ea
 
 | Service | Module | Documentation |
 |:--------|:-------|:--------------|
-| KMS REST | `services/kms` | [docs.sphereon.com/idk/services/kms](https://docs.sphereon.com/idk/services/kms) |
+| KMS host wiring | `services/kms/rest` | [docs.sphereon.com/idk/services/kms](https://docs.sphereon.com/idk/services/kms) |
 | Ktor base | `services/ktor` | [docs.sphereon.com/idk/services/ktor](https://docs.sphereon.com/idk/services/ktor) |
 | OAuth 2.0 Authorization Server | `services/oauth2-as/rest` | [docs.sphereon.com/idk/services/oauth2-as](https://docs.sphereon.com/idk/services/oauth2-as) |
 | OID4VCI Issuer | `services/oid4vci-issuer/rest` | [docs.sphereon.com/idk/services/oid4vci-issuer](https://docs.sphereon.com/idk/services/oid4vci-issuer) |
@@ -472,7 +471,7 @@ Sphereon's proprietary product that extends the IDK with the layers required for
 - **Zero-trust authorization** via the OpenID AuthZEN specification, with Cedarling (Cedar), OPA, and any AuthZEN-compliant PDP supported. Authorization is transparent: a `PolicyCommandExtension` intercepts every command before execution.
 - **Identity verification and reconciliation**: composable IDV workflows chaining OIDC, document scanning, biometric, and OTP verification; privacy-preserving identity matching with HMAC-hashed linking; policy-driven reconciliation; an auth bridge from wallet presentations to OAuth2/OIDC.
 - **Microservice transport**: dual transport that makes command execution location-transparent. The same command can run in-process or be forwarded to a remote service via HTTP RPC or gRPC, controlled by configuration.
-- **Cloud configuration and secrets**: cloud config providers (Azure App Configuration, REST), secret vaults (AWS Secrets Manager, Azure Key Vault, HashiCorp Vault), `${secret:vault:path}` interpolation, offline cache.
+- **Cloud configuration and secrets**: cloud config providers (Azure App Configuration, REST) plus server-issued opaque secret IDs backed by AWS Secrets Manager, Azure Key Vault, or HashiCorp Vault.
 - **Audit and compliance**: structured audit logging with sensitive-data redaction, multiple output formats (JSON, CEF, OCSF), tamper evidence via hash chaining and signed checkpoints.
 
 ### [Verifiable Data Exchange (VDX)](https://sphereon.com)

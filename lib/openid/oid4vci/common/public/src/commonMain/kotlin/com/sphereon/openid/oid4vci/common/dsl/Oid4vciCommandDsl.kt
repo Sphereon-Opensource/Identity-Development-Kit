@@ -256,6 +256,8 @@ data class RequestCredentialArgsState(
  */
 @Oid4vciDsl
 class CreateCredentialRequestProofArgsBuilder {
+    private var walletUnitId: String? = null
+    private var operationBinding: String? = null
     private var issuerUrl: String? = null
     private var signingKeyId: String? = null
 
@@ -279,6 +281,15 @@ class CreateCredentialRequestProofArgsBuilder {
      */
     fun issuerUrl(url: String) {
         this.issuerUrl = url
+    }
+
+    /** Select the wallet unit and bind the attended WSCA key-use operation. */
+    fun secureComponent(
+        walletUnitId: String,
+        operationBinding: String,
+    ) {
+        this.walletUnitId = walletUnitId
+        this.operationBinding = operationBinding
     }
 
     /**
@@ -333,6 +344,14 @@ class CreateCredentialRequestProofArgsBuilder {
     }
 
     fun buildState(): CreateCredentialRequestProofArgsState {
+        val walletUnit =
+            requireNotNull(walletUnitId) {
+                "CreateCredentialRequestProofArgsBuilder: 'secureComponent' must set walletUnitId"
+            }
+        val operation =
+            requireNotNull(operationBinding) {
+                "CreateCredentialRequestProofArgsBuilder: 'secureComponent' must set operationBinding"
+            }
         val url =
             requireNotNull(issuerUrl) {
                 "CreateCredentialRequestProofArgsBuilder: 'issuerUrl' must be set"
@@ -342,6 +361,8 @@ class CreateCredentialRequestProofArgsBuilder {
                 "CreateCredentialRequestProofArgsBuilder: 'signingKey' must be called to set the signing key identifier"
             }
         return CreateCredentialRequestProofArgsState(
+            walletUnitId = walletUnit,
+            operationBinding = operation,
             issuerUrl = url,
             cNonce = cNonce,
             signingKeyId = keyId,
@@ -356,6 +377,8 @@ class CreateCredentialRequestProofArgsBuilder {
 /** Validated intermediate state produced by [CreateCredentialRequestProofArgsBuilder]. */
 @JsExportCompat
 data class CreateCredentialRequestProofArgsState(
+    val walletUnitId: String,
+    val operationBinding: String,
     val issuerUrl: String,
     val cNonce: String?,
     val signingKeyId: String,
@@ -389,6 +412,8 @@ data class CreateCredentialRequestProofArgsState(
 @Oid4vciDsl
 class RequestCredentialWithFlowArgsBuilder {
     private var sessionId: String? = null
+    private var walletUnitId: String? = null
+    private var operationBinding: String? = null
     private var credentialEndpoint: String? = null
     private var accessToken: String? = null
     private var issuerUrl: String? = null
@@ -419,6 +444,15 @@ class RequestCredentialWithFlowArgsBuilder {
      */
     fun sessionId(id: String) {
         this.sessionId = id
+    }
+
+    /** Select the wallet unit and bind the attended WSCA key-use operation. */
+    fun secureComponent(
+        walletUnitId: String,
+        operationBinding: String,
+    ) {
+        this.walletUnitId = walletUnitId
+        this.operationBinding = operationBinding
     }
 
     /**
@@ -508,6 +542,14 @@ class RequestCredentialWithFlowArgsBuilder {
             requireNotNull(sessionId) {
                 "RequestCredentialWithFlowArgsBuilder: 'sessionId' must be set"
             }
+        val walletUnit =
+            requireNotNull(walletUnitId) {
+                "RequestCredentialWithFlowArgsBuilder: 'secureComponent' must set walletUnitId"
+            }
+        val operation =
+            requireNotNull(operationBinding) {
+                "RequestCredentialWithFlowArgsBuilder: 'secureComponent' must set operationBinding"
+            }
         val endpoint =
             requireNotNull(credentialEndpoint) {
                 "RequestCredentialWithFlowArgsBuilder: 'endpoint' must be called to set the credential endpoint URL"
@@ -532,6 +574,8 @@ class RequestCredentialWithFlowArgsBuilder {
         }
         return RequestCredentialWithFlowArgsState(
             sessionId = session,
+            walletUnitId = walletUnit,
+            operationBinding = operation,
             credentialEndpoint = endpoint,
             accessToken = token,
             issuerUrl = issuer,
@@ -551,6 +595,8 @@ class RequestCredentialWithFlowArgsBuilder {
 @JsExportCompat
 data class RequestCredentialWithFlowArgsState(
     val sessionId: String,
+    val walletUnitId: String,
+    val operationBinding: String,
     val credentialEndpoint: String,
     val accessToken: String,
     val issuerUrl: String,

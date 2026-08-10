@@ -19,6 +19,7 @@ package com.sphereon.core.api.conf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -197,6 +198,103 @@ class EnvPrefixProtectionParserTest {
 // ========== ProtectedMutableMapPropertySource Tests ==========
 
 class ProtectedMutableMapPropertySourceTest {
+    @Test
+    fun tenantAndPrincipalWritesRejectDirectEnvironmentReferences() {
+        val tenant = ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT)
+        val principal = ProtectedMutableMapPropertySource("principal", ConfigLevel.PRINCIPAL)
+
+        val tenantError =
+            assertFailsWith<IllegalArgumentException> {
+                tenant.addProperty("endpoint", "https://\${env:INTERNAL_HOST}/v1")
+            }
+        val principalError =
+            assertFailsWith<IllegalArgumentException> {
+                principal.addProtectedProperty(
+                    "endpoint",
+                    "\${env:INTERNAL_HOST:fallback}",
+                    PropertyProtection.PROTECTED,
+                )
+            }
+
+        assertEquals(tenantError.message, principalError.message)
+        assertFalse(tenantError.message.orEmpty().contains("INTERNAL_HOST"))
+        assertFalse(tenant.hasProperty("endpoint"))
+        assertFalse(principal.hasProperty("endpoint"))
+    }
+
+    @Test
+    fun lowerScopeWritesRejectNestedMapListAndArrayEnvironmentReferences() {
+        val source = ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT)
+        val values =
+            listOf(
+                mapOf("nested" to listOf("\${env:INTERNAL_HOST}")),
+                listOf(mapOf("nested" to "\${env:INTERNAL_HOST}")),
+                arrayOf<Any>("safe", mapOf("nested" to "\${env:INTERNAL_HOST}")),
+            )
+
+        values.forEachIndexed { index, value ->
+            val error =
+                assertFailsWith<IllegalArgumentException> {
+                    source.addProperty("nested.$index", value)
+                }
+            assertFalse(error.message.orEmpty().contains("INTERNAL_HOST"))
+            assertFalse(source.hasProperty("nested.$index"))
+        }
+    }
+
+    @Test
+    fun everyScopeRejectsNestedExternalSecretReferencesBeforeWrite() {
+        listOf(ConfigLevel.APP, ConfigLevel.TENANT, ConfigLevel.PRINCIPAL).forEach { scope ->
+            val source = ProtectedMutableMapPropertySource("source-$scope", scope)
+            val value = mapOf("nested" to listOf("\${secret:@env:INTERNAL_HOST}"))
+
+            val error =
+                assertFailsWith<IllegalArgumentException> {
+                    source.addProperty("provider.reference", value)
+                }
+
+            assertEquals("Configuration value is not permitted", error.message)
+            assertFalse(source.hasProperty("provider.reference"))
+        }
+    }
+
+    @Test
+    fun lowerScopeWriteValidationFailsClosedWhenTraversalBoundsAreExceeded() {
+        val source = ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT)
+        var value: Any = "safe"
+        repeat(34) {
+            value = listOf(value)
+        }
+
+        assertFailsWith<IllegalArgumentException> {
+            source.addProperty("nested.too-deep", value)
+        }
+        assertFalse(source.hasProperty("nested.too-deep"))
+    }
+
+    @Test
+    fun exposedProtectedMapIsDefensiveAndCannotMutateRegisteredValues() {
+        val source =
+            ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT).apply {
+                addProperty("service.endpoint", "safe")
+            }
+
+        source.getSource()["service.endpoint"] = "\${env:PATH}"
+        source.getSource()["service.late"] = "\${env:PATH}"
+
+        assertEquals("safe", source.getPropertyAsString("service.endpoint"))
+        assertFalse(source.hasProperty("service.late"))
+    }
+
+    @Test
+    fun appWritePreservesDeclaredEnvironmentReference() {
+        val source = ProtectedMutableMapPropertySource("app", ConfigLevel.APP)
+
+        source.addProperty("endpoint", "\${env:EXTERNAL_BASE_URL:https://example.com}")
+
+        assertEquals("\${env:EXTERNAL_BASE_URL:https://example.com}", source.getPropertyAsString("endpoint"))
+    }
+
     @Test
     fun addPropertyWithoutPrefixHasNoProtection() {
         val source = ProtectedMutableMapPropertySource("test", ConfigLevel.APP)
@@ -505,9 +603,13 @@ class PropertyInterpolatorProtectionTest {
             // TENANT cannot interpolate - denied BEFORE value is read
             val tenantResult = interpolator.interpolate("\${db.password}", resolver, ConfigLevel.TENANT)
             assertTrue(tenantResult.isErr)
-            assertTrue(
+            assertFalse(
                 tenantResult.error.message.defaultMessage
-                    .contains("PROTECTED"),
+                    .contains("db.password")
+            )
+            assertFalse(
+                tenantResult.error.message.defaultMessage
+                    .contains("secret")
             )
         }
 
@@ -524,9 +626,13 @@ class PropertyInterpolatorProtectionTest {
             // TENANT cannot use ${app:db.password} interpolation
             val result = interpolator.interpolate("\${app:db.password}", resolver, ConfigLevel.TENANT)
             assertTrue(result.isErr)
-            assertTrue(
+            assertFalse(
                 result.error.message.defaultMessage
-                    .contains("PROTECTED"),
+                    .contains("db.password")
+            )
+            assertFalse(
+                result.error.message.defaultMessage
+                    .contains("secret")
             )
         }
 
@@ -555,7 +661,7 @@ class PropertyInterpolatorProtectionTest {
         }
 
     @Test
-    fun interpolateWithDefaultValueStillDeniedForProtectedProperty() =
+    fun protectedAndAbsentValuesUseTheSameDefaultWithoutReadingProtectedValue() =
         runTest {
             val source = ProtectedMutableMapPropertySource("app", ConfigLevel.APP)
             source.addProperty("protected.db.password", "secret")
@@ -564,13 +670,13 @@ class PropertyInterpolatorProtectionTest {
             val resolver = ProtectedPropertySourcesResolver(sources, ConfigLevel.APP)
             val interpolator = DefaultPropertyInterpolator()
 
-            // Even with a default value, protection check should fail first
-            val result = interpolator.interpolate("\${db.password:fallback}", resolver, ConfigLevel.TENANT)
-            assertTrue(result.isErr)
-            assertTrue(
-                result.error.message.defaultMessage
-                    .contains("PROTECTED"),
-            )
+            val protected = interpolator.interpolate("\${db.password:fallback}", resolver, ConfigLevel.TENANT)
+            val absent = interpolator.interpolate("\${db.absent:fallback}", resolver, ConfigLevel.TENANT)
+
+            assertTrue(protected.isOk)
+            assertTrue(absent.isOk)
+            assertEquals("fallback", protected.value)
+            assertEquals(protected.value, absent.value)
         }
 
     @Test
@@ -690,5 +796,167 @@ class ProtectedPropertyResolverFactoryTest {
         val resolver = ProtectedPropertyResolverFactory.forPrincipal(sources)
 
         assertEquals(ConfigLevel.PRINCIPAL, resolver.resolverLevel)
+    }
+}
+
+class ProtectedDirectVisibilityTest {
+    private fun sourcesWithProtectedAppAndEnvironment(): DefaultPropertySources {
+        val app =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProtectedProperty("service.token", "server-owned", PropertyProtection.PROTECTED)
+                addProperty("service.public", "visible")
+            }
+        return DefaultPropertySources(
+            mutableListOf(
+                StaticProtectedEnvPropertySourceObject,
+                app,
+            ),
+        )
+    }
+
+    @Test
+    fun tenantAndPrincipalDirectReadsHideProtectedAppAndEnvironmentSources() {
+        val sources = sourcesWithProtectedAppAndEnvironment()
+
+        listOf(ConfigLevel.TENANT, ConfigLevel.PRINCIPAL).forEach { level ->
+            val resolver = ProtectedPropertySourcesResolver(sources, level)
+
+            assertFalse(resolver.containsProperty("service.token"))
+            assertNull(resolver.getPropertyAsString("service.token"))
+            assertNull(resolver.getPropertyAtScope("service.token", String::class, ConfigLevel.APP))
+            assertFalse(resolver.getAllProperties().containsKey("service.token"))
+            assertFalse(resolver.getSubProperties(setOf("service"), stripPrefix = false).containsKey("service.token"))
+
+            assertFalse(resolver.containsProperty("PATH"))
+            assertNull(resolver.getPropertyAsString("PATH"))
+            assertNull(resolver.getPropertyAtScope("PATH", String::class, ConfigLevel.APP))
+            assertFalse(resolver.getAllProperties().containsKey("path"))
+            assertFalse(resolver.getSubProperties(setOf("path"), stripPrefix = false).containsKey("path"))
+
+            assertEquals("visible", resolver.getPropertyAsString("service.public"))
+        }
+    }
+
+    @Test
+    fun interpolateFalseFactoryStillHidesProtectedAndEnvironmentValues() {
+        val resolver =
+            PropertyResolverFactory.create(
+                propertySources = sourcesWithProtectedAppAndEnvironment(),
+                interpolator = null,
+                resolverLevel = ConfigLevel.TENANT,
+            )
+
+        assertFalse(resolver.containsProperty("service.token"))
+        assertNull(resolver.getPropertyAsString("service.token"))
+        assertFalse(resolver.containsProperty("PATH"))
+        assertNull(resolver.getPropertyAsString("PATH"))
+        assertEquals("visible", resolver.getPropertyAsString("service.public"))
+    }
+}
+
+class ScopedPropertySourceWrapperContainmentTest {
+    @Test
+    fun scopedCollectionIsValidatedAsAnyBeforeStringConversionAtRegistration() {
+        val scopedCollection =
+            object :
+                MutableMapPropertySource("tenant-collection"),
+                ScopedPropertySource<MutableMap<String, Any>> {
+                override val configLevel: ConfigLevel = ConfigLevel.TENANT
+
+                override fun getPropertyAsString(name: String): String? = "opaque"
+            }.apply {
+                addProperty(
+                    "service.options",
+                    mapOf("nested" to listOf("safe", "\${env:PATH}")),
+                )
+            }
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultPropertySources(mutableListOf(scopedCollection))
+        }
+    }
+
+    @Test
+    fun postRegistrationBackingMutationFailsClosedForLowerScopeReads() {
+        val backing =
+            MutableMapPropertySource("tenant-backing").apply {
+                addProperty("service.endpoint", "safe")
+            }
+        val wrapped = ScopedPropertySourceWrapper(backing, ConfigLevel.TENANT)
+        val resolver =
+            ProtectedPropertySourcesResolver(
+                DefaultPropertySources(mutableListOf(wrapped)),
+                ConfigLevel.TENANT,
+            )
+
+        backing.getSource()["service.endpoint"] = mapOf("nested" to listOf("\${env:PATH}"))
+
+        assertFalse(resolver.containsProperty("service.endpoint"))
+        assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("service.endpoint")
+        }
+        assertFailsWith<IllegalStateException> {
+            resolver.getSubProperties(setOf("service"), stripPrefix = false)
+        }
+    }
+
+    @Test
+    fun wrapperPreservesProtectionAndRefreshMetadata() {
+        val protected =
+            ProtectedMutableMapPropertySource("protected", ConfigLevel.APP).apply {
+                addProtectedProperty("service.token", "server-owned", PropertyProtection.PROTECTED)
+            }
+        val protectedWrapper = ScopedPropertySourceWrapper(protected, ConfigLevel.APP)
+        val refreshable = WrapperRefreshablePropertySource()
+        val refreshableWrapper = ScopedPropertySourceWrapper(refreshable, ConfigLevel.APP)
+
+        assertNotNull(protectedWrapper.getProtection("service.token"))
+        assertFalse(protectedWrapper.canInterpolate("service.token", ConfigLevel.TENANT))
+        assertEquals(0L, refreshableWrapper.contentRevision)
+
+        refreshable.publishOnRefresh()
+        refreshableWrapper.refreshIfNeeded()
+
+        assertEquals(1L, refreshableWrapper.contentRevision)
+        assertEquals("updated", refreshableWrapper.getPropertyAsString("refresh.value"))
+    }
+
+    @Test
+    fun wrappedEnvironmentSourceCannotBypassLowerScopeVisibility() {
+        val wrappedEnvironment = ScopedPropertySourceWrapper(EnvPropertySource(), ConfigLevel.APP)
+        val resolver =
+            ProtectedPropertySourcesResolver(
+                DefaultPropertySources(mutableListOf(wrappedEnvironment)),
+                ConfigLevel.TENANT,
+            )
+
+        assertFalse(resolver.containsProperty("PATH"))
+        assertNull(resolver.getPropertyAsString("PATH"))
+        assertTrue(resolver.getAllProperties().isEmpty())
+    }
+}
+
+private class WrapperRefreshablePropertySource :
+    MutableMapPropertySource("refreshable-wrapper"),
+    RefreshablePropertySource {
+    override var contentRevision: Long = 0L
+        private set
+
+    private var publish = false
+
+    init {
+        addProperty("refresh.value", "initial")
+    }
+
+    fun publishOnRefresh() {
+        publish = true
+    }
+
+    override fun refreshIfNeeded() {
+        if (publish) {
+            publish = false
+            addProperty("refresh.value", "updated")
+            contentRevision += 1L
+        }
     }
 }

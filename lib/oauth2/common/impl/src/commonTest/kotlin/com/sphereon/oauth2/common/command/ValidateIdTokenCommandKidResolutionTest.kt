@@ -61,7 +61,7 @@ class ValidateIdTokenCommandKidResolutionTest {
 
     private val app = createOauth2CommonTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("id-token-kid-resolution")
+    private val session = context.sessionContextManager.createOrGetFromId("id-token-kid-resolution", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

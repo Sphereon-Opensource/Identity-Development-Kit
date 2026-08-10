@@ -47,15 +47,6 @@ enum class ResolutionSource {
     /** Resolved from a verified JWT/OIDC token */
     TOKEN,
 
-    /** Resolved from an HTTP header (e.g., X-Tenant-Id) */
-    HEADER,
-
-    /** Resolved from the Host header */
-    HOST,
-
-    /** Resolved from the URL path prefix */
-    PATH,
-
     /** Resolved from a system default */
     DEFAULT,
 
@@ -66,18 +57,14 @@ enum class ResolutionSource {
 /**
  * Input data for the identity resolution pipeline.
  *
- * Aggregates all available identity signals from an incoming request.
+ * Carries only claims produced by cryptographic token validation. Transport
+ * headers, hosts, and paths are deliberately absent so they cannot become
+ * identity inputs accidentally.
  *
- * @property headers HTTP headers from the request (header name → value)
  * @property tokenClaims Parsed JWT claims if a bearer token was present
- * @property hostHeader The Host header value if available
- * @property pathPrefix URL path prefix if available (for path-based tenant routing)
  */
 data class IdentityResolutionInput(
-    val headers: Map<String, String> = emptyMap(),
     val tokenClaims: Map<String, JsonElement>? = null,
-    val hostHeader: String? = null,
-    val pathPrefix: String? = null,
 )
 
 /**
@@ -103,16 +90,12 @@ data class IdentityResolutionResult(
  * @property audience Token audience (aud claim) if resolved from token
  * @property resolvedFrom How the primary identity was resolved
  * @property additionalClaims Extra claims extracted during resolution
- * @property headerTenantId Tenant ID from X-Tenant-Id header (even if token was used as primary)
- * @property headerPrincipalId Principal ID from X-Principal-Id header (even if token was used as primary)
  */
 data class IdentityMetadata(
     val issuer: String? = null,
     val audience: String? = null,
     val resolvedFrom: ResolutionSource = ResolutionSource.UNKNOWN,
     val additionalClaims: Map<String, JsonElement> = emptyMap(),
-    val headerTenantId: String? = null,
-    val headerPrincipalId: String? = null,
 )
 
 /**

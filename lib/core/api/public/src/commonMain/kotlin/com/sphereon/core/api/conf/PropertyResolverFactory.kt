@@ -25,7 +25,8 @@ import kotlin.native.ObjCName
  *
  * When an [interpolator] is provided, returns an [InterpolatingPropertySourcesPropertyResolver]
  * that resolves `${...}` placeholders inline after property lookup.
- * When no interpolator is provided, returns a plain [PropertySourcesPropertyResolver].
+ * When no interpolator is provided, returns a protection-aware resolver so disabling
+ * interpolation never disables scope authorization.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("PropertyResolverFactory", exact = true)
@@ -42,11 +43,23 @@ object PropertyResolverFactory {
         propertySources: PropertySources,
         interpolator: PropertyInterpolator? = null,
         redactionPolicy: SecretRedactionPolicy = DefaultSecretRedactionPolicy(),
-    ): PropertyResolver =
+        resolverLevel: ConfigLevel,
+        interpolationPolicyProvider: InterpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
+    ): ProtectedPropertyResolver =
         if (interpolator != null) {
-            InterpolatingPropertySourcesPropertyResolver(propertySources, interpolator, redactionPolicy)
+            InterpolatingPropertySourcesPropertyResolver(
+                propertySources = propertySources,
+                interpolator = interpolator,
+                redactionPolicy = redactionPolicy,
+                resolverLevel = resolverLevel,
+                interpolationPolicyProvider = interpolationPolicyProvider,
+            )
         } else {
-            PropertySourcesPropertyResolver(propertySources, redactionPolicy)
+            ProtectedPropertySourcesResolver(
+                propertySources = propertySources,
+                resolverLevel = resolverLevel,
+                redactionPolicy = redactionPolicy,
+            )
         }
 
     /**
@@ -54,21 +67,26 @@ object PropertyResolverFactory {
      *
      * @param propertySources The property sources to use
      * @param maxInterpolationDepth Max nesting depth for recursive interpolation
-     * @param secretResolver Optional resolver for secret references
      * @param redactionPolicy Policy for redacting sensitive values
      * @return A [PropertyResolver] with interpolation support
      */
     fun withInterpolation(
         propertySources: PropertySources,
         maxInterpolationDepth: Int = 10,
-        secretResolver: SecretResolver? = null,
         redactionPolicy: SecretRedactionPolicy = DefaultSecretRedactionPolicy(),
-    ): PropertyResolver {
+        resolverLevel: ConfigLevel,
+        interpolationPolicyProvider: InterpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
+    ): ProtectedPropertyResolver {
         val interpolator =
             DefaultPropertyInterpolator(
                 maxDepth = maxInterpolationDepth,
-                secretResolver = secretResolver,
             )
-        return create(propertySources, interpolator, redactionPolicy)
+        return create(
+            propertySources = propertySources,
+            interpolator = interpolator,
+            redactionPolicy = redactionPolicy,
+            resolverLevel = resolverLevel,
+            interpolationPolicyProvider = interpolationPolicyProvider,
+        )
     }
 }

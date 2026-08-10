@@ -105,10 +105,13 @@ class DidExternalIdentifierResolutionServiceImpl(
                         message = "No resolver found for DID method: ${parsedDid.method}",
                     ).asErrorResult()
 
-        // Resolve the DID
+        // Resolve the DID document, not the DID URL. Fragments are dereference
+        // selectors and must not become part of method-specific document ids
+        // (did:jwk would otherwise publish a malformed `#0#0` method).
+        val documentDid = did.substringBefore('#')
         val resolutionResult =
             resolver
-                .resolve(did, DidResolutionOptions())
+                .resolve(documentDid, DidResolutionOptions())
                 .getOrElse { return Err(it) }
 
         // Convert DID document to crypto resolution types
@@ -118,13 +121,19 @@ class DidExternalIdentifierResolutionServiceImpl(
         val jwks = extractJwks(resolutionResult.didDocument)
         val didJwks = extractDidDocumentJwks(resolutionResult.didDocument)
 
-        // Get the first JWK as keyInfo
-        // Note: keyInfo is required but we may not have any keys, which would be an error case
+        // A DID URL fragment identifies one verification method. Never silently
+        // fall back to the first document key: multi-key hosted DIDs commonly
+        // publish verifier and issuer keys in a different order.
         val keyInfo =
-            jwks.firstOrNull()
+            selectDidKeyInfo(did, parsedDid.fragment, jwks)
                 ?: return IdkError
                     .NOT_FOUND_ERROR(
-                        message = "DID document has no verification methods with public keys: $did",
+                        message =
+                            if (parsedDid.fragment == null) {
+                                "DID document has no verification methods with public keys: $did"
+                            } else {
+                                "DID document does not contain exactly one public verification method for: $did"
+                            },
                     ).asErrorResult()
 
         return ExternalIdentifierResult
@@ -367,6 +376,20 @@ class DidExternalIdentifierResolutionServiceImpl(
 
     companion object {
         const val COMMAND_ID = "did.resolution.external"
+    }
+}
+
+internal fun selectDidKeyInfo(
+    identifier: String,
+    fragment: String?,
+    jwks: List<ResolvedKeyInfo<JwkType>>,
+): ResolvedKeyInfo<JwkType>? {
+    if (fragment == null) return jwks.firstOrNull()
+
+    val did = identifier.substringBefore('#')
+    val absoluteId = "$did#$fragment"
+    return jwks.singleOrNull { keyInfo ->
+        keyInfo.kid == absoluteId || keyInfo.kid == "#$fragment" || keyInfo.kid == fragment
     }
 }
 

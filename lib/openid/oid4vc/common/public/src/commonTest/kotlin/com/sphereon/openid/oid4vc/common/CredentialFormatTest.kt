@@ -39,8 +39,8 @@ class CredentialFormatTest {
 
     @Test
     fun serializesToCorrectJsonValues() {
-        assertEquals("\"dc+sd-jwt\"", json.encodeToString(CredentialFormat.SD_JWT_DC))
-        assertEquals("\"vc+sd-jwt\"", json.encodeToString(CredentialFormat.SD_JWT_VC))
+        assertEquals("\"dc+sd-jwt\"", json.encodeToString(CredentialFormat.SD_JWT_VC))
+        assertEquals("\"vc+sd-jwt\"", json.encodeToString(CredentialFormat.W3C_VC_SD_JWT))
         assertEquals("\"mso_mdoc\"", json.encodeToString(CredentialFormat.MSO_MDOC))
         assertEquals("\"jwt_vc_json\"", json.encodeToString(CredentialFormat.JWT_VC_JSON))
         assertEquals("\"jwt_vp_json\"", json.encodeToString(CredentialFormat.JWT_VP_JSON))
@@ -48,8 +48,8 @@ class CredentialFormatTest {
 
     @Test
     fun fromValueExactMatch() {
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.fromValue("dc+sd-jwt"))
-        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.fromValue("vc+sd-jwt"))
+        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.fromValue("dc+sd-jwt"))
+        assertEquals(CredentialFormat.W3C_VC_SD_JWT, CredentialFormat.fromValue("vc+sd-jwt"))
         assertEquals(CredentialFormat.MSO_MDOC, CredentialFormat.fromValue("mso_mdoc"))
         assertEquals(CredentialFormat.JWT_VC_JSON, CredentialFormat.fromValue("jwt_vc_json"))
         assertEquals(CredentialFormat.JWT_VP_JSON, CredentialFormat.fromValue("jwt_vp_json"))
@@ -57,9 +57,11 @@ class CredentialFormatTest {
     }
 
     @Test
-    fun fromValueLenientPartialMatches() {
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.fromValueLenient("sd-jwt"))
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.fromValueLenient("sd_jwt"))
+    fun fromValueLenientKeepsSdJwtMediaTypesDistinct() {
+        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.fromValueLenient("application/dc+sd-jwt"))
+        assertEquals(CredentialFormat.W3C_VC_SD_JWT, CredentialFormat.fromValueLenient("application/vc+sd-jwt"))
+        assertNull(CredentialFormat.fromValueLenient("sd-jwt"))
+        assertNull(CredentialFormat.fromValueLenient("sd_jwt"))
         assertEquals(CredentialFormat.MSO_MDOC, CredentialFormat.fromValueLenient("mdoc"))
         assertEquals(CredentialFormat.JWT_VC_JSON, CredentialFormat.fromValueLenient("jwt_vc"))
         assertEquals(CredentialFormat.JWT_VP_JSON, CredentialFormat.fromValueLenient("jwt_vp"))
@@ -69,7 +71,7 @@ class CredentialFormatTest {
     @Test
     fun detectFormatFromPresentation() {
         // SD-JWT (contains ~)
-        assertEquals(CredentialFormat.SD_JWT_DC, CredentialFormat.detectFormat("header.payload.sig~disclosure1~"))
+        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.detectFormat("header.payload.sig~disclosure1~"))
         // JWT (three dot-separated parts)
         assertEquals(CredentialFormat.JWT_VC_JSON, CredentialFormat.detectFormat("eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"))
         // mDoc (long string, no dots)
@@ -80,8 +82,8 @@ class CredentialFormatTest {
 
     @Test
     fun isSdJwtProperty() {
-        assertTrue(CredentialFormat.SD_JWT_DC.isSdJwt)
         assertTrue(CredentialFormat.SD_JWT_VC.isSdJwt)
+        assertTrue(CredentialFormat.W3C_VC_SD_JWT.isSdJwt)
         assertFalse(CredentialFormat.MSO_MDOC.isSdJwt)
         assertFalse(CredentialFormat.JWT_VC_JSON.isSdJwt)
         assertFalse(CredentialFormat.JWT_VP_JSON.isSdJwt)
@@ -89,8 +91,8 @@ class CredentialFormatTest {
 
     @Test
     fun isJwtProperty() {
-        assertFalse(CredentialFormat.SD_JWT_DC.isJwt)
         assertFalse(CredentialFormat.SD_JWT_VC.isJwt)
+        assertFalse(CredentialFormat.W3C_VC_SD_JWT.isJwt)
         assertFalse(CredentialFormat.MSO_MDOC.isJwt)
         assertTrue(CredentialFormat.JWT_VC_JSON.isJwt)
         assertTrue(CredentialFormat.JWT_VP_JSON.isJwt)
@@ -98,7 +100,7 @@ class CredentialFormatTest {
 
     @Test
     fun isMdocProperty() {
-        assertFalse(CredentialFormat.SD_JWT_DC.isMdoc)
+        assertFalse(CredentialFormat.SD_JWT_VC.isMdoc)
         assertTrue(CredentialFormat.MSO_MDOC.isMdoc)
     }
 
@@ -113,13 +115,15 @@ class CredentialFormatTest {
     fun extensionFunctionDetectCredentialFormat() {
         val format = "header.payload.sig~disc~".detectCredentialFormat()
         assertNotNull(format)
-        assertEquals(CredentialFormat.SD_JWT_DC, format)
+        assertEquals(CredentialFormat.SD_JWT_VC, format)
     }
 
     @Test
     fun extensionFunctionMatchesCredentialFormat() {
-        assertTrue("dc+sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_DC))
-        assertTrue("sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_VC)) // cross-SD-JWT match
+        assertTrue("dc+sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_VC))
+        assertTrue("vc+sd-jwt".matchesCredentialFormat(CredentialFormat.W3C_VC_SD_JWT))
+        assertFalse("dc+sd-jwt".matchesCredentialFormat(CredentialFormat.W3C_VC_SD_JWT))
+        assertFalse("vc+sd-jwt".matchesCredentialFormat(CredentialFormat.SD_JWT_VC))
         assertFalse("mso_mdoc".matchesCredentialFormat(CredentialFormat.JWT_VC_JSON))
     }
 }

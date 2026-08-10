@@ -1,7 +1,10 @@
 package com.sphereon.oauth2.server.authorization.ktor
 
 import com.sphereon.core.api.log.Log
+import com.sphereon.core.api.session.AppCommandInvoker
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
+import com.sphereon.core.defaults.context.DefaultPrincipalInputString
+import com.sphereon.core.defaults.context.DefaultTenantInputString
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.app.RootScopeProvider
@@ -9,6 +12,8 @@ import com.sphereon.ktor.server.inject.KotlinInjectPlugin
 import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
+import com.sphereon.oauth2.server.authorization.impl.bootstrap.ensureActiveSigningKeyBlocking
+import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
@@ -38,11 +43,27 @@ fun main() {
             profile = System.getenv("APP_PROFILE") ?: "development",
             version = "1.0.0",
         )
+    val signingKeyResult =
+        ensureActiveSigningKeyBlocking(
+            appCommandInvoker = appGraph.appCommandInvoker,
+            signingKeyStore = appGraph.signingKeyStore,
+            tenantInput = DefaultTenantInputString("default"),
+            principalInput = DefaultPrincipalInputString("oauth2-as"),
+        )
+    check(!signingKeyResult.isErr) {
+        "OAuth2 Authorization Server signing-key bootstrap failed: ${signingKeyResult.error}"
+    }
 
-    embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
+    embeddedServer(CIO, port = configuredServerPort(), host = "0.0.0.0") {
         configureOAuth2As(appGraph)
     }.start(wait = true)
 }
+
+private fun configuredServerPort(): Int =
+    System.getenv("SERVER_PORT")
+        ?.toIntOrNull()
+        ?.also { require(it in 1..65535) { "SERVER_PORT must be between 1 and 65535" } }
+        ?: 8080
 
 /**
  * Configure the Ktor application with OAuth2 Authorization Server routes.
@@ -95,11 +116,13 @@ fun Application.configureOAuth2As(appGraph: AppGraph) {
 
 @DependencyGraph(AppScope::class)
 abstract class OAuth2AsAppGraph : AbstractAppGraph() {
-    // Default JWT-validation config for the STANDALONE IDK AS server. The internal signing-key
-    // provisioning endpoint injects JwtValidationService/IdpRegistry (to validate the platform's
-    // east-west bearer); their default impls need a JwtValidationConfig. The enterprise tenant-as
-    // assembly provides this via PlatformBearerAuth — this graph-local provider keeps the standalone
-    // server self-sufficient without colliding with that contributed binding.
+    abstract val appCommandInvoker: AppCommandInvoker
+    abstract val signingKeyStore: SigningKeyStore
+
+    // Default JWT-validation config for the STANDALONE IDK AS server: the default
+    // JwtValidationService/IdpRegistry bindings on this classpath need a JwtValidationConfig. The
+    // enterprise tenant-as assembly provides its own via PlatformBearerAuth — this graph-local
+    // provider keeps the standalone server self-sufficient without colliding with that binding.
     @Provides
     @SingleIn(AppScope::class)
     fun provideJwtValidationConfig(): JwtValidationConfig = JwtValidationConfig()
@@ -121,7 +144,7 @@ fun createOAuth2AsAppGraph(
     appId: String = "oauth2-as",
     profile: String = "production",
     version: String = "1.0.0",
-): AppGraph {
+): OAuth2AsAppGraph {
     val graph =
         createGraphFactory<OAuth2AsAppGraph.Factory>().create(
             application = application,

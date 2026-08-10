@@ -66,10 +66,17 @@ data class IssuanceContext(
     val sdPolicies: Map<String, SdPolicy> = emptyMap(),
     @JsExportIgnoreCompat
     val mandatoryClaims: Set<String> = emptySet(),
-    /** Key alias in the KMS for credential signing. Defaults to credentialConfigurationId. */
+    /**
+     * KMS key name this credential signs under, resolved server side before the issuance reaches a
+     * handler. A handler only consumes it and refuses when it is null; there is no credential
+     * configuration id, vct, or doctype to fall back on. Process-internal: never place it on a DTO,
+     * a REST response, or any serializable model.
+     */
     val signingKeyAlias: String? = null,
     /** Key reference mode for the signing key identifier in the JWT protected header. */
     val signingKeyMode: SigningKeyMode = SigningKeyMode.None,
+    /** Exact assertionMethod DID URL selected for the signing key. */
+    val signingVerificationMethodId: String? = null,
     /** Optional PEM file path for X.509 certificate chain (fallback when KMS key has no x5c). */
     val signingCertChainPath: String? = null,
     /**

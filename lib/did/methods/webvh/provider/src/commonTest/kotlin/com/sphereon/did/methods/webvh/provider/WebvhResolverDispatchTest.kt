@@ -45,7 +45,7 @@ class WebvhResolverDispatchTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("webvh-resolver-dispatch-test")
+                .createOrGetFromId("webvh-resolver-dispatch-test", principalType = com.sphereon.di.context.PrincipalType.USER)
         registry = (session.graph as DidResolverRegistryImpl.Graph).didResolverRegistry
     }
 

@@ -79,7 +79,7 @@ class UniversalResolverHttpAdapter(
             ),
     ) {
     companion object {
-        const val ID = "DID-UNIVERSAL-RESOLVER"
+        const val ID = "did.resolver.http"
     }
 
     /**

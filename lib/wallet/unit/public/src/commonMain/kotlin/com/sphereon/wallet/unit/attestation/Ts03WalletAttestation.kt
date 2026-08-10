@@ -96,6 +96,7 @@ data class WalletAttestationSigningRequest(
     val signerId: String,
     val signingInput: ByteArray,
     val x5c: List<String> = emptyList(),
+    val providerId: String? = null,
     val keyId: String? = null,
 ) {
     override fun equals(other: Any?): Boolean =
@@ -105,6 +106,7 @@ data class WalletAttestationSigningRequest(
             signerId == other.signerId &&
             signingInput.contentEquals(other.signingInput) &&
             x5c == other.x5c &&
+            providerId == other.providerId &&
             keyId == other.keyId
 
     override fun hashCode(): Int {
@@ -113,6 +115,7 @@ data class WalletAttestationSigningRequest(
         result = 31 * result + signerId.hashCode()
         result = 31 * result + signingInput.contentHashCode()
         result = 31 * result + x5c.hashCode()
+        result = 31 * result + (providerId?.hashCode() ?: 0)
         result = 31 * result + (keyId?.hashCode() ?: 0)
         return result
     }

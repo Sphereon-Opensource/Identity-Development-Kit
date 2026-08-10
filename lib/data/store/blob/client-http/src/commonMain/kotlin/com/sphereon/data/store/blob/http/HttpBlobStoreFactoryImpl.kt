@@ -16,6 +16,7 @@
 
 package com.sphereon.data.store.blob.http
 
+import com.sphereon.core.api.conf.OpaqueSecretResolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.data.store.blob.BlobStore
 import com.sphereon.data.store.blob.BlobStoreConfigBase
@@ -52,6 +53,7 @@ import kotlinx.serialization.json.JsonPrimitive
 @ContributesIntoSet(AppScope::class, binding = binding<BlobStoreFactory>())
 class HttpBlobStoreFactoryImpl(
     private val httpClientFactory: HttpClientFactory,
+    private val opaqueSecretResolver: OpaqueSecretResolver,
 ) : BlobStoreFactory {
     override val backendId: String = HttpBlobServiceClientConfig.BACKEND_ID
 
@@ -75,7 +77,13 @@ class HttpBlobStoreFactoryImpl(
         }
 
         val httpClient = createHttpClient(typedConfig)
-        val client = HttpBlobServiceClient(config = typedConfig, http = httpClient, execution = execution)
+        val client =
+            HttpBlobServiceClient(
+                config = typedConfig,
+                http = httpClient,
+                execution = execution,
+                opaqueSecretResolver = opaqueSecretResolver,
+            )
 
         val tenantId =
             try {
@@ -111,9 +119,9 @@ class HttpBlobStoreFactoryImpl(
                 val clientId =
                     config.auth.clientId
                         ?: throw IllegalArgumentException("HTTP blob client credentials requires 'auth.clientId'")
-                val clientSecret =
-                    config.auth.clientSecret
-                        ?: throw IllegalArgumentException("HTTP blob client credentials requires 'auth.clientSecret'")
+                val clientSecretId =
+                    config.auth.clientSecretId
+                        ?: throw IllegalArgumentException("HTTP blob client credentials requires 'auth.clientSecretId'")
                 val scopes = config.auth.scopes
 
                 // Create a new client with the Auth plugin wrapping the factory-created engine
@@ -129,10 +137,10 @@ class HttpBlobStoreFactoryImpl(
                     install(Auth) {
                         bearer {
                             loadTokens {
-                                fetchToken(tokenUri, clientId, clientSecret, scopes)
+                                fetchToken(tokenUri, clientId, clientSecretId, scopes)
                             }
                             refreshTokens {
-                                fetchToken(tokenUri, clientId, clientSecret, scopes)
+                                fetchToken(tokenUri, clientId, clientSecretId, scopes)
                             }
                         }
                     }
@@ -144,9 +152,10 @@ class HttpBlobStoreFactoryImpl(
     private suspend fun fetchToken(
         tokenUri: String,
         clientId: String,
-        clientSecret: String,
+        clientSecretId: String,
         scopes: List<String>,
     ): BearerTokens {
+        val clientSecret = resolveCredential(clientSecretId)
         val tokenClient =
             httpClientFactory.createClient(
                 HttpClientOptions(enableContentNegotiation = true),
@@ -174,5 +183,14 @@ class HttpBlobStoreFactoryImpl(
         } finally {
             tokenClient.close()
         }
+    }
+
+    private suspend fun resolveCredential(secretId: String): String {
+        secretId.requireOpaqueSecretId("clientSecretId")
+        val result = opaqueSecretResolver.resolve(secretId)
+        if (result.isErr || result.value.isBlank()) {
+            throw IllegalStateException("HTTP blob credential is unavailable")
+        }
+        return result.value
     }
 }

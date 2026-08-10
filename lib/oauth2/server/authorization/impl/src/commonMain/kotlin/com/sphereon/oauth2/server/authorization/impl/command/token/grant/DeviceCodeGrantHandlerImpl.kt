@@ -102,6 +102,7 @@ class DeviceCodeGrantHandlerImpl(
                         audience = verified.audience ?: emptyList(),
                         dpopJkt = deviceBoundJkt,
                         certificateThumbprintS256 = certThumbprint,
+                        authTime = verified.authTime?.epochSeconds,
                         baseUrlOverride = applied.baseUrlOverride,
                     ),
                 ).getOrElse { error -> return Err(error) }

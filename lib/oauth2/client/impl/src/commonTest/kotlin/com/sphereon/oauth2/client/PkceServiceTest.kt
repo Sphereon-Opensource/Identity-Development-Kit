@@ -44,7 +44,7 @@ import kotlin.test.assertTrue
 class PkceServiceTest {
     val app = createOAuth2ClientTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("pkce-service-test")
+    val session = context.sessionContextManager.createOrGetFromId("pkce-service-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     val execution = session.asCoreApiServiceGraph().serviceExecution
 
     private fun createPkceService(): PkceService {

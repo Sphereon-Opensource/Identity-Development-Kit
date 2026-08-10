@@ -100,7 +100,12 @@ class AppCommandInvokerImpl(
         val sessionContextManager = activeContext.asCoreApiContextGraph().sessionContextManager
         val sessionInstance =
             sessionContextManager
-                .createOrGetFromId(sessionId = sessionId, correlationId = resolvedCorrelationId, makeActive = false)
+                .createOrGetFromId(
+                    sessionId = sessionId,
+                    correlationId = resolvedCorrelationId,
+                    makeActive = false,
+                    principalType = activeContext.context.principalType,
+                )
         val executor = (sessionInstance.graph as CommandInvokerGraph).commandInvoker
         return try {
             // Re-resolve the command from the freshly opened session's executor so

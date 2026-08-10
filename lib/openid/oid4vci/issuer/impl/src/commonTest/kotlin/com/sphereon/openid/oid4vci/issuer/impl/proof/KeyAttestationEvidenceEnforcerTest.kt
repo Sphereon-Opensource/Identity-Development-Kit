@@ -42,6 +42,7 @@ class KeyAttestationEvidenceEnforcerTest {
                 claims = claims(),
                 policy = policy,
                 attestedKeyCount = 1,
+                requireWalletUnitEvidence = true,
             )
 
         assertTrue(result.isOk, "expected valid evidence but got Err: ${result.errorOrNull()}")
@@ -61,6 +62,7 @@ class KeyAttestationEvidenceEnforcerTest {
                 claims = claims(includeKeyStorage = false),
                 policy = policy,
                 attestedKeyCount = 1,
+                requireWalletUnitEvidence = true,
             )
 
         assertTrue(result.isErr, "expected missing key_storage to fail")
@@ -75,6 +77,7 @@ class KeyAttestationEvidenceEnforcerTest {
                 claims = claims(statusRevoked = true),
                 policy = policy,
                 attestedKeyCount = 1,
+                requireWalletUnitEvidence = true,
             )
 
         assertTrue(result.isErr, "expected revoked status to fail")
@@ -89,6 +92,7 @@ class KeyAttestationEvidenceEnforcerTest {
                 claims = claims(),
                 policy = policy,
                 attestedKeyCount = 1,
+                requireWalletUnitEvidence = true,
             )
 
         assertTrue(result.isErr, "expected missing x5c to fail")
@@ -103,6 +107,7 @@ class KeyAttestationEvidenceEnforcerTest {
                 claims = claims(profile = "LOCAL_EVALUATION_REFERENCE", signerProfile = "LOCAL_EVALUATION", production = false),
                 policy = policy,
                 attestedKeyCount = 1,
+                requireWalletUnitEvidence = true,
             )
 
         assertTrue(result.isErr, "expected local/evaluation evidence to fail")
@@ -117,6 +122,7 @@ class KeyAttestationEvidenceEnforcerTest {
                 claims = claims(secureComponent = "REMOTE_HSM", userAuthenticationAssurance = "pin_test"),
                 policy = policy,
                 attestedKeyCount = 1,
+                requireWalletUnitEvidence = true,
             )
 
         assertTrue(result.isErr, "expected unsupported storage/authentication evidence to fail")
@@ -131,10 +137,38 @@ class KeyAttestationEvidenceEnforcerTest {
                 claims = claims(profile = "WEBAUTHN_PRF_WSCD", secureComponent = "REMOTE_WSCD"),
                 policy = policy,
                 attestedKeyCount = 1,
+                requireWalletUnitEvidence = true,
             )
 
         assertTrue(result.isErr, "PRF-backed client WSCD evidence must not claim production remote-WSCD assurance")
         assertTrue("WEBAUTHN_PRF_WSCD" in result.error.message.defaultMessage)
+    }
+
+    @Test
+    fun genericOid4vciPolicyAcceptsStandardStringArrayEvidenceWithoutTs03Claims() {
+        val claims =
+            buildJsonObject {
+                putJsonArray("key_storage") { add("ISO_18045_HIGH") }
+                putJsonArray("user_authentication") { add("high") }
+            }
+
+        val result = validateGenericKeyAttestationPolicy(claims, policy)
+
+        assertTrue(result.isOk, "generic OID4VCI evidence must not require VDX Wallet Unit claims: ${result.errorOrNull()}")
+    }
+
+    @Test
+    fun genericOid4vciPolicyRejectsMissingRequiredValue() {
+        val claims =
+            buildJsonObject {
+                putJsonArray("key_storage") { add("ISO_18045_MODERATE") }
+                putJsonArray("user_authentication") { add("high") }
+            }
+
+        val result = validateGenericKeyAttestationPolicy(claims, policy)
+
+        assertTrue(result.isErr)
+        assertTrue("ISO_18045_HIGH" in result.error.message.defaultMessage)
     }
 
     private fun header(x5c: Boolean = true) =

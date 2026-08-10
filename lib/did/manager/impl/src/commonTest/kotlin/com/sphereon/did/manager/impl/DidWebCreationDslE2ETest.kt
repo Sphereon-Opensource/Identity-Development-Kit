@@ -79,7 +79,7 @@ class DidWebCreationDslE2ETest {
         app.userContextManager.destroyAll()
 
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("did-web-dsl-e2e-test")
+        val session = userContext.sessionContextManager.createOrGetFromId("did-web-dsl-e2e-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         val sessionGraph = session.graph
 

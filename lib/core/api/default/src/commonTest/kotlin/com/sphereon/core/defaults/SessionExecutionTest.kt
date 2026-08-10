@@ -46,7 +46,7 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = sessionInstance.sessionExecution
             assertNotNull(sessionExecution.sessionContext)
         } finally {
@@ -63,7 +63,7 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = sessionInstance.sessionExecution
             assertNotNull(sessionExecution.log)
         } finally {
@@ -80,7 +80,7 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = sessionInstance.sessionExecution
             assertNotNull(sessionExecution.conf)
         } finally {
@@ -97,7 +97,7 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = sessionInstance.sessionExecution
             assertNotNull(sessionExecution.sessionContextManager)
         } finally {
@@ -114,7 +114,7 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = sessionInstance.sessionExecution
             assertTrue(sessionExecution == sessionExecution)
         } finally {
@@ -131,7 +131,7 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = sessionInstance.sessionExecution
             val hashCode1 = sessionExecution.hashCode()
             val hashCode2 = sessionExecution.hashCode()
@@ -150,7 +150,7 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = sessionInstance.sessionExecution
             assertFalse(sessionExecution.equals(null))
         } finally {
@@ -167,7 +167,7 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = sessionInstance.sessionExecution
             assertFalse(sessionExecution.equals("string"))
         } finally {
@@ -184,8 +184,8 @@ class SessionExecutionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val session1 = userContextInstance.sessionContextManager.createOrGetFromId("session-1")
-            val session2 = userContextInstance.sessionContextManager.createOrGetFromId("session-2")
+            val session1 = userContextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session2 = userContextInstance.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val exec1 = session1.sessionExecution
             val exec2 = session2.sessionExecution

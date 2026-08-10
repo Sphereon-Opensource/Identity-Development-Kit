@@ -45,7 +45,7 @@ kotlin {
                 implementation(projects.libOauth2CommonPublic)
                 implementation(projects.libOauth2CommonImpl)
 
-                // JWT validation registry used by OAuth2 AS REST signing-key provisioning.
+                // JWT validation registry used by the OAuth2 AS REST internal surfaces.
                 implementation(projects.libOauth2JwtValidationApi)
                 implementation(projects.libOauth2JwtValidationImpl)
 
@@ -133,7 +133,7 @@ kotlin {
                 implementation(projects.libCborPublic)
                 implementation(projects.libCborImpl)
 
-                // DID manager (DidProviderRegistry needed by SdJwtDcFormatHandler)
+                // DID manager (DidProviderRegistry needed by SdJwtVcFormatHandler)
                 implementation(projects.libDidManagerPublic)
                 implementation(projects.libDidManagerImpl)
                 implementation(projects.libDidMethodsJwk)
@@ -152,6 +152,7 @@ kotlin {
                 // Neutral wallet interaction engine and OID4VP protocol adapter
                 implementation(projects.libWalletInteractionPublic)
                 implementation(projects.libWalletInteractionImpl)
+                implementation(projects.libWalletInteractionTestFixtures)
                 implementation(projects.libWalletInteractionProtocolOid4vci)
                 implementation(projects.libWalletInteractionProtocolOid4vp)
 

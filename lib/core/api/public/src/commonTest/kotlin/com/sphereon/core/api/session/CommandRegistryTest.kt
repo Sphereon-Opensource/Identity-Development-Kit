@@ -56,6 +56,17 @@ class InMemoryCommandRegistryTest {
     }
 
     @Test
+    fun registerRejectsNonCanonicalHyphens() {
+        val registry = InMemoryCommandRegistry()
+        assertFailsWith<IllegalArgumentException> {
+            registry.register("kms.keys.create-", "kms")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            registry.register("kms.key--pairs.create", "kms")
+        }
+    }
+
+    @Test
     fun listIdsReturnsAllRegisteredIds() {
         val registry = InMemoryCommandRegistry()
         registry.register("kms.keys.create", "kms")

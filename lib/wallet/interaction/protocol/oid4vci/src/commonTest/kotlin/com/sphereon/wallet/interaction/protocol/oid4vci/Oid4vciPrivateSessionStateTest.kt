@@ -7,7 +7,7 @@
 package com.sphereon.wallet.interaction.protocol.oid4vci
 
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
@@ -38,7 +38,7 @@ class Oid4vciPrivateSessionStateTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = store,
                 )
             val state = fullyPopulatedState()
@@ -76,7 +76,7 @@ class Oid4vciPrivateSessionStateTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = store,
                 )
 

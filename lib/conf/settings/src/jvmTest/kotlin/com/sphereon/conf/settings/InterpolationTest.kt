@@ -16,6 +16,7 @@
 
 package com.sphereon.conf.settings
 
+import com.russhwolf.settings.PreferencesSettings
 import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.TenantConfigService
@@ -24,9 +25,12 @@ import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.core.defaults.context.DefaultTenantInputString
 import com.sphereon.di.context.UserContextInstance
 import kotlinx.coroutines.runBlocking
+import java.util.prefs.Preferences
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 /**
@@ -74,6 +78,7 @@ class InterpolationTest {
                     version = "0.0.1",
                 )
 
+            cleanupPersistedMutationKeys()
             userContextInstance =
                 appGraph.userContextManager.createOrGetFromInputs(
                     DefaultTenantInputString("test-tenant"),
@@ -86,6 +91,13 @@ class InterpolationTest {
             // Clean up any existing test keys
             cleanupTestKeys()
         }
+    }
+
+    private fun cleanupPersistedMutationKeys() {
+        val namespace = propKeyNormalizer.normalize("interpolation-test.test.test-tenant")
+        val settings = PreferencesSettings.Factory(Preferences.userRoot()).create(namespace)
+        settings.remove(propKeyNormalizer.normalize("env.ref"))
+        settings.remove(propKeyNormalizer.normalize(DIRECT_MUTATION_KEY))
     }
 
     private fun cleanupTestKeys() {
@@ -101,6 +113,11 @@ class InterpolationTest {
                 "level2",
                 "missing.ref",
                 "with.default",
+                "env.ref",
+                "env.missing",
+                "env.placeholder",
+                "env.recursive",
+                DIRECT_MUTATION_KEY,
             )
         keysToClean.forEach { key ->
             appSettings.remove(key)
@@ -213,5 +230,62 @@ class InterpolationTest {
         // Verify default is used for missing env var
         val resolved = appConfigService.getProperty<String>("env.missing")
         assertEquals("default-value", resolved)
+    }
+
+    @Test
+    fun tenantAndPrincipalSettingsRejectEnvironmentReferencesAtWriteTime() {
+        val tenantError =
+            assertFailsWith<IllegalArgumentException> {
+                tenantSettingsSource.setProperty("env.ref", "\${env:PATH}")
+            }
+        val principalError =
+            assertFailsWith<IllegalArgumentException> {
+                principalSettingsSource.setProperty("env.ref", "\${env:PATH:fallback}")
+            }
+
+        assertEquals(tenantError.message, principalError.message)
+        assertFalse(tenantError.message.orEmpty().contains("PATH"))
+        assertNull(tenantSettingsSource.getPropertyAsString("env.ref"))
+        assertNull(principalSettingsSource.getPropertyAsString("env.ref"))
+    }
+
+    @Test
+    fun tenantSettingsCannotProduceEnvironmentReferenceRecursively() {
+        tenantSettingsSource.setProperty("env.placeholder", "env:PATH")
+        tenantSettingsSource.setProperty("env.recursive", "\${\${env.placeholder}}")
+
+        val error =
+            assertFailsWith<IllegalStateException> {
+                tenantConfigService.getProperty<String>("env.recursive")
+            }
+
+        assertFalse(error.message.orEmpty().contains("PATH"))
+    }
+
+    @Test
+    fun directBackingSettingsMutationFailsClosedAtReadTime() {
+        tenantSettings.set(DIRECT_MUTATION_KEY, "\${env:PATH}")
+        try {
+            val directError =
+                assertFailsWith<IllegalStateException> {
+                    tenantSettingsSource.getPropertyAsString(DIRECT_MUTATION_KEY)
+                }
+            val serviceError =
+                assertFailsWith<IllegalStateException> {
+                    tenantConfigService.getProperty<String>(DIRECT_MUTATION_KEY)
+                }
+
+            assertFalse(directError.message.orEmpty().contains("PATH"))
+            assertFalse(serviceError.message.orEmpty().contains("PATH"))
+            assertFailsWith<IllegalStateException> {
+                tenantConfigService.getAllProperties()
+            }
+        } finally {
+            tenantSettings.remove(DIRECT_MUTATION_KEY)
+        }
+    }
+
+    private companion object {
+        const val DIRECT_MUTATION_KEY = "wp3.backing.env.ref"
     }
 }

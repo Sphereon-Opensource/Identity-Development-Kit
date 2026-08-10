@@ -19,6 +19,7 @@ package com.sphereon.core.defaults.service
 import com.sphereon.core.api.service.ServiceCommandGroupCatalog
 import com.sphereon.core.api.service.ServiceCommandGroupDescription
 import com.sphereon.core.api.service.ServiceCommandGroupDescriptorProvider
+import com.sphereon.core.api.session.CommandId
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -39,7 +40,13 @@ class DefaultServiceCommandGroupCatalog(
 ) : ServiceCommandGroupCatalog {
     override val groups: List<ServiceCommandGroupDescription> =
         descriptorProviders
-            .map { it.describe() }
+            .map { provider ->
+                provider.describe().let { description ->
+                    description.copy(
+                        commandIds = description.commandIds.map { CommandId(it).value },
+                    )
+                }
+            }
             .sortedBy { it.groupId }
 
     private val groupsByModule: Map<String, List<ServiceCommandGroupDescription>> =

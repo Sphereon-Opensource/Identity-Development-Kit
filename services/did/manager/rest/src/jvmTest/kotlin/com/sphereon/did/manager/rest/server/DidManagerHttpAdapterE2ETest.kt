@@ -74,7 +74,7 @@ class DidManagerHttpAdapterE2ETest {
         app.userContextManager.destroyAll()
 
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("rest-e2e")
+        val session = userContext.sessionContextManager.createOrGetFromId("rest-e2e", principalType = com.sphereon.di.context.PrincipalType.USER)
         val fixture = TestSessionGraph.fromSession(session)
         adapter = fixture.adapter
         dslProcessor = fixture.dslProcessor
@@ -145,6 +145,23 @@ class DidManagerHttpAdapterE2ETest {
 
     private suspend fun delete(path: String): com.sphereon.core.api.http.GenericHttpResponse = adapter.handleRequest(GenericHttpRequest(method = "DELETE", path = path))
 
+    private fun publicJwkKeyInfo(kid: String): JsonObject =
+        buildJsonObject {
+            put("kind", JsonPrimitive("PUBLIC_JWK"))
+            put(
+                "publicJwk",
+                buildJsonObject {
+                    put("kty", JsonPrimitive("EC"))
+                    put("crv", JsonPrimitive("P-256"))
+                    put("x", JsonPrimitive("f83OJ3D2xF4yVPs6k2lE0_C3lq8GG5GpQ1GkGvI0zGY"))
+                    put("y", JsonPrimitive("x_FEzRu9m0cN5yZKkH9VqxcWxLb5Y7EFYqmP9FxbnTc"))
+                    put("kid", JsonPrimitive(kid))
+                    put("alg", JsonPrimitive("ES256"))
+                    put("use", JsonPrimitive("sig"))
+                },
+            )
+        }
+
     @AfterTest
     fun tearDown() {
         if (::app.isInitialized) app.userContextManager.destroyAll()
@@ -153,39 +170,11 @@ class DidManagerHttpAdapterE2ETest {
     @Test
     fun didLifecycleFlow_happyPath() =
         runTest {
-            // 1. Register a KMS key first — POST /identifiers does NOT accept wire-supplied key
-            //    material; the server resolves the public JWK from KMS via keyInfo. This
-            //    mirrors the production flow: KMS key registration is its own step.
             val createAlias = "rest-e2e-alias"
-            try {
-                keyManager.generateKey(
-                    providerId = "softwaretest",
-                    alias = createAlias,
-                    alg = com.sphereon.crypto.core.generic.SignatureAlgorithm.ECDSA_SHA256,
-                )
-            } catch (expected: IllegalStateException) {
-                if ("key-reference store is unavailable" in expected.message.orEmpty()) {
-                    org.junit.jupiter.api.Assumptions.assumeTrue(
-                        false,
-                        "Test skipped — IDK-17 keyref-store wiring unavailable in this fixture (VDX-infra-otp): ${expected.message}",
-                    )
-                }
-                throw expected
-            }
-
-            // 2. Create did:key via POST /api/did/v1/identifiers referencing the registered key.
-            //    Body must match the new OpenAPI DidCreateRequest shape — keyInfo envelope,
-            //    no wire-supplied publicKeyJwk.
             val createBody =
                 buildJsonObject {
                     put("method", JsonPrimitive("key"))
-                    put(
-                        "keyInfo",
-                        buildJsonObject {
-                            put("providerId", JsonPrimitive("softwaretest"))
-                            put("alias", JsonPrimitive(createAlias))
-                        },
-                    )
+                    put("keyInfo", publicJwkKeyInfo(createAlias))
                 }
             val createResponse =
                 try {
@@ -209,8 +198,8 @@ class DidManagerHttpAdapterE2ETest {
             assertEquals(
                 201,
                 createResponse.statusCode,
-                "POST /api/did/v1/identifiers must create the DID and return 201 once the KMS key " +
-                    "is registered (got ${createResponse.statusCode}; body=${createResponse.body})",
+                "POST /api/did/v1/identifiers must create the DID from strict public JWK material " +
+                    "(got ${createResponse.statusCode}; body=${createResponse.body})",
             )
             val createdBody =
                 createResponse.body
@@ -291,32 +280,11 @@ class DidManagerHttpAdapterE2ETest {
             // Before the fix, POST /identifiers with method=web always returned 400
             // "did:web creation requires a domain in options" regardless of body.
             val webAlias = "rest-e2e-web-alias"
-            try {
-                keyManager.generateKey(
-                    providerId = "softwaretest",
-                    alias = webAlias,
-                    alg = com.sphereon.crypto.core.generic.SignatureAlgorithm.ECDSA_SHA256,
-                )
-            } catch (expected: IllegalStateException) {
-                if ("key-reference store is unavailable" in expected.message.orEmpty()) {
-                    org.junit.jupiter.api.Assumptions.assumeTrue(
-                        false,
-                        "Test skipped — IDK-17 keyref-store wiring unavailable in this fixture (VDX-infra-otp): ${expected.message}",
-                    )
-                }
-                throw expected
-            }
 
             val createBody =
                 buildJsonObject {
                     put("method", JsonPrimitive("web"))
-                    put(
-                        "keyInfo",
-                        buildJsonObject {
-                            put("providerId", JsonPrimitive("softwaretest"))
-                            put("alias", JsonPrimitive(webAlias))
-                        },
-                    )
+                    put("keyInfo", publicJwkKeyInfo(webAlias))
                     put(
                         "options",
                         buildJsonObject {
@@ -369,13 +337,7 @@ class DidManagerHttpAdapterE2ETest {
             val missingDomainBody =
                 buildJsonObject {
                     put("method", JsonPrimitive("web"))
-                    put(
-                        "keyInfo",
-                        buildJsonObject {
-                            put("providerId", JsonPrimitive("softwaretest"))
-                            put("alias", JsonPrimitive(webAlias))
-                        },
-                    )
+                    put("keyInfo", publicJwkKeyInfo(webAlias))
                 }
             val missingDomainResponse =
                 adapter.handleRequest(

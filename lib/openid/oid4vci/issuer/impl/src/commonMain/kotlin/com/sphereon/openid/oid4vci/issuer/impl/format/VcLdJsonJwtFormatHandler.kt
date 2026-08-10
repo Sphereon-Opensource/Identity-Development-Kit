@@ -215,7 +215,9 @@ class VcLdJsonJwtFormatHandler(
         jwtPayload: JsonObject,
         context: IssuanceContext,
     ): IdkResult<CredentialEnvelope, IdkError> {
-        val issuerKey = ManagedOptsAlias(identifier = context.credentialConfigurationId)
+        // Server-resolved signing key; the credential configuration id names a configuration, never
+        // key material.
+        val issuerKey = ManagedOptsAlias(identifier = context.requireSigningKeyName().getOrElse { return Err(it) })
         val signed =
             jwtService
                 .createJwsCompact(

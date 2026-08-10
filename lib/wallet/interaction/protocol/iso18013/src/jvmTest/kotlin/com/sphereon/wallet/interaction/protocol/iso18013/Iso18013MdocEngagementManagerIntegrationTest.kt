@@ -37,7 +37,7 @@ import com.sphereon.mdoc.transfer.reader.ReaderEngagementCborCodecImpl
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
@@ -48,6 +48,7 @@ import com.sphereon.wallet.interaction.WalletSecurityGate
 import com.sphereon.wallet.interaction.WalletProtocol
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStore
 import dev.whyoleg.cryptography.CryptographyProvider
 import io.mockk.coEvery
 import io.mockk.every
@@ -72,12 +73,16 @@ class Iso18013MdocEngagementManagerIntegrationTest {
     fun startWithMdocWebsiteQrUsesRealMdocToAppPath() =
         runTest {
             val manager = createRealGraphMdocManager("iso18013-${Uuid.random()}")
-            val adapter = Iso18013WalletInteractionProtocolAdapter(engagementManager = manager)
+            val adapter =
+                Iso18013WalletInteractionProtocolAdapter(
+                    disclosureExecutor = Iso18013DisclosureExecutor.notConfigured,
+                    engagementManager = manager,
+                )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("iso-real-path"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
 
             try {
@@ -106,6 +111,8 @@ class Iso18013MdocEngagementManagerIntegrationTest {
             val engine =
                 DefaultWalletInteractionEngine(
                     sensitiveInputAuthority = Iso18013TestSensitiveInputAuthority,
+                    privateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
+                    sessionStore = InMemoryWalletInteractionSessionStore(),
                     securityGate = WalletSecurityGate.allow,
                     adapters =
                         listOf(
@@ -175,7 +182,7 @@ class Iso18013MdocEngagementManagerIntegrationTest {
                 WalletInteractionContext(
                     sessionId = sessionId,
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.BACKEND,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                     privateSessionStore = privateSessionStore,
                 )
             val state =
@@ -213,7 +220,7 @@ class Iso18013MdocEngagementManagerIntegrationTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId(sessionId)
+                .createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
         // Sanctioned test KMS wiring lives in the wscd test-fixtures module.
         val kms = TestWscdSupport.ensureSoftwareKmsProvider(app, session, "$sessionId-software-kms")
         return (session.graph as MdocEngagementManagerImpl.Graph).mdocEngagementManager
@@ -261,7 +268,7 @@ class Iso18013MdocEngagementManagerIntegrationTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId(sessionId)
+                .createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
         // Sanctioned test KMS wiring lives in the wscd test-fixtures module.
         val kms = TestWscdSupport.ensureSoftwareKmsProvider(app, session, "$sessionId-software-kms")
         return kms

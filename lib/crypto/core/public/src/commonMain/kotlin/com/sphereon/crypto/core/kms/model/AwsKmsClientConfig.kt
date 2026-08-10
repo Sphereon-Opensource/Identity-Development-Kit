@@ -19,6 +19,7 @@ package com.sphereon.crypto.core.kms.model
 
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmOverloads
 import kotlin.native.ObjCName
@@ -49,6 +50,7 @@ private const val FIFTEEN = 15
  *
  * @param applicationId Identifier for the AWS KMS client application. Defaults to "aws-kms".
  * @param region The AWS region where the KMS operations are performed.
+ * @param endpointUrl Optional explicit service endpoint for isolated AWS-compatible test environments.
  * @param credentialOpts Options for configuring authentication credentials required for accessing AWS KMS.
  * @param exponentialBackoffRetryOpts Configuration options for exponential backoff retries in case of transient failures.
  */
@@ -62,6 +64,7 @@ AwsKmsClientConfig
     constructor(
         val applicationId: String = "aws-kms",
         val region: String,
+        val endpointUrl: String? = null,
         val credentialOpts: CredentialOpts,
         val exponentialBackoffRetryOpts: ExponentialBackoffRetryOpts? = null,
     )
@@ -76,6 +79,13 @@ AwsKmsClientConfig
 @Serializable
 @JsExportCompat
 enum class CredentialMode {
+    /**
+     * Uses the AWS SDK default credential chain. This is the deployment-safe
+     * choice for Docker environment credentials, ECS task roles, EKS web
+     * identity, EC2 instance profiles, and local AWS-compatible emulators.
+     */
+    DEFAULT_CHAIN,
+
     /**
      * Represents the credential mode option "ACCESS_KEY".
      * This mode is used when AWS credentials are provided explicitly via an access key ID and a secret access key.
@@ -173,10 +183,16 @@ data class
 AccessKeyCredentialOpts
     @JvmOverloads
     constructor(
-        val accessKeyId: String,
-        val secretAccessKey: String,
+        val credentialsSecretId: String,
+        @Transient
+        val accessKeyId: String? = null,
+        @Transient
+        val secretAccessKey: String? = null,
+        @Transient
         val sessionToken: String? = null,
-    )
+    ) {
+        override fun toString(): String = "AccessKeyCredentialOpts(credentialsSecretId=[REDACTED],material=[REDACTED])"
+    }
 
 /**
  * Represents the configuration options for AWS profile-based credentials.

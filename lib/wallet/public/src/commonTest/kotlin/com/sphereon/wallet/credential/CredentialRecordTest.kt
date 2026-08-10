@@ -17,7 +17,7 @@ private val NOW = Instant.fromEpochSeconds(1_800_000_000)
 private val ISSUER_REF = IdentifierRef(type = IdentifierType.DID, value = "did:ex:issuer")
 private val TYPE_REF =
     CredentialTypeRef(
-        format = CredentialFormat.SD_JWT_DC,
+        format = CredentialFormat.SD_JWT_VC,
         kind = CredentialTypeRefKind.SD_JWT_VCT,
         value = "https://credentials.example.com/employee",
         source = CredentialTypeRefSource.CREDENTIAL_PAYLOAD,
@@ -31,7 +31,7 @@ private fun instance(
     id = id,
     walletUnitId = WALLET_UNIT_ID,
     credentialRecordId = "record-1",
-    format = CredentialFormat.SD_JWT_DC,
+    format = CredentialFormat.SD_JWT_VC,
     raw = "raw-$id",
     bodyStorageRef = BodyStorageRef(BodyStorageKind.WALLET_STORE, "wallet-units/$WALLET_UNIT_ID/credentials/record-1/instances/$id/body"),
     holderKeyRef = KeyRef(alias = "key-$id"),
@@ -47,7 +47,7 @@ private fun record() =
         id = "record-1",
         walletUnitId = WALLET_UNIT_ID,
         issuerRef = ISSUER_REF,
-        format = CredentialFormat.SD_JWT_DC,
+        format = CredentialFormat.SD_JWT_VC,
         credentialTypeRefs = setOf(TYPE_REF),
         display = CredentialDisplayMetadata(credentialDisplay = listOf(CredentialDisplayProperties(name = "Employee Credential", locale = "en"))),
         instances = listOf(instance("ci-1")),

@@ -46,7 +46,8 @@ interface WalletEntryPointRouter {
      *
      * @param uri the raw external URI, e.g. `openid-credential-offer://issuer.example.com?...`
      * @param walletUnitId the wallet unit that should own the resulting session
-     * @param executionMode where protocol execution should run; defaults to [WalletInteractionExecutionMode.LOCAL]
+     * @param executionOwner the component that performs the first interpretation and owns the
+     * complete protocol exchange; defaults to [ProtocolExecutionOwner.WALLET_APP]
      * @return [com.sphereon.core.api.Ok] with the started session id, or
      *   [com.sphereon.core.api.Err] with a clean [IdkError] when [uri] is not a
      *   parseable URI or no registered adapter can handle it
@@ -54,6 +55,6 @@ interface WalletEntryPointRouter {
     suspend fun route(
         uri: String,
         walletUnitId: String,
-        executionMode: WalletInteractionExecutionMode = WalletInteractionExecutionMode.LOCAL,
+        executionOwner: ProtocolExecutionOwner = ProtocolExecutionOwner.WALLET_APP,
     ): IdkResult<WalletInteractionSessionId, IdkError>
 }

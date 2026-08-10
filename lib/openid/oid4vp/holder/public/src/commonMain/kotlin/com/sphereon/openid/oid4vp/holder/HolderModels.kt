@@ -29,6 +29,21 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 /**
+ * Authorization request delivered by the W3C Digital Credentials API.
+ *
+ * [origin] is trusted browser transport context. It is deliberately separate from [data]:
+ * wallets must derive the web-origin client identity from the caller and must never accept an
+ * `origin:` client identifier supplied by request JSON.
+ */
+@Serializable
+@JsExportCompat
+data class DigitalCredentialsAuthorizationRequest(
+    val protocol: String,
+    val data: JsonObject,
+    val origin: String,
+)
+
+/**
  * Resolved OID4VP authorization request with all metadata and validation complete.
  *
  * This is the result of resolving an authorization request, which includes:
@@ -111,13 +126,17 @@ data class VerifierInfo(
  * @property presentation Serialized presentation (JWT, SD-JWT, or mdoc CBOR)
  * @property format Format identifier (e.g., "dc+sd-jwt", "mso_mdoc", "jwt_vp")
  * @property disclosedClaims Optional map of disclosed claims (for SD-JWT)
- * @property holderKeyAlias Optional KMS alias of the holder's key bound to this credential.
- *                          When present for an SD-JWT format, the OID4VP holder produces a
- *                          Key Binding JWT (RFC 9901 §4.3) over the presentation, binding it to
- *                          the verifier's `client_id` (audience) and the request `nonce`. The
- *                          stored [presentation] is the issuer SD-JWT; the holder appends the
- *                          freshly signed KB-JWT before submission. Null means the [presentation]
- *                          is submitted as-is (no holder binding added by the holder).
+ * @property holderKeyRef Opaque WSCA/WSCD reference for the holder key bound to this credential.
+ *                        The holder signing surface resolves it; the protocol model does not select
+ *                          a KMS or transport. When present for an SD-JWT format, the OID4VP holder
+ *                          produces a Key Binding JWT (RFC 9901 Section 4.3) over the presentation,
+ *                          binding it to the verifier's `client_id` (audience) and request `nonce`.
+ *                          The stored [presentation] is the issuer SD-JWT; the holder appends the
+ *                          freshly signed KB-JWT before submission.
+ * @property sdJwtKeyBindingApplied True only when [presentation] is already a selectively disclosed
+ *                                  SD-JWT presentation with its fresh KB-JWT applied by the holder's
+ *                                  signing delegate. The holder validates the embedded KB-JWT request
+ *                                  binding and submits that prepared artifact without signing it again.
  */
 @Serializable
 @JsExportCompat
@@ -128,7 +147,8 @@ data class SelectedCredential(
     val format: String,
     @JsExportIgnoreCompat
     val disclosedClaims: Map<String, String>? = null,
-    val holderKeyAlias: String? = null,
+    val holderKeyRef: String? = null,
+    val sdJwtKeyBindingApplied: Boolean = false,
 )
 
 /**
@@ -145,6 +165,16 @@ data class SelectedCredential(
  * @see SubmissionResult.Redirect
  */
 sealed interface SubmissionResult {
+    /**
+     * Authorization-response data that must be returned through the W3C Digital Credentials API.
+     * Transport wrapping (`protocol` plus this `data`) belongs to the wallet edge that received
+     * the browser request; the holder service never invents that protocol identifier.
+     */
+    @Serializable
+    data class DigitalCredential(
+        val data: JsonObject,
+    ) : SubmissionResult
+
     /**
      * Successful submission with verifier acknowledgment.
      *

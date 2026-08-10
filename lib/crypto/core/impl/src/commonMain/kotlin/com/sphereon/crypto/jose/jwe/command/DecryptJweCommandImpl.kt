@@ -40,6 +40,9 @@ import com.sphereon.crypto.core.kms.EcdhUtils
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
+import com.sphereon.crypto.core.kms.command.EcdhDeriveArgs
+import com.sphereon.crypto.core.kms.command.EcdhDeriveCommand
+import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
 import com.sphereon.crypto.jose.jwe.DecryptJweArgs
 import com.sphereon.crypto.jose.jwe.DecryptJweCommand
 import com.sphereon.crypto.jose.jwe.JweCompact
@@ -48,6 +51,7 @@ import com.sphereon.crypto.jose.jwe.JweHeader
 import com.sphereon.crypto.jose.jwe.JweJsonFlattened
 import com.sphereon.crypto.jose.jwe.JweJsonGeneral
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
@@ -87,6 +91,7 @@ class DecryptJweCommandImpl(
     execution: SessionExecution,
     private val identifierService: MultiManagedIdentifierService,
     private val keyManagerService: KeyManagerService,
+    private val ecdhDeriveCommand: EcdhDeriveCommand,
 ) : TypedServiceCommandAdapter<DecryptJweArgs, JweDecryptionResult, IdkError>(
         commandId = DecryptJweCommand.COMMAND_ID,
         execution = execution,
@@ -134,14 +139,7 @@ class DecryptJweCommandImpl(
                 }
             }
 
-        // Step 2: Resolve decryptor to get private key
-        val identifierResult = identifierService.resolve(decryptor)
-        if (!identifierResult.isOk) {
-            return IdkResult.err(IdkError.fromDTO(identifierResult.error))
-        }
-        val resolvedDecryptor = identifierResult.value
-
-        // Step 3: Get algorithm strings and convert to typed enums
+        // Step 2: Get algorithm strings and convert to typed enums
         val keyAlgStr = header.alg ?: return IdkResult.err(IdkError.fromString("alg header is required"))
         val encAlgStr = header.enc ?: return IdkResult.err(IdkError.fromString("enc header is required"))
 
@@ -153,7 +151,24 @@ class DecryptJweCommandImpl(
         val keyAgreementAlg = KeyAgreementAlgorithm.fromIdentifier(keyAlgStr)
         val keyWrapAlg = KeyWrapAlgorithm.fromIdentifier(keyAlgStr)
 
-        // Step 4: Derive or unwrap the CEK
+        // A provider-backed ECDH key is a handle, not private key material. Preserve that
+        // handle for provider-backed key agreement instead of resolving it in this
+        // process. Non-ECDH algorithms and caller-supplied local keys still use the normal
+        // managed-identifier resolution path.
+        val decryptorReference =
+            (decryptor as? ManagedOptsKeyInfo)
+                ?.identifier
+                ?.takeIf { keyAgreementAlg != null && it.isProviderBackedReference() }
+        val decryptorKeyInfo =
+            decryptorReference ?: run {
+                val identifierResult = identifierService.resolve(decryptor)
+                if (!identifierResult.isOk) {
+                    return IdkResult.err(IdkError.fromDTO(identifierResult.error))
+                }
+                identifierResult.value.asResult().keyInfo
+            }
+
+        // Step 3: Derive or unwrap the CEK
         val cek: ByteArray
         if (keyAgreementAlg != null) {
             // ECDH-ES algorithm - perform key agreement to derive CEK
@@ -163,20 +178,20 @@ class DecryptJweCommandImpl(
                     encAlgStr = encAlgStr,
                     header = header,
                     encryptedKey = encryptedKey,
-                    decryptorKeyInfo = resolvedDecryptor.asResult().keyInfo,
+                    decryptorKeyInfo = decryptorKeyInfo,
                 ).getOrElse { error -> return Err(error) }
         } else if (keyWrapAlg != null) {
             cek =
                 if (keyWrapAlg == KeyWrapAlgorithm.DIR) {
                     // Direct encryption - the shared symmetric key IS the CEK
                     // Extract the symmetric key from the decryptor's KeyInfo
-                    extractSymmetricKeyForDir(resolvedDecryptor.asResult().keyInfo, encAlgStr)
+                    extractSymmetricKeyForDir(decryptorKeyInfo, encAlgStr)
                         .getOrElse { error -> return Err(error) }
                 } else {
                     // Unwrap the CEK using our private key
                     try {
                         keyManagerService.unwrapKey(
-                            unwrappingKeyInfo = resolvedDecryptor.asResult().keyInfo,
+                            unwrappingKeyInfo = decryptorKeyInfo,
                             wrappedKey = encryptedKey,
                             algorithm = keyWrapAlg,
                         )
@@ -307,35 +322,6 @@ class DecryptJweCommandImpl(
             header.epk
                 ?: return IdkResult.err(IdkError.fromString("epk (ephemeral public key) is required in header for ECDH-ES"))
 
-        // Get our private key as JWK
-        val ourPrivateJwk =
-            decryptorKeyInfo.key as? Jwk
-                ?: return IdkResult.err(IdkError.fromString("Decryptor key must be a JWK for ECDH-ES"))
-
-        // Validate our key is EC with private key
-        if (ourPrivateJwk.kty != JwaKeyType.EC) {
-            return IdkResult.err(IdkError.fromString("Decryptor key must be an EC key for ECDH-ES, got: ${ourPrivateJwk.kty}"))
-        }
-        if (ourPrivateJwk.d == null) {
-            return IdkResult.err(IdkError.fromString("Decryptor key must be a private key (must have 'd' parameter)"))
-        }
-
-        // Get curve from our key (epk should use the same curve)
-        val curve = EcdhUtils.getCurveFromJwk(ourPrivateJwk)
-        val epkCurve = EcdhUtils.getCurveFromJwk(epk)
-
-        if (curve != epkCurve) {
-            return IdkResult.err(IdkError.fromString("Curve mismatch: our key uses $curve but epk uses $epkCurve"))
-        }
-
-        // Perform ECDH key agreement
-        val sharedSecret =
-            EcdhUtils.performKeyAgreementForDecryption(
-                ourPrivateKeyJwk = ourPrivateJwk,
-                senderEphemeralPublicKeyJwk = epk,
-                curve = curve,
-            )
-
         // Get apu and apv from header (if present)
         val apu = header.apu?.let { it.decodeFrom(Encoding.BASE64URL) } ?: ByteArray(0)
         val apv = header.apv?.let { it.decodeFrom(Encoding.BASE64URL) } ?: ByteArray(0)
@@ -344,15 +330,56 @@ class DecryptJweCommandImpl(
         val keyLengthBits = ConcatKdf.getKeyLengthBits(keyAgreementAlg, encAlgStr)
         val algorithmId = ConcatKdf.getAlgorithmId(keyAgreementAlg, encAlgStr)
 
-        // Apply Concat KDF to derive the key
+        if (epk.kty != JwaKeyType.EC || epk.x == null || epk.y == null) {
+            return IdkResult.err(IdkError.fromString("epk must be an EC public key with x and y coordinates"))
+        }
+
+        // Route opaque handles through the selected KMS provider. Both ECDH and
+        // Concat KDF run there, so neither private key material nor the raw shared
+        // secret leaves the provider. Caller-supplied inline private JWKs retain
+        // the local implementation.
         val derivedKey =
-            ConcatKdf.deriveKey(
-                sharedSecret = sharedSecret,
-                keyDataLen = keyLengthBits,
-                algorithmId = algorithmId,
-                apu = apu,
-                apv = apv,
-            )
+            if (decryptorKeyInfo.isProviderBackedReference()) {
+                ecdhDeriveCommand
+                    .execute(
+                        EcdhDeriveArgs(
+                            privateKeyInfo = decryptorKeyInfo,
+                            publicKeyInfo = KeyInfo(key = epk, keyVisibility = KeyVisibility.PUBLIC),
+                            algorithm = keyAgreementAlg,
+                            mode = EcdhDeriveMode.CONCAT_KDF,
+                            keyDataLen = keyLengthBits,
+                            algorithmId = algorithmId,
+                            partyUInfo = apu,
+                            partyVInfo = apv,
+                        ),
+                    ).getOrElse { error -> return Err(error) }
+                    .derivedSecret
+            } else {
+                val ourPrivateJwk =
+                    decryptorKeyInfo.key as? Jwk
+                        ?: return IdkResult.err(IdkError.fromString("Decryptor key must be a JWK for ECDH-ES"))
+                if (ourPrivateJwk.kty != JwaKeyType.EC || ourPrivateJwk.d == null) {
+                    return IdkResult.err(IdkError.fromString("Decryptor key must be a private EC key for ECDH-ES"))
+                }
+                val curve = EcdhUtils.getCurveFromJwk(ourPrivateJwk)
+                val epkCurve = EcdhUtils.getCurveFromJwk(epk)
+                if (curve != epkCurve) {
+                    return IdkResult.err(IdkError.fromString("Curve mismatch: our key uses $curve but epk uses $epkCurve"))
+                }
+                val sharedSecret =
+                    EcdhUtils.performKeyAgreementForDecryption(
+                        ourPrivateKeyJwk = ourPrivateJwk,
+                        senderEphemeralPublicKeyJwk = epk,
+                        curve = curve,
+                    )
+                ConcatKdf.deriveKey(
+                    sharedSecret = sharedSecret,
+                    keyDataLen = keyLengthBits,
+                    algorithmId = algorithmId,
+                    apu = apu,
+                    apv = apv,
+                )
+            }
 
         return if (keyAgreementAlg.requiresKeyWrap) {
             // ECDH-ES+AxxxKW: Use derived key to unwrap the CEK
@@ -363,6 +390,11 @@ class DecryptJweCommandImpl(
             IdkResult.ok(derivedKey)
         }
     }
+
+    private fun KeyInfoType<*>.isProviderBackedReference(): Boolean =
+        key == null &&
+            !providerId.isNullOrBlank() &&
+            (!alias.isNullOrBlank() || !kid.isNullOrBlank())
 
     /**
      * Unwraps the CEK using AES Key Wrap with the derived key.
@@ -496,13 +528,6 @@ class DecryptJweCommandImpl(
             jwe.getProtectedHeader() ?: jwe.getUnprotectedHeader()
                 ?: return IdkResult.err(IdkError.fromString("No header in JWE"))
 
-        // Resolve decryptor to get private key
-        val identifierResult = identifierService.resolve(decryptor)
-        if (!identifierResult.isOk) {
-            return IdkResult.err(IdkError.fromDTO(identifierResult.error))
-        }
-        val resolvedDecryptor = identifierResult.value
-
         // Get algorithm strings
         val keyAlgStr = header.alg ?: return IdkResult.err(IdkError.fromString("alg header is required"))
         val encAlgStr = header.enc ?: return IdkResult.err(IdkError.fromString("enc header is required"))
@@ -514,8 +539,21 @@ class DecryptJweCommandImpl(
         val keyAgreementAlg = KeyAgreementAlgorithm.fromIdentifier(keyAlgStr)
         val keyWrapAlg = KeyWrapAlgorithm.fromIdentifier(keyAlgStr)
 
+        val decryptorReference =
+            (decryptor as? ManagedOptsKeyInfo)
+                ?.identifier
+                ?.takeIf { keyAgreementAlg != null && it.isProviderBackedReference() }
+        val decryptorKeyInfo =
+            decryptorReference ?: run {
+                val identifierResult = identifierService.resolve(decryptor)
+                if (!identifierResult.isOk) {
+                    return IdkResult.err(IdkError.fromDTO(identifierResult.error))
+                }
+                identifierResult.value.asResult().keyInfo
+            }
+
         // Try to find matching recipient by kid first
-        val decryptorKid = resolvedDecryptor.keyInfo.kid
+        val decryptorKid = decryptorKeyInfo.kid
         val orderedRecipients =
             if (decryptorKid != null) {
                 // Put matching recipient first, followed by others
@@ -552,16 +590,16 @@ class DecryptJweCommandImpl(
                             encAlgStr = encAlgStr,
                             header = effectiveHeader,
                             encryptedKey = encryptedKey,
-                            decryptorKeyInfo = resolvedDecryptor.asResult().keyInfo,
+                            decryptorKeyInfo = decryptorKeyInfo,
                         )
                     } else if (keyWrapAlg != null) {
                         if (keyWrapAlg == KeyWrapAlgorithm.DIR) {
-                            extractSymmetricKeyForDir(resolvedDecryptor.asResult().keyInfo, encAlgStr)
+                            extractSymmetricKeyForDir(decryptorKeyInfo, encAlgStr)
                         } else {
                             try {
                                 val cek =
                                     keyManagerService.unwrapKey(
-                                        unwrappingKeyInfo = resolvedDecryptor.asResult().keyInfo,
+                                        unwrappingKeyInfo = decryptorKeyInfo,
                                         wrappedKey = encryptedKey,
                                         algorithm = keyWrapAlg,
                                     )

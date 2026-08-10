@@ -30,16 +30,21 @@ internal object TestWalletCredentialBodyProtector : WalletCredentialBodyProtecto
         credentialRecordId: String,
         credentialInstanceId: String,
         plaintext: ByteArray,
-    ): IdkResult<ByteArray, IdkError> = Ok(("test-protected:" + plaintext.reversedArray().encodeTo(Encoding.BASE64URL)).encodeToByteArray())
+        documentRole: WalletCredentialProtectedDocumentRole,
+    ): IdkResult<ByteArray, IdkError> =
+        Ok(("test-protected:${documentRole.name}:" + plaintext.reversedArray().encodeTo(Encoding.BASE64URL)).encodeToByteArray())
 
     override suspend fun open(
         walletUnitId: String,
         credentialRecordId: String,
         credentialInstanceId: String,
         protectedBody: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole,
     ): IdkResult<ByteArray, IdkError> {
-        val encoded = protectedBody.decodeToString().removePrefix("test-protected:")
-        if (encoded == protectedBody.decodeToString()) {
+        val serialized = protectedBody.decodeToString()
+        val prefix = "test-protected:${documentRole.name}:"
+        val encoded = serialized.removePrefix(prefix)
+        if (encoded == serialized) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Unsupported test credential body envelope"))
         }
         return Ok(encoded.decodeFrom(Encoding.BASE64URL).reversedArray())

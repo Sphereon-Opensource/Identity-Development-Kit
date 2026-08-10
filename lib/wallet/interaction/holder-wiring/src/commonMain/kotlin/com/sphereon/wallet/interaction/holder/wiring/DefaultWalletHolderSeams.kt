@@ -17,10 +17,16 @@
 package com.sphereon.wallet.interaction.holder.wiring
 
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.command.PrivateKeyJwtAssertionAssembly
+import com.sphereon.openid.oid4vci.holder.Oid4vciHolderService
+import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciKeyAttestationProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciTokenEndpointProofsProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.SecureComponentOid4vciTokenEndpointProofsProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.SecureComponentOid4vciKeyAttestationProvider
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpJarmOptionsProvider
+import com.sphereon.wallet.wsca.Wsca
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
@@ -44,15 +50,23 @@ import dev.zacsweers.metro.SingleIn
 interface DefaultWalletHolderOptionalSeamsModule {
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideOid4vciTokenEndpointProofsProvider(): Oid4vciTokenEndpointProofsProvider = Oid4vciTokenEndpointProofsProvider.none
+    fun provideOid4vciTokenEndpointProofsProvider(
+        wsca: Wsca,
+        privateKeyJwtAssertionAssembly: PrivateKeyJwtAssertionAssembly,
+    ): Oid4vciTokenEndpointProofsProvider =
+        SecureComponentOid4vciTokenEndpointProofsProvider(wsca, privateKeyJwtAssertionAssembly)
 
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideOid4vciRefreshTokenGrantProvider(): Oid4vciRefreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported
+    fun provideOid4vciRefreshTokenGrantProvider(
+        holder: Oid4vciHolderService,
+    ): Oid4vciRefreshTokenGrantProvider =
+        HolderServiceOid4vciRefreshTokenGrantProvider(holder)
 
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideOid4vciKeyAttestationProvider(): Oid4vciKeyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported
+    fun provideOid4vciKeyAttestationProvider(wsca: Wsca): Oid4vciKeyAttestationProvider =
+        SecureComponentOid4vciKeyAttestationProvider(wsca)
 
     /**
      * Unlike the other seams this one does NOT default to `.none`: a null-options seam makes every

@@ -28,6 +28,7 @@ import com.sphereon.core.api.session.ExecutionScopedCommandAdapter
 import com.sphereon.crypto.core.kms.GetAllCapabilitiesArgs
 import com.sphereon.crypto.core.kms.GetAllCapabilitiesCommand
 import com.sphereon.crypto.core.kms.GetAllCapabilitiesResult
+import com.sphereon.crypto.core.kms.KmsProvider
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import com.sphereon.crypto.core.kms.ProviderMatch
 import com.sphereon.crypto.core.kms.QueryProviderArgs
@@ -73,13 +74,17 @@ class QueryProviderCommandImpl(
         log.debug("Querying for KMS provider with criteria: $query")
 
         return try {
-            // Query providers directly by iterating and checking capabilities
+            // Resolved one at a time so the first match ends the scan. Resolving a provider
+            // suspends, which a lazy sequence cannot carry.
             val providerIds = providerRegistry.getProviderIds()
-            val matchingProvider =
-                providerIds
-                    .asSequence()
-                    .map { providerRegistry.getProviderById(it) }
-                    .firstOrNull { provider -> query.matches(provider.getCapabilities()) }
+            var matchingProvider: KmsProvider? = null
+            for (providerId in providerIds) {
+                val candidate = providerRegistry.getProviderById(providerId)
+                if (query.matches(candidate.getCapabilities())) {
+                    matchingProvider = candidate
+                    break
+                }
+            }
 
             if (matchingProvider == null) {
                 log.warn("No provider found matching query: $query")

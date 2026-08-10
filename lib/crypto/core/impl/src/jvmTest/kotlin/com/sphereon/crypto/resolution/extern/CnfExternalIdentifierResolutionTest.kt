@@ -55,7 +55,7 @@ class CnfExternalIdentifierResolutionTest {
 
     val app = createJvmCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("cnf-resolution-test")
+    val session = context.sessionContextManager.createOrGetFromId("cnf-resolution-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

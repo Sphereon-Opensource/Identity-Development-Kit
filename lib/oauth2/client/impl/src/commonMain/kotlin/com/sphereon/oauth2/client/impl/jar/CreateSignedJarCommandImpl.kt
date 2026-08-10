@@ -178,17 +178,13 @@ class CreateSignedJarCommandImpl(
                     opts =
                         CreateJwsOpts(
                             noIssPayloadUpdate = true, // Don't modify iss - we already set it
-                            // Keep noIdentifierInHeader=false so PrepareJwsCommandImpl
-                            // adds the `alg` claim based on the signing key. When we
-                            // supply our own [protectedHeader] (for OID4VP §5.9.3 DID
-                            // or x509 bindings) the pipeline starts from our map, adds
-                            // alg, and only overwrites the identifier when it can derive
-                            // a stronger one from the resolved key (DID-prefixed kid,
-                            // or x509 chain). Setting this to true would skip the entire
-                            // identifier-population function including alg → JWS becomes
-                            // invalid (wallets reject "expected string received undefined
-                            // at 'alg'").
-                            noIdentifierInHeader = false,
+                            // The caller-provided x5c is the protocol chain to emit. The resolved
+                            // KMS key may retain the complete storage chain, including the trust
+                            // anchor; allowing PrepareJwsCommandImpl to repopulate the identifier
+                            // would overwrite the filtered protocol chain. Identifier suppression
+                            // still lets PrepareJwsCommandImpl add the mandatory `alg` header before
+                            // it returns.
+                            noIdentifierInHeader = x5cChain != null,
                             protectedHeader = protectedHeader,
                         ),
                 )

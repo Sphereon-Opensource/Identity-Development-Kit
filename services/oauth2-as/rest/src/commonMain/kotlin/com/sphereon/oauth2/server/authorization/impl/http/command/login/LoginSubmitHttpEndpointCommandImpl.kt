@@ -41,7 +41,6 @@ import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
 import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
-import com.sphereon.oauth2.server.authorization.provider.ClientApplicationResolver
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession
@@ -52,6 +51,8 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 
@@ -74,7 +75,6 @@ class LoginSubmitHttpEndpointCommandImpl(
     private val userAuthProvider: UserAuthenticationProvider,
     private val loginSessionStore: OidcLoginSessionStore,
     private val pendingAuthorizationSessionStore: PendingAuthorizationSessionStore,
-    private val clientApplicationResolver: ClientApplicationResolver,
     private val secureRandom: SecureRandom,
     private val configProvider: OAuth2ServersConfigProvider,
     private val clock: Clock,
@@ -181,21 +181,10 @@ class LoginSubmitHttpEndpointCommandImpl(
                     )
                     return Ok(oauth2ErrorResponse(400, "invalid_request", "Unknown or expired login session", json))
                 }
-        val applicationId =
-            pendingSession.applicationId
-                ?: clientApplicationResolver
-                    .resolveApplicationId(clientId = pendingSession.clientId, requestHost = null)
-                    .getOrElse { error ->
-                        auditEmitter.emit(
-                            type = OAuth2AuditEventType.LOGIN_ERROR,
-                            clientId = pendingSession.clientId,
-                            metadata = mapOf("error_subcode" to "application_resolution_failed"),
-                            errorCode = "invalid_request",
-                            errorMessage = error.message.defaultMessage,
-                        )
-                        return Ok(oauth2ErrorResponse(400, "invalid_request", "Could not resolve login application", json))
-                    }
-                ?: return Ok(oauth2ErrorResponse(400, "invalid_request", "Could not resolve login application", json))
+        // Application resolution is part of authorization-session creation. Consume the exact
+        // value stamped there instead of resolving it again with different request inputs. A
+        // null value is the intentional application-agnostic mode defined by AuthenticationContext.
+        val applicationId = pendingSession.applicationId
         val authResult =
             userAuthProvider.authenticateUserWithCredentials(
                 credentials.withOidcBinding(sessionId = sessionId, applicationId = applicationId),
@@ -244,6 +233,20 @@ class LoginSubmitHttpEndpointCommandImpl(
                 idleExpiresAt = now + session.idleTtlSeconds.seconds,
                 acr = authenticatedUser.acr,
                 amr = authenticatedUser.amr,
+                claims =
+                    if (authenticatedUser.roles.isEmpty()) {
+                        emptyMap()
+                    } else {
+                        mapOf(
+                            "roles" to
+                                JsonArray(
+                                    authenticatedUser.roles
+                                        .distinct()
+                                        .sorted()
+                                        .map(::JsonPrimitive),
+                                ),
+                        )
+                    },
             )
         val stored = loginSessionStore.create(record)
         if (!stored.isOk) {
@@ -327,7 +330,7 @@ class LoginSubmitHttpEndpointCommandImpl(
 
     private fun UserCredentials.withOidcBinding(
         sessionId: String,
-        applicationId: String,
+        applicationId: String?,
     ): UserCredentials =
         when (this) {
             is UserCredentials.WebAuthnAssertion -> copy(oidcSessionId = sessionId, oidcApplicationId = applicationId)

@@ -50,7 +50,7 @@ class ResourceIndicatorsE2ETest {
 
     private val app = createOAuth2ClientTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("resource-indicators-test")
+    private val session = context.sessionContextManager.createOrGetFromId("resource-indicators-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

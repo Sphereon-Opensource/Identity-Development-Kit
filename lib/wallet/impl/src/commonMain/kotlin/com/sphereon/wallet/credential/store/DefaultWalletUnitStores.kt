@@ -16,9 +16,16 @@
 
 package com.sphereon.wallet.credential.store
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
+import com.sphereon.wallet.credential.LocalWalletCredentialStore
+import com.sphereon.wallet.credential.LocalWalletIssuanceSessionStore
 import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
+import com.sphereon.wallet.credential.WalletOperationReplayResult
+import com.sphereon.wallet.credential.WalletOperationSyncService
 import com.sphereon.wallet.credential.WalletUnitStores
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -38,3 +45,30 @@ class DefaultWalletUnitStores(
     override val credentials: WalletCredentialStore,
     override val issuanceSessions: WalletIssuanceSessionStore,
 ) : WalletUnitStores
+
+/** Local profiles bind directly to their durable local credential store. */
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class, binding = binding<WalletCredentialStore>())
+class LocalWalletCredentialStoreBinding(
+    private val delegate: LocalWalletCredentialStore,
+) : WalletCredentialStore by delegate
+
+/** Local profiles bind directly to their durable local issuance-session store. */
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class, binding = binding<WalletIssuanceSessionStore>())
+class LocalWalletIssuanceSessionStoreBinding(
+    private val delegate: LocalWalletIssuanceSessionStore,
+) : WalletIssuanceSessionStore by delegate
+
+/** A local-only profile has no remote operation log to replay. */
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class, binding = binding<WalletOperationSyncService>())
+class LocalWalletOperationSyncService : WalletOperationSyncService {
+    override suspend fun replayPending(walletUnitId: String): IdkResult<WalletOperationReplayResult, IdkError> {
+        require(walletUnitId.isNotBlank()) { "wallet_unit_id_blank" }
+        return Ok(WalletOperationReplayResult(attempted = 0, applied = 0))
+    }
+}

@@ -28,16 +28,20 @@ import com.sphereon.oauth2.client.command.CreateSignedJarArgs
 import com.sphereon.oauth2.client.command.CreateSignedJarCommand
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
+import com.sphereon.openid.oid4vp.verifier.requesturi.VerifierSignerBinding
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -45,6 +49,24 @@ import kotlin.time.Clock
 
 class RequestUriHandlerImplTest {
     private val testContext = Oid4vpVerifierTestContext("request-uri-handler-test", this)
+
+    @Test
+    fun `did request object iss is the did and kid is its full assertionMethod`() {
+        val did = "did:web:verifier.example"
+        val binding = VerifierSignerBinding.Did(did = did, verificationMethodId = "$did#verifier-request-object-root")
+
+        assertEquals(did, binding.requestObjectIssuer())
+        assertEquals(binding.requestObjectIssuer(), binding.verificationMethodId.substringBefore('#'))
+        assertFailsWith<IllegalArgumentException> {
+            VerifierSignerBinding.Did(
+                did = did,
+                verificationMethodId = "did:web:other.example#verifier-request-object-root",
+            ).requestObjectIssuer()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            VerifierSignerBinding.Did(did = did, verificationMethodId = did).requestObjectIssuer()
+        }
+    }
 
     @Test
     fun `handlePost echoes wallet_nonce as a JAR claim`() =
@@ -144,7 +166,17 @@ class RequestUriHandlerImplTest {
                 instanceId = "verifier-instance-request-uri-handler",
                 sessionId = sessionId,
                 correlationId = sessionId,
-                dcqlQuery = DcqlQuery(credentials = emptyList()),
+                dcqlQuery =
+                    DcqlQuery(
+                        credentials =
+                            listOf(
+                                DcqlCredentialQuery(
+                                    id = "credential",
+                                    format = "dc+sd-jwt",
+                                    meta = sdJwtVcMeta("urn:test:credential"),
+                                ),
+                            ),
+                    ),
                 authorizationRequest =
                     AuthorizationRequest(
                         clientId = "https://verifier.example.com",

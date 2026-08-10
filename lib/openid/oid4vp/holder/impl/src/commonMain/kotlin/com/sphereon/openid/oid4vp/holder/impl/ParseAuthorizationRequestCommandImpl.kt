@@ -22,11 +22,16 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.encodeUrlGraph
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.api.validation.toIdkResult
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ResolvedKeyInfo
+import com.sphereon.crypto.jose.jws.JwsJsonGeneral
+import com.sphereon.crypto.jose.jws.JwsValidationResult
+import com.sphereon.crypto.jose.jws.JwtService
+import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierDidOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
@@ -48,6 +53,7 @@ import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.Oid4vpJson
+import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommandService
@@ -58,6 +64,7 @@ import dev.zacsweers.metro.SingleIn
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -91,6 +98,7 @@ class ParseAuthorizationRequestCommandImpl(
     private val jarService: JarService,
     private val httpClientFactory: HttpClientFactory,
     private val externalIdentifierService: MultiExternalIdentifierService,
+    private val jwtService: JwtService,
 ) : TypedServiceCommandAdapter<ParseAuthorizationRequestArgs, AuthorizationRequest, IdkError>(
         commandId = ParseAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
@@ -108,13 +116,29 @@ class ParseAuthorizationRequestCommandImpl(
         walletConfig: WalletConfig?,
     ): IdkResult<AuthorizationRequest, IdkError> = execute(ParseAuthorizationRequestArgs(requestUri, walletConfig))
 
+    override suspend fun parseDigitalCredentialsAuthorizationRequest(
+        request: DigitalCredentialsAuthorizationRequest,
+        walletConfig: WalletConfig?,
+    ): IdkResult<AuthorizationRequest, IdkError> =
+        execute(ParseAuthorizationRequestArgs(walletConfig = walletConfig, digitalCredentialsRequest = request))
+
     override suspend fun doExecute(
         args: ParseAuthorizationRequestArgs,
         applyDuring: (ParseAuthorizationRequestArgs) -> ParseAuthorizationRequestArgs,
     ): IdkResult<AuthorizationRequest, IdkError> {
         val processedArgs = applyDuring(args)
-        val requestUri = processedArgs.requestUri
-        val walletConfig = processedArgs.walletConfig
+        val digitalCredentialsRequest = processedArgs.digitalCredentialsRequest
+        return if (digitalCredentialsRequest != null) {
+            parseDigitalCredentialsRequest(digitalCredentialsRequest, processedArgs.walletConfig)
+        } else {
+            parseAuthorizationRequestUri(requireNotNull(processedArgs.requestUri), processedArgs.walletConfig)
+        }
+    }
+
+    private suspend fun parseAuthorizationRequestUri(
+        requestUri: String,
+        walletConfig: WalletConfig?,
+    ): IdkResult<AuthorizationRequest, IdkError> {
 
         // Parse URI using dedicated command
         val parsedUri =
@@ -219,9 +243,13 @@ class ParseAuthorizationRequestCommandImpl(
         // Per OID4VP 1.0: redirect_uri is OPTIONAL when response_mode is direct_post
         // or direct_post.jwt, because response_uri is used instead.
         val responseMode = mergedParams.getOptional("response_mode")
-        val isDirectPost = responseMode == "direct_post" || responseMode == "direct_post.jwt"
+        val responseUriOrBrowserMode =
+            responseMode == "direct_post" ||
+                responseMode == "direct_post.jwt" ||
+                responseMode == "dc_api" ||
+                responseMode == "dc_api.jwt"
         val redirectUri =
-            if (isDirectPost) {
+            if (responseUriOrBrowserMode) {
                 mergedParams.getOptional("redirect_uri")
             } else {
                 mergedParams
@@ -251,6 +279,10 @@ class ParseAuthorizationRequestCommandImpl(
                 .filter { key -> key !in standardParams }
                 .associate { key -> key to JsonPrimitive(mergedParams[key] ?: "") }
 
+        if (mergedParams.names().any { it.startsWith(INTERNAL_PARAMETER_PREFIX) }) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Authorization request contains a reserved internal parameter"))
+        }
+
         val jarParams = requestObjectJwt?.let { extractJarContextParams(it) } ?: emptyMap()
 
         // Create AuthorizationRequest from merged parameters
@@ -278,6 +310,149 @@ class ParseAuthorizationRequestCommandImpl(
             )
         }
     }
+
+    private suspend fun parseDigitalCredentialsRequest(
+        request: DigitalCredentialsAuthorizationRequest,
+        walletConfig: WalletConfig?,
+    ): IdkResult<AuthorizationRequest, IdkError> {
+        validateDigitalCredentialsOrigin(request.origin)?.let { return Err(it) }
+        if (request.data.keys.any { it.startsWith(INTERNAL_PARAMETER_PREFIX) }) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials request contains a reserved internal parameter"))
+        }
+
+        val parsed =
+            when (request.protocol) {
+                DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED -> {
+                    if ("client_id" in request.data || "expected_origins" in request.data) {
+                        return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "Unsigned Digital Credentials requests must derive client_id from the browser origin",
+                            ),
+                        )
+                    }
+                    parseAuthorizationRequestUri(
+                        requestUri =
+                            authorizationRequestUri(
+                                request.data + ("client_id" to JsonPrimitive("origin:${request.origin}")),
+                            ),
+                        walletConfig = walletConfig,
+                    ).getOrElse { return Err(it) }
+                }
+
+                DIGITAL_CREDENTIAL_PROTOCOL_SIGNED -> {
+                    if (request.data.keys != setOf("request")) {
+                        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Signed Digital Credentials data must contain only 'request'"))
+                    }
+                    val compact = (request.data["request"] as? JsonPrimitive)?.contentOrNull
+                    if (compact.isNullOrBlank()) {
+                        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Signed Digital Credentials request is missing compact JWS"))
+                    }
+                    parseAuthorizationRequestUri(
+                        requestUri = "openid4vp://?request=${compact.encodeUrlGraph()}",
+                        walletConfig = walletConfig,
+                    ).getOrElse { return Err(it) }
+                }
+
+                DIGITAL_CREDENTIAL_PROTOCOL_MULTI_SIGNED -> {
+                    if (request.data.keys != setOf("request")) {
+                        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Multi-signed Digital Credentials data must contain only 'request'"))
+                    }
+                    val generalElement = request.data["request"] as? JsonObject
+                        ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Multi-signed Digital Credentials request must use JWS JSON General serialization"))
+                    val verified = verifyAtLeastOneDigitalCredentialsSignature(generalElement).getOrElse { return Err(it) }
+                    if ("client_id" in verified.payload) {
+                        return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "Multi-signed Digital Credentials request must carry client_id in each protected header",
+                            ),
+                        )
+                    }
+                    val parsedPayload =
+                        parseAuthorizationRequestUri(
+                            requestUri =
+                                authorizationRequestUri(
+                                    verified.payload + ("client_id" to JsonPrimitive(verified.clientId)),
+                                ),
+                            walletConfig = walletConfig,
+                        ).getOrElse { return Err(it) }
+                    parsedPayload.copy(
+                        additionalParameters = parsedPayload.additionalParameters.orEmpty() + jarContextParams(verified.protectedHeader),
+                    )
+                }
+
+                else ->
+                    return Err(
+                        IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            message = "Unsupported OID4VP Digital Credentials protocol: ${request.protocol}",
+                        ),
+                    )
+            }
+
+        validateDigitalCredentialsAuthorizationRequest(parsed, request)?.let { return Err(it) }
+        return Ok(
+            parsed.copy(
+                additionalParameters =
+                    parsed.additionalParameters.orEmpty() +
+                        mapOf(
+                            DIGITAL_CREDENTIAL_ORIGIN_PARAMETER to JsonPrimitive(request.origin),
+                            DIGITAL_CREDENTIAL_PROTOCOL_PARAMETER to JsonPrimitive(request.protocol),
+                        ),
+            ),
+        )
+    }
+
+    private suspend fun verifyAtLeastOneDigitalCredentialsSignature(
+        element: JsonObject,
+    ): IdkResult<VerifiedDigitalCredentialsSignature, IdkError> =
+        verifyDigitalCredentialsSignatures(element) { jws ->
+            jwtService.verifyJws(VerifyJwsArgs(jws = jws))
+        }
+
+    private fun validateDigitalCredentialsAuthorizationRequest(
+        parsed: AuthorizationRequest,
+        transport: DigitalCredentialsAuthorizationRequest,
+    ): IdkError? {
+        if (parsed.responseMode != "dc_api" && parsed.responseMode != "dc_api.jwt") {
+            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials OID4VP request must use response_mode dc_api or dc_api.jwt")
+        }
+        if (parsed.redirectUri != null || parsed.state != null || parsed.additionalParameters.orEmpty().containsKey("response_uri")) {
+            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials OID4VP request must not contain redirect_uri, response_uri, or state")
+        }
+        if (transport.protocol == DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED) {
+            if (parsed.clientId != "origin:${transport.origin}") {
+                return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Unsigned Digital Credentials client identity does not match browser origin")
+            }
+            return null
+        }
+        val expectedOrigins = parsed.additionalParameters.orEmpty()["expected_origins"].asStringList()
+        if (transport.origin !in expectedOrigins) {
+            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials expected_origins does not contain the calling browser origin")
+        }
+        return null
+    }
+
+    private fun validateDigitalCredentialsOrigin(origin: String): IdkError? {
+        if (origin.isBlank() || '?' in origin || '#' in origin || '@' in origin) {
+            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials browser origin is invalid")
+        }
+        val url =
+            try {
+                Url(origin)
+            } catch (expected: Exception) {
+                return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials browser origin is invalid", throwable = expected)
+            }
+        if (url.protocol.name.lowercase() != "https" || url.host.isBlank() || '/' in origin.substringAfter("://")) {
+            return IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Digital Credentials browser origin must be an HTTPS origin without path, query, or fragment")
+        }
+        return null
+    }
+
+    private fun authorizationRequestUri(parameters: Map<String, JsonElement>): String =
+        parameters.entries
+            .sortedBy { it.key }
+            .joinToString(prefix = "openid4vp://?", separator = "&") { (name, value) ->
+                "${name.encodeUrlGraph()}=${value.asAuthorizationRequestParameter().encodeUrlGraph()}"
+            }
 
     /**
      * Merges JWT request object parameters with query parameters.
@@ -336,15 +511,16 @@ class ParseAuthorizationRequestCommandImpl(
                 x5cHeader = x5cHeader,
             ).getOrElse { return Err(it) }
 
-        // RFC 9101 binds `iss` to the complete OAuth client identifier. OID4VP 1.0 also
-        // requires outer and signed client_id values to match, including the identifier prefix.
-        val jarIssuer = oid4vpJarIssuer(clientId)
         val mergeArgs =
             MergeRequestObjectArgs(
                 requestObjectJwt = requestObjectJwt,
                 queryParameters = queryParameters,
-                issuer = jarIssuer,
-                audience = walletConfig?.audience,
+                // OpenID4VP 1.0 section 5 makes client_id the Request Object identity
+                // binding. An iss claim MAY be present for JAR compatibility, but the Wallet
+                // MUST ignore it. Generic OAuth JAR validation remains issuer-aware; this
+                // OID4VP profile deliberately opts out of that generic claim check.
+                issuer = null,
+                audience = oid4vpJarAudience(walletConfig?.audience, payloadHint),
                 verificationKey = verificationKey,
                 decryptionKey = walletConfig?.decryptionKey, // Wallet decryption key from config
             )
@@ -361,8 +537,10 @@ class ParseAuthorizationRequestCommandImpl(
     }
 
     private fun extractJarContextParams(jwt: String): Map<String, JsonElement> {
-        val header = extractJwtHeader(jwt)
+        return jarContextParams(extractJwtHeader(jwt))
+    }
 
+    private fun jarContextParams(header: JsonObject): Map<String, JsonElement> {
         val kid = header["kid"]?.jsonPrimitive?.contentOrNull
         val typ = header["typ"]?.jsonPrimitive?.contentOrNull
         val x5c =
@@ -551,8 +729,128 @@ class ParseAuthorizationRequestCommandImpl(
     }
 }
 
-/** RFC 9101 issuer binding uses the complete OAuth client identifier, prefix included. */
-internal fun oid4vpJarIssuer(clientId: String?): String? = clientId
+internal const val DIGITAL_CREDENTIAL_ORIGIN_PARAMETER: String = "__idk_dc_api_origin"
+internal const val DIGITAL_CREDENTIAL_PROTOCOL_PARAMETER: String = "__idk_dc_api_protocol"
+private const val INTERNAL_PARAMETER_PREFIX: String = "__idk_"
+private const val DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED: String = "openid4vp-v1-unsigned"
+private const val DIGITAL_CREDENTIAL_PROTOCOL_SIGNED: String = "openid4vp-v1-signed"
+private const val DIGITAL_CREDENTIAL_PROTOCOL_MULTI_SIGNED: String = "openid4vp-v1-multisigned"
+private const val OAUTH_AUTHORIZATION_REQUEST_JWT_TYPE: String = "oauth-authz-req+jwt"
+
+internal data class VerifiedDigitalCredentialsSignature(
+    val payload: JsonObject,
+    val protectedHeader: JsonObject,
+    val clientId: String,
+)
+
+internal suspend fun verifyDigitalCredentialsSignatures(
+    element: JsonObject,
+    verify: suspend (JwsJsonGeneral) -> IdkResult<JwsValidationResult, IdkError>,
+): IdkResult<VerifiedDigitalCredentialsSignature, IdkError> {
+    val general =
+        try {
+            Oid4vpJson.wire.decodeFromJsonElement(JwsJsonGeneral.serializer(), element)
+        } catch (expected: Exception) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Invalid JWS JSON General serialization: ${expected.message}",
+                    throwable = expected,
+                ),
+            )
+        }
+    if (general.signatures.isEmpty()) {
+        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Multi-signed Digital Credentials request has no signatures"))
+    }
+    val payload =
+        try {
+            Json.parseToJsonElement(general.payload.decodeFromBase64Url().decodeToString()).jsonObject
+        } catch (expected: Exception) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Multi-signed Digital Credentials request payload is not a JSON object",
+                    throwable = expected,
+                ),
+            )
+        }
+
+    val failures = mutableListOf<String>()
+    general.signatures.forEachIndexed { index, signature ->
+        val protectedHeader =
+            try {
+                Json.parseToJsonElement(signature.protected.decodeFromBase64Url().decodeToString()).jsonObject
+            } catch (_: Exception) {
+                failures += "signature $index has an invalid protected header"
+                return@forEachIndexed
+            }
+        val clientId = protectedHeader["client_id"]?.jsonPrimitive?.contentOrNull
+        if (clientId.isNullOrBlank()) {
+            failures += "signature $index is missing protected client_id"
+            return@forEachIndexed
+        }
+        if (protectedHeader["typ"]?.jsonPrimitive?.contentOrNull != OAUTH_AUTHORIZATION_REQUEST_JWT_TYPE) {
+            failures += "signature $index has an invalid typ"
+            return@forEachIndexed
+        }
+        val verification =
+            verify(JwsJsonGeneral(payload = general.payload, signatures = listOf(signature))).getOrElse { error ->
+                failures += "signature $index could not be verified: ${error.message.defaultMessage}"
+                return@forEachIndexed
+            }
+        if (verification.isValid && verification.trustEstablished && verification.cryptoVerified == true) {
+            return Ok(VerifiedDigitalCredentialsSignature(payload, protectedHeader, clientId))
+        }
+        failures += "signature $index is not trusted and cryptographically valid"
+    }
+    return Err(
+        IdkError.ILLEGAL_ARGUMENT_ERROR(
+            message = "No valid signature in multi-signed Digital Credentials request: ${failures.joinToString("; ")}",
+        ),
+    )
+}
+
+private fun JsonElement.asAuthorizationRequestParameter(): String =
+    when (this) {
+        is JsonPrimitive -> content
+        else -> toString()
+    }
+
+private fun JsonElement?.asStringList(): List<String> {
+    val normalized =
+        when (this) {
+            is JsonPrimitive ->
+                contentOrNull?.let { encoded ->
+                    runCatching { Json.parseToJsonElement(encoded) }.getOrNull()
+                }
+            else -> this
+        }
+    return (normalized as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+}
+
+/** The generic SIOPv2/OID4VP wallet audience verifiers use when the wallet is not pre-registered. */
+internal const val OID4VP_SELF_ISSUED_AUDIENCE: String = "https://self-issued.me/v2"
+
+/**
+ * The wallet accepts its own configured audience (its client id) AND the generic self-issued
+ * audience as the request-object `aud` binding. The (unverified) payload hint only selects which
+ * of the two exact values the verified comparison uses, it never widens the comparison itself.
+ */
+internal fun oid4vpJarAudience(
+    configuredAudience: String?,
+    payloadHint: JsonObject = JsonObject(emptyMap()),
+): String? {
+    val hint = payloadHint["aud"]
+    val hintValues =
+        when (hint) {
+            is JsonArray -> hint.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            is JsonPrimitive -> listOfNotNull(hint.contentOrNull)
+            else -> emptyList()
+        }
+    return if (OID4VP_SELF_ISSUED_AUDIENCE in hintValues && configuredAudience !in hintValues) {
+        OID4VP_SELF_ISSUED_AUDIENCE
+    } else {
+        configuredAudience
+    }
+}
 
 /**
  * Resolve only the identity method needed to verify a JAR. A signed payload declaration can

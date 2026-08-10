@@ -49,6 +49,10 @@ kotlin {
                 api(projects.libOpenidOid4vciHolderPublic)
                 api(projects.libOpenidOid4vciCommonImpl)
 
+                // Holder key creation and signing are exclusively mediated by WSCA. The selected
+                // WSCD owns its configured KMS; this module must never resolve managed KMS keys.
+                implementation(projects.libWalletWscaPublic)
+
                 // Crypto (JWT/JWE, managed identifiers)
                 api(projects.libCryptoCoreImpl)
 

@@ -29,6 +29,9 @@ import com.sphereon.core.compat.JsExportCompat
  */
 const val INSTANCES_NAMESPACE: String = "oid4vp.verifiers"
 
+/** Stable persistence identity for the singular, config-only verifier deployment. */
+const val DEFAULT_OID4VP_VERIFIER_INSTANCE_ID: String = "default"
+
 /**
  * Per-request seam exposing the active OID4VP verifier instance id.
  *
@@ -48,6 +51,10 @@ const val INSTANCES_NAMESPACE: String = "oid4vp.verifiers"
 interface Oid4vpVerifierInstanceIdProvider {
     fun currentInstanceId(): String?
 }
+
+/** Resolve the routed instance or the canonical identity of the singular verifier deployment. */
+fun Oid4vpVerifierInstanceIdProvider.currentInstanceIdOrDefault(): String =
+    currentInstanceId()?.trim()?.takeIf(String::isNotEmpty) ?: DEFAULT_OID4VP_VERIFIER_INSTANCE_ID
 
 /**
  * Mutable counterpart of [Oid4vpVerifierInstanceIdProvider]. The HTTP adapter (or any other request

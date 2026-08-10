@@ -59,7 +59,7 @@ class JweCommandErrorPathsTest {
 
     val app = createCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("jwe-error-test")
+    val session = context.sessionContextManager.createOrGetFromId("jwe-error-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

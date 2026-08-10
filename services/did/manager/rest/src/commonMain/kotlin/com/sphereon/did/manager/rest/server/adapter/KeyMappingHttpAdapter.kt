@@ -45,7 +45,7 @@ class KeyMappingHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-KEY-MAPPING"
+        const val ID: String = "did.manager.key-mapping"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1.7
+
+ARG GIT_IMAGE
+ARG MAVEN_IMAGE
+ARG RUNTIME_IMAGE
+FROM ${GIT_IMAGE} AS source
+ARG OIDF_SUITE_REPOSITORY
+ARG OIDF_SUITE_COMMIT
+RUN git clone --filter=blob:none "${OIDF_SUITE_REPOSITORY}" /source \
+    && git -C /source checkout --detach "${OIDF_SUITE_COMMIT}" \
+    && test "$(git -C /source rev-parse HEAD)" = "${OIDF_SUITE_COMMIT}"
+COPY patches/0001-vdx-wallet-canonical-issuer.patch /tmp/0001-vdx-wallet-canonical-issuer.patch
+COPY patches/0002-vdx-verifier-request-object-object-skip.patch /tmp/0002-vdx-verifier-request-object-object-skip.patch
+COPY patches/0003-vdx-verifier-effective-request-parameters.patch /tmp/0003-vdx-verifier-effective-request-parameters.patch
+COPY patches/0004-vdx-issuer-encryption-variant-selection.patch /tmp/0004-vdx-issuer-encryption-variant-selection.patch
+COPY patches/0005-vdx-preauthorized-multiple-client-single-use.patch /tmp/0005-vdx-preauthorized-multiple-client-single-use.patch
+RUN git -C /source apply --check /tmp/0001-vdx-wallet-canonical-issuer.patch \
+    && git -C /source apply /tmp/0001-vdx-wallet-canonical-issuer.patch \
+    && git -C /source apply --check /tmp/0002-vdx-verifier-request-object-object-skip.patch \
+    && git -C /source apply /tmp/0002-vdx-verifier-request-object-object-skip.patch \
+    && git -C /source apply --check /tmp/0003-vdx-verifier-effective-request-parameters.patch \
+    && git -C /source apply /tmp/0003-vdx-verifier-effective-request-parameters.patch \
+    && git -C /source apply --check /tmp/0004-vdx-issuer-encryption-variant-selection.patch \
+    && git -C /source apply /tmp/0004-vdx-issuer-encryption-variant-selection.patch \
+    && git -C /source apply --check /tmp/0005-vdx-preauthorized-multiple-client-single-use.patch \
+    && git -C /source apply /tmp/0005-vdx-preauthorized-multiple-client-single-use.patch
+
+FROM ${MAVEN_IMAGE} AS build
+WORKDIR /source
+COPY --from=source /source/ /source/
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B "-Dtest=VCICredentialIssuerMetadataBuilder_UnitTest,VCICheckIssuerMetadataRequestUrl_UnitTest,VP1FinalEncryptVPResponse_UnitTest,CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted_UnitTest,CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted_UnitTest" test
+RUN --mount=type=cache,target=/root/.m2 mvn -B -Dmaven.test.skip=true package
+
+FROM ${RUNTIME_IMAGE}
+ARG OIDF_SUITE_COMMIT
+COPY --from=build /source/target/fapi-test-suite.jar /server/fapi-test-suite.jar
+COPY --from=source /source/scripts/test-configs-rp-against-op/ /opt/oidf-suite-source/scripts/test-configs-rp-against-op/
+COPY --from=source /source/scripts/certs-keys/ /opt/oidf-suite-source/scripts/certs-keys/
+ENV BASE_URL=https://localhost:8443 \
+    BASE_MTLS_URL=https://localhost:8444 \
+    MONGODB_HOST=mongodb \
+    JAVA_EXTRA_ARGS=
+EXPOSE 8080
+ENTRYPOINT ["/bin/sh", "-c", "exec java -Djdk.tls.maxHandshakeMessageSize=65536 -Dfintechlabs.base_url=${BASE_URL} -Dfintechlabs.base_mtls_url=${BASE_MTLS_URL} -Dspring.data.mongodb.uri=mongodb://${MONGODB_HOST}:27017/test_suite ${SIGNING_KEY:+-Dfintechlabs.signingKey=${SIGNING_KEY}} ${PRIVATE_LINK_SIGNING_KEY:+-Dfintechlabs.privateLinkSigningKey=${PRIVATE_LINK_SIGNING_KEY}} -Doidc.google.clientid=${OIDC_GOOGLE_CLIENTID} -Doidc.google.secret=${OIDC_GOOGLE_SECRET} -Doidc.gitlab.clientid=${OIDC_GITLAB_CLIENTID} -Doidc.gitlab.secret=${OIDC_GITLAB_SECRET} ${JAVA_EXTRA_ARGS} -jar /server/fapi-test-suite.jar"]
+LABEL org.opencontainers.image.source="https://github.com/openid-certification/conformance-suite" \
+      org.opencontainers.image.revision="${OIDF_SUITE_COMMIT}" \
+      com.sphereon.oidf.patch-set="vdx-10"

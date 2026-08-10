@@ -16,14 +16,10 @@
 
 package com.sphereon.openid.oid4vp.holder.impl
 
-import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
-import com.sphereon.core.api.binary.TypeToken
-import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeToBase64Url
-import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.core.compat.DateTimeUtils
 import com.sphereon.core.compat.Uuid
@@ -78,9 +74,6 @@ import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
-import com.sphereon.sdjwt.PresentSdJwtArgs
-import com.sphereon.sdjwt.PresentSdJwtResult
-import com.sphereon.sdjwt.command.PresentSdJwtCommand
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
@@ -140,7 +133,7 @@ class CreateAuthorizationResponseCommandImplMdocTest {
                 ).also { it.initRootScopeProvider() }
 
         val userContext = app.userContextManager.getAnonymous()
-        val sessionContext = userContext.sessionContextManager.createOrGetFromId("holder-mdoc-${Uuid.v4String()}")
+        val sessionContext = userContext.sessionContextManager.createOrGetFromId("holder-mdoc-${Uuid.v4String()}", principalType = com.sphereon.di.context.PrincipalType.USER)
         val execution: SessionExecution = sessionContext.asCoreApiServiceGraph().serviceExecution
         val kms: KeyManagerService = sessionContext.graph.asKeyManagerServiceGraph().keyManagerService
         val certificateService: CertificateServiceImpl
@@ -202,7 +195,6 @@ class CreateAuthorizationResponseCommandImplMdocTest {
             val command =
                 CreateAuthorizationResponseCommandImpl(
                     execution = setup.execution,
-                    presentSdJwtCommand = UnusedPresentSdJwtCommand,
                     mdocOid4vpService =
                         MdocOid4vpServiceImpl(
                             signService = setup.mdocSignService,
@@ -267,7 +259,7 @@ class CreateAuthorizationResponseCommandImplMdocTest {
                         credentialId = "mdoc-1",
                         presentation = storedCredential,
                         format = "mso_mdoc",
-                        holderKeyAlias = deviceKeyPair.kid ?: deviceKeyPair.alias,
+                        holderKeyRef = deviceKeyPair.kid ?: deviceKeyPair.alias,
                     ),
                 )
 
@@ -408,11 +400,4 @@ class CreateAuthorizationResponseCommandImplMdocTest {
         )
     }
 
-    private object UnusedPresentSdJwtCommand : PresentSdJwtCommand {
-        override val isEnabled: Boolean = true
-        override val inputTypeToken: TypeToken<PresentSdJwtArgs> = typeToken<PresentSdJwtArgs>()
-        override val outputTypeToken: TypeToken<PresentSdJwtResult> = typeToken<PresentSdJwtResult>()
-
-        override suspend fun execute(args: PresentSdJwtArgs): IdkResult<PresentSdJwtResult, IdkError> = error("UnusedPresentSdJwtCommand should not be called for an mso_mdoc presentation")
-    }
 }

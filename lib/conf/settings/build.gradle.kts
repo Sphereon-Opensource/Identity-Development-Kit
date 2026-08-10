@@ -54,6 +54,9 @@ kotlin {
                 implementation(sphereonlib.org.jetbrains.kotlinx.io.core)
                 implementation(libs.bundles.app.platform.di)
                 implementation(sphereonlib.com.russhwolf.multiplatform.settings)
+                implementation(sphereonlib.org.jetbrains.kotlinx.atomicfu)
+                implementation(sphereonlib.org.kotlincrypto.core.digest)
+                implementation(sphereonlib.org.kotlincrypto.hash.sha2)
                 implementation(projects.libCoreApiPublic)
             }
         }

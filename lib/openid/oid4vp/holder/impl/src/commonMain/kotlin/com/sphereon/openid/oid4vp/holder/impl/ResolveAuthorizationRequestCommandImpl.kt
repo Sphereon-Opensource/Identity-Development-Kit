@@ -48,6 +48,7 @@ import com.sphereon.openid.oid4vp.dcql.DcqlError
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.validateDcqlQuery
 import com.sphereon.openid.oid4vp.holder.ResolveAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.holder.ResolveAuthorizationRequestCommandService
@@ -217,6 +218,8 @@ class ResolveAuthorizationRequestCommandImpl(
                 }
             }
 
+        validateTransactionDataHolderBinding(dcqlQuery, transactionData).getOrElse { return Err(it) }
+
         // 4. Resolve client metadata
         val resolvedMetadata =
             resolveClientMetadataCommand
@@ -303,10 +306,33 @@ class ResolveAuthorizationRequestCommandImpl(
                     },
             )
 
+        val digitalCredentialsOrigin =
+            processedArgs.additionalParameters[DIGITAL_CREDENTIAL_ORIGIN_PARAMETER]
+                ?.jsonPrimitive
+                ?.contentOrNull
+        val originBoundDigitalCredentialsRequest = parsedClientId.clientIdScheme == ClientIdScheme.ORIGIN
+        if (originBoundDigitalCredentialsRequest) {
+            if (
+                digitalCredentialsOrigin.isNullOrBlank() ||
+                processedArgs.clientId != "origin:$digitalCredentialsOrigin" ||
+                (processedArgs.responseMode != "dc_api" && processedArgs.responseMode != "dc_api.jwt") ||
+                jarUsed
+            ) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "Invalid browser-origin client identity for Digital Credentials API request",
+                    ),
+                )
+            }
+        }
         val validationResult =
-            validateClientIdCommand
-                .execute(validationArgs)
-                .getOrElse { return it.asErrorResult() }
+            if (originBoundDigitalCredentialsRequest) {
+                null
+            } else {
+                validateClientIdCommand
+                    .execute(validationArgs)
+                    .getOrElse { return it.asErrorResult() }
+            }
 
         // 7. Build verifier info with validation results.
         //
@@ -320,8 +346,8 @@ class ResolveAuthorizationRequestCommandImpl(
             VerifierInfo(
                 clientId = processedArgs.clientId,
                 clientIdScheme = parsedClientId.clientIdScheme,
-                clientIdValid = validationResult.valid,
-                clientIdValidationErrors = validationResult.errors,
+                clientIdValid = validationResult?.valid ?: true,
+                clientIdValidationErrors = validationResult?.errors.orEmpty(),
                 displayName = null,
                 logoUri = null,
                 trustRoot = null, // TODO: Will come from identifier resolution trust establishment
@@ -342,6 +368,43 @@ class ResolveAuthorizationRequestCommandImpl(
 
 }
 
+/**
+ * OpenID4VP 1.0 Final Appendix B.3.3 requires transaction data to be carried in a
+ * cryptographically holder-bound presentation. Reject the request during resolution, before the
+ * wallet offers credentials or asks the user for consent, when any referenced Credential Query
+ * explicitly disables that binding.
+ */
+internal fun validateTransactionDataHolderBinding(
+    dcqlQuery: DcqlQuery?,
+    transactionData: List<ParsedTransactionDataEntry>?,
+): IdkResult<Unit, IdkError> {
+    if (transactionData.isNullOrEmpty()) return Ok(Unit)
+    val queriesById = dcqlQuery?.credentials.orEmpty().associateBy { it.id }
+    for (entry in transactionData) {
+        for (credentialId in entry.transactionData.credentialIds) {
+            val query =
+                queriesById[credentialId]
+                    ?: return Err(
+                        IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            message =
+                                "Transaction data at index ${entry.transactionDataIndex} references unknown " +
+                                    "Credential Query '$credentialId'",
+                        ),
+                    )
+            if (!query.require_cryptographic_holder_binding) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "Transaction data at index ${entry.transactionDataIndex} references Credential Query " +
+                                "'$credentialId', but require_cryptographic_holder_binding is false",
+                    ),
+                )
+            }
+        }
+    }
+    return Ok(Unit)
+}
+
 internal fun presentationDefinitionToDcql(definitionElement: JsonElement): IdkResult<DcqlQuery, IdkError> =
     try {
         val normalized =
@@ -351,7 +414,7 @@ internal fun presentationDefinitionToDcql(definitionElement: JsonElement): IdkRe
             }
         val definition = Json.decodeFromJsonElement<Oid4VPPresentationDefinition>(normalized)
         val credentialQueries =
-            definition.input_descriptors.map { descriptor ->
+            definition.input_descriptors.mapIndexed { descriptorIndex, descriptor ->
                 require(descriptor.format.mso_mdoc != null) {
                     "The ISO mdoc Presentation Definition descriptor '${descriptor.id}' does not request mso_mdoc"
                 }
@@ -360,22 +423,27 @@ internal fun presentationDefinitionToDcql(definitionElement: JsonElement): IdkRe
                         field.path.map { path ->
                             val (namespace, elementIdentifier) = assertedPathEntry(path)
                             DcqlClaimQuery(
-                                path = listOf(namespace.toString(), elementIdentifier.toString()),
+                                path =
+                                    ClaimsPathPointer(
+                                        listOf(
+                                            JsonPrimitive(namespace.toString()),
+                                            JsonPrimitive(elementIdentifier.toString()),
+                                        ),
+                                    ),
                                 intent_to_retain = field.intent_to_retain,
                             )
                         }
                     }
-                val namespaces = requestedClaims.mapNotNull { it.path.firstOrNull() }.distinct()
                 DcqlCredentialQuery(
-                    id = descriptor.id.toString(),
+                    // Presentation Exchange descriptor IDs may contain characters (such as '.')
+                    // that OID4VP Final explicitly forbids in DCQL Credential Query IDs. This ID
+                    // is only the identifier of the normalized internal query; the mdoc doctype
+                    // remains the original descriptor ID in meta.
+                    id = "presentation_credential_$descriptorIndex",
                     format = "mso_mdoc",
                     meta =
                         buildJsonObject {
                             put("doctype_value", descriptor.id.toString())
-                            put(
-                                "namespace_values",
-                                kotlinx.serialization.json.JsonArray(namespaces.map(::JsonPrimitive)),
-                            )
                         },
                     claims = requestedClaims,
                 )

@@ -98,7 +98,6 @@ class NoOpAdapterTest {
             assertEquals("/api", mount.serverPrefix)
             assertEquals("/items", mount.adapterBasePath)
             assertEquals(TenantPathMode.OFF, mount.tenantPathMode)
-            assertEquals(TenantResolutionPriority.HEADER_THEN_PATH, mount.tenantResolutionPriority)
             assertEquals("/t/{tenantId}", mount.tenantSegmentPattern)
         } finally {
             appGraph.destroy()
@@ -147,19 +146,6 @@ class NoOpAdapterTest {
             assertNotNull(TenantPathMode.BEFORE_SERVER_PREFIX)
             assertNotNull(TenantPathMode.AFTER_SERVER_PREFIX)
             assertNotNull(TenantPathMode.BOTH)
-        } finally {
-            appGraph.destroy()
-        }
-    }
-
-    // ========== TenantResolutionPriority Tests ==========
-
-    @Test
-    fun tenantResolutionPriorityValuesExist() {
-        val appGraph = createAppGraph()
-        try {
-            assertNotNull(TenantResolutionPriority.HEADER_THEN_PATH)
-            assertNotNull(TenantResolutionPriority.PATH_THEN_HEADER)
         } finally {
             appGraph.destroy()
         }

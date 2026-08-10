@@ -20,7 +20,6 @@ import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.TenantPathMode
-import com.sphereon.core.api.http.describe.TenantResolutionPriority
 import com.sphereon.core.compat.JsExportCompat
 
 /**
@@ -56,11 +55,6 @@ class UniversalHttpDefaultsBuilder {
     var tenantSegmentPattern: String = HttpAdapterMount.DEFAULT_TENANT_SEGMENT_PATTERN
 
     /**
-     * Default tenant resolution priority.
-     */
-    var tenantResolutionPriority: TenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH
-
-    /**
      * Default content types accepted (consumes).
      */
     var defaultConsumes: Set<MediaType> = setOf(MediaType.ApplicationJson)
@@ -76,7 +70,6 @@ class UniversalHttpDefaultsBuilder {
             tenantPathMode = tenantPathMode,
             tenantPathPolicy = tenantPathPolicy,
             tenantSegmentPattern = tenantSegmentPattern,
-            tenantResolutionPriority = tenantResolutionPriority,
             defaultConsumes = defaultConsumes,
             defaultProduces = defaultProduces,
         )
@@ -114,11 +107,6 @@ class UniversalHttpAdapterOverrideBuilder {
     var tenantSegmentPattern: String? = null
 
     /**
-     * Override the tenant resolution priority for this adapter.
-     */
-    var tenantResolutionPriority: TenantResolutionPriority? = null
-
-    /**
      * Whether this adapter is enabled.
      */
     var enabled: Boolean = true
@@ -130,7 +118,6 @@ class UniversalHttpAdapterOverrideBuilder {
             tenantPathMode = tenantPathMode,
             tenantPathPolicy = tenantPathPolicy,
             tenantSegmentPattern = tenantSegmentPattern,
-            tenantResolutionPriority = tenantResolutionPriority,
             enabled = enabled,
         )
 }

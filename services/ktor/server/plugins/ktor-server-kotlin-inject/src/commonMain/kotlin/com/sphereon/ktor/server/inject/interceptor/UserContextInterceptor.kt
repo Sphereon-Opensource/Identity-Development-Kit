@@ -21,6 +21,13 @@ import com.sphereon.core.api.app.CoreApiAppExtensionGraph
 import com.sphereon.core.api.log.LogService
 import com.sphereon.core.defaults.context.toSecuredDetails
 import com.sphereon.di.app.AppGraph
+import com.sphereon.di.context.IdentityConstants
+import com.sphereon.di.context.IdentityMetadata
+import com.sphereon.di.context.IdentityResolutionInput
+import com.sphereon.di.context.IdentityResolutionResult
+import com.sphereon.di.context.PrincipalType
+import com.sphereon.di.context.ResolutionSource
+import com.sphereon.ktor.server.inject.BaseTenantIdAttribute
 import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
 import com.sphereon.ktor.server.inject.context.RequestScopedContext
 import com.sphereon.ktor.server.inject.requestContext
@@ -79,21 +86,56 @@ class UserContextInterceptor(
         (appGraph as CoreApiAppExtensionGraph).appLogManager.withTag(LOG_TAG)
     }
 
+    private val coreGraph: CoreApiAppExtensionGraph by lazy {
+        appGraph as CoreApiAppExtensionGraph
+    }
+
     suspend fun intercept(call: ApplicationCall): RequestScopedContext {
         try {
             // Resolve tenant and principal
             val tenantInput = tenantResolver.resolve(call)
             val principalInput = principalResolver.resolve(call)
+            val validatedJwt = call.attributes.getOrNull(ValidatedJwtClaimsAttribute)
+            val identityResolution =
+                validatedJwt?.let {
+                    coreGraph.identityResolutionPipeline.resolve(
+                        IdentityResolutionInput(tokenClaims = it.claimsInput.claims),
+                    )
+                }
 
             appLogger.debug("Processing request [tenant=${tenantInput.tenant}, principal=${principalInput.principal}]")
 
+            val effectiveIdentityResolution =
+                identityResolution
+                    ?: IdentityResolutionResult(
+                        tenantId = tenantInput.tenant.toString(),
+                        principalId = principalInput.principal.toString(),
+                        principalType =
+                            if (principalInput.principal == IdentityConstants.ANONYMOUS_PRINCIPAL_ID) {
+                                PrincipalType.ANONYMOUS
+                            } else {
+                                PrincipalType.USER
+                            },
+                        metadata = IdentityMetadata(resolvedFrom = ResolutionSource.DEFAULT),
+                    )
+
             // Create or get user context (ID-based, no active state)
             val contextInstance =
-                appGraph.userContextManager.createOrGetFromInputs(
+                coreGraph.userContextManager.createOrGetFromResolvedInputs(
                     tenantInput = tenantInput,
                     principalInput = principalInput,
+                    identityResolution = effectiveIdentityResolution,
                     makeActive = false, // ID-based resolution, no global active state
                 )
+
+            val resolvedTenantId = contextInstance.context.tenant.tenantId
+            val previouslyResolvedTenantId = call.attributes.getOrNull(BaseTenantIdAttribute)
+            require(previouslyResolvedTenantId == null || previouslyResolvedTenantId == resolvedTenantId) {
+                "Resolved tenant mismatch between authenticated ingress stages"
+            }
+            if (previouslyResolvedTenantId == null) {
+                call.attributes.put(BaseTenantIdAttribute, resolvedTenantId)
+            }
 
             // Generate a unique session ID for this request (multiplatform compatible)
             // In production, you might want to use a session cookie or similar
@@ -109,15 +151,18 @@ class UserContextInterceptor(
             // `execution.sessionContext.context.secureDetails?.jwt`. Per-session by
             // design: the user context above is cached per tenant+principal and must
             // not carry one request's token.
-            val secureDetails = call.attributes.getOrNull(ValidatedJwtClaimsAttribute)?.toSecuredDetails()
+            val secureDetails = validatedJwt?.toSecuredDetails()
 
-            // Create or get session (using generated session ID)
+            // Create or get session (using generated session ID). The principal
+            // classification resolved by the identity pipeline rides along so the
+            // session does not silently downgrade e.g. WORKLOAD to USER.
             val sessionInstance =
                 contextInstance.sessionContextManager.createOrGetFromId(
                     sessionId = sessionId,
                     correlationId = correlationId,
                     makeActive = false, // ID-based resolution, no global active state
                     secureDetails = secureDetails,
+                    principalType = effectiveIdentityResolution.principalType,
                 )
 
             // Store context in call attributes

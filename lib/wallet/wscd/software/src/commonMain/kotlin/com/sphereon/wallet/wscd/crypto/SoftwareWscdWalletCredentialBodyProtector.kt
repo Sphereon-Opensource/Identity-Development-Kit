@@ -25,6 +25,7 @@ import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.credential.store.WalletCredentialBodyProtector
+import com.sphereon.wallet.credential.store.WalletCredentialProtectedDocumentRole
 import com.sphereon.wallet.wscd.software.KmsProviderBootstrap
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -63,6 +64,7 @@ class SoftwareWscdWalletCredentialBodyProtector(
         credentialRecordId: String,
         credentialInstanceId: String,
         plaintext: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole,
     ): IdkResult<ByteArray, IdkError> {
         providerRegistrar.ensureRegistered()
         val keyInfo = resolveOrCreateBodyKey(walletUnitId).getOrElse { return Err(it) }
@@ -71,7 +73,7 @@ class SoftwareWscdWalletCredentialBodyProtector(
                 keyInfo = keyInfo,
                 plaintext = plaintext,
                 algorithm = ContentEncryptionAlgorithm.A256GCM,
-                additionalAuthenticatedData = bodyAad(walletUnitId, credentialRecordId, credentialInstanceId),
+                additionalAuthenticatedData = bodyAad(walletUnitId, credentialRecordId, credentialInstanceId, documentRole),
             )
         if (encrypted.isErr) return Err(encrypted.error)
 
@@ -91,6 +93,7 @@ class SoftwareWscdWalletCredentialBodyProtector(
         credentialRecordId: String,
         credentialInstanceId: String,
         protectedBody: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole,
     ): IdkResult<ByteArray, IdkError> {
         providerRegistrar.ensureRegistered()
         val envelope =
@@ -119,9 +122,22 @@ class SoftwareWscdWalletCredentialBodyProtector(
                 algorithm = ContentEncryptionAlgorithm.A256GCM,
                 iv = envelope.iv.decodeFrom(Encoding.BASE64URL),
                 authTag = envelope.authTag.decodeFrom(Encoding.BASE64URL),
-                additionalAuthenticatedData = bodyAad(walletUnitId, credentialRecordId, credentialInstanceId),
+                additionalAuthenticatedData = bodyAad(walletUnitId, credentialRecordId, credentialInstanceId, documentRole),
             )
         return if (decrypted.isOk) Ok(decrypted.value.plaintext) else Err(decrypted.error)
+    }
+
+    override suspend fun validate(
+        walletUnitId: String,
+        credentialRecordId: String,
+        credentialInstanceId: String,
+        protectedBody: ByteArray,
+        documentRole: WalletCredentialProtectedDocumentRole,
+    ): IdkResult<Unit, IdkError> {
+        val opened = open(walletUnitId, credentialRecordId, credentialInstanceId, protectedBody, documentRole)
+        if (opened.isErr) return Err(opened.error)
+        opened.value.fill(0)
+        return Ok(Unit)
     }
 
     private suspend fun resolveOrCreateBodyKey(walletUnitId: String): IdkResult<KeyInfo<Nothing>, IdkError> {
@@ -180,4 +196,6 @@ private fun bodyAad(
     walletUnitId: String,
     credentialRecordId: String,
     credentialInstanceId: String,
-): ByteArray = "wallet-credential-body:v1:$walletUnitId:$credentialRecordId:$credentialInstanceId".encodeToByteArray()
+    documentRole: WalletCredentialProtectedDocumentRole,
+): ByteArray =
+    "wallet-credential-content:v1:${documentRole.name}:$walletUnitId:$credentialRecordId:$credentialInstanceId".encodeToByteArray()

@@ -42,17 +42,11 @@ import kotlinx.serialization.json.JsonObject
  * As defined in draft-ietf-oauth-sd-jwt-vc-13 §4.1
  */
 object SdJwtVcMediaTypes {
-    /**
-     * Media type for SD-JWT-VC credentials
-     * Used in older versions of the spec
-     */
-    const val VC_SD_JWT = "application/vc+sd-jwt"
+    /** W3C VCDM 2.0 credential secured using SD-JWT (VC JOSE/COSE). */
+    const val W3C_VC_SD_JWT = "application/vc+sd-jwt"
 
-    /**
-     * Media type for SD-JWT-VC credentials (draft-13)
-     * "dc" stands for "digital credential"
-     */
-    const val DC_SD_JWT = "application/dc+sd-jwt"
+    /** IETF SD-JWT VC media type; `dc` means digital credential. */
+    const val IETF_SD_JWT_VC = "application/dc+sd-jwt"
 }
 
 /**
@@ -60,16 +54,11 @@ object SdJwtVcMediaTypes {
  * As defined in draft-ietf-oauth-sd-jwt-vc-13 §4.1
  */
 object SdJwtVcTypeHeaders {
-    /**
-     * Type header value for SD-JWT-VC (older spec versions)
-     */
-    const val VC_SD_JWT = "vc+sd-jwt"
+    /** W3C VCDM 2.0 credential secured using SD-JWT (VC JOSE/COSE). */
+    const val W3C_VC_SD_JWT = "vc+sd-jwt"
 
-    /**
-     * Type header value for SD-JWT-VC (draft-13)
-     * "dc" stands for "digital credential"
-     */
-    const val DC_SD_JWT = "dc+sd-jwt"
+    /** IETF SD-JWT VC `typ` value. */
+    const val IETF_SD_JWT_VC = "dc+sd-jwt"
 }
 
 /**
@@ -149,7 +138,7 @@ data class SdJwtVcTypeMetadata(
 @Serializable
 @JsExportCompat
 data class DisplayInformation(
-    @SerialName("lang")
+    @SerialName("locale")
     val locale: String,
     @SerialName("name")
     val name: String,
@@ -328,7 +317,7 @@ data class ClaimInformation(
 @Serializable
 @JsExportCompat
 data class ClaimDisplayMetadata(
-    @SerialName("lang")
+    @SerialName("locale")
     val locale: String,
     @SerialName("label")
     val label: String,

@@ -54,7 +54,7 @@ class JwsIntegrationTest {
 
     val app = createCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("jws-test")
+    val session = context.sessionContextManager.createOrGetFromId("jws-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

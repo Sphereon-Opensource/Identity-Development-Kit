@@ -75,7 +75,7 @@ class WebvhDidResolverHttpMockTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("webvh-resolver-mock")
+                .createOrGetFromId("webvh-resolver-mock", principalType = com.sphereon.di.context.PrincipalType.USER)
         val sessionGraph = session.graph
         registry = (sessionGraph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
         keyManager = (sessionGraph as KeyManagerServiceGraph).keyManagerService

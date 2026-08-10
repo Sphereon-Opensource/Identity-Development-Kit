@@ -22,15 +22,22 @@ import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.dcqlQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.mdocMeta
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -52,10 +59,11 @@ class CreateAuthorizationRequestCommandImplTest {
                             DcqlCredentialQuery(
                                 id = "identity_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:identity"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("first_name")),
-                                        DcqlClaimQuery(path = listOf("last_name")),
+                                        DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("first_name")))),
+                                        DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("last_name")))),
                                     ),
                             ),
                         ),
@@ -93,6 +101,64 @@ class CreateAuthorizationRequestCommandImplTest {
         }
 
     @Test
+    fun `test create authorization request persists templateId onto the session`() =
+        runTest {
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
+                )
+
+            val args =
+                CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-template-id-request",
+                    dcqlQuery = dcqlQuery,
+                    clientId = "https://verifier.example.com",
+                    responseUri = "https://verifier.example.com/response",
+                    responseMode = ResponseMode.DIRECT_POST,
+                    nonce = "nonce12345678",
+                    state = "state-template-a",
+                    verifierId = "verifier-a",
+                    templateId = "template-a",
+                )
+
+            val result = command.createAuthorizationRequest(args)
+
+            assertIs<Ok<*>>(result)
+            val createdSessionId = assertNotNull(result.value.sessionId)
+            val storedSession = sessionStore.get(createdSessionId)
+            assertIs<Ok<*>>(storedSession)
+            assertEquals("template-a", storedSession.value?.templateId)
+        }
+
+    @Test
+    fun `test create authorization request without templateId leaves session templateId null`() =
+        runTest {
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials = listOf(DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
+                )
+
+            val args =
+                CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-no-template-id-request",
+                    dcqlQuery = dcqlQuery,
+                    clientId = "https://verifier.example.com",
+                    responseUri = "https://verifier.example.com/response",
+                    responseMode = ResponseMode.DIRECT_POST,
+                    nonce = "nonce12345678",
+                    state = "state-no-template",
+                )
+
+            val result = command.createAuthorizationRequest(args)
+
+            assertIs<Ok<*>>(result)
+            val createdSessionId = assertNotNull(result.value.sessionId)
+            val storedSession = sessionStore.get(createdSessionId)
+            assertIs<Ok<*>>(storedSession)
+            assertNull(storedSession.value?.templateId)
+        }
+
+    @Test
     fun `test create authorization request with client metadata`() =
         runTest {
             val dcqlQuery =
@@ -102,6 +168,7 @@ class CreateAuthorizationRequestCommandImplTest {
                             DcqlCredentialQuery(
                                 id = "mdoc_credential",
                                 format = "mso_mdoc",
+                                meta = mdocMeta("org.iso.18013.5.1.mDL"),
                             ),
                         ),
                 )
@@ -129,7 +196,7 @@ class CreateAuthorizationRequestCommandImplTest {
         runTest {
             val dcqlQuery =
                 DcqlQuery(
-                    credentials = listOf(DcqlCredentialQuery(id = "test")),
+                    credentials = listOf(DcqlCredentialQuery(id = "test", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
                 )
 
             val args =
@@ -156,7 +223,7 @@ class CreateAuthorizationRequestCommandImplTest {
         runTest {
             val dcqlQuery =
                 DcqlQuery(
-                    credentials = listOf(DcqlCredentialQuery(id = "test")),
+                    credentials = listOf(DcqlCredentialQuery(id = "test", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
                 )
 
             val args =
@@ -183,7 +250,7 @@ class CreateAuthorizationRequestCommandImplTest {
         runTest {
             val dcqlQuery =
                 DcqlQuery(
-                    credentials = listOf(DcqlCredentialQuery(id = "test")),
+                    credentials = listOf(DcqlCredentialQuery(id = "test", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
                 )
 
             val args =
@@ -210,7 +277,7 @@ class CreateAuthorizationRequestCommandImplTest {
         runTest {
             val dcqlQuery =
                 DcqlQuery(
-                    credentials = listOf(DcqlCredentialQuery(id = "test")),
+                    credentials = listOf(DcqlCredentialQuery(id = "test", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
                 )
 
             val args =
@@ -231,32 +298,16 @@ class CreateAuthorizationRequestCommandImplTest {
         }
 
     @Test
-    fun `test empty DCQL query fails validation`() =
-        runTest {
-            val dcqlQuery =
+    fun `test empty DCQL query is rejected by the model`() {
+        val exception =
+            assertFailsWith<IllegalArgumentException> {
                 DcqlQuery(
                     credentials = emptyList(),
                     credential_sets = null,
                 )
-
-            val args =
-                CreateAuthorizationRequestArgs(
-                    instanceId = "verifier-instance-empty-dcql-validation",
-                    dcqlQuery = dcqlQuery,
-                    clientId = "https://verifier.example.com",
-                    responseUri = "https://verifier.example.com/response",
-                    responseMode = ResponseMode.DIRECT_POST,
-                    nonce = "nonce12345678",
-                )
-
-            val result = command.createAuthorizationRequest(args)
-
-            assertIs<Err<*>>(result)
-            assertTrue(
-                result.error.message.defaultMessage
-                    .contains("credential"),
-            )
-        }
+            }
+        assertTrue(exception.message.orEmpty().contains("credential"))
+    }
 
     @Test
     fun `JAR signing DID binding rewrites client_id to decentralized_identifier prefix`() =
@@ -283,7 +334,7 @@ class CreateAuthorizationRequestCommandImplTest {
                 command.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
                         instanceId = "verifier-instance-did-signer-binding",
-                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt"))),
+                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                         clientId = "https://verifier.example.com",
                         responseUri = "https://verifier.example.com/response",
                         responseMode = ResponseMode.DIRECT_POST,
@@ -328,7 +379,7 @@ class CreateAuthorizationRequestCommandImplTest {
                 command.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
                         instanceId = "verifier-instance-x509-signer-binding",
-                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt"))),
+                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                         clientId = "https://verifier.example.com",
                         responseUri = "https://verifier.example.com/response",
                         responseMode = ResponseMode.DIRECT_POST,
@@ -356,7 +407,7 @@ class CreateAuthorizationRequestCommandImplTest {
                 command.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
                         instanceId = "verifier-instance-missing-signer-binding",
-                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt"))),
+                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                         clientId = "https://verifier.example.com",
                         responseUri = "https://verifier.example.com/response",
                         responseMode = ResponseMode.DIRECT_POST,
@@ -400,7 +451,7 @@ class CreateAuthorizationRequestCommandImplTest {
                 command.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
                         instanceId = "verifier-instance-caller-supplied-binding",
-                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt"))),
+                        dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                         clientId = "x509_san_dns:caller.example.com",
                         clientIdScheme = ClientIdScheme.X509_SAN_DNS,
                         responseUri = "https://verifier.example.com/response",

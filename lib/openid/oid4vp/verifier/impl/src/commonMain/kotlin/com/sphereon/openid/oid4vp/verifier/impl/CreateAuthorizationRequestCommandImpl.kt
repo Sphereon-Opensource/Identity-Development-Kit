@@ -30,6 +30,7 @@ import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationRequest
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.validateDcqlQuery
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestCommandService
@@ -42,6 +43,7 @@ import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import io.konform.validation.Invalid
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -269,14 +271,13 @@ class CreateAuthorizationRequestCommandImpl(
                 dcqlQueryId = processedArgs.dcqlQueryId,
                 dcqlQueryVersion = processedArgs.dcqlQueryVersion,
                 verifierId = processedArgs.verifierId,
+                templateId = processedArgs.templateId,
                 authorizationRequest = request,
                 status = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED,
                 error = null,
                 parsedResponse = null,
                 validationResult = null,
                 callback = null,
-                jarmEncryptionKeyAlias = processedArgs.jarmEncryptionKeyAlias,
-                jarmEncryptionKeyProviderId = processedArgs.jarmEncryptionKeyProviderId,
                 boundInvitationToken = processedArgs.boundInvitationToken,
                 postPresentationHookAllowList = processedArgs.postPresentationHookAllowList,
                 credentialStatusPolicies = processedArgs.credentialStatusPolicies,
@@ -348,12 +349,12 @@ class CreateAuthorizationRequestCommandImpl(
             )
         }
 
-        // Validate DCQL query has at least credentials or credential_sets
-        if (args.dcqlQuery.credentials.isNullOrEmpty() &&
-            args.dcqlQuery.credential_sets.isNullOrEmpty()
-        ) {
+        val dcqlValidation = validateDcqlQuery(args.dcqlQuery)
+        if (dcqlValidation is Invalid) {
             return IdkError.ILLEGAL_ARGUMENT_ERROR(
-                message = "dcql_query must have at least one credential or credential_set",
+                message =
+                    "Invalid OpenID4VP 1.0 Final dcql_query: " +
+                        dcqlValidation.errors.joinToString("; ") { "${it.path}: ${it.message}" },
             )
         }
 

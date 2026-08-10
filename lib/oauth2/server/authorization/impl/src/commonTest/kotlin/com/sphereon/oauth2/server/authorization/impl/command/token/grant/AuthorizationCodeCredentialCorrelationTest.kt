@@ -10,30 +10,48 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 
 class AuthorizationCodeCredentialCorrelationTest {
     @Test
-    fun offerLinkedAuthorizationCodeCarriesExactOfferSessionIdentifier() {
+    fun tokenResponseReturnsCredentialIdentifierDistinctFromConfigurationId() {
         val detail =
             buildAuthorizationCodeCredentialAuthorizationDetails(
                 credentialConfigurationIds = listOf("shared-config"),
-                issuerState = "offer-session-exact",
+                credentialIdentifierProvider = { "dataset-handle-001" },
             )!![0].jsonObject
 
         assertEquals("shared-config", detail["credential_configuration_id"]?.jsonPrimitive?.content)
-        assertEquals(listOf("offer-session-exact"), detail["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content })
+        val identifiers = detail["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertEquals(listOf("dataset-handle-001"), identifiers)
+        assertNotEquals(detail["credential_configuration_id"]?.jsonPrimitive?.content, identifiers?.single())
     }
 
     @Test
-    fun walletInitiatedAuthorizationCodeKeepsConfigurationFlowWithoutInventingIdentifier() {
-        val detail =
+    fun eachAuthorizedConfigurationGetsItsOwnIdentifier() {
+        val details =
             buildAuthorizationCodeCredentialAuthorizationDetails(
-                credentialConfigurationIds = listOf("shared-config"),
-                issuerState = null,
-            )!![0].jsonObject
+                credentialConfigurationIds = listOf("pid", "mdl"),
+                credentialIdentifierProvider = { configId -> "dataset-$configId" },
+            )!!.map { it.jsonObject }
 
-        assertEquals("shared-config", detail["credential_configuration_id"]?.jsonPrimitive?.content)
-        assertFalse("credential_identifiers" in detail)
+        assertEquals(listOf("pid", "mdl"), details.map { it["credential_configuration_id"]?.jsonPrimitive?.content })
+        assertEquals(
+            listOf(listOf("dataset-pid"), listOf("dataset-mdl")),
+            details.map { detail -> detail["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content } },
+        )
+    }
+
+    @Test
+    fun refreshTokenResponsesRemintCredentialIdentifiers() {
+        fun identifier() =
+            buildRefreshedCredentialAuthorizationDetails(listOf("mdl"))!![0]
+                .jsonObject["credential_identifiers"]!!
+                .jsonArray.single().jsonPrimitive.content
+
+        val firstAccessTokenIdentifier = identifier()
+        val refreshedAccessTokenIdentifier = identifier()
+
+        assertNotEquals(firstAccessTokenIdentifier, refreshedAccessTokenIdentifier)
     }
 }

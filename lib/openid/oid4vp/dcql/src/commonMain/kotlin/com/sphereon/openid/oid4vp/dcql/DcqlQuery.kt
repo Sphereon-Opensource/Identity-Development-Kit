@@ -17,12 +17,17 @@
 package com.sphereon.openid.oid4vp.dcql
 
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.core.compat.JsExportIgnoreCompat
+import io.konform.validation.Invalid
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import kotlin.jvm.JvmInline
 
 /**
  * Digital Credentials Query Language (DCQL) Query
@@ -34,9 +39,8 @@ import kotlinx.serialization.json.JsonObject
  * and claims from a holder. It provides a simpler and more flexible alternative to DIF
  * Presentation Exchange."
  *
- * A query MUST contain at least one of:
- * - `credentials`: A list of specific credential requests
- * - `credential_sets`: A list of credential set requests (where one option must be satisfied)
+ * A query MUST contain a non-empty `credentials` array. `credential_sets`, when present, adds
+ * constraints over identifiers from that array; it is not an alternative to `credentials`.
  *
  * Example:
  * ```json
@@ -63,13 +67,12 @@ import kotlinx.serialization.json.JsonObject
 @Serializable
 @JsExportCompat
 data class DcqlQuery(
-    val credentials: List<DcqlCredentialQuery>? = null,
+    val credentials: List<DcqlCredentialQuery>,
     val credential_sets: List<DcqlCredentialSetQuery>? = null,
 ) {
     init {
-        require(credentials != null || credential_sets != null) {
-            "At least one of 'credentials' or 'credential_sets' must be present"
-        }
+        require(credentials.isNotEmpty()) { "'credentials' must contain at least one Credential Query" }
+        requireValid("DcqlQuery", validateDcqlQuery(this))
     }
 }
 
@@ -96,7 +99,6 @@ data class DcqlQuery(
  *     {"path": ["first_name"]},
  *     {"path": ["birth_date"]}
  *   ],
- *   "require_cryptographic_holder_binding": true,
  *   "multiple": false,
  *   "trusted_authorities": [
  *     {
@@ -108,16 +110,16 @@ data class DcqlQuery(
  * ```
  *
  * @property id Unique identifier for this credential query (used in responses)
- * @property format Optional credential format (e.g., "dc+sd-jwt", "mso_mdoc", "jwt_vc_json")
- * @property meta Optional format-specific metadata (e.g., vct_values for SD-JWT VC, doctype_value for mDoc)
+ * @property format Required credential format (e.g., "dc+sd-jwt" or "mso_mdoc")
+ * @property meta Required format-specific metadata. An empty object applies no metadata constraint
+ * for extension formats; Appendix B defines required properties for the Final standard formats.
  * @property claims Optional list of specific claims to request from this credential
  * @property claim_sets Optional list of claim sets (logical groupings of claims)
- * @property require_cryptographic_holder_binding Whether cryptographic holder binding is required (default: true)
+ * @property require_cryptographic_holder_binding Whether cryptographic Holder Binding is required (default: true)
  * @property multiple Whether multiple matching credentials can be presented (default: false)
  * @property trusted_authorities Optional list of trusted authorities that may have issued the credential
  *
  * @see DcqlClaimQuery
- * @see DcqlClaimSet
  * @see DcqlTrustedAuthority
  * @see SdJwtVcMeta
  * @see MdocMeta
@@ -126,15 +128,49 @@ data class DcqlQuery(
 @JsExportCompat
 data class DcqlCredentialQuery(
     val id: String,
-    val format: String? = null,
-    val meta: JsonObject? = null,
+    val format: String,
+    val meta: JsonObject,
     val claims: List<DcqlClaimQuery>? = null,
-    val claim_sets: List<DcqlClaimSet>? = null,
+    val claim_sets: List<List<String>>? = null,
     val require_cryptographic_holder_binding: Boolean = true,
     val multiple: Boolean = false,
     @SerialName("trusted_authorities")
     val trusted_authorities: List<DcqlTrustedAuthority>? = null,
 ) {
+    init {
+        when (format) {
+            "dc+sd-jwt" -> {
+                val values = meta["vct_values"] as? JsonArray
+                require(values != null && values.isNotEmpty() && values.all { it is JsonPrimitive && it.isString && it.content.isNotEmpty() }) {
+                    "dc+sd-jwt meta.vct_values is required and must be a non-empty array of non-empty type identifiers"
+                }
+            }
+
+            "mso_mdoc" -> {
+                val doctype = meta["doctype_value"] as? JsonPrimitive
+                require(doctype?.isString == true && doctype.content.isNotEmpty()) {
+                    "mso_mdoc meta.doctype_value is required and must be a non-empty doctype identifier"
+                }
+            }
+
+            "jwt_vc_json", "ldp_vc" -> {
+                val alternatives = meta["type_values"] as? JsonArray
+                require(
+                    alternatives != null && alternatives.isNotEmpty() && alternatives.all { alternative ->
+                        alternative is JsonArray && alternative.isNotEmpty() &&
+                            alternative.all { it is JsonPrimitive && it.isString && it.content.isNotEmpty() }
+                    },
+                ) {
+                    "$format meta.type_values is required and must contain non-empty alternative sets of fully expanded types"
+                }
+            }
+        }
+        require(format == "mso_mdoc" || claims.orEmpty().none { it.intent_to_retain != null }) {
+            "intent_to_retain is only defined for mso_mdoc Claims Queries in OpenID4VP 1.0 Final"
+        }
+        requireValid("DcqlCredentialQuery", validateDcqlCredentialQuery(this))
+    }
+
     /**
      * Normalized trusted authorities with duplicate types automatically combined.
      *
@@ -194,10 +230,10 @@ data class DcqlCredentialQuery(
  *
  * Requests a specific claim from a credential using a JSON path.
  *
- * OpenID4VP 1.0 Section 6.2:
+ * OpenID4VP 1.0 Final Section 6.3 and Appendix B.2.4:
  * "A claim query specifies a single claim that the verifier requests from a credential.
- * The claim is identified by a path (array of strings) that navigates the credential's
- * JSON structure."
+ * The claim is identified by a Claims Path Pointer containing strings, nulls, and non-negative
+ * integers as defined by OpenID4VP 1.0 Final Section 7.
  *
  * Examples:
  * ```json
@@ -208,58 +244,60 @@ data class DcqlCredentialQuery(
  * {"path": ["address", "street_address"]}
  *
  * // Array element
- * {"path": ["degrees", "0", "name"]}
+ * {"path": ["degrees", 0, "name"]}
  *
  * // With value constraint
  * {"path": ["over_18"], "values": [true]}
  *
- * // With intent to retain
- * {"path": ["email"], "intent_to_retain": true}
  * ```
  *
  * @property path JSON path to the claim (array of property names/indices)
  * @property values Optional list of acceptable values for this claim (constraint)
- * @property intent_to_retain Optional flag indicating verifier intends to retain this claim
+ * @property intent_to_retain Optional ISO mdoc IntentToRetain value; invalid for other formats
  *
  * @see DcqlCredentialQuery
  */
 @Serializable
 @JsExportCompat
 data class DcqlClaimQuery(
-    val path: List<String>,
+    val path: ClaimsPathPointer,
+    val id: String? = null,
     val values: List<JsonElement>? = null,
     val intent_to_retain: Boolean? = null,
-)
+) {
+    init {
+        requireValid("DcqlClaimQuery", validateDcqlClaimQuery(this))
+    }
+}
 
 /**
- * DCQL Claim Set
+ * OpenID4VP 1.0 Final Claims Path Pointer.
  *
- * Logical grouping of claims that can be referenced by ID.
- *
- * OpenID4VP 1.0 Section 6.3:
- * "A claim set allows grouping multiple claims under a single identifier. This is useful
- * for organizing related claims and for expressing disjunctions (OR logic) between different
- * sets of claims."
- *
- * Example:
- * ```json
- * {
- *   "id": "basic_identity",
- *   "claims": ["first_name", "last_name", "birth_date"]
- * }
- * ```
- *
- * @property id Unique identifier for this claim set
- * @property claims List of claim IDs or paths belonging to this set
- *
- * @see DcqlCredentialQuery
+ * This value class serializes as the JSON array itself. It prevents draft-era string-only paths
+ * from leaking into protocol logic while keeping traversal independent of credential format.
  */
 @Serializable
-@JsExportCompat
-data class DcqlClaimSet(
-    val id: String,
-    val claims: List<String>,
-)
+@JvmInline
+value class ClaimsPathPointer(
+    val components: List<JsonElement>,
+) {
+    init {
+        require(components.isNotEmpty()) { "Claims Path Pointer must not be empty" }
+        components.forEachIndexed { index, component ->
+            require(
+                component is JsonNull ||
+                    component is JsonPrimitive &&
+                    (component.isString || component.longOrNull?.let { it >= 0 } == true),
+            ) {
+                "Claims Path Pointer component at index $index must be a string, null, or non-negative integer"
+            }
+        }
+    }
+}
+
+/** Creates a Final Claims Path Pointer containing string path components. */
+fun claimsPathPointer(vararg components: String): ClaimsPathPointer =
+    ClaimsPathPointer(components.map(::JsonPrimitive))
 
 /**
  * DCQL Credential Set Query
@@ -276,53 +314,37 @@ data class DcqlClaimSet(
  * {
  *   "required": true,
  *   "options": [
- *     {"credential_ids": ["passport"]},
- *     {"credential_ids": ["drivers_license"]},
- *     {"credential_ids": ["national_id"]}
+ *     ["passport"],
+ *     ["drivers_license"],
+ *     ["national_id"]
  *   ]
  * }
  * ```
  *
  * This means: "Present EITHER a passport OR a driver's license OR a national ID"
  *
- * @property required Whether at least one option from this set MUST be satisfied (default: false)
+ * @property required Whether at least one option from this set MUST be satisfied (default: true)
  * @property options List of alternative credential options (any one can satisfy the requirement)
  *
- * @see DcqlCredentialSetOption
  * @see DcqlQuery
  */
 @Serializable
 @JsExportCompat
 data class DcqlCredentialSetQuery(
-    val required: Boolean = false,
-    val options: List<DcqlCredentialSetOption>,
-)
+    val required: Boolean = true,
+    val options: List<List<String>>,
+) {
+    init {
+        requireValid("DcqlCredentialSetQuery", validateDcqlCredentialSetQuery(this))
+    }
+}
 
-/**
- * DCQL Credential Set Option
- *
- * One alternative option in a credential set query.
- *
- * OpenID4VP 1.0 Section 6.4:
- * "Each option in a credential set specifies one or more credential IDs that together
- * satisfy the requirement. If multiple IDs are listed, ALL of those credentials must
- * be presented together."
- *
- * Example:
- * ```json
- * // Single credential option
- * {"credential_ids": ["passport"]}
- *
- * // Multiple credentials required together
- * {"credential_ids": ["university_id", "transcript"]}
- * ```
- *
- * @property credential_ids List of credential IDs that satisfy this option
- *
- * @see DcqlCredentialSetQuery
- */
-@Serializable
-@JsExportCompat
-data class DcqlCredentialSetOption(
-    val credential_ids: List<String>,
-)
+private fun requireValid(
+    type: String,
+    validationResult: io.konform.validation.ValidationResult<*>,
+) {
+    if (validationResult is Invalid) {
+        val errors = validationResult.errors.joinToString("; ") { "${it.path}: ${it.message}" }
+        throw IllegalArgumentException("Invalid $type: $errors")
+    }
+}

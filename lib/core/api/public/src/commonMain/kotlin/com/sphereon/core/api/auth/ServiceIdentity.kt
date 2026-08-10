@@ -19,12 +19,12 @@ package com.sphereon.core.api.auth
 import com.sphereon.core.compat.JsExportCompat
 
 /**
- * Provides the identity of the current service for outbound propagation.
+ * Provides the identity of the current service for local credential selection.
  *
  * Each service assembly provides its [serviceId] via environment variable
  * or configuration (e.g., `SPHEREON_SERVICE_ID=service-crypto`).
- * The service ID is attached to outbound gRPC calls as an `X-Service-Id` header
- * so receiving services can identify the caller.
+ * The receiver derives workload identity exclusively from validated JWT claims;
+ * this value is never propagated as caller-controlled request metadata.
  */
 @JsExportCompat
 interface ServiceIdentity {

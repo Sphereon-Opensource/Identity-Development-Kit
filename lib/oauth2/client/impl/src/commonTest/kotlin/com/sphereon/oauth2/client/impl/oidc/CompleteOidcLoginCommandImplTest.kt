@@ -42,7 +42,7 @@ import kotlin.time.Duration.Companion.minutes
 class CompleteOidcLoginCommandImplTest {
     private val app = createOAuth2ClientTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("complete-oidc-login-test")
+    private val session = context.sessionContextManager.createOrGetFromId("complete-oidc-login-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     private val oauth2Client: OAuth2Client = (session.graph as OAuth2ClientImpl.Graph).oauth2Client
     private val transactionStore: OidcLoginTransactionStore =
         (app as OidcLoginTransactionStoreTestGraph).oidcLoginTransactionStore

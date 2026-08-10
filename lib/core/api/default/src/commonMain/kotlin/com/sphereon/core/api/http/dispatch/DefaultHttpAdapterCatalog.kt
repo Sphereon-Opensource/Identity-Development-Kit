@@ -19,6 +19,7 @@ package com.sphereon.core.api.http.dispatch
 import com.sphereon.core.api.http.config.UniversalHttpConfig
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
+import com.sphereon.core.api.log.Log
 import com.sphereon.di.HasOrder
 import com.sphereon.di.Order
 import dev.zacsweers.metro.AppScope
@@ -68,6 +69,17 @@ class DefaultHttpAdapterCatalog(
 
     override val diagnostics: HttpAdapterCatalogDiagnostics = HttpAdapterCatalogDiagnostics.from(descriptions)
 
+    init {
+        // The catalog decides every dispatchable route; one line at construction states what
+        // this process actually serves, so a route-not-found never has to be guessed at.
+        Log.app().withTag(LOG_TAG).info(
+            "HTTP adapter catalog built: ${descriptions.size} adapters " +
+                descriptions.joinToString(", ", prefix = "[", postfix = "]") { description ->
+                    "${description.id}(${description.endpoints.size})"
+                },
+        )
+    }
+
     override fun getOrder(): Int = Order.MEDIUM.orderValue
 
     override fun describeAll(): List<HttpAdapterDescription> = descriptions
@@ -92,5 +104,9 @@ class DefaultHttpAdapterCatalog(
     interface DefaultConfigGraph {
         @Provides
         fun provideUniversalHttpConfig(): UniversalHttpConfig = UniversalHttpConfig.DEFAULT
+    }
+
+    private companion object {
+        const val LOG_TAG = "HttpAdapterCatalog"
     }
 }

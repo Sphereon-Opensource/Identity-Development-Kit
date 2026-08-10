@@ -45,7 +45,7 @@ class EquivalentIdHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-EQUIVALENT-ID"
+        const val ID: String = "did.manager.equivalent-id"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

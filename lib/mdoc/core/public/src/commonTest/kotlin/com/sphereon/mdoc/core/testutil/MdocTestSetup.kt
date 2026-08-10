@@ -39,7 +39,7 @@ class MdocTestContext(
 ) {
     val app: AppGraph = createMdocTestAppGraph(testInstance)
     val userContext = app.userContextManager.getAnonymous()
-    val sessionContext = userContext.sessionContextManager.createOrGetFromId("mdoc-test-${Uuid.v4String()}")
+    val sessionContext = userContext.sessionContextManager.createOrGetFromId("mdoc-test-${Uuid.v4String()}", principalType = com.sphereon.di.context.PrincipalType.USER)
     val sessionGraph: SessionGraph = sessionContext.graph
 
     val kms: KeyManagerService = sessionGraph.asKeyManagerServiceGraph().keyManagerService

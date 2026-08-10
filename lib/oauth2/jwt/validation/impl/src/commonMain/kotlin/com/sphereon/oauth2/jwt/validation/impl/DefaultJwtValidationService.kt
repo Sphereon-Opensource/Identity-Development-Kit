@@ -27,8 +27,10 @@ import com.sphereon.oauth2.jwt.validation.AccessTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdpConfig
 import com.sphereon.oauth2.jwt.validation.IdpRegistry
+import com.sphereon.oauth2.jwt.validation.IdpType
 import com.sphereon.oauth2.jwt.validation.JwtValidationError
 import com.sphereon.oauth2.jwt.validation.JwtValidationService
+import com.sphereon.oauth2.jwt.validation.OidcDiscoveryService
 import com.sphereon.oauth2.jwt.validation.TokenClaims
 import com.sphereon.oauth2.jwt.validation.ValidatedAccessToken
 import com.sphereon.oauth2.jwt.validation.ValidatedIdToken
@@ -77,6 +79,7 @@ import kotlinx.serialization.json.jsonObject
 class DefaultJwtValidationService(
     private val verifyJwtCommand: VerifyJwtCommand,
     private val idpRegistry: IdpRegistry,
+    private val oidcDiscoveryService: OidcDiscoveryService,
 ) : JwtValidationService {
     override suspend fun validateAccessToken(
         token: String,
@@ -96,6 +99,12 @@ class DefaultJwtValidationService(
 
         val idpConfig = (idpResult as Ok).value
 
+        val jwksResult = resolveJwksUri(idpConfig)
+        if (jwksResult is Err) {
+            return Err(jwksResult.error)
+        }
+        val jwksUri = (jwksResult as Ok).value
+
         // Determine expected audience
         val expectedAudience = options.expectedAudience ?: idpConfig.audience
 
@@ -106,7 +115,7 @@ class DefaultJwtValidationService(
                     jwt = token,
                     authorizationServer = idpConfig.issuer,
                     expectedAudience = expectedAudience,
-                    jwksUri = idpConfig.jwksUri,
+                    jwksUri = jwksUri,
                 ),
             )
 
@@ -180,6 +189,12 @@ class DefaultJwtValidationService(
 
         val idpConfig = (idpResult as Ok).value
 
+        val jwksResult = resolveJwksUri(idpConfig)
+        if (jwksResult is Err) {
+            return Err(jwksResult.error)
+        }
+        val jwksUri = (jwksResult as Ok).value
+
         // Verify the JWT
         val verifyResult =
             verifyJwtCommand.execute(
@@ -187,7 +202,7 @@ class DefaultJwtValidationService(
                     jwt = token,
                     authorizationServer = idpConfig.issuer,
                     expectedAudience = options.expectedAudience ?: idpConfig.audience,
-                    jwksUri = idpConfig.jwksUri,
+                    jwksUri = jwksUri,
                 ),
             )
 
@@ -316,6 +331,54 @@ class DefaultJwtValidationService(
 
         // Priority 4: Default IdP
         return idpRegistry.getDefaultIdp()
+    }
+
+    /**
+     * Resolve the JWKS endpoint promised by [IdpConfig]. An explicit endpoint is
+     * authoritative. Every discovery-capable IdP type resolves a missing endpoint
+     * through OIDC metadata; CUSTOM configurations must provide one themselves.
+     *
+     * Returning a concrete endpoint is important: [VerifyJwtCommand] interprets a
+     * null identifier as a managed/KMS key lookup. A remote OIDC token's `kid` is
+     * not a local KMS alias, so passing null would silently select the wrong trust
+     * mechanism instead of performing the documented OIDC discovery flow.
+     */
+    private suspend fun resolveJwksUri(idpConfig: IdpConfig): IdkResult<String, JwtValidationError> {
+        idpConfig.jwksUri?.trim()?.takeIf(String::isNotEmpty)?.let { return Ok(it) }
+
+        if (idpConfig.type == IdpType.CUSTOM) {
+            return Err(
+                JwtValidationError.idpConfigurationError(
+                    "Custom IdP '${idpConfig.id}' must configure a JWKS URI",
+                ),
+            )
+        }
+
+        val discovered = oidcDiscoveryService.getMetadata(idpConfig.issuer)
+        if (discovered is Err) {
+            return Err(discovered.error)
+        }
+        val metadata = (discovered as Ok).value
+        return if (metadata.issuer != idpConfig.issuer) {
+            Err(
+                JwtValidationError.discoveryFailed(
+                    issuer = idpConfig.issuer,
+                    cause = "Discovered issuer '${metadata.issuer}' does not match the configured issuer",
+                ),
+            )
+        } else {
+            val jwksUri = metadata.jwksUri.trim()
+            if (jwksUri.isEmpty()) {
+                Err(
+                    JwtValidationError.discoveryFailed(
+                        issuer = idpConfig.issuer,
+                        cause = "Discovered metadata contains an empty JWKS URI",
+                    ),
+                )
+            } else {
+                Ok(jwksUri)
+            }
+        }
     }
 
     /**

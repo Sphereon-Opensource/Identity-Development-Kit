@@ -30,6 +30,7 @@ import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.config.currentInstanceIdOrDefault
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferInput
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferOutput
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferServiceCommand
@@ -79,13 +80,7 @@ class CreateCredentialOfferServiceCommandImpl(
         applyDuring: (CreateCredentialOfferInput) -> CreateCredentialOfferInput,
     ): IdkResult<CreateCredentialOfferOutput, IdkError> {
         val input = applyDuring(args)
-        val instanceId =
-            instanceIdProvider.currentInstanceId()?.trim()?.takeIf(String::isNotEmpty)
-                ?: return Err(
-                    IdkError.INVALID_STATE(
-                        message = "An OID4VCI issuer instance must be resolved before creating a credential offer",
-                    ),
-                )
+        val instanceId = instanceIdProvider.currentInstanceIdOrDefault()
 
         if (input.credentialConfigurationIds.isEmpty()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "credential_configuration_ids must not be empty"))
@@ -180,11 +175,18 @@ class CreateCredentialOfferServiceCommandImpl(
                 qrCodeService.generateDataUri(created.offerUri, options)
             }
 
-        emitSessionCreatedEvent(created.instanceId, correlationId, created.sessionId, input.credentialConfigurationIds)
+        emitSessionCreatedEvent(
+            created.instanceId,
+            correlationId,
+            created.sessionId,
+            input.credentialConfigurationIds,
+            input.templateId,
+        )
 
         return Ok(
             CreateCredentialOfferOutput(
                 correlationId = correlationId,
+                sessionId = created.sessionId,
                 offerUri = created.offerUri,
                 statusUri = statusUri,
                 qrUri = qrUri,
@@ -200,6 +202,7 @@ class CreateCredentialOfferServiceCommandImpl(
         correlationId: String,
         protocolSessionId: String,
         credentialConfigurationIds: List<String>,
+        templateId: String?,
     ) {
         sessionEventService.emit(
                 sessionEventService
@@ -216,11 +219,13 @@ class CreateCredentialOfferServiceCommandImpl(
                                 protocolSessionId = protocolSessionId,
                                 instanceId = instanceId,
                                 newState = CredentialOfferSessionStatus.CREDENTIAL_OFFER_CREATED.name,
+                                templateId = templateId,
                                 creationSnapshot = buildJsonObject {
                                     put("correlationId", correlationId)
                                     put("credentialConfigurationIds", buildJsonArray {
                                         credentialConfigurationIds.forEach { add(JsonPrimitive(it)) }
                                     })
+                                    templateId?.let { put("templateId", it) }
                                 },
                                 currentResult = buildJsonObject {
                                     put("correlationId", correlationId)

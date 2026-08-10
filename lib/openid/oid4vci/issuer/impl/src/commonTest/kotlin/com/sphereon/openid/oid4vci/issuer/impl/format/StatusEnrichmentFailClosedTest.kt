@@ -118,6 +118,7 @@ class StatusEnrichmentFailClosedTest {
             holderBindingKey = null,
             attributes = mapOf("given_name" to JsonPrimitive("Alice")),
             statusListBinding = statusListBinding,
+            signingKeyAlias = "issuer-signing-eupid",
         )
 
     private val binding =

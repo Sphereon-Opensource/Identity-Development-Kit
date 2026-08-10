@@ -20,7 +20,6 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.credential.CredentialRecord
 import com.sphereon.wallet.credential.LocalWalletCredentialStore
 import com.sphereon.wallet.credential.RemoteWalletCredentialStore
@@ -32,20 +31,13 @@ import com.sphereon.wallet.credential.WalletOperationReplayFailure
 import com.sphereon.wallet.credential.WalletOperationReplayResult
 import com.sphereon.wallet.credential.WalletOperationSyncService
 import com.sphereon.wallet.credential.WalletOperationType
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 import kotlin.time.Clock
 
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<WalletOperationSyncService>())
 class HybridWalletOperationSyncService(
     private val localStore: WalletCredentialStore,
     private val remoteStore: WalletCredentialStore,
     private val operationQueue: WalletOperationQueue,
 ) : WalletOperationSyncService {
-    @Inject
     constructor(
         localStore: LocalWalletCredentialStore,
         remoteStore: RemoteWalletCredentialStore,
@@ -82,11 +74,12 @@ class HybridWalletOperationSyncService(
                 WalletOperationType.UPDATE_METADATA,
                 WalletOperationType.APPEND_PRESENTATION_BINDING,
                 -> {
-                    failures +=
-                        operation.failure(
-                            code = "WALLET_OPERATION_REPLAY_UNSUPPORTED",
-                            message = "Replay for operation type ${operation.operationType} is not implemented yet",
-                        )
+                    val result = replayPut(walletUnitId, operation)
+                    when (result) {
+                        ReplayOutcome.APPLIED -> applied++
+                        is ReplayOutcome.CONFLICT -> conflicts += result.conflict
+                        is ReplayOutcome.FAILED -> failures += result.failure
+                    }
                 }
             }
         }

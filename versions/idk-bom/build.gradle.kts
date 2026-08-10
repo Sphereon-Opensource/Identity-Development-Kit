@@ -36,7 +36,6 @@ dependencies {
         api("com.sphereon.idk:lib-crypto-kms-provider-azure:$version")
         api("com.sphereon.idk:lib-crypto-kms-provider-mobile:$version")
         api("com.sphereon.idk:lib-crypto-kms-rest-api:$version")
-        api("com.sphereon.idk:lib-crypto-kms-provider-rest:$version")
 
         // SD-JWT libraries
         api("com.sphereon.idk:lib-sdjwt-public:$version")

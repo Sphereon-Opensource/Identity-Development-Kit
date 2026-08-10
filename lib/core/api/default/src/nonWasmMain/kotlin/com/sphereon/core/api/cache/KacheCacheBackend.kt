@@ -21,6 +21,8 @@ import com.mayakapps.kache.KacheStrategy
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
@@ -30,7 +32,7 @@ import kotlin.time.Instant
  * Kache-based in-memory cache backend.
  *
  * Features:
- * - High-performance concurrent access via Kache's implementation
+ * - Safe concurrent access with serialized protection of Kache's mutable LRU metadata
  * - LRU eviction strategy for memory management
  * - Manual TTL expiration checking
  * - Pattern-based key operations via iteration
@@ -83,7 +85,15 @@ class KacheCacheBackend(
             strategy = KacheStrategy.LRU
         }
 
-    override suspend fun get(key: String): ByteArray? {
+    /**
+     * InMemoryKache's LRU strategy mutates its access-order chain even for reads. The chain is not
+     * safe to access concurrently, so every operation that touches [cache] must hold this mutex.
+     */
+    private val cacheMutex = Mutex()
+
+    override suspend fun get(key: String): ByteArray? = cacheMutex.withLock { getUnlocked(key) }
+
+    private suspend fun getUnlocked(key: String): ByteArray? {
         val entry = cache.getIfAvailable(key) ?: return null
 
         if (entry.isExpired()) {
@@ -98,14 +108,24 @@ class KacheCacheBackend(
         key: String,
         value: ByteArray,
         ttlMs: Long?,
+    ) = cacheMutex.withLock {
+        setUnlocked(key, value, ttlMs)
+    }
+
+    private suspend fun setUnlocked(
+        key: String,
+        value: ByteArray,
+        ttlMs: Long?,
     ) {
         val expiresAt = ttlMs?.let { Clock.System.now().plus(kotlin.time.Duration.parse("${it}ms")) }
         cache.put(key, CacheEntry(value, expiresAt))
     }
 
-    override suspend fun delete(key: String): Boolean = cache.remove(key) != null
+    override suspend fun delete(key: String): Boolean = cacheMutex.withLock { cache.remove(key) != null }
 
-    override suspend fun exists(key: String): Boolean {
+    override suspend fun exists(key: String): Boolean = cacheMutex.withLock { existsUnlocked(key) }
+
+    private suspend fun existsUnlocked(key: String): Boolean {
         val entry = cache.getIfAvailable(key) ?: return false
         if (entry.isExpired()) {
             cache.remove(key)
@@ -114,36 +134,37 @@ class KacheCacheBackend(
         return true
     }
 
-    override suspend fun getMany(keys: Collection<String>): Map<String, ByteArray> {
+    override suspend fun getMany(keys: Collection<String>): Map<String, ByteArray> = cacheMutex.withLock {
         val result = mutableMapOf<String, ByteArray>()
         for (key in keys) {
-            get(key)?.let { result[key] = it }
+            getUnlocked(key)?.let { result[key] = it }
         }
-        return result
+        result
     }
 
     override suspend fun setMany(
         entries: Map<String, ByteArray>,
         ttlMs: Long?,
-    ) {
+    ) = cacheMutex.withLock {
         entries.forEach { (key, value) ->
-            set(key, value, ttlMs)
+            setUnlocked(key, value, ttlMs)
         }
     }
 
-    override suspend fun deleteByPattern(pattern: String): Int {
-        val keysToDelete = keysMatchingPattern(pattern, cacheKeys())
+    override suspend fun deleteByPattern(pattern: String): Int = cacheMutex.withLock {
+        val keysToDelete = keysMatchingPattern(pattern, cacheKeysUnlocked())
         keysToDelete.forEach { cache.remove(it) }
-        return keysToDelete.size
+        keysToDelete.size
     }
 
-    override suspend fun keys(pattern: String): List<String> = keysMatchingPattern(pattern, cacheKeys())
+    override suspend fun keys(pattern: String): List<String> =
+        cacheMutex.withLock { keysMatchingPattern(pattern, cacheKeysUnlocked()) }
 
     override suspend fun clear() {
-        cache.clear()
+        cacheMutex.withLock { cache.clear() }
     }
 
-    override suspend fun size(): Long = cache.size
+    override suspend fun size(): Long = cacheMutex.withLock { cache.size }
 
     override suspend fun isHealthy(): Boolean = true
 
@@ -151,11 +172,11 @@ class KacheCacheBackend(
      * Cleanup expired entries.
      * Can be called periodically if needed.
      */
-    suspend fun cleanupExpired(): Int {
+    suspend fun cleanupExpired(): Int = cacheMutex.withLock {
         val now = Clock.System.now()
         var cleaned = 0
 
-        for (key in cacheKeys()) {
+        for (key in cacheKeysUnlocked()) {
             val entry = cache.getIfAvailable(key)
             if (entry != null && entry.expiresAt != null && now >= entry.expiresAt) {
                 cache.remove(key)
@@ -163,10 +184,10 @@ class KacheCacheBackend(
             }
         }
 
-        return cleaned
+        cleaned
     }
 
-    private suspend fun cacheKeys(): List<String> {
+    private suspend fun cacheKeysUnlocked(): List<String> {
         @Suppress("UNCHECKED_CAST")
         val keys = cache.getKeys() as Iterable<String?>
         return keys.filterNotNull()

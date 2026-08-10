@@ -65,7 +65,7 @@ class JwsSigningFlowsE2ETest {
 
     val app = createCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("jws-signing-flows-test")
+    val session = context.sessionContextManager.createOrGetFromId("jws-signing-flows-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

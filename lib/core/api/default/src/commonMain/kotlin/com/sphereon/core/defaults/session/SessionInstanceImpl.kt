@@ -19,6 +19,8 @@ package com.sphereon.core.defaults.session
 
 import com.sphereon.core.api.conf.ConfigCacheWarmup
 import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.PrincipalConfigEnvironment
+import com.sphereon.core.api.conf.refreshableContentRevision
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.di.session.SessionContext
@@ -52,6 +54,7 @@ class SessionInstanceImpl(
     override val sessionExecution: SessionExecution,
     override val sessionContextManager: SessionContextManager,
     private val configCacheWarmup: ConfigCacheWarmup,
+    private val principalConfigEnvironment: PrincipalConfigEnvironment,
 ) : SynchronizedObject(),
     SessionInstance {
     override lateinit var graph: SessionGraph
@@ -89,6 +92,8 @@ class SessionInstanceImpl(
 
         val tenantId = sessionContext.context.tenant.tenantId
         val principalId = sessionContext.context.principal?.toString()
+        val propertySources = principalConfigEnvironment.getPropertySources(includeParents = true)
+        val contentRevision = propertySources.refreshableContentRevision(refresh = true)
 
         // Warm up KMS-related config prefixes
         configCacheWarmup.warmupAsync(
@@ -96,6 +101,11 @@ class SessionInstanceImpl(
             level = ConfigLevel.PRINCIPAL,
             tenantId = tenantId,
             principalId = principalId,
+            sourceRevision = propertySources.revision,
+            contentRevision = contentRevision,
+            interpolationPolicyIdentity =
+                principalConfigEnvironment.interpolationPolicyProvider.cacheIdentity
+                    ?: "interpolation-policy:unavailable",
         )
 
         cacheWarmedUp = true

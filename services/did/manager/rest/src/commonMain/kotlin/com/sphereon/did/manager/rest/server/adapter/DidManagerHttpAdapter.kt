@@ -34,15 +34,11 @@ import dev.zacsweers.metro.SingleIn
  * nothing matches, it falls back to invoking the lifecycle adapter so the standard
  * 404/405 error renderer produces a deterministic response.
  *
- * ### Tenant and principal forwarding (`X-Tenant-ID` / `X-User-ID`)
+ * ### Tenant and principal resolution
  *
- * Endpoint commands deliberately do NOT extract `X-Tenant-ID` / `X-User-ID` headers
- * themselves. Tenant and principal resolution is the host's responsibility — for the
- * bundled Ktor host (`DidManagerKtorServer`), `KotlinInjectPlugin` extracts both
- * headers via the configured `DefaultTenantResolver` / `DefaultPrincipalResolver`,
- * opens a session under the resolved tenant + principal, and runs the endpoint command
- * inside that session. Hosts mounting these adapters outside Ktor must perform the
- * equivalent extraction in their own request pipeline before invoking [handleRequest].
+ * Endpoint commands do not inspect caller-controlled identity headers. The host must
+ * validate the bearer JWT and establish tenant and principal context before invoking
+ * [handleRequest]. Hosts mounting these adapters outside Ktor have the same obligation.
  */
 @Inject
 @SingleIn(SessionScope::class)

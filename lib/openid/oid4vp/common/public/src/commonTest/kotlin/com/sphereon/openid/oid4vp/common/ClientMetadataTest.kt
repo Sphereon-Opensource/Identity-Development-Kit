@@ -216,6 +216,23 @@ class ClientMetadataSerializationTest {
         assertEquals(setOf("dc+sd-jwt"), decoded.vpFormatsSupported?.keys)
         assertEquals(listOf("A128GCM", "A256GCM"), decoded.encryptedResponseEncValuesSupported)
     }
+
+    @Test
+    fun `VP format builders keep IETF and W3C SD-JWT identifiers distinct`() {
+        val verifierFormats =
+            buildVpFormats {
+                sdJwtVc()
+                w3cVcSdJwt()
+            }
+        val walletMetadata =
+            buildWalletMetadata {
+                supportSdJwtVc()
+                supportW3cVcSdJwt()
+            }
+
+        assertEquals(setOf("dc+sd-jwt", "vc+sd-jwt"), verifierFormats.keys)
+        assertEquals(setOf("dc+sd-jwt", "vc+sd-jwt"), walletMetadata.vpFormatsSupported.keys)
+    }
 }
 
 class ClientMetadataValidationTest {

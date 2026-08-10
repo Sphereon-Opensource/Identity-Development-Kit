@@ -20,7 +20,6 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.credential.HybridWalletIssuanceSessionStoreDelegate
 import com.sphereon.wallet.credential.IssuanceSession
 import com.sphereon.wallet.credential.IssuanceSessionStatus
@@ -30,10 +29,6 @@ import com.sphereon.wallet.credential.SecretRef
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorOperation
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorPolicy
 import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorRequest
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 
 /**
  * Hybrid local-first issuance-session store.
@@ -42,14 +37,10 @@ import dev.zacsweers.metro.binding
  * delegate is updated opportunistically so deferred issuance can be resumed by another authorized
  * device or service when policy allows it.
  */
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<HybridWalletIssuanceSessionStoreDelegate>())
 class HybridWalletIssuanceSessionStore(
     private val localStore: LocalWalletIssuanceSessionStore,
     private val remoteStore: RemoteWalletIssuanceSessionStore,
-    private val deferredAccessTokenRemoteMirrorPolicy: WalletDeferredAccessTokenRemoteMirrorPolicy =
-        WalletDeferredAccessTokenRemoteMirrorPolicy.deny,
+    private val deferredAccessTokenRemoteMirrorPolicy: WalletDeferredAccessTokenRemoteMirrorPolicy,
 ) : HybridWalletIssuanceSessionStoreDelegate {
     override suspend fun putSession(
         walletUnitId: String,
@@ -168,7 +159,3 @@ class HybridWalletIssuanceSessionStore(
 /**
  * Default hybrid secret policy: session metadata may mirror remotely, raw deferred access tokens do not.
  */
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<WalletDeferredAccessTokenRemoteMirrorPolicy>())
-class DefaultWalletDeferredAccessTokenRemoteMirrorPolicy : WalletDeferredAccessTokenRemoteMirrorPolicy by WalletDeferredAccessTokenRemoteMirrorPolicy.deny

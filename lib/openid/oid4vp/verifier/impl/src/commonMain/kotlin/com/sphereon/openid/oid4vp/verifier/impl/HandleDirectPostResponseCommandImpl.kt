@@ -289,6 +289,7 @@ class HandleDirectPostResponseCommandImpl(
                 verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
                 verifierId = processedArgs.verifierId,
                 dcqlQueryId = processedArgs.dcqlQueryId,
+                templateId = processedArgs.templateId,
             )
 
         val validationResult =

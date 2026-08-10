@@ -61,7 +61,7 @@ class JvmTest {
                     DefaultPrincipalInputString("test@principal.com"),
                 )
 
-            val sessionContextGraph = contextInstance.sessionContextManager.createOrGetFromId("testAction")
+            val sessionContextGraph = contextInstance.sessionContextManager.createOrGetFromId("testAction", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionContext1 = sessionContextGraph.sessionContext
             println(contextInstance)
             println(appGraph)
@@ -121,7 +121,10 @@ class JvmTest {
                 DefaultTenantInputString("test@principal.com"),
                 DefaultPrincipalInputString("test@principal.com")
             )
-            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId(sessionId = "HelloWorld")
+            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId(
+                sessionId = "HelloWorld",
+                principalType = PrincipalType.USER,
+            )
             val out = sessionGraph.asCoreApiServiceGraph().helloWorld.execute(args = "hello world")
             assertTrue(out.isOk)
             println(Clock.System.now().minus(start).toString(DurationUnit.MILLISECONDS))

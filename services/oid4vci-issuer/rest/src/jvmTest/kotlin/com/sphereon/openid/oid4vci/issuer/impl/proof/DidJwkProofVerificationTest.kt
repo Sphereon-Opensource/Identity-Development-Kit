@@ -62,7 +62,7 @@ class DidJwkProofVerificationTest {
             graph.initRootScopeProvider()
 
             val context = graph.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("did-jwk-test")
+            val session = context.sessionContextManager.createOrGetFromId("did-jwk-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val jwtService = (session.graph as JwtServiceImpl.Graph).jwtService
 

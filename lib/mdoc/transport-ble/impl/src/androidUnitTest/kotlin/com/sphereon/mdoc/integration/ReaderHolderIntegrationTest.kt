@@ -92,8 +92,8 @@ class ReaderHolderIntegrationTest {
 
     // Create separate sessions for holder and reader
     // This simulates two different actors in the mdoc exchange
-    private val holderSession = userContext.sessionContextManager.createOrGetFromId("holder-session")
-    private val readerSession = userContext.sessionContextManager.createOrGetFromId("reader-session")
+    private val holderSession = userContext.sessionContextManager.createOrGetFromId("holder-session", principalType = com.sphereon.di.context.PrincipalType.USER)
+    private val readerSession = userContext.sessionContextManager.createOrGetFromId("reader-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     // Cast to proper graph types to access services
     private val holderSessionGraph = holderSession.graph.asKeyManagerServiceGraph()

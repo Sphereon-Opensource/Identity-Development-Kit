@@ -25,16 +25,18 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Tests for secret resolution through the ConfigResolutionPipeline.
+ * Tests for the greenfield configuration pipeline.
  *
  * These tests verify that:
- * 1. ${secret:@env:VAR} references resolve environment variables as secrets
- * 2. Secret references work in combination with regular interpolation
- * 3. Missing secrets are handled appropriately
+ * 1. Caller-created ${secret:...} references fail closed
+ * 2. Regular property and environment interpolation continue to work
+ * 3. Raw provider references are never returned by configuration interpolation
  */
 class SecretResolutionTest {
     private lateinit var userContextInstance: UserContextInstance
@@ -74,9 +76,14 @@ class SecretResolutionTest {
         val keysToClean =
             listOf(
                 "secret.ref",
+                "db.host",
                 "db.connection",
                 "combined.value",
                 "missing.secret",
+                "user.home.secret",
+                "raw.secret",
+                "app.name",
+                "complex.value",
             )
         keysToClean.forEach { key ->
             appSettings.remove(key)
@@ -84,15 +91,16 @@ class SecretResolutionTest {
     }
 
     @Test
-    fun testSecretEnvResolution() {
-        // Set a value referencing an env var as a secret
-        // Using PATH which should exist on all systems
-        appSettingsSource.setProperty("secret.ref", "\${secret:@env:PATH}")
+    fun testSecretReferenceFailsClosed() {
+        val secretRef = "\${secret:@env:PATH}"
 
-        // Verify secret is resolved (just check it's not the placeholder)
-        val resolved = appConfigService.getProperty<String>("secret.ref")
-        assertNotNull(resolved, "Secret should resolve to a value")
-        assertTrue(!resolved.contains("\${secret:"), "Secret placeholder should be resolved")
+        val denial =
+            assertFailsWith<IllegalArgumentException> {
+                appSettingsSource.setProperty("secret.ref", secretRef)
+            }
+
+        assertEquals("Configuration value is not permitted", denial.message)
+        assertNull(appSettings.get<String>("secret.ref"))
     }
 
     @Test
@@ -108,9 +116,7 @@ class SecretResolutionTest {
     }
 
     @Test
-    fun testSecretEnvResolutionWithExistingVar() {
-        // Test with a common environment variable that should exist
-        // HOME on Unix, USERPROFILE on Windows
+    fun testSecretReferenceDoesNotReadExistingEnvironmentVariable() {
         val envVar =
             if (System.getProperty("os.name").lowercase().contains("win")) {
                 "USERPROFILE"
@@ -118,33 +124,28 @@ class SecretResolutionTest {
                 "HOME"
             }
 
-        appSettingsSource.setProperty("user.home.secret", "\${secret:@env:$envVar}")
+        val secretRef = "\${secret:@env:$envVar}"
 
-        val resolved = appConfigService.getProperty<String>("user.home.secret")
-        assertNotNull(resolved, "Secret referencing $envVar should resolve")
+        val denial =
+            assertFailsWith<IllegalArgumentException> {
+                appSettingsSource.setProperty("user.home.secret", secretRef)
+            }
 
-        // Verify it matches the actual env var
-        val expected = System.getenv(envVar)
-        assertEquals(expected, resolved, "Secret should resolve to actual env var value")
+        assertEquals("Configuration value is not permitted", denial.message)
+        assertNull(appSettings.get<String>("user.home.secret"))
     }
 
     @Test
-    fun testRawSecretReferenceStored() {
-        // Verify that the raw reference is stored in settings (not resolved at storage time)
+    fun testRawSecretReferenceIsRejectedBeforeStorage() {
         val secretRef = "\${secret:@env:PATH}"
-        appSettingsSource.setProperty("raw.secret", secretRef)
 
-        // Get the raw value from settings (bypassing interpolation)
-        val rawValue = appSettings.get<String>("raw.secret")
-        assertEquals(secretRef, rawValue, "Raw secret reference should be stored as-is")
+        val denial =
+            assertFailsWith<IllegalArgumentException> {
+                appSettingsSource.setProperty("raw.secret", secretRef)
+            }
 
-        // But when accessed through ConfigService, it should be resolved
-        val resolvedValue = appConfigService.getProperty<String>("raw.secret")
-        assertNotNull(resolvedValue)
-        assertTrue(
-            resolvedValue != secretRef || System.getenv("PATH") == null,
-            "Secret should be resolved through ConfigService",
-        )
+        assertEquals("Configuration value is not permitted", denial.message)
+        assertNull(appSettings.get<String>("raw.secret"))
     }
 
     @Test

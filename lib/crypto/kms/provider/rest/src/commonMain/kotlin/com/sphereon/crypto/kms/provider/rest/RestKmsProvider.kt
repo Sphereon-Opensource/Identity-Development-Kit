@@ -92,6 +92,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlin.experimental.ExperimentalObjCName
@@ -185,7 +186,10 @@ class RestClientKmsProviderImpl(
                 applyAuthHeaders()
                 setBody(
                     GenerateKey(
-                        alias = alias,
+                        // The RC2-compatible REST API makes alias the durable tenant-facing key
+                        // selector. The generic provider interface permits null for providers
+                        // which create their own aliases, but this transport must not invent one.
+                        alias = requireNotNull(alias) { "REST KMS key generation requires an alias" },
                         use = use?.toRest(),
                         keyOperations = keyOperations.toRest(),
                         alg = alg?.toRest(),
@@ -550,56 +554,11 @@ class RestClientKmsProviderImpl(
         return LegacyHttpClientFactory.createClient(restOptions)
     }
 
-    /**
-     * Applies authentication and context headers to the HTTP request based on configuration.
-     */
+    /** Applies JWT bearer authentication to the remote KMS request. */
     private fun HttpRequestBuilder.applyAuthHeaders() {
-        val authConfig = config.authConfig
-
-        // Add authentication token if using header-based auth
-        if (authConfig.methods.contains("header") && authConfig.token != null) {
-            header(authConfig.authHeader, "Bearer ${authConfig.token}")
+        config.authConfig.bearerJwt?.let { jwt ->
+            header(HttpHeaders.Authorization, "Bearer $jwt")
         }
-
-        // Resolve tenant ID from context or config
-        val tenantId = resolveTenantId(authConfig)
-        if (tenantId != null) {
-            header(authConfig.tenantHeader, tenantId)
-        }
-
-        // Resolve principal ID from context or config
-        val principalId = resolvePrincipalId(authConfig)
-        if (principalId != null) {
-            header(authConfig.principalHeader, principalId)
-        }
-    }
-
-    /**
-     * Resolves the tenant ID to use based on configuration and current context.
-     */
-    private fun resolveTenantId(authConfig: RestClientAuthConfig): String? {
-        if (authConfig.useTenantFromContext) {
-            val contextTenantId = execution.sessionContext.context.tenant.tenantId
-            // Use context tenant unless it's anonymous, then fallback to config
-            if (contextTenantId != "<anonymous>") {
-                return contextTenantId
-            }
-        }
-        return authConfig.tenantId
-    }
-
-    /**
-     * Resolves the principal ID to use based on configuration and current context.
-     */
-    private fun resolvePrincipalId(authConfig: RestClientAuthConfig): String? {
-        if (authConfig.usePrincipalFromContext) {
-            val contextPrincipal = execution.sessionContext.context.principal
-            // Use context principal unless it's anonymous, then fallback to config
-            if (contextPrincipal != null && contextPrincipal != "<anonymous>") {
-                return contextPrincipal.toString()
-            }
-        }
-        return authConfig.principalId
     }
 
     private suspend fun handleErrors(response: HttpResponse) {

@@ -62,6 +62,10 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 
 @Inject
 @SingleIn(SessionScope::class)
@@ -81,9 +85,107 @@ class CreateDidEndpointCommandImpl(
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
-        val input = request.requireJsonBody<CreateDidInput>(endpointJson).getOrElse { return Err(it) }
+        val raw = request.requireJsonBody<JsonObject>(endpointJson).getOrElse { return Err(it) }
+        validateStrictCreateDidBody(raw).getOrElse { return Err(it) }
+        val input =
+            try {
+                endpointJson.decodeFromJsonElement<CreateDidInput>(raw)
+            } catch (expected: Exception) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "Invalid request body: ${expected.message}",
+                        throwable = expected,
+                    ),
+                )
+            }
         val created = serviceCommand.execute(input).getOrElse { return Err(it) }
         return Ok(jsonResponse(201, endpointJson.encodeToString(Did.serializer(), created.toWire(emptySet()))))
+    }
+}
+
+private fun validateStrictCreateDidBody(body: JsonObject): IdkResult<Unit, IdkError> {
+    val unknownCreateFields = body.keys - CREATE_DID_FIELDS
+    if (unknownCreateFields.isNotEmpty()) {
+        return Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                message = "DidCreateRequest contains unknown fields: ${unknownCreateFields.sorted().joinToString()}",
+            ),
+        )
+    }
+
+    val keyInfo =
+        body["keyInfo"] as? JsonObject
+            ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DidCreateRequest.keyInfo must be an object"))
+    val unknownKeyInfoFields = keyInfo.keys - CREATE_DID_KEY_INFO_FIELDS
+    if (unknownKeyInfoFields.isNotEmpty()) {
+        return Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                message = "DidCreateRequest.keyInfo contains unknown fields: ${unknownKeyInfoFields.sorted().joinToString()}",
+            ),
+        )
+    }
+
+    val kind = (keyInfo["kind"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+    return when (kind) {
+        "PUBLIC_JWK" -> validateCreatePublicJwk(keyInfo)
+        "KMS" -> {
+            if (keyInfo.keys !in setOf(setOf("kind", "providerId", "alias"), setOf("kind", "providerId", "kid"))) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "KMS must contain providerId and exactly one key locator"))
+            }
+            val providerId = (keyInfo["providerId"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+            val alias = (keyInfo["alias"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+            val kid = (keyInfo["kid"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+            if (providerId.isNullOrBlank() || (alias.isNullOrBlank() == kid.isNullOrBlank())) {
+                Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DidCreateRequest.keyInfo.KMS requires providerId and exactly one of alias or kid"))
+            } else {
+                Ok(Unit)
+            }
+        }
+        else -> Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DidCreateRequest.keyInfo.kind must be PUBLIC_JWK or KMS"))
+    }
+}
+
+private val CREATE_DID_FIELDS = setOf("method", "keyInfo", "didAlias", "controllers", "alsoKnownAs", "options")
+private val CREATE_DID_KEY_INFO_FIELDS = setOf("kind", "publicJwk", "providerId", "alias", "kid")
+private val PRIVATE_JWK_FIELDS = setOf("d", "p", "q", "dp", "dq", "qi", "k")
+private val PUBLIC_JWK_FIELDS =
+    setOf(
+        "kty",
+        "use",
+        "key_ops",
+        "alg",
+        "kid",
+        "crv",
+        "x",
+        "y",
+        "n",
+        "e",
+        "x5c",
+        "x5t",
+        "x5u",
+        "x5t#S256",
+    )
+
+private fun validateCreatePublicJwk(keyInfo: JsonObject): IdkResult<Unit, IdkError> {
+    if (keyInfo.keys != setOf("kind", "publicJwk")) {
+        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "PUBLIC_JWK must contain only kind and publicJwk"))
+    }
+    val publicJwk =
+        keyInfo["publicJwk"] as? JsonObject
+            ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DidCreateRequest.keyInfo.publicJwk must be an object"))
+    val privateFields = publicJwk.keys intersect PRIVATE_JWK_FIELDS
+    if (privateFields.isNotEmpty()) {
+        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DidCreateRequest.keyInfo.publicJwk contains private or symmetric key fields"))
+    }
+    val unknownJwkFields = publicJwk.keys - PUBLIC_JWK_FIELDS
+    if (unknownJwkFields.isNotEmpty()) {
+        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DidCreateRequest.keyInfo.publicJwk contains unknown fields: ${unknownJwkFields.sorted().joinToString()}"))
+    }
+    val kid = (publicJwk["kid"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+    return if (kid.isNullOrBlank()) {
+        Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DidCreateRequest.keyInfo.publicJwk.kid must be non-blank"))
+    } else {
+        Ok(Unit)
     }
 }
 

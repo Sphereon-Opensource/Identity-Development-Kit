@@ -88,6 +88,21 @@ class LocalWalletPartyDirectoryTest {
     }
 
     @Test
+    fun `holder identifier resolution is durable and idempotent`() = runTest {
+        val store = MemoryDocumentStore()
+        val directory = LocalWalletPartyDirectory(store, backgroundScope)
+        val scope = directory.localScope()
+
+        val created =
+            directory.resolveOrCreateIdentifier(scope, IdentifierType.DID, "did:example:holder", IdentityRole.HOLDER).getOrThrow()
+        val reloaded = LocalWalletPartyDirectory(store, backgroundScope)
+        val resolved =
+            reloaded.resolveOrCreateIdentifier(scope, IdentifierType.DID, "did:example:holder", IdentityRole.HOLDER).getOrThrow()
+
+        assertEquals(created, resolved)
+    }
+
+    @Test
     fun `sibling subdomains of one registrable domain are association candidates`() = runTest {
         val directory = LocalWalletPartyDirectory(MemoryDocumentStore(), backgroundScope)
         val scope = directory.localScope()

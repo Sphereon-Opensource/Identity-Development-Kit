@@ -8,6 +8,7 @@ package com.sphereon.wallet.interaction.presenter.contracts
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 /** Safe projection with no protocol payloads, authorization URLs, tokens or hidden values. */
 @Serializable
@@ -179,7 +180,8 @@ data class WalletCredentialReviewPresentation(
 
 @Serializable
 data class WalletInfoDescriptorPresentation(
-    val path: List<String>,
+    /** OID4VP 1.0 Final Claims Path Pointer segments: string, non-negative integer, or null. */
+    val path: List<JsonElement>,
     val labelKey: String?,
     val intentToRetain: Boolean?,
     val valueAvailable: Boolean,

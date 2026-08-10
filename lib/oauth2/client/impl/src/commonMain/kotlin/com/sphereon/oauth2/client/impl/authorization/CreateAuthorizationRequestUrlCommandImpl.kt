@@ -64,6 +64,7 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -178,6 +179,8 @@ class CreateAuthorizationRequestUrlCommandImpl(
                 authorizationEndpoint = authorizationEndpoint,
                 clientId = options.authorizationRequest.clientId,
                 clientAuthentication = options.clientAuthentication,
+                dpopProofJwt = options.dpopProofJwt,
+                additionalHeaders = options.additionalHeaders,
                 pkceData = pkceData,
             )
         } else {
@@ -242,6 +245,8 @@ class CreateAuthorizationRequestUrlCommandImpl(
         authorizationEndpoint: String,
         clientId: String,
         clientAuthentication: ClientAuthenticationConfig?,
+        dpopProofJwt: String?,
+        additionalHeaders: Map<String, String>,
         pkceData: PkceData?,
     ): IdkResult<AuthorizationRequestUrlResult, Oauth2Error> {
         return try {
@@ -289,10 +294,13 @@ class CreateAuthorizationRequestUrlCommandImpl(
                             header(key, value)
                         }
                     }
+                    dpopProofJwt?.let { header("DPoP", it) }
+                    additionalHeaders.forEach { (key, value) -> header(key, value) }
                     setBody(formBody)
                 }
 
             if (!response.status.isSuccess()) {
+                val dpopNonce = response.headers["DPoP-Nonce"]
                 val errorBody =
                     try {
                         response.body<String>()
@@ -300,6 +308,13 @@ class CreateAuthorizationRequestUrlCommandImpl(
                         execution.log.debug("Failed to read PAR error response body: ${expected.message}")
                         ""
                     }
+                val oauthError =
+                    runCatching {
+                        json.parseToJsonElement(errorBody).jsonObject["error"]?.jsonPrimitive?.content
+                    }.getOrNull()
+                if (response.status == HttpStatusCode.BadRequest && oauthError == "use_dpop_nonce" && dpopNonce != null) {
+                    return Err(Oauth2Error.DpopNonceRequired(dpopNonce))
+                }
                 return Err(
                     MetadataError.FetchFailed(
                         url = endpoint,

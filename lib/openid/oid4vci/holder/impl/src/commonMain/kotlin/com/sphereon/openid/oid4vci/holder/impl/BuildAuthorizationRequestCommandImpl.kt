@@ -107,6 +107,17 @@ class BuildAuthorizationRequestCommandImpl(
                             issuerState = applied.issuerState,
                             additionalParameters = authorizationDetails,
                         ),
+                    clientAuthentication = applied.clientAuthentication,
+                    dpopProofJwt = applied.dpopProofJwt,
+                    additionalHeaders =
+                        if (applied.clientAttestationJwt != null) {
+                            mapOf(
+                                "OAuth-Client-Attestation" to requireNotNull(applied.clientAttestationJwt),
+                                "OAuth-Client-Attestation-PoP" to requireNotNull(applied.clientAttestationPopJwt),
+                            )
+                        } else {
+                            emptyMap()
+                        },
                 ),
             )
         if (result.isErr) return Err(result.error)

@@ -74,6 +74,36 @@ import kotlin.test.assertTrue
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SubmitAuthorizationResponseCommandImplTest {
+    @Test
+    fun `test dc_api returns authorization data without HTTP submission`() =
+        runTest {
+            val command =
+                SubmitAuthorizationResponseCommandImpl(
+                    execution = TestExecutionContext.createExecution(),
+                    httpClientFactory = createMockHttpClientFactory(responseStatus = HttpStatusCode.InternalServerError),
+                    externalIdentifierService = createMockExternalIdentifierService(),
+                    createJarmCommand = createMockJarmCommand(),
+                )
+            val response =
+                buildOid4vpAuthorizationResponse {
+                    vpToken("test_query", "eyJhbGciOiJFUzI1NiJ9.payload.signature")
+                    state("dc-api-state")
+                }
+
+            val result =
+                command.execute(
+                    SubmitAuthorizationResponseArgs(
+                        resolvedRequest = createResolvedRequestDirectPost(responseUri = ""),
+                        response = response,
+                        responseMode = ResponseMode.DC_API,
+                    ),
+                )
+
+            val digitalCredential = assertIs<SubmissionResult.DigitalCredential>(result.value)
+            assertEquals("dc-api-state", (digitalCredential.data["state"] as? JsonPrimitive)?.content)
+            assertTrue(digitalCredential.data.containsKey("vp_token"))
+        }
+
     /**
      * Create a resolved request for direct_post mode
      */

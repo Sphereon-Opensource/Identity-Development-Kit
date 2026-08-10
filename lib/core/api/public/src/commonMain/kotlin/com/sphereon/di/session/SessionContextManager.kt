@@ -18,6 +18,7 @@
 package com.sphereon.di.session
 
 import dev.zacsweers.metro.Named
+import com.sphereon.di.context.PrincipalType
 import kotlinx.coroutines.flow.StateFlow
 import software.amazon.app.platform.scope.Scope
 import kotlin.experimental.ExperimentalObjCName
@@ -58,28 +59,26 @@ interface SessionContextManager {
      * exists it is returned as-is and the supplied `correlationId` is
      * ignored (the session's correlationId was fixed at first creation).
      */
-    fun createOrGetFromId(
-        @Named("sessionId") sessionId: String,
-        @Named("correlationId") correlationId: String = sessionId,
-        makeActive: Boolean = true,
-    ): SessionInstance
-
     /**
      * Open a session by id, additionally binding validated transport credentials
      * (e.g. the request's bearer JWT after upstream validation) into the session
      * graph so the session-scoped [SessionContext] exposes them via
      * `context.secureDetails`. The credentials are per-session by design: the
      * cached per-tenant+principal user context must never carry one request's
-     * token. The default delegates to the credential-less overload (fakes and
-     * legacy managers keep working); [com.sphereon.core.defaults.session.SessionContextManagerImpl]
-     * overrides it to thread the details into the session graph factory.
+     * token.
+     */
+    /**
+     * Open a session while explicitly preserving the caller's principal
+     * classification. No overload silently assumes [PrincipalType.USER]: every
+     * ingress and background caller must make its trust decision visible.
      */
     fun createOrGetFromId(
         @Named("sessionId") sessionId: String,
         @Named("correlationId") correlationId: String = sessionId,
         makeActive: Boolean = true,
-        secureDetails: com.sphereon.di.context.SecuredTenantContextDetails?,
-    ): SessionInstance = createOrGetFromId(sessionId, correlationId, makeActive)
+        secureDetails: com.sphereon.di.context.SecuredTenantContextDetails? = null,
+        principalType: PrincipalType,
+    ): SessionInstance
 
     // Session cleanup
     fun destroyById(sessionId: String)

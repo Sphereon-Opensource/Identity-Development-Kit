@@ -119,8 +119,8 @@ private suspend fun buildBody(
     // credential-level modes; the top-level metadata signing key (if any) is
     // assumed to follow the same mode as credentials. Group aliases by mode so
     // each alias's kid is computed consistently with how it appears in headers.
-    val credentialConfigs = configProvider.credentialSigningConfigs
-    val aliases = configProvider.signingKeyAliases
+    val credentialConfigs = configProvider.credentialSigningConfigs()
+    val aliases = configProvider.signingKeyNames()
     val aliasToMode: Map<String, SigningKeyMode> =
         aliases.associateWith { alias ->
             // Find the first credential that uses this alias and use its mode; if none,

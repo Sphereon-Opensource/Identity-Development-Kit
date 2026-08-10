@@ -33,7 +33,7 @@ data class OidcDriverState(
     val callbackRef: String,
     val redirectUri: String,
     val clientId: String,
-    val clientSecret: String?,
+    val clientSecretId: String,
     val codeVerifier: String,
     val authorizationEndpoint: String,
     val tokenEndpoint: String,

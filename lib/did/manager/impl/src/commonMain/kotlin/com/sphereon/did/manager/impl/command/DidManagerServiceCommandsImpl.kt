@@ -23,11 +23,6 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.crypto.core.CoseJoseKeyMappingService
-import com.sphereon.crypto.core.KeyInfo
-import com.sphereon.crypto.core.KeyType
-import com.sphereon.crypto.core.jose.Jwk
-import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.manager.AddKeyMappingInput
 import com.sphereon.did.manager.DidAggregateReplacement
@@ -237,7 +232,10 @@ internal fun normalizeServiceDidUrl(
 ): String = if (value.startsWith("#")) did + value else value
 
 /** Projects a persistence VM row into the wire [VerificationMethodResponse]. */
-internal fun DidVerificationMethodRecord.toServiceResponse(detail: DidDetail): VerificationMethodResponse {
+internal fun DidVerificationMethodRecord.toServiceResponse(
+    detail: DidDetail,
+    keyref: com.sphereon.crypto.key.persistence.KeyReferenceRecord? = null,
+): VerificationMethodResponse {
     val embeddedPurpose = inlineInJson.toServicePurposeList().firstOrNull()
     val referencePurposes =
         detail.verificationRelationship
@@ -247,12 +245,20 @@ internal fun DidVerificationMethodRecord.toServiceResponse(detail: DidDetail): V
         id = vmId,
         type = type,
         controller = controller,
+        // An unbound public verification method must omit keyInfo. Constructing an all-null
+        // KeyInfo serializes as `{}` with encodeDefaults=false, which makes consumers mistake
+        // an external/public key for a malformed server-managed binding.
         keyInfo =
-            com.sphereon.crypto.core.KeyInfo<com.sphereon.crypto.core.KeyType>(
-                providerId = kmsProviderId,
-                alias = kmsKeyAlias,
-                kid = kmsKid,
-            ),
+            kmsProviderId?.let { providerId ->
+                com.sphereon.crypto.core.KeyInfo<com.sphereon.crypto.core.KeyType>(
+                    providerId = providerId,
+                    alias = kmsKeyAlias,
+                    kid = kmsKid,
+                    keyType = keyref?.keyType,
+                    signatureAlgorithm = keyref?.signatureAlgorithm,
+                    keyEncoding = keyref?.keyEncoding,
+                )
+            },
         expiresAt = expiresAt,
         revokedAt = revokedAt,
         valueVerificationRelation = embeddedPurpose,
@@ -427,7 +433,7 @@ internal fun ReplaceDidBody.toAggregateReplacement(): DidAggregateReplacement =
 class CreateDidServiceCommandImpl(
     execution: SessionExecution,
     private val didManager: DidManager,
-    private val keyManager: KeyManagerService,
+    private val keyManagerService: com.sphereon.crypto.core.kms.KeyManagerService,
 ) : TypedServiceCommandAdapter<CreateDidInput, ManagedDid, IdkError>(
         commandId = CreateDidServiceCommand.COMMAND_ID,
         execution = execution,
@@ -442,81 +448,52 @@ class CreateDidServiceCommandImpl(
         applyDuring: (CreateDidInput) -> CreateDidInput,
     ): IdkResult<ManagedDid, IdkError> {
         val input = applyDuring(args)
-        val resolvedKey = resolveKmsKey(input.keyInfo).getOrElse { return Err(it) }
-        val options = input.toDidCreateOptions(resolvedKey).getOrElse { return Err(it) }
+        val resolved =
+            if (input.keyInfo.kind == com.sphereon.did.manager.command.DidCreateKeyMaterialKind.KMS) {
+                val key =
+                    try {
+                        keyManagerService.getKey(
+                            com.sphereon.crypto.core.KeyInfo<com.sphereon.crypto.core.jose.JwkType>(
+                                providerId = input.keyInfo.providerId,
+                                alias = input.keyInfo.alias,
+                                kid = input.keyInfo.kid,
+                            ),
+                        )
+                    } catch (expected: Exception) {
+                        return Err(
+                            IdkError.NOT_FOUND_ERROR(
+                                message =
+                                    "KMS key ${input.keyInfo.providerId}/${input.keyInfo.alias ?: input.keyInfo.kid} " +
+                                        "was not resolved in the active tenant",
+                            ),
+                        )
+                    }
+                val publicJwk =
+                    when (val material = key.key) {
+                        is com.sphereon.crypto.core.jose.Jwk -> material
+                        is com.sphereon.crypto.core.jose.JwkType -> com.sphereon.crypto.core.jose.Jwk.from(material)
+                        else -> null
+                    }
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "KMS key ${input.keyInfo.providerId}/${input.keyInfo.alias ?: input.keyInfo.kid} does not expose a public JWK",
+                            ),
+                        )
+                Triple(publicJwk, key.alias, key.kid ?: input.keyInfo.kid)
+            } else {
+                null
+            }
+        val options = input.toDidCreateOptions(resolved).getOrElse { return Err(it) }
         val created = didManager.create(options).getOrElse { return Err(it) }
         return Ok(created)
     }
 
-    /**
-     * Resolves the registered KMS key referenced by [keyInfo] and returns its canonical alias
-     * plus public JWK. `(providerId, alias)` and `(providerId, kid)` are both supported — the
-     * caller passes whichever they have on hand and the KMS returns the same [ManagedKeyInfoType].
-     *
-     * This endpoint never accepts wire-supplied JWK material; the key must already be
-     * registered with the KMS before POST /dids is issued.
-     */
-    private suspend fun resolveKmsKey(keyInfo: KeyInfo<KeyType>): IdkResult<ResolvedKmsKey, IdkError> {
-        val providerId =
-            keyInfo.providerId ?: return Err(
-                IdkError.fromString(
-                    message = "DidCreateRequest.keyInfo requires `providerId` (KMS provider id)",
-                    code = "ILLEGAL_ARGUMENT",
-                    category = com.sphereon.core.api.error.ErrorCategory.VALIDATION,
-                ),
-            )
-        if (keyInfo.alias == null && keyInfo.kid == null) {
-            return Err(
-                IdkError.fromString(
-                    message = "DidCreateRequest.keyInfo requires at least one of `alias` or `kid` to locate the registered KMS key",
-                    code = "ILLEGAL_ARGUMENT",
-                    category = com.sphereon.core.api.error.ErrorCategory.VALIDATION,
-                ),
-            )
-        }
-        val managed =
-            keyManager.getKey(
-                KeyInfo<KeyType>(
-                    alias = keyInfo.alias,
-                    kid = keyInfo.kid,
-                    providerId = providerId,
-                ),
-            )
-        val resolvedAlias =
-            managed.alias ?: return Err(
-                IdkError.fromString(
-                    message = "KMS-resolved key (providerId=$providerId, alias=${keyInfo.alias}, kid=${keyInfo.kid}) has no alias; cannot build DidKeyMapping",
-                    code = "ILLEGAL_STATE",
-                ),
-            )
-        val jwk =
-            CoseJoseKeyMappingService.toJwkKeyInfo(managed.toManagedPublicKeyInfo()).key
-                ?: return Err(
-                    IdkError.fromString(
-                        message = "KMS key (providerId=$providerId, alias=$resolvedAlias) has no public JWK material",
-                        code = "ILLEGAL_STATE",
-                    ),
-                )
-        return Ok(ResolvedKmsKey(alias = resolvedAlias, providerId = providerId, jwk = jwk))
-    }
 }
 
 /**
- * KMS lookup result: the canonical key alias + public JWK retrieved from the registered key,
- * regardless of whether the caller passed `alias` or `kid` on the wire.
- */
-private data class ResolvedKmsKey(
-    val alias: String,
-    val providerId: String,
-    val jwk: com.sphereon.crypto.core.jose.Jwk,
-)
-
-/**
- * Maps the wire shape + the KMS-resolved key to the SDK [DidCreateOptions]. The KMS lookup
- * collapses `(providerId, alias)` and `(providerId, kid)` to the same canonical alias + public
- * JWK regardless of which one the caller passed; that pair folds into a single
- * [VerificationMethodConfig] entry pinned to `verificationMethodId="key-1"` (the single-VM
- * convention used by did:key) with the standard default purpose set.
+ * Maps the strict create-only public JWK to [DidCreateOptions]. No verification-method config
+ * is created: the provider emits the public verification method, while the manager persists no
+ * KMS binding or key mapping.
  *
  * `alsoKnownAs` cannot be set at creation time today (no field on [DidCreateOptions]) — once
  * the DID is created callers must use the AKA sub-resource endpoint. Reject up front rather
@@ -528,7 +505,9 @@ private data class ResolvedKmsKey(
  * e.g. `"user/alice"`) → [DidCreateOptions.path]. The full map is still passed through as
  * [DidCreateOptions.methodOptions] for forward compatibility.
  */
-private fun CreateDidInput.toDidCreateOptions(resolvedKey: ResolvedKmsKey): IdkResult<DidCreateOptions, IdkError> {
+private fun CreateDidInput.toDidCreateOptions(
+    resolvedKms: Triple<com.sphereon.crypto.core.jose.Jwk, String, String?>? = null,
+): IdkResult<DidCreateOptions, IdkError> {
     if (alsoKnownAs?.isNotEmpty() == true) {
         return Err(
             IdkError.fromString(
@@ -551,25 +530,33 @@ private fun CreateDidInput.toDidCreateOptions(resolvedKey: ResolvedKmsKey): IdkR
                     ?.filter { segment -> segment.isNotEmpty() }
                     ?.takeIf { segments -> segments.isNotEmpty() },
             controllers = controllers ?: emptyList(),
-            publicKeyJwk = resolvedKey.jwk,
+            publicKeyJwk = keyInfo.publicJwk ?: resolvedKms?.first,
             verificationMethods =
-                listOf(
-                    VerificationMethodConfig(
-                        kmsKeyAlias = resolvedKey.alias,
-                        kmsProviderId = resolvedKey.providerId,
-                        verificationMethodId = "key-1",
-                        purposes =
-                            listOf(
-                                VerificationPurpose.AUTHENTICATION,
-                                VerificationPurpose.ASSERTION_METHOD,
-                            ),
-                        // Normally the DidCreationDslProcessor resolves this from KMS; this REST
-                        // mapping bypasses the DSL, so populate it from the KMS lookup done above.
-                        // Providers that emit document VMs from configs (e.g. did:web) skip
-                        // entries without a JWK.
-                        publicKeyJwk = resolvedKey.jwk,
-                    ),
-                ),
+                if (keyInfo.kind == com.sphereon.did.manager.command.DidCreateKeyMaterialKind.KMS) {
+                    val (publicJwk, alias, kid) =
+                        resolvedKms
+                            ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "KMS key material was not resolved"))
+                    listOf(
+                        com.sphereon.did.models.VerificationMethodConfig(
+                            kmsKeyAlias = alias,
+                            kmsProviderId = keyInfo.providerId!!,
+                            kmsKid = kid,
+                            verificationMethodId = "key-1",
+                            purposes =
+                                listOf(
+                                    com.sphereon.did.models.VerificationPurpose.AUTHENTICATION,
+                                    com.sphereon.did.models.VerificationPurpose.ASSERTION_METHOD,
+                                ),
+                            // The top-level create input carries the resolved public material for
+                            // the DID provider.  Leave the VM config without it so the manager
+                            // resolves the tenant-scoped key-reference id before persisting the
+                            // KMS binding and mapping.
+                            publicKeyJwk = null,
+                        ),
+                    )
+                } else {
+                    emptyList()
+                },
             methodOptions = options,
         ),
     )
@@ -821,6 +808,7 @@ class ResolveDidServiceCommandImpl(
 class ListVerificationMethodsServiceCommandImpl(
     execution: SessionExecution,
     private val repository: DidRepository,
+    private val keyReferenceStore: com.sphereon.crypto.key.persistence.KeyReferenceStore,
 ) : TypedServiceCommandAdapter<DidIdInput, VerificationMethodListResponse, IdkError>(
         commandId = ListVerificationMethodsServiceCommand.COMMAND_ID,
         execution = execution,
@@ -838,7 +826,19 @@ class ListVerificationMethodsServiceCommandImpl(
         val detail =
             repository.findByDid(execution.tenantId, did).getOrElse { return Err(it) }
                 ?: return Err(IdkError.NOT_FOUND_ERROR(message = "DID not found: $did"))
-        return Ok(VerificationMethodListResponse(detail.verificationMethod.map { it.toServiceResponse(detail) }))
+        val items =
+            detail.verificationMethod.map { verificationMethod ->
+                val keyref =
+                    verificationMethod.keyReferenceId?.let { keyReferenceId ->
+                        if (keyReferenceStore.isAvailable) {
+                            keyReferenceStore.findById(execution.tenantId, keyReferenceId).getOrElse { return Err(it) }
+                        } else {
+                            null
+                        }
+                    }
+                verificationMethod.toServiceResponse(detail, keyref)
+            }
+        return Ok(VerificationMethodListResponse(items))
     }
 }
 
@@ -905,6 +905,7 @@ class AddVerificationMethodServiceCommandImpl(
 class GetVerificationMethodServiceCommandImpl(
     execution: SessionExecution,
     private val repository: DidRepository,
+    private val keyReferenceStore: com.sphereon.crypto.key.persistence.KeyReferenceStore,
 ) : TypedServiceCommandAdapter<GetVerificationMethodInput, VerificationMethodResponse, IdkError>(
         commandId = GetVerificationMethodServiceCommand.COMMAND_ID,
         execution = execution,
@@ -927,7 +928,15 @@ class GetVerificationMethodServiceCommandImpl(
         val vm =
             detail.verificationMethod.firstOrNull { it.id == methodId || it.vmId == methodId || it.vmId.endsWith("#$methodId") }
                 ?: return Err(IdkError.NOT_FOUND_ERROR(message = "Verification method not found: $methodId"))
-        return Ok(vm.toServiceResponse(detail))
+        val keyref =
+            vm.keyReferenceId?.let { keyReferenceId ->
+                if (keyReferenceStore.isAvailable) {
+                    keyReferenceStore.findById(execution.tenantId, keyReferenceId).getOrElse { return Err(it) }
+                } else {
+                    null
+                }
+            }
+        return Ok(vm.toServiceResponse(detail, keyref))
     }
 }
 
@@ -1239,6 +1248,7 @@ class RemoveDidServiceServiceCommandImpl(
 class ListKeyMappingsServiceCommandImpl(
     execution: SessionExecution,
     private val repository: DidRepository,
+    private val keyReferenceStore: com.sphereon.crypto.key.persistence.KeyReferenceStore,
 ) : TypedServiceCommandAdapter<DidIdInput, KeyMappingListResponse, IdkError>(
         commandId = ListKeyMappingsServiceCommand.COMMAND_ID,
         execution = execution,
@@ -1256,7 +1266,19 @@ class ListKeyMappingsServiceCommandImpl(
         val detail =
             repository.findByDid(execution.tenantId, did).getOrElse { return Err(it) }
                 ?: return Err(IdkError.NOT_FOUND_ERROR(message = "DID not found: $did"))
-        return Ok(KeyMappingListResponse(detail.keyMapping.map { it.toServiceResponse() }))
+        val items = mutableListOf<KeyMappingResponse>()
+        for (mapping in detail.keyMapping) {
+            val keyref =
+                mapping.keyReferenceId?.let { keyReferenceId ->
+                    if (keyReferenceStore.isAvailable) {
+                        keyReferenceStore.findById(execution.tenantId, keyReferenceId).getOrElse { return Err(it) }
+                    } else {
+                        null
+                    }
+                }
+            items += mapping.toServiceResponse(keyref)
+        }
+        return Ok(KeyMappingListResponse(items))
     }
 }
 

@@ -25,12 +25,11 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
-import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.DigestAlg
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.x509.certificateFromBase64Der
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierService
 import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
 import com.sphereon.did.manager.DidCreateOptions
@@ -39,6 +38,8 @@ import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.requesturi.VerifierSignerBinding
+import com.sphereon.openid.oid4vp.verifier.spi.VerifierSigningKeyNameResolver
+import dev.zacsweers.metro.Provider
 
 /**
  * Config-backed [RequestObjectSigningConfig] whose entire keyspace is rooted at a runtime-supplied
@@ -63,6 +64,17 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
     private val kms: KeyManagerService,
     private val didProviderRegistry: DidProviderRegistry,
     private val namespaceProvider: () -> String,
+    /**
+     * Active verifier instance id, evaluated per read like [namespaceProvider]. It identifies the
+     * binding a bound [VerifierSigningKeyNameResolver] resolves against; it never itself names a key.
+     */
+    private val instanceIdProvider: () -> String? = { null },
+    /**
+     * Bound by deployments that manage signing material centrally. While bound it is the only source
+     * of the signing key name: `signing.keyAlias` and `signing.providerId` are not read at all, and a
+     * null answer refuses the signing outright.
+     */
+    private val signingKeyNameResolver: Provider<VerifierSigningKeyNameResolver>? = null,
 ) : RequestObjectSigningConfig {
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
@@ -89,48 +101,19 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
             configService.getProperty("$signingNamespace.signing.expiration.seconds", Long::class)
                 ?: DEFAULT_EXPIRATION_SECONDS
 
+    /**
+     * Resolve the request-object signing key.
+     *
+     * The key must already exist. Nothing is created here: a signing key the verifier's published
+     * `client_id` is derived from is provisioned durably, out of band, and a request that finds none
+     * is refused rather than served under a freshly minted identity.
+     */
     override suspend fun resolveSigningKey(): KeyInfoType<*> {
-        val alias = requireKeyAlias()
-        ensureSigningKey(alias)
-        val opts = ManagedOptsAlias(identifier = alias)
-        val result = managedIdentifierService.resolve(opts)
-        check(result.isOk) { "Failed to resolve signing key '$alias': ${result.error}" }
+        val keyName = requireSigningKeyName()
+        val result = managedIdentifierService.resolve(ManagedOptsAlias(identifier = keyName))
+        check(result.isOk) { SIGNING_KEY_UNAVAILABLE }
         @Suppress("UNCHECKED_CAST")
         return result.value as KeyInfoType<KeyType>
-    }
-
-    /**
-     * Get-or-generate the signing key under [alias]. The DID/x509 binding is derived
-     * deterministically from this key's public JWK, and the request_uri JAR is signed
-     * with it on every fetch — so create-time client_id substitution
-     * (CreateAuthorizationRequestCommandImpl) and fetch-time signing (RequestUriHandlerImpl)
-     * resolve to the SAME identifier only if the key is stable. Generating once and reusing
-     * by alias guarantees that.
-     *
-     * Generated with ES256 (P-256) which is what the verifier advertises in client_metadata
-     * (`sd-jwt_alg_values`/`kb-jwt_alg_values` = ES256) and what did:jwk wallets resolve.
-     * A no-op when the alias already exists.
-     */
-    private suspend fun ensureSigningKey(alias: String) {
-        val existing = kms.getKeyResult(KeyInfo<Nothing>(alias = alias))
-        if (existing.isOk && existing.value.key != null) {
-            return
-        }
-        val generated =
-            kms.generateKeyResult(
-                // Pin the provider explicitly. With KMS routed to a remote crypto service the
-                // alg-only lookup (getKmsBySignatureAlgorithm) can miss because the remote
-                // registry advertises its providers by id, not by a queryable alg set over the
-                // wire — pass the configured provider id so the software KMS is selected directly.
-                providerId = configService.getPropertyAsString("$signingNamespace.signing.providerId") ?: DEFAULT_PROVIDER_ID,
-                alias = alias,
-                alg = SignatureAlgorithm.ECDSA_SHA256,
-                keyVisibility = KeyVisibility.PRIVATE,
-            )
-        check(generated.isOk) {
-            "Request-object signing is enabled but the signing key '$alias' could not be " +
-                "resolved or generated in the KMS: ${generated.error.message.defaultMessage}"
-        }
     }
 
     /**
@@ -149,7 +132,7 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
      */
     override suspend fun resolveSignerBinding(scheme: ClientIdScheme?): VerifierSignerBinding? {
         if (!enabled) return null
-        val alias = requireKeyAlias()
+        val keyName = requireSigningKeyName()
         return when (scheme) {
             ClientIdScheme.DECENTRALIZED_IDENTIFIER -> {
                 // Default did method to `jwk` if the caller didn't pin one via config.
@@ -160,24 +143,24 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
                     } else {
                         "jwk"
                     }
-                buildDidBinding(alias, method = didMethod)
+                buildDidBinding(keyName, method = didMethod)
             }
 
             ClientIdScheme.X509_SAN_DNS -> {
-                buildX509SanDnsBinding(alias)
+                buildX509SanDnsBinding(keyName)
             }
 
             ClientIdScheme.X509_HASH -> {
-                buildX509HashBinding(alias)
+                buildX509HashBinding(keyName)
             }
 
             null -> {
                 // No scheme requested — use the deployment-configured default.
                 val mode = configService.getPropertyAsString("$signingNamespace.signing.mode") ?: DEFAULT_MODE
                 when {
-                    mode.startsWith("did:") -> buildDidBinding(alias, method = mode.removePrefix("did:"))
-                    mode == "x509_san_dns" -> buildX509SanDnsBinding(alias)
-                    mode == "x509_hash" -> buildX509HashBinding(alias)
+                    mode.startsWith("did:") -> buildDidBinding(keyName, method = mode.removePrefix("did:"))
+                    mode == "x509_san_dns" -> buildX509SanDnsBinding(keyName)
+                    mode == "x509_hash" -> buildX509HashBinding(keyName)
                     else -> error("Unsupported $signingNamespace.signing.mode='$mode' (expected did:<method>, x509_san_dns, or x509_hash)")
                 }
             }
@@ -208,10 +191,10 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
      * fabricated kid.
      */
     private suspend fun buildDidBinding(
-        alias: String,
+        keyName: String,
         method: String,
     ): VerifierSignerBinding.Did {
-        val jwk = loadJwk(alias)
+        val jwk = loadJwk(keyName)
         val provider =
             didProviderRegistry.getProvider(method)
                 ?: error("No DID provider registered for method '$method' — cannot derive verifier client_id")
@@ -239,9 +222,9 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
                         purposes = if (method in WEB_RESOLVED_METHODS) listOf(VerificationPurpose.AUTHENTICATION) else null,
                         // Descriptive, per-key fragment (e.g. did:web:host#oid4vp-verifier-signing) so the
                         // verifier's VM is distinct in the shared hosted document.
-                        verificationMethodId = if (method in WEB_RESOLVED_METHODS) alias else null,
+                        verificationMethodId = if (method in WEB_RESOLVED_METHODS) keyName else null,
                     ),
-                ).getOrElse { error("Failed to derive did:$method from signing key '$alias': ${it.message.defaultMessage}") }
+                ).getOrElse { error("Failed to derive did:$method from the verifier signing key: ${it.message.defaultMessage}") }
 
         val absoluteOverride = configService.getPropertyAsString("$signingNamespace.signing.verification-method-id")
         val fragmentOverride = configService.getPropertyAsString("$signingNamespace.signing.verification-method-fragment")
@@ -249,11 +232,7 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
         val vmId =
             when {
                 absoluteOverride != null -> {
-                    require(absoluteOverride.startsWith(createResult.did)) {
-                        "$signingNamespace.signing.verification-method-id='$absoluteOverride' must reference the DID " +
-                            "'${createResult.did}' derived from signing key '$alias'"
-                    }
-                    absoluteOverride
+                    requireAbsoluteVerificationMethodIdForDid(createResult.did, absoluteOverride)
                 }
 
                 fragmentOverride != null -> {
@@ -272,7 +251,7 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
                             "${createResult.did}#0"
                         } else {
                             error(
-                                "DID provider for method '$method' returned no `authentication` verification method for signing key '$alias'. " +
+                                "DID provider for method '$method' returned no `authentication` verification method for the verifier signing key. " +
                                     "Configure $signingNamespace.signing.verification-method-id (full DID URL) or " +
                                     "$signingNamespace.signing.verification-method-fragment (fragment only) to pin one explicitly — " +
                                     "we won't fabricate a fragment (no universal '#0' default).",
@@ -280,11 +259,14 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
                         }
                 }
             }
-        return VerifierSignerBinding.Did(did = createResult.did, verificationMethodId = vmId)
+        return VerifierSignerBinding.Did(
+            did = createResult.did,
+            verificationMethodId = requireAbsoluteVerificationMethodIdForDid(createResult.did, vmId),
+        )
     }
 
-    private suspend fun buildX509SanDnsBinding(alias: String): VerifierSignerBinding.X509SanDns {
-        val chain = loadX5cChain(alias)
+    private suspend fun buildX509SanDnsBinding(keyName: String): VerifierSignerBinding.X509SanDns {
+        val chain = loadX5cChain(keyName)
         val dnsName =
             configService.getPropertyAsString("$signingNamespace.signing.sanDnsName")
                 ?: error(
@@ -313,12 +295,12 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
      * `x5c` entries are base64-encoded DER per RFC 7515 §4.1.6 (regular base64 with padding,
      * not base64url) — decode that and SHA-256 the resulting DER bytes.
      */
-    private suspend fun buildX509HashBinding(alias: String): VerifierSignerBinding.X509Hash {
-        val chain = loadX5cChain(alias)
+    private suspend fun buildX509HashBinding(keyName: String): VerifierSignerBinding.X509Hash {
+        val chain = loadX5cChain(keyName)
         val leafBase64 =
             chain.firstOrNull()
                 ?: error(
-                    "Signing key '$alias' resolved an empty x5c chain — x509_hash signing requires the " +
+                    "The verifier signing key resolved an empty x5c chain — x509_hash signing requires the " +
                         "leaf certificate as the first element of the chain.",
                 )
         val leafDer = leafBase64.decodeFrom(Encoding.BASE64)
@@ -326,27 +308,47 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
         return VerifierSignerBinding.X509Hash(certificateHash = certHash, certificateChain = chain)
     }
 
-    private suspend fun loadJwk(alias: String): Jwk {
-        ensureSigningKey(alias)
-        val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = alias))
-        check(keyResult.isOk) { "Failed to load signing key '$alias' from KMS: ${keyResult.error}" }
+    /**
+     * Load the signing key's stored JWK. The key must already be present; a miss refuses with the
+     * uniform message and no key is created.
+     */
+    private suspend fun loadJwk(keyName: String): Jwk {
+        val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyName))
+        check(keyResult.isOk) { SIGNING_KEY_UNAVAILABLE }
         val managedKey = keyResult.value.key
-        return (managedKey?.key as? Jwk)
-            ?: error("Signing key '$alias' is not a JWK — cannot use for verifier JAR signing")
+        return (managedKey?.key as? Jwk) ?: error(SIGNING_KEY_UNAVAILABLE)
     }
 
-    private suspend fun loadX5cChain(alias: String): List<String> {
-        val jwk = loadJwk(alias)
-        return jwk.x5c?.toList()
-            ?: error(
-                "Signing key '$alias' has no x5c chain — x509_san_dns/x509_hash signing requires " +
-                    "the KMS-stored JWK to carry the leaf certificate chain.",
-            )
+    private suspend fun loadX5cChain(keyName: String): List<String> {
+        val jwk = loadJwk(keyName)
+        val storedChain =
+            jwk.x5c?.toList()
+                ?: error(
+                    "The verifier signing key has no x5c chain — x509_san_dns/x509_hash signing requires " +
+                        "the KMS-stored JWK to carry the leaf certificate chain.",
+                )
+        return requestObjectX5cChain(storedChain)
     }
 
-    private fun requireKeyAlias(): String =
-        configService.getPropertyAsString("$signingNamespace.signing.keyAlias")
-            ?: error("Request URI signing is enabled but no key alias configured at $signingNamespace.signing.keyAlias")
+    /**
+     * The name of the key this verifier signs request objects under.
+     *
+     * A bound [VerifierSigningKeyNameResolver] is the sole source while it is bound: the resolver
+     * derives the name from the deployment's own binding for the active tenant and verifier
+     * instance, and `signing.keyAlias` / `signing.providerId` are not consulted at all. Without one,
+     * the deployment's own configured alias is used. Either way nothing is generated and every
+     * unusable outcome ends at the same refusal.
+     */
+    private suspend fun requireSigningKeyName(): String = resolveSigningKeyName() ?: error(SIGNING_KEY_UNAVAILABLE)
+
+    private suspend fun resolveSigningKeyName(): String? {
+        val resolver =
+            signingKeyNameResolver?.invoke()
+                ?: return configService.getPropertyAsString("$signingNamespace.signing.keyAlias")?.takeIf { it.isNotBlank() }
+        val tenantId = execution.tenantId.takeIf { it.isNotBlank() } ?: return null
+        val instanceId = instanceIdProvider()?.takeIf { it.isNotBlank() } ?: return null
+        return resolver.resolveRequestObjectSigningKeyName(tenantId, instanceId)?.takeIf { it.isNotBlank() }
+    }
 
     /** Instance-relative did:web host override key, nested under the active signing namespace. */
     private fun didWebDomainKey(): String = "$signingNamespace.signing.did-web-domain"
@@ -387,11 +389,45 @@ abstract class AbstractConfigOid4vpVerifierConfigProvider(
 
         private const val DEFAULT_EXPIRATION_SECONDS = 300L
         private const val DEFAULT_MODE = "did:jwk"
-        private const val DEFAULT_PROVIDER_ID = "default"
+
+        /**
+         * Single refusal for every reason the request-object signing key cannot be used: no binding,
+         * a detached or cross-tenant one, an inactive one, an unmapped one, and a key that is absent
+         * from the KMS or is not a JWK. Stating one message keeps the refusal from becoming a
+         * discovery oracle over which verifiers hold which key material.
+         */
+        internal const val SIGNING_KEY_UNAVAILABLE = "The verifier request-object signing key is unavailable"
     }
 }
 
-/** Host portion of a verifier domain setting, accepting either a bare host or an absolute URL. */
+/**
+ * Build the JOSE `x5c` value for a signed authorization request.
+ *
+ * KMS storage keeps the complete validation chain, including the root CA. RFC 7515 `x5c` values
+ * sent by the verifier contain the leaf and any intermediates, but not the trust anchor. A
+ * terminal self-issued certificate is the stored root and is therefore omitted when a leaf is
+ * also present. A single-certificate chain is preserved because its only entry is the leaf.
+ */
+internal fun requestObjectX5cChain(
+    storedChain: List<String>,
+    terminalIsSelfIssued: (String) -> Boolean = { encodedCertificate ->
+        val certificate = certificateFromBase64Der(encodedCertificate)
+        certificate.issuerDN == certificate.subjectDN
+    },
+): List<String> {
+    require(storedChain.isNotEmpty()) { "Request-object signing requires a non-empty x5c chain" }
+    return if (storedChain.size > 1 && terminalIsSelfIssued(storedChain.last())) {
+        storedChain.dropLast(1)
+    } else {
+        storedChain
+    }
+}
+
+/**
+ * Authority portion of a verifier domain setting, accepting either a bare authority or an absolute
+ * URL. A non-default port is part of a did:web authority and must be retained so the DID provider
+ * can encode it as `%3A<port>`.
+ */
 internal fun verifierHostOf(value: String): String? {
     val trimmed = value.trim()
     if (trimmed.isBlank()) return null
@@ -400,6 +436,21 @@ internal fun verifierHostOf(value: String): String? {
             .substringBefore('/')
             .substringBefore('?')
             .substringBefore('#')
-    val host = authority.substringBefore('@').substringBefore(':')
-    return host.takeIf { it.isNotBlank() }
+    if ('@' in authority) return null
+    return authority.takeIf { it.isNotBlank() }
+}
+
+internal fun requireAbsoluteVerificationMethodIdForDid(
+    did: String,
+    verificationMethodId: String,
+): String {
+    require(
+        did.startsWith("did:") &&
+            verificationMethodId.startsWith("$did#") &&
+            verificationMethodId.length > did.length + 1 &&
+            verificationMethodId.substringBefore('#') == did
+    ) {
+        "Verifier request-object kid must be a full assertionMethod id rooted in issuer DID '$did'"
+    }
+    return verificationMethodId
 }

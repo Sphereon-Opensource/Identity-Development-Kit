@@ -16,6 +16,10 @@
 
 package com.sphereon.data.store.blob.http
 
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.OpaqueSecretResolver
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.data.store.blob.BlobDescriptor
 import com.sphereon.data.store.blob.BlobInfo
 import com.sphereon.data.store.blob.ListOptions
@@ -34,10 +38,13 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class HttpBlobServiceClientTest {
@@ -56,11 +63,14 @@ class HttpBlobServiceClientTest {
             auth =
                 HttpBlobAuthConfig(
                     mode = HttpBlobAuthMode.STATIC_TOKEN,
-                    token = "test-token",
+                    tokenSecretId = "sec_0123456789abcdef",
                 ),
         )
 
-    private fun createClient(engine: MockEngine): HttpBlobServiceClient {
+    private fun createClient(
+        engine: MockEngine,
+        opaqueSecretResolver: OpaqueSecretResolver = OpaqueSecretResolver { Ok("test-token") },
+    ): HttpBlobServiceClient {
         val httpClient =
             HttpClient(engine) {
                 install(ContentNegotiation) {
@@ -71,12 +81,52 @@ class HttpBlobServiceClientTest {
             config = createConfig(),
             http = httpClient,
             execution = null,
+            opaqueSecretResolver = opaqueSecretResolver,
         )
+    }
+
+    @Test
+    fun serializedAuthenticationContainsOnlyOpaqueHandles() {
+        val auth =
+            HttpBlobAuthConfig(
+                mode = HttpBlobAuthMode.CLIENT_CREDENTIALS,
+                tokenUri = "https://issuer.example.com/token",
+                clientId = "blob-client",
+                clientSecretId = "sec_0123456789abcdef",
+            )
+
+        val serialized = jsonCodec.encodeToString(auth)
+
+        assertTrue(serialized.contains("\"clientSecretId\":\"sec_0123456789abcdef\""))
+        assertFalse(serialized.contains("\"clientSecret\":"))
+        assertFalse(serialized.contains("\"token\":"))
+        assertFalse(serialized.contains("\${"))
+    }
+
+    @Test
+    fun legacyPlaintextAndMalformedOpaqueIdsAreRejected() {
+        assertFailsWith<IllegalArgumentException> {
+            HttpBlobAuthConfig(
+                mode = HttpBlobAuthMode.STATIC_TOKEN,
+                tokenSecretId = "plaintext-token",
+            )
+        }
+        assertFailsWith<Exception> {
+            jsonCodec.decodeFromString<HttpBlobAuthConfig>(
+                """{"mode":"STATIC_TOKEN","token":"plaintext-token"}""",
+            )
+        }
+        assertFailsWith<Exception> {
+            jsonCodec.decodeFromString<HttpBlobAuthConfig>(
+                """{"mode":"CLIENT_CREDENTIALS","clientSecret":"plaintext-secret"}""",
+            )
+        }
     }
 
     @Test
     fun storeBlobSendsCorrectRequest() =
         runTest {
+            var resolvedSecretId: String? = null
             val descriptor =
                 BlobDescriptor(
                     path = "docs/file.txt",
@@ -92,7 +142,14 @@ class HttpBlobServiceClientTest {
                     respond(jsonCodec.encodeToString(descriptor), headers = jsonHeaders)
                 }
 
-            val client = createClient(engine)
+            val client =
+                createClient(
+                    engine,
+                    OpaqueSecretResolver { secretId ->
+                        resolvedSecretId = secretId
+                        Ok("test-token")
+                    },
+                )
             val target =
                 BlobInfo(
                     storeId = "test-store",
@@ -106,8 +163,42 @@ class HttpBlobServiceClientTest {
                 )
 
             assertTrue(result.isOk)
+            assertEquals("sec_0123456789abcdef", resolvedSecretId)
             assertEquals("docs/file.txt", result.value.path)
             assertEquals(13L, result.value.sizeBytes)
+        }
+
+    @Test
+    fun opaqueCredentialFailureStopsBeforeNetworkAndSanitizesTheError() =
+        runTest {
+            var networkCalled = false
+            val engine =
+                MockEngine {
+                    networkCalled = true
+                    respondError(HttpStatusCode.InternalServerError)
+                }
+            val client =
+                createClient(
+                    engine,
+                    OpaqueSecretResolver {
+                        Err(IdkError.FORBIDDEN_ERROR(message = "provider path and internal credential detail"))
+                    },
+                )
+
+            val result =
+                client.getBlob(
+                    info =
+                        BlobInfo(
+                            storeId = "test-store",
+                            path = "docs/file.txt",
+                            tenantId = "tenant-1",
+                        ),
+                )
+
+            assertTrue(result.isErr)
+            assertFalse(networkCalled)
+            assertEquals("HTTP blob credential is unavailable", result.error.message.defaultMessage)
+            assertFalse(result.error.message.defaultMessage.contains("provider path"))
         }
 
     @Test

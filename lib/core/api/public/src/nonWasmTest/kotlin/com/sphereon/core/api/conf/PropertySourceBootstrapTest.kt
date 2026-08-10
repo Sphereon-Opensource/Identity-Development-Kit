@@ -463,6 +463,76 @@ class PropertySourceBootstrapImplTest {
     }
 
     @Test
+    fun registerAppSourcesRejectsMismatchedScopedSource() {
+        val contribution =
+            object : PropertySourceContribution {
+                override val configLevel = ConfigLevel.APP
+                override val providerId = "mismatched-app-provider"
+
+                override fun isEnabled(resolver: PropertyResolver) = true
+
+                override fun getPropertySource(): PropertySource<*> =
+                    ScopedPropertySourceWrapper(
+                        MapPropertySource("mismatched-app-source", mapOf("key" to "value")),
+                        ConfigLevel.TENANT,
+                    )
+
+                override fun getOrder() = 50
+            }
+        val bootstrap =
+            PropertySourceBootstrapImpl(
+                appConfigService = createAppConfigService(),
+                contributions = setOf(contribution),
+                logService = createLogService(),
+            )
+
+        assertFailsWith<IllegalArgumentException> {
+            bootstrap.registerAppSources()
+        }
+    }
+
+    @Test
+    fun bootstrapWrapperPreservesProtectionAndRefreshMetadata() {
+        val appConfigService = createAppConfigService()
+        val source = BootstrapProtectedRefreshableSource()
+        val contribution =
+            object : PropertySourceContribution {
+                override val configLevel = ConfigLevel.APP
+                override val providerId = "protected-refreshable-provider"
+
+                override fun isEnabled(resolver: PropertyResolver) = true
+
+                override fun getPropertySource(): PropertySource<*> = source
+
+                override fun getOrder() = 50
+            }
+        val bootstrap =
+            PropertySourceBootstrapImpl(
+                appConfigService = appConfigService,
+                contributions = setOf(contribution),
+                logService = createLogService(),
+            )
+
+        bootstrap.registerAppSources()
+
+        val registered =
+            appConfigService
+                .getPropertySources(includeParents = false)
+                .get("bootstrap-protected-refreshable")
+        assertTrue(registered is ScopedPropertySource<*>)
+        assertTrue(registered is ProtectedPropertySource<*>)
+        assertTrue(registered is RefreshablePropertySource)
+        assertFalse(registered.canInterpolate("service.token", ConfigLevel.TENANT))
+        assertEquals(0L, registered.contentRevision)
+
+        source.publishOnRefresh()
+        registered.refreshIfNeeded()
+
+        assertEquals(1L, registered.contentRevision)
+        assertEquals("updated", registered.getPropertyAsString("refresh.value"))
+    }
+
+    @Test
     fun registerAppSourcesIsExplicit() {
         val logService = createLogService()
         val appConfigService = createAppConfigService()
@@ -915,6 +985,35 @@ class PropertySourceBootstrapImplTest {
     }
 
     @Test
+    fun registerTenantSourcesRejectsAppSelfLabelledSource() {
+        val contribution =
+            object : PropertySourceContribution {
+                override val configLevel = ConfigLevel.TENANT
+                override val providerId = "spoofed-tenant-provider"
+
+                override fun isEnabled(resolver: PropertyResolver) = true
+
+                override fun getPropertySource(): PropertySource<*> =
+                    ScopedPropertySourceWrapper(
+                        MapPropertySource("spoofed-tenant-source", mapOf("path" to "\${env:PATH}")),
+                        ConfigLevel.APP,
+                    )
+
+                override fun getOrder() = 50
+            }
+        val bootstrap =
+            PropertySourceBootstrapImpl(
+                appConfigService = createAppConfigService(),
+                contributions = setOf(contribution),
+                logService = createLogService(),
+            )
+
+        assertFailsWith<IllegalArgumentException> {
+            bootstrap.registerTenantSources(createMockConfigService(), "tenant-123")
+        }
+    }
+
+    @Test
     fun registerTenantSourcesSkipsDisabledContributions() {
         val logService = createLogService()
         val appConfigService = createAppConfigService()
@@ -1116,6 +1215,39 @@ class PropertySourceBootstrapImplTest {
     }
 
     @Test
+    fun registerPrincipalSourcesRejectsTenantSelfLabelledSource() {
+        val contribution =
+            object : PropertySourceContribution {
+                override val configLevel = ConfigLevel.PRINCIPAL
+                override val providerId = "spoofed-principal-provider"
+
+                override fun isEnabled(resolver: PropertyResolver) = true
+
+                override fun getPropertySource(): PropertySource<*> =
+                    ScopedPropertySourceWrapper(
+                        MapPropertySource("spoofed-principal-source", mapOf("key" to "value")),
+                        ConfigLevel.TENANT,
+                    )
+
+                override fun getOrder() = 50
+            }
+        val bootstrap =
+            PropertySourceBootstrapImpl(
+                appConfigService = createAppConfigService(),
+                contributions = setOf(contribution),
+                logService = createLogService(),
+            )
+
+        assertFailsWith<IllegalArgumentException> {
+            bootstrap.registerPrincipalSources(
+                createMockConfigService(),
+                "tenant-123",
+                "principal-456",
+            )
+        }
+    }
+
+    @Test
     fun registerPrincipalSourcesSkipsDisabledContributions() {
         val logService = createLogService()
         val appConfigService = createAppConfigService()
@@ -1288,6 +1420,50 @@ class PropertySourceBootstrapImplTest {
         val sources = DefaultPropertySources().apply { add(source) }
         val env = TestConfigEnvironment(propertySources = sources)
         return TestConfigService(env)
+    }
+}
+
+private class BootstrapProtectedRefreshableSource :
+    MutableMapPropertySource("bootstrap-protected-refreshable"),
+    ProtectedPropertySource<MutableMap<String, Any>>,
+    RefreshablePropertySource {
+    override var contentRevision: Long = 0L
+        private set
+
+    private var publish = false
+
+    init {
+        addProperty("service.token", "server-owned")
+        addProperty("refresh.value", "initial")
+    }
+
+    override fun getProtection(canonicalKey: String): PropertyProtection? =
+        if (canonicalKey == "service.token") {
+            PropertyProtection.PROTECTED.withScope(ConfigLevel.APP)
+        } else {
+            null
+        }
+
+    override fun canSet(
+        key: String,
+        fromScope: ConfigLevel,
+    ): Boolean = true
+
+    override fun canInterpolate(
+        key: String,
+        fromScope: ConfigLevel,
+    ): Boolean = key != "service.token" || fromScope == ConfigLevel.APP
+
+    fun publishOnRefresh() {
+        publish = true
+    }
+
+    override fun refreshIfNeeded() {
+        if (publish) {
+            publish = false
+            addProperty("refresh.value", "updated")
+            contentRevision += 1L
+        }
     }
 }
 

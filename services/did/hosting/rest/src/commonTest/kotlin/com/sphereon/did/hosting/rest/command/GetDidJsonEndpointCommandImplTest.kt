@@ -20,6 +20,8 @@ import com.sphereon.core.api.log.LogService
 import com.sphereon.core.api.log.LoggerConfig
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.SessionLogService
+import com.sphereon.core.api.session.CommandId
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.UserContext
@@ -30,6 +32,9 @@ import com.sphereon.did.hosting.DidHostingRegistry
 import com.sphereon.did.hosting.HostedDid
 import com.sphereon.did.hosting.rest.DidHostingApiConstants
 import com.sphereon.did.hosting.rest.DidHostingConfig
+import com.sphereon.did.hosting.rest.adapter.DidHostingHttpAdapter
+import com.sphereon.did.hosting.rest.adapter.describe.DidHostingHttpAdapterDescriptorProvider
+import com.sphereon.did.hosting.rest.http.GetDidJsonEndpointCommand
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
@@ -37,6 +42,22 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class GetDidJsonEndpointCommandImplTest {
+    @Test
+    fun adapterAndDescriptorUseCanonicalThreeSegmentCommandId() {
+        assertEquals("did.hosting.http", DidHostingHttpAdapter.ID)
+        assertEquals(DidHostingHttpAdapter.ID, CommandId(DidHostingHttpAdapter.ID).value)
+        assertEquals(
+            DidHostingHttpAdapter.ID,
+            DidHostingHttpAdapterDescriptorProvider(DidHostingConfig()).id,
+        )
+    }
+
+    @Test
+    fun endpointUsesCanonicalThreeSegmentCommandId() {
+        assertEquals("did.hosting.document-get", GetDidJsonEndpointCommand.COMMAND_ID)
+        assertEquals(GetDidJsonEndpointCommand.COMMAND_ID, CommandId(GetDidJsonEndpointCommand.COMMAND_ID).value)
+    }
+
     @Test
     fun hostHeaderWithGatewayPortFallsBackToHostOnlyDidWebLocation() =
         runTest {
@@ -156,6 +177,8 @@ class GetDidJsonEndpointCommandImplTest {
                     sessionId: String,
                     correlationId: String,
                     makeActive: Boolean,
+                    secureDetails: SecuredTenantContextDetails?,
+                    principalType: PrincipalType,
                 ) = throw NotImplementedError()
 
                 override fun destroyById(sessionId: String) {}

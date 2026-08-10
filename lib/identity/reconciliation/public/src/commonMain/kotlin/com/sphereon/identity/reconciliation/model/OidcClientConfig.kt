@@ -18,7 +18,6 @@ package com.sphereon.identity.reconciliation.model
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.identity.idv.model.ConfigReference
-import com.sphereon.identity.idv.model.SecretReference
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmOverloads
 
@@ -30,7 +29,7 @@ data class OidcClientConfig
         val id: String,
         val discoveryUrl: String,
         val clientIdRef: ConfigReference,
-        val clientSecretRef: SecretReference,
+        val clientSecretId: String,
         val scopes: List<String> = listOf("openid"),
         val userInfoEnabled: Boolean = false,
         val authorizationEndpointOverride: String? = null,

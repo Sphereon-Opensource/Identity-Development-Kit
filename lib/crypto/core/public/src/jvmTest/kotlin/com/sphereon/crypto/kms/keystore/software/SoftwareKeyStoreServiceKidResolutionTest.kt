@@ -93,6 +93,18 @@ class SoftwareKeyStoreServiceKidResolutionTest {
         }
 
     @Test
+    fun certificateCatalogIgnoresSecretKeyEntriesWithoutCertificateChains() =
+        runTest {
+            val service = newPkcs12Service()
+            service.storeKey(hmacResolvedKeyInfo(hmacAlias), "test-pkcs12", hmacAlias)
+
+            assertTrue(
+                service.listCertificateAliases().isEmpty(),
+                "A key-only PKCS12 entry must not fail or appear in the trusted-certificate catalog",
+            )
+        }
+
+    @Test
     fun hmacKeyStoredByAliasIsResolvableByAlias() =
         runTest {
             val service = newPkcs12Service()
@@ -101,6 +113,7 @@ class SoftwareKeyStoreServiceKidResolutionTest {
 
             val resolved = service.getKey(KeyInfo<Jwk>(alias = hmacAlias))
             assertEquals(hmacAlias, resolved.alias)
+            assertEquals(hmacAlias, resolved.kid)
             assertNotNull((resolved.key as? JwkType)?.k, "Resolved HMAC key must carry symmetric key material")
         }
 
@@ -171,6 +184,8 @@ class SoftwareKeyStoreServiceKidResolutionTest {
     @Test
     fun hmacKeyIsResolvableByKidAfterReload() =
         runTest {
+            KeyStoreLoaderFactory.clearCache()
+            SoftwareKeyStoreStateCache.clear()
             val dir = Files.createTempDirectory("sks-kid-reload-test").toFile()
             dir.deleteOnExit()
             val path = dir.resolve("reload-keystore.p12").absolutePath
@@ -184,14 +199,30 @@ class SoftwareKeyStoreServiceKidResolutionTest {
                     keyVisibility = KeyVisibility.PRIVATE.keyVisibility,
                 )
 
-            val writer = SoftwareKeyStoreService(config)
-            writer.storeKey(hmacResolvedKeyInfo(hmacAlias), "test-pkcs12", hmacAlias)
-            writer.awaitPendingPersistenceCompletion()
-            assertTrue(java.io.File(path).exists(), "Keystore file must have been persisted")
+            try {
+                val originalKeyInfo = hmacResolvedKeyInfo(hmacAlias)
+                val originalK = originalKeyInfo.key.k
+                val writer = SoftwareKeyStoreService(config)
+                writer.storeKey(originalKeyInfo, "test-pkcs12", hmacAlias)
+                writer.awaitPendingPersistenceCompletion()
+                assertTrue(java.io.File(path).exists(), "Keystore file must have been persisted")
 
-            val reader = SoftwareKeyStoreService(config)
-            val resolved = reader.getKey(KeyInfo<Jwk>(kid = hmacAlias))
-            assertEquals(hmacAlias, resolved.alias)
-            assertNotNull((resolved.key as? JwkType)?.k, "Reloaded HMAC key must carry symmetric key material")
+                // Model a process restart rather than another service instance in the same process:
+                // neither the loaded KeyStore nor its resolved-key cache may satisfy the read.
+                KeyStoreLoaderFactory.clearCache()
+                SoftwareKeyStoreStateCache.clear()
+
+                val reader = SoftwareKeyStoreService(config)
+                val resolved = reader.getKey(KeyInfo<Jwk>(kid = hmacAlias))
+                assertEquals(hmacAlias, resolved.alias)
+                val resolvedK = (resolved.key as? JwkType)?.k
+                assertTrue(
+                    originalK != null && resolvedK != null && originalK == resolvedK,
+                    "Reloaded HMAC key material must exactly match the value persisted by the writer",
+                )
+            } finally {
+                KeyStoreLoaderFactory.clearCache()
+                SoftwareKeyStoreStateCache.clear()
+            }
         }
 }

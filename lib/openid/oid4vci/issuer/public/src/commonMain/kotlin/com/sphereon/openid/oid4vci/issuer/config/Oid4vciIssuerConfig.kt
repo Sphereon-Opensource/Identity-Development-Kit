@@ -83,9 +83,13 @@ interface Oid4vciIssuerConfigProvider {
      * - Populates the `signed_metadata` field on JSON responses
      *
      * When null, JWT responses return 406 Not Acceptable and JSON responses omit `signed_metadata`.
+     * Suspending because a deployment that manages key material centrally resolves the key from its
+     * own server-side binding (see
+     * [com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver]) rather than from a
+     * configuration value.
      */
-    val signingKey: ManagedIdentifierOptsOrResult?
-        get() = null
+    @JsExportIgnoreCompat
+    suspend fun signingKey(): ManagedIdentifierOptsOrResult? = null
 
     /**
      * OID4VCI 1.1 top-level credential response encryption metadata.
@@ -120,10 +124,12 @@ interface Oid4vciIssuerConfigProvider {
      * Mirrors the [signingKey] pattern: the config layer returns unresolved opts; consumers
      * resolve them at use time via `MultiManagedIdentifierService` because the resolution is
      * suspending and can fail. Returns null when the issuer doesn't advertise request
-     * encryption (the [credentialRequestEncryption] getter must also return null in that case).
+     * encryption, and also when a deployment that manages key material centrally has no usable
+     * binding for the request-decryption key — the field is then omitted from metadata and an
+     * encrypted request is refused, identically for every unusable binding shape.
      */
-    val credentialRequestDecryptionKey: ManagedIdentifierOptsOrResult?
-        get() = null
+    @JsExportIgnoreCompat
+    suspend fun credentialRequestDecryptionKey(): ManagedIdentifierOptsOrResult? = null
 
     /**
      * OID4VCI 1.1 batch credential issuance metadata.
@@ -149,8 +155,7 @@ interface Oid4vciIssuerConfigProvider {
      * and populate the JWT protected header with the appropriate identifier (kid, x5c, etc.).
      */
     @JsExportIgnoreCompat
-    val credentialSigningConfigs: Map<String, CredentialSigningConfig>
-        get() = emptyMap()
+    suspend fun credentialSigningConfigs(): Map<String, CredentialSigningConfig> = emptyMap()
 
     /**
      * Per-credential binding to a status list defined in the standalone, protocol-neutral
@@ -207,32 +212,35 @@ interface Oid4vciIssuerConfigProvider {
     ): KeyAttesterTrustConfig? = keyAttesterTrustConfigs[credentialConfigId]?.get(proofType)
 
     /**
-     * All KMS aliases this issuer actively signs with — union of per-credential signing
-     * keys and the top-level issuer-metadata signing key (when configured). Falls back
-     * to the credential configuration ID when a credential has no explicit alias.
+     * All KMS key names this issuer actively signs with — union of the resolved per-credential
+     * signing keys and the issuer-metadata signing key.
      *
-     * Consumed by the SD-JWT VC Issuer Metadata endpoint (`/.well-known/jwt-vc-issuer`)
-     * to build the published JWKS.
+     * Consumed by the SD-JWT VC Issuer Metadata endpoint (`/.well-known/jwt-vc-issuer`) to build the
+     * published JWKS. A credential configuration whose key does not resolve contributes nothing: the
+     * configuration id is caller-visible, so publishing it as a key name would advertise, and let a
+     * signer select, whatever key material happened to sit at that name.
      */
     @JsExportIgnoreCompat
-    val signingKeyAliases: Set<String>
-        get() {
-            val perCredential =
-                credentialConfigurations.keys.map { configId ->
-                    credentialSigningConfigs[configId]?.signingKeyAlias ?: configId
-                }
-            return (perCredential + listOfNotNull(metadataSigningKeyAlias))
-                .filter { it.isNotBlank() }
-                .toSet()
-        }
+    suspend fun signingKeyNames(): Set<String> {
+        val signingConfigs = credentialSigningConfigs()
+        val perCredential = credentialConfigurations.keys.mapNotNull { configId -> signingConfigs[configId]?.signingKeyAlias }
+        return (perCredential + listOfNotNull(metadataSigningKeyName()))
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
 
     /**
-     * Alias of the key used to sign issuer metadata (OID4VCI §13.2.4), when configured.
-     * Separate from [signingKey] because the bridge to KMS-alias-based resolution happens
-     * in the provider implementation. Null when metadata signing isn't enabled.
+     * Name of the key used to sign issuer metadata (OID4VCI §13.2.4), and the default the issuer's
+     * credentials sign with. Separate from [signingKey] because the bridge to KMS name-based
+     * resolution happens in the provider implementation.
+     *
+     * Null when no usable key is available. A deployment that manages key material centrally
+     * resolves this from its own server-side binding (see
+     * [com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver]); the name is
+     * process-internal and must never reach a DTO or a REST response.
      */
-    val metadataSigningKeyAlias: String?
-        get() = null
+    @JsExportIgnoreCompat
+    suspend fun metadataSigningKeyName(): String? = null
 
     /**
      * Issuer-wide clock-skew tolerance, in seconds. The `iat` claim (and `nbf`, when
@@ -246,6 +254,31 @@ interface Oid4vciIssuerConfigProvider {
      */
     val issuanceClockSkewInSeconds: Long
         get() = 60L
+
+    /**
+     * Governs the credential endpoint's §6.1 completeness gate when a completeness verdict
+     * reports missing required claims and the binding carries no explicit deferral policy of its
+     * own (see [com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciCompletenessLifecycleResult.missingRequiredClaims]).
+     *
+     * - [MissingRequiredClaimsPolicy.REJECT] (the default) fails the credential request with
+     *   `invalid_credential_request` — a credential is never issued with a required claim absent.
+     * - [MissingRequiredClaimsPolicy.DEFER] instead routes the request down the same deferred
+     *   (`transaction_id`) response path used when a binding's own deferral policy is enabled.
+     *
+     * YAML: `sphereon.oid4vci.issuer.missing-required-claims` (kebab-case). Default: `reject`.
+     */
+    val missingRequiredClaims: MissingRequiredClaimsPolicy
+        get() = MissingRequiredClaimsPolicy.REJECT
+}
+
+/**
+ * Policy for the credential endpoint's completeness gate when required claims are missing and
+ * the binding carries no explicit deferral policy. See [Oid4vciIssuerConfigProvider.missingRequiredClaims].
+ */
+@JsExportCompat
+enum class MissingRequiredClaimsPolicy {
+    REJECT,
+    DEFER,
 }
 
 @JsExportCompat
@@ -290,7 +323,10 @@ enum class SdJwtVcSpecProfile(
 /**
  * Signing configuration for a single credential type.
  *
- * @property signingKeyAlias KMS key alias for credential signing. When null, defaults to the credential configuration ID.
+ * @property signingKeyAlias Server-resolved KMS key name this credential signs under. Null means the
+ *   key is unavailable and issuance of this credential is refused; nothing is derived from the
+ *   credential configuration id and no key is created. The name is process-internal and must never
+ *   reach a DTO or a REST response.
  * @property signingKeyMode Key reference mode determining how the signing key is identified in the JWT header.
  * @property signingCertChainPath Optional PEM file path for X.509 certificate chain (fallback when KMS key has no x5c).
  */
@@ -298,6 +334,8 @@ enum class SdJwtVcSpecProfile(
 data class CredentialSigningConfig(
     val signingKeyAlias: String? = null,
     val signingKeyMode: SigningKeyMode = SigningKeyMode.None,
+    /** Exact assertionMethod DID URL selected for this key. Required for DID signing modes. */
+    val signingVerificationMethodId: String? = null,
     val signingCertChainPath: String? = null,
     /**
      * Validity window of issued credentials of this configuration, expressed in days.
@@ -331,7 +369,14 @@ data class CredentialSigningConfig(
 data class KeyAttesterTrustConfig
     @JsExportIgnoreCompat
     constructor(
+        val mode: String? = null,
         @JsExportIgnoreCompat val trustedJwks: List<Jwk>? = null,
         val trustedIssuers: List<String>? = null,
         val x509TrustAnchorPaths: List<String>? = null,
+        /**
+         * Requires the VDX Wallet Unit/TS03 persisted-evidence profile in addition to the
+         * generic OID4VCI key-attestation contract. This is an operator policy and must not
+         * be inferred from the protocol-level `key_attestations_required` metadata field.
+         */
+        val requireWalletUnitEvidence: Boolean = false,
     )

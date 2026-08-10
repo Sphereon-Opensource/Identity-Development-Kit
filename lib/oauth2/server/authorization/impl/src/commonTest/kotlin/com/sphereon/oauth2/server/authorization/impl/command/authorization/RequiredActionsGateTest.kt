@@ -18,6 +18,7 @@ import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
+import com.sphereon.oauth2.common.config.PublicClientConfig
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
@@ -138,9 +139,31 @@ class RequiredActionsGateTest {
             assertEquals(SESSION_ID, capture.lastSession?.sessionId)
         }
 
+    @Test
+    fun evaluatorReceivesPermissivePublicClientFallback() =
+        runTest {
+            val capture = CapturingEvaluator()
+            val command =
+                newCommand(
+                    evaluators = setOf(capture),
+                    clientRegistry = SingleClientRegistry(client = null),
+                    publicClients = PublicClientConfig(allowAny = true, permissiveRedirectUri = true),
+                )
+
+            val result = command.execute(args())
+
+            assertTrue(result.isOk, "permitted unregistered public client must survive the required-actions gate")
+            assertEquals(CLIENT_ID, capture.lastClient?.clientId)
+            assertTrue(capture.lastClient?.requirePkce == true)
+        }
+
     // ── Helpers ─────────────────────────────────────────────────────
 
-    private fun newCommand(evaluators: Set<RequiredActionEvaluator>,): CreateAuthorizationCodeCommandImpl {
+    private fun newCommand(
+        evaluators: Set<RequiredActionEvaluator>,
+        clientRegistry: ClientRegistry = SingleClientRegistry(),
+        publicClients: PublicClientConfig = PublicClientConfig(),
+    ): CreateAuthorizationCodeCommandImpl {
         val backing = InMemoryOAuth2BackingStorageImpl()
         return CreateAuthorizationCodeCommandImpl(
             execution = ctx.execution,
@@ -154,6 +177,7 @@ class RequiredActionsGateTest {
                                     OAuth2ServerInstanceConfig(
                                         issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.SUPPORTED,
+                                        publicClients = publicClients,
                                     ),
                             ),
                     ),
@@ -162,7 +186,7 @@ class RequiredActionsGateTest {
             loginSessionIdProvider = DefaultOidcLoginSessionIdProvider(),
             pushedAuthorizationRequestStorage = InMemoryPushedAuthorizationRequestStorageImpl(backing, Clock.System),
             acrEnforcer = DefaultOAuth2AcrEnforcer(),
-            clientRegistry = SingleClientRegistry(),
+            clientRegistry = clientRegistry,
             requiredActionEvaluators = evaluators,
         )
     }
@@ -240,15 +264,17 @@ class RequiredActionsGateTest {
         }
     }
 
-    private class SingleClientRegistry : ClientRegistry {
-        private val client =
+    private class SingleClientRegistry(
+        private val client: ClientRegistration? =
             ClientRegistration(
                 clientId = CLIENT_ID,
                 grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
                 redirectUris = listOf("https://app.example.org/cb"),
-            )
+            ),
+    ) : ClientRegistry {
 
-        override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> = Ok(if (clientId == client.clientId) client else null)
+        override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> =
+            Ok(client?.takeIf { clientId == it.clientId })
 
         override suspend fun registerClient(registration: ClientRegistration): IdkResult<ClientRegistration, AuthorizationServerError.StorageError> = Ok(registration)
 

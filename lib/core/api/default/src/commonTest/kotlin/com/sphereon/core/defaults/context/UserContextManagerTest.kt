@@ -23,11 +23,16 @@ import com.sphereon.core.api.conf.MutableMapPropertySource
 import com.sphereon.core.api.session.currentTimeMillis
 import com.sphereon.core.api.testutil.appConfigService
 import com.sphereon.core.api.testutil.createCoreApiTestAppGraph
+import com.sphereon.di.context.IdentityMetadata
+import com.sphereon.di.context.IdentityResolutionResult
+import com.sphereon.di.context.PrincipalType
+import com.sphereon.di.context.ResolutionSource
 import com.sphereon.di.context.UserContext
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -76,6 +81,87 @@ class UserContextManagerTest {
                 DefaultPrincipalInputString("test-user"),
             )
             assertTrue(appGraph.userContextManager.hasAuthenticated())
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun resolvedWorkloadTypeIsStoredAndCannotBeReusedAsAUser() {
+        val appGraph = createAppGraph()
+        try {
+            val manager = appGraph.userContextManager
+            val tenantInput = DefaultTenantInputString("workload-tenant")
+            val principalInput = DefaultPrincipalInputString("issuer-service:workload-tenant")
+
+            assertFailsWith<IllegalArgumentException> {
+                manager.createOrGetFromResolvedInputs(
+                    tenantInput = tenantInput,
+                    principalInput = principalInput,
+                    identityResolution =
+                        IdentityResolutionResult(
+                            tenantId = "workload-tenant",
+                            principalId = "issuer-service:other-tenant",
+                            principalType = PrincipalType.WORKLOAD,
+                            metadata = IdentityMetadata(resolvedFrom = ResolutionSource.TOKEN),
+                        ),
+                    makeActive = false,
+                )
+            }
+
+            val instance =
+                manager.createOrGetFromResolvedInputs(
+                    tenantInput = tenantInput,
+                    principalInput = principalInput,
+                    identityResolution =
+                        IdentityResolutionResult(
+                            tenantId = "workload-tenant",
+                            principalId = "issuer-service:workload-tenant",
+                            principalType = PrincipalType.WORKLOAD,
+                            metadata = IdentityMetadata(resolvedFrom = ResolutionSource.TOKEN),
+                        ),
+                    makeActive = false,
+                )
+
+            assertEquals(PrincipalType.WORKLOAD, instance.context.principalType)
+            assertFailsWith<IllegalArgumentException> {
+                manager.createOrGetFromInputs(
+                    tenantInput = tenantInput,
+                    principalInput = principalInput,
+                    makeActive = false,
+                )
+            }
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun authoritativeContextDataPreservesItsRequiredPrincipalType() {
+        val appGraph = createAppGraph()
+        try {
+            val tenant =
+                object : com.sphereon.di.context.TenantContextData {
+                    override val tenantId = "resolved-workload-tenant"
+                }
+            val tenantAware =
+                object : com.sphereon.di.context.TenantAware {
+                    override val tenant = tenant
+                }
+            val principalAware =
+                object : com.sphereon.di.context.PrincipalAware {
+                    override val principal = "issuer-service:resolved-workload-tenant"
+                }
+
+            val instance =
+                appGraph.userContextManager.createOrGet(
+                    tenantAware = tenantAware,
+                    principalAware = principalAware,
+                    principalType = PrincipalType.WORKLOAD,
+                    makeActive = false,
+                )
+
+            assertEquals(PrincipalType.WORKLOAD, instance.context.principalType)
         } finally {
             appGraph.destroy()
         }
@@ -521,6 +607,47 @@ class UserContextManagerTest {
             appGraph.destroy()
         }
     }
+
+    @Test
+    fun idleCleanupRetainsAppScopedTenantAndPrincipalCaches() =
+        runTest {
+            val appGraph = createAppGraph()
+            try {
+                appGraph.appConfigService.addPropertySource(
+                    MutableMapPropertySource("idle-cleanup-cache-retention-test").apply {
+                        addProperty("context.user.idle-timeout-ms", "1000")
+                        addProperty("context.user.idle-cleanup.enabled", "true")
+                    },
+                )
+                val manager = appGraph.userContextManager as UserContextManagerImpl
+                val cacheManager = (appGraph as CacheModule.Graph).cacheManager
+                val cache =
+                    cacheManager.createCache(
+                        CacheRequirements(namespace = "idle-cleanup-cache-retention-test"),
+                        CacheSerializers.string,
+                        CacheSerializers.string,
+                    )
+                val instance =
+                    manager.createOrGetFromInputs(
+                        DefaultTenantInputString("idle-cache-tenant"),
+                        DefaultPrincipalInputString("idle-cache-user"),
+                    )
+
+                cache.putTenant("idle-cache-tenant", "tenant-key", "tenant-value")
+                cache.putPrincipal("idle-cache-tenant", "idle-cache-user", "principal-key", "principal-value")
+
+                manager.runIdleCleanup(nowEpochMs = Long.MAX_VALUE)
+
+                assertFalse(manager.hasById(instance.contextId))
+                assertEquals("tenant-value", cache.getTenant("idle-cache-tenant", "tenant-key"))
+                assertEquals(
+                    "principal-value",
+                    cache.getPrincipal("idle-cache-tenant", "idle-cache-user", "principal-key"),
+                )
+            } finally {
+                appGraph.destroy()
+            }
+        }
 
     @Test
     fun idleCleanupKeepsRecentlyAccessedRegularContext() {

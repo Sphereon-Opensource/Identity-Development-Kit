@@ -44,7 +44,7 @@ class Oid4vciMetadataDslTest {
                 authorizationServer("https://auth.example.com")
                 nonceEndpoint = "https://issuer.example.com/nonce"
 
-                credentialConfiguration("UniversityDegree", CredentialFormat.SD_JWT_DC) {
+                credentialConfiguration("UniversityDegree", CredentialFormat.SD_JWT_VC) {
                     vct = "https://credentials.example.com/university_degree"
                     scope = "UniversityDegree"
                     bindingMethod("did:key")
@@ -110,13 +110,13 @@ class Oid4vciMetadataDslTest {
     }
 
     // -----------------------------------------------------------------------
-    // 2. SD-JWT DC config with VCT
+    // 2. IETF SD-JWT VC config with VCT
     // -----------------------------------------------------------------------
 
     @Test
-    fun buildSdJwtDcConfigWithVct() {
+    fun buildSdJwtVcConfigWithVct() {
         val config =
-            credentialConfiguration(CredentialFormat.SD_JWT_DC) {
+            credentialConfiguration(CredentialFormat.SD_JWT_VC) {
                 vct = "https://credentials.example.com/identity_credential"
                 scope = "IdentityCredential"
                 bindingMethods("did:key", "did:jwk")
@@ -253,7 +253,7 @@ class Oid4vciMetadataDslTest {
                 }
             }
 
-        assertEquals("vc+sd-jwt", config.format)
+        assertEquals("dc+sd-jwt", config.format)
 
         // §12.2.4: display and claims live under credential_metadata, not at the top level.
         assertNull(config.display)
@@ -294,7 +294,7 @@ class Oid4vciMetadataDslTest {
     @Test
     fun buildConfigWithMultipleLocales() {
         val config =
-            credentialConfiguration(CredentialFormat.SD_JWT_DC) {
+            credentialConfiguration(CredentialFormat.SD_JWT_VC) {
                 vct = "https://credentials.example.com/diploma"
 
                 display {
@@ -335,7 +335,7 @@ class Oid4vciMetadataDslTest {
     @Test
     fun buildConfigWithOid4vci11CredentialMetadata() {
         val config =
-            credentialConfiguration(CredentialFormat.SD_JWT_DC) {
+            credentialConfiguration(CredentialFormat.SD_JWT_VC) {
                 vct = "https://credentials.example.com/identity_credential"
 
                 credentialMetadata {
@@ -407,7 +407,7 @@ class Oid4vciMetadataDslTest {
                 batchCredentialIssuance(10)
                 preferredKeyStorageStatusPeriod = 900
 
-                credentialConfiguration("IdentityCredential", CredentialFormat.SD_JWT_DC) {
+                credentialConfiguration("IdentityCredential", CredentialFormat.SD_JWT_VC) {
                     vct = "https://credentials.example.com/identity"
                     bindingMethod("did:key")
                     signingAlg(JwaAlgorithm.ES256)
@@ -486,7 +486,7 @@ class Oid4vciMetadataDslTest {
                     encryptionRequired = true
                 }
 
-                credentialConfiguration("Test", CredentialFormat.SD_JWT_DC) {
+                credentialConfiguration("Test", CredentialFormat.SD_JWT_VC) {
                     vct = "https://credentials.example.com/test"
                 }
             }

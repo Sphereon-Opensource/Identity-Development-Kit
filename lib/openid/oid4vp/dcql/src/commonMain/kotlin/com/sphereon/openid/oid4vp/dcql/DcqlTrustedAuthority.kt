@@ -31,8 +31,8 @@ import kotlinx.serialization.Serializable
  * to trust only Credentials issued by specific entities or trust frameworks."
  *
  * Three types of trusted authorities are supported:
- * 1. `authority_key_identifier` - X.509 certificate Authority Key Identifier (base64url-encoded)
- * 2. `etsi_trusted_list` - ETSI Trusted List URLs (HTTPS only)
+ * 1. `aki` - X.509 certificate Authority Key Identifier (base64url-encoded)
+ * 2. `etsi_tl` - ETSI Trusted List identifier
  * 3. `openid_federation` - OpenID Federation entity identifiers (HTTPS only)
  *
  * Example:
@@ -44,7 +44,7 @@ import kotlinx.serialization.Serializable
  *       "values": ["https://federation.example.com"]
  *     },
  *     {
- *       "type": "etsi_trusted_list",
+ *       "type": "etsi_tl",
  *       "values": ["https://eidas.europa.eu/TL/EN_TL.xml"]
  *     }
  *   ]
@@ -52,13 +52,13 @@ import kotlinx.serialization.Serializable
  * ```
  *
  * @property type The type of trusted authority. Must be one of:
- *   - "authority_key_identifier"
- *   - "etsi_trusted_list"
+ *   - "aki"
+ *   - "etsi_tl"
  *   - "openid_federation"
  * @property values List of values (identifiers or URLs) for this trusted authority.
  *   Must be non-empty. Format depends on type:
- *   - For authority_key_identifier: base64url-encoded AKI values
- *   - For etsi_trusted_list: HTTPS URLs to trusted lists
+ *   - For aki: base64url-encoded AKI values
+ *   - For etsi_tl: identifiers of ETSI Trusted Lists
  *   - For openid_federation: HTTPS URLs representing entity identifiers
  */
 @Serializable
@@ -84,12 +84,12 @@ data class DcqlTrustedAuthority(
         /**
          * Authority Key Identifier type
          */
-        const val TYPE_AUTHORITY_KEY_IDENTIFIER = "authority_key_identifier"
+        const val TYPE_AKI = "aki"
 
         /**
          * ETSI Trusted List type
          */
-        const val TYPE_ETSI_TRUSTED_LIST = "etsi_trusted_list"
+        const val TYPE_ETSI_TL = "etsi_tl"
 
         /**
          * OpenID Federation type
@@ -101,8 +101,8 @@ data class DcqlTrustedAuthority(
          */
         val VALID_TYPES =
             setOf(
-                TYPE_AUTHORITY_KEY_IDENTIFIER,
-                TYPE_ETSI_TRUSTED_LIST,
+                TYPE_AKI,
+                TYPE_ETSI_TL,
                 TYPE_OPENID_FEDERATION,
             )
     }

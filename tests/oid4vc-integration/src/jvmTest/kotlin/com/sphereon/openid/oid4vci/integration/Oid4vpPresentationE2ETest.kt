@@ -19,8 +19,14 @@ package com.sphereon.openid.oid4vci.integration
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
+import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.verifier.BuildAuthorizationRequestUriArgs
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
@@ -75,11 +81,12 @@ class Oid4vpPresentationE2ETest {
                             DcqlCredentialQuery(
                                 id = "identity_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:identity"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("last_name")),
-                                        DcqlClaimQuery(path = listOf("first_name")),
-                                        DcqlClaimQuery(path = listOf("birth_date")),
+                                        DcqlClaimQuery(path = claimsPathPointer("last_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("first_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("birth_date")),
                                     ),
                             ),
                         ),
@@ -88,6 +95,7 @@ class Oid4vpPresentationE2ETest {
             val result =
                 verifier.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "oid4vc-integration-verifier",
                         dcqlQuery = dcqlQuery,
                         clientId = verifierClientId,
                         responseUri = responseUri,
@@ -133,10 +141,11 @@ class Oid4vpPresentationE2ETest {
                             DcqlCredentialQuery(
                                 id = "university_degree",
                                 format = "jwt_vc_json",
+                                meta = w3cVcMeta(listOf("VerifiableCredential", "UniversityDegreeCredential")),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("degree", "type")),
-                                        DcqlClaimQuery(path = listOf("degree", "name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("degree", "type")),
+                                        DcqlClaimQuery(path = claimsPathPointer("degree", "name")),
                                     ),
                             ),
                         ),
@@ -146,6 +155,7 @@ class Oid4vpPresentationE2ETest {
             val createResult =
                 verifier.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "oid4vc-integration-verifier",
                         dcqlQuery = dcqlQuery,
                         clientId = verifierClientId,
                         responseUri = responseUri,
@@ -187,19 +197,21 @@ class Oid4vpPresentationE2ETest {
                             DcqlCredentialQuery(
                                 id = "pid_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:pid"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("family_name")),
-                                        DcqlClaimQuery(path = listOf("given_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("family_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("given_name")),
                                     ),
                             ),
                             DcqlCredentialQuery(
                                 id = "mdl_credential",
                                 format = "mso_mdoc",
+                                meta = JsonObject(mapOf("doctype_value" to JsonPrimitive("org.iso.18013.5.1.mDL"))),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("document_number")),
-                                        DcqlClaimQuery(path = listOf("driving_privileges")),
+                                        DcqlClaimQuery(path = claimsPathPointer("org.iso.18013.5.1", "document_number")),
+                                        DcqlClaimQuery(path = claimsPathPointer("org.iso.18013.5.1", "driving_privileges")),
                                     ),
                             ),
                         ),
@@ -208,6 +220,7 @@ class Oid4vpPresentationE2ETest {
             val result =
                 verifier.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "oid4vc-integration-verifier",
                         dcqlQuery = dcqlQuery,
                         clientId = verifierClientId,
                         responseUri = responseUri,
@@ -286,14 +299,14 @@ class Oid4vpPresentationE2ETest {
                             DcqlCredentialQuery(
                                 id = "age_verification",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:age-verification"),
                                 claims =
                                     listOf(
                                         DcqlClaimQuery(
-                                            path = listOf("age_over_18"),
-                                            values = listOf(kotlinx.serialization.json.JsonPrimitive(true)),
+                                            path = ClaimsPathPointer(listOf(JsonPrimitive("age_over_18"))),
+                                            values = listOf(JsonPrimitive(true)),
                                         ),
                                     ),
-                                require_cryptographic_holder_binding = true,
                             ),
                         ),
                 )
@@ -301,6 +314,7 @@ class Oid4vpPresentationE2ETest {
             val result =
                 verifier.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "oid4vc-integration-verifier",
                         dcqlQuery = dcqlQuery,
                         clientId = verifierClientId,
                         responseUri = responseUri,
@@ -331,6 +345,7 @@ class Oid4vpPresentationE2ETest {
                             DcqlCredentialQuery(
                                 id = "test_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:credential"),
                             ),
                         ),
                 )
@@ -338,6 +353,7 @@ class Oid4vpPresentationE2ETest {
             val result =
                 verifier.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "oid4vc-integration-verifier",
                         dcqlQuery = dcqlQuery,
                         clientId = verifierClientId,
                         responseUri = responseUri,

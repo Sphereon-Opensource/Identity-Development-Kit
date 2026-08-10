@@ -131,19 +131,6 @@ data class ResolutionContext(
     val activeProfiles: List<String> = listOf("default"),
     val options: ResolutionOptions = ResolutionOptions(),
 ) {
-    /**
-     * The scope identifier to thread into secret resolution, chosen by [level]:
-     * - [ConfigLevel.TENANT] -> [tenantId]
-     * - [ConfigLevel.PRINCIPAL] -> [principalId]
-     * - [ConfigLevel.APP] -> null (no scope identity)
-     */
-    fun scopeIdentifier(): String? =
-        when (level) {
-            ConfigLevel.TENANT -> tenantId
-            ConfigLevel.PRINCIPAL -> principalId
-            ConfigLevel.APP -> null
-        }
-
     companion object {
         @JvmStatic
         fun app(profiles: List<String> = listOf("default")) =
@@ -187,7 +174,6 @@ data class ResolutionContext(
 data class ResolutionOptions(
     val useCache: Boolean = true,
     val interpolate: Boolean = true,
-    val resolveSecrets: Boolean = true,
     val includeMetadata: Boolean = true,
     val maxInterpolationDepth: Int = 10,
     val profile: String? = null,
@@ -234,6 +220,16 @@ data class ResolvedValue<T>(
                     isInterpolated = isInterpolated,
                     resolvedAt = Clock.System.now(),
                     ttl = ttl,
+                    provenance =
+                        ResolutionProvenance
+                            .known(scope, sensitive = isSecret)
+                            .let { provenance ->
+                                if (isInterpolated) {
+                                    provenance.withTaint(ResolutionTaint.INTERPOLATED)
+                                } else {
+                                    provenance
+                                }
+                            },
                 ),
         )
     }
@@ -258,6 +254,7 @@ data class ResolutionMetadata(
     val isInterpolated: Boolean,
     val resolvedAt: Instant,
     val ttl: Duration?,
+    val provenance: ResolutionProvenance = ResolutionProvenance.unknown(),
 )
 
 /**
@@ -278,16 +275,14 @@ class DefaultConfigResolutionPipeline(
     private val keyNormalizer: PropertyKeyNormalizer = PropertyKeyNormalizerImpl.Default,
     private val resolverLevel: ConfigLevel = ConfigLevel.APP,
     private val snapshotCache: SyncConfigSnapshotCache? = null,
+    private val redactionPolicy: SecretRedactionPolicy = DefaultSecretRedactionPolicy(),
+    private val interpolationPolicyProvider: InterpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
 ) : ConfigResolutionPipeline {
     @Volatile
     private var cachedOrderedRevision: Long = Long.MIN_VALUE
 
     @Volatile
     private var cachedOrderedSources: List<PropertySource<*>> = emptyList()
-
-    private val cachedPropertyResolver: PropertyResolver by lazy {
-        ProtectedPropertySourcesResolver(propertySources, resolverLevel)
-    }
 
     private fun cachedOrderedSourcesByScope(): List<PropertySource<*>> {
         val revision = propertySources.revision
@@ -305,40 +300,78 @@ class DefaultConfigResolutionPipeline(
         targetType: KClass<T>,
         context: ResolutionContext,
     ): IdkResult<ResolvedValue<T>, IdkError> {
+        if (!isWithinAuthority(context)) {
+            return policyDenied()
+        }
         val normalizedKey = keyNormalizer.normalize(key)
+        val directResolver = ProtectedPropertySourcesResolver(propertySources, context.level, redactionPolicy)
+        if (directResolver.canReadProperty(normalizedKey, context.level).isErr) {
+            return propertyNotFound(key)
+        }
 
         for (source in cachedOrderedSourcesByScope()) {
-            if (!source.isPlatformSupported) {
+            if (!source.isPlatformSupported || !source.isDirectlyVisibleAt(context.level)) {
                 continue
             }
 
-            val rawValue = source.getProperty(normalizedKey, targetType)
+            val rawValue =
+                try {
+                    source.getProperty(normalizedKey, targetType)
+                } catch (_: IllegalStateException) {
+                    return policyDenied()
+                }
             if (rawValue != null) {
-                val finalValue =
+                val sourceScope =
+                    (source as? ScopedPropertySource<*>)?.configLevel
+                        ?: return policyDenied()
+                try {
+                    validateConfigurationValueForRead(rawValue, sourceScope)
+                } catch (_: IllegalStateException) {
+                    return policyDenied()
+                }
+                val sensitive =
+                    redactionPolicy.shouldRedact(
+                        normalizedKey,
+                        directMetadata(
+                            source = source,
+                            sourceScope = sourceScope,
+                            originalKey = key,
+                            normalizedKey = normalizedKey,
+                        ),
+                    )
+                val sourceProvenance = ResolutionProvenance.known(sourceScope, sensitive)
+                val interpolatedValue =
                     if (context.options.interpolate && interpolator != null && rawValue is String) {
-                        // Use scope-aware interpolation with full options support.
-                        // Thread the scope identifier so cascade secret references can select
-                        // the tenant/principal-scoped provider (TENANT -> tenantId, PRINCIPAL -> principalId).
+                        val interpolationResolver = ProtectedPropertySourcesResolver(propertySources, sourceScope, redactionPolicy)
                         val interpolated =
-                            interpolator.interpolate(
+                            interpolator.interpolateWithProvenance(
                                 value = rawValue,
-                                resolver = cachedPropertyResolver,
-                                requestingScope = context.level,
+                                resolver = interpolationResolver,
+                                requestingScope = sourceScope,
                                 maxDepth = context.options.maxInterpolationDepth,
-                                resolveSecrets = context.options.resolveSecrets,
-                                scopeIdentifier = context.scopeIdentifier(),
+                                policy = interpolationPolicyProvider.policyFor(normalizedKey, sourceScope),
+                                sourceProvenance = sourceProvenance,
                             )
                         if (interpolated.isErr) {
                             return Err(interpolated.error)
                         }
+                        interpolated.value
+                    } else {
+                        InterpolatedPropertyValue(rawValue.toString(), sourceProvenance)
+                    }
+
+                val isInterpolated =
+                    context.options.interpolate &&
+                        interpolator != null &&
+                        rawValue is String &&
+                        interpolator.containsPlaceholders(rawValue)
+                val finalValue =
+                    if (rawValue is String) {
                         @Suppress("UNCHECKED_CAST")
-                        interpolated.value as T
+                        interpolatedValue.value as T
                     } else {
                         rawValue
                     }
-
-                val isSecret = interpolator?.isSecretReference(rawValue.toString()) ?: false
-                val isInterpolated = interpolator?.containsPlaceholders(rawValue.toString()) ?: false
 
                 return Ok(
                     ResolvedValue(
@@ -346,41 +379,62 @@ class DefaultConfigResolutionPipeline(
                         metadata =
                             ResolutionMetadata(
                                 source = source.getName(),
-                                scope = context.level,
+                                scope = sourceScope,
                                 originalKey = key,
                                 normalizedKey = normalizedKey,
                                 order = source.getOrder(),
-                                isSecret = isSecret,
+                                isSecret = sensitive,
                                 isInterpolated = isInterpolated,
                                 resolvedAt = Clock.System.now(),
                                 ttl = null,
+                                provenance = interpolatedValue.provenance,
                             ),
                     ),
                 )
             }
         }
 
-        return Err(
+        return propertyNotFound(key)
+    }
+
+    private fun <T> propertyNotFound(key: String): IdkResult<T, IdkError> =
+        Err(
             IdkError.NOT_FOUND_ERROR(
                 resource = "config property",
                 message = "Property not found: $key",
             ),
         )
-    }
 
     override suspend fun resolveAll(
         prefix: String,
         context: ResolutionContext,
+    ): IdkResult<Map<String, ResolvedValue<Any>>, IdkError> =
+        resolveAllInternal(prefix, context, redactionPolicy)
+
+    private suspend fun resolveAllInternal(
+        prefix: String,
+        context: ResolutionContext,
+        effectiveRedactionPolicy: SecretRedactionPolicy,
     ): IdkResult<Map<String, ResolvedValue<Any>>, IdkError> {
+        if (!isWithinAuthority(context)) {
+            return policyDenied()
+        }
         val normalizedPrefix = keyNormalizer.normalize(prefix)
         val result = mutableMapOf<String, ResolvedValue<Any>>()
+        val directResolver = ProtectedPropertySourcesResolver(propertySources, context.level, effectiveRedactionPolicy)
 
         for (source in cachedOrderedSourcesByScope()) {
-            if (!source.isPlatformSupported) {
+            if (!source.isPlatformSupported || !source.isDirectlyVisibleAt(context.level)) {
                 continue
             }
 
-            for (propertyName in source.getAllPropertyNames()) {
+            val propertyNames =
+                try {
+                    source.getAllPropertyNames()
+                } catch (_: IllegalStateException) {
+                    return policyDenied()
+                }
+            for (propertyName in propertyNames) {
                 // Check prefix matching with dot boundary to avoid partial matches
                 // (e.g., "app" should not match "application.name")
                 if (normalizedPrefix.isNotEmpty() &&
@@ -392,33 +446,67 @@ class DefaultConfigResolutionPipeline(
                 if (result.containsKey(propertyName)) {
                     continue
                 }
+                if (directResolver.canReadProperty(propertyName, context.level).isErr) {
+                    continue
+                }
 
-                val value = source.getProperty(propertyName, Any::class) ?: continue
+                val value =
+                    try {
+                        source.getProperty(propertyName, Any::class)
+                    } catch (_: IllegalStateException) {
+                        return policyDenied()
+                    } ?: continue
+                val sourceScope =
+                    (source as? ScopedPropertySource<*>)?.configLevel
+                        ?: return policyDenied()
+                try {
+                    validateConfigurationValueForRead(value, sourceScope)
+                } catch (_: IllegalStateException) {
+                    return policyDenied()
+                }
 
-                val finalValue =
+                val sensitive =
+                    effectiveRedactionPolicy.shouldRedact(
+                        propertyName,
+                        directMetadata(
+                            source = source,
+                            sourceScope = sourceScope,
+                            originalKey = propertyName,
+                            normalizedKey = propertyName,
+                        ),
+                    )
+                val sourceProvenance = ResolutionProvenance.known(sourceScope, sensitive)
+                val interpolatedValue =
                     if (context.options.interpolate && interpolator != null && value is String) {
-                        // Use scope-aware interpolation with full options support.
-                        // Thread the scope identifier so cascade secret references can select
-                        // the tenant/principal-scoped provider (TENANT -> tenantId, PRINCIPAL -> principalId).
+                        val interpolationResolver =
+                            ProtectedPropertySourcesResolver(
+                                propertySources,
+                                sourceScope,
+                                effectiveRedactionPolicy,
+                            )
                         val interpolated =
-                            interpolator.interpolate(
+                            interpolator.interpolateWithProvenance(
                                 value = value,
-                                resolver = cachedPropertyResolver,
-                                requestingScope = context.level,
+                                resolver = interpolationResolver,
+                                requestingScope = sourceScope,
                                 maxDepth = context.options.maxInterpolationDepth,
-                                resolveSecrets = context.options.resolveSecrets,
-                                scopeIdentifier = context.scopeIdentifier(),
+                                policy = interpolationPolicyProvider.policyFor(propertyName, sourceScope),
+                                sourceProvenance = sourceProvenance,
                             )
                         if (interpolated.isErr) {
                             continue
                         }
                         interpolated.value
                     } else {
-                        value
+                        InterpolatedPropertyValue(value.toString(), sourceProvenance)
                     }
 
-                val isSecret = interpolator?.isSecretReference(value.toString()) ?: false
-                val isInterpolated = interpolator?.containsPlaceholders(value.toString()) ?: false
+                val isInterpolated =
+                    context.options.interpolate &&
+                        interpolator != null &&
+                        value is String &&
+                        interpolator.containsPlaceholders(value)
+                val finalValue = if (value is String) interpolatedValue.value else value
 
                 result[propertyName] =
                     ResolvedValue(
@@ -426,14 +514,15 @@ class DefaultConfigResolutionPipeline(
                         metadata =
                             ResolutionMetadata(
                                 source = source.getName(),
-                                scope = context.level,
+                                scope = sourceScope,
                                 originalKey = propertyName,
                                 normalizedKey = propertyName,
                                 order = source.getOrder(),
-                                isSecret = isSecret,
+                                isSecret = sensitive,
                                 isInterpolated = isInterpolated,
                                 resolvedAt = Clock.System.now(),
                                 ttl = null,
+                                provenance = interpolatedValue.provenance,
                             ),
                     )
             }
@@ -448,7 +537,12 @@ class DefaultConfigResolutionPipeline(
         redact: Boolean,
         redactionPolicy: SecretRedactionPolicy,
     ): IdkResult<Map<String, String>, IdkError> {
-        val resolveResult = resolveAll(prefix, context)
+        val effectiveRedactionPolicy =
+            CombinedSecretRedactionPolicy(
+                authoritative = this.redactionPolicy,
+                additional = redactionPolicy,
+            )
+        val resolveResult = resolveAllInternal(prefix, context, effectiveRedactionPolicy)
         if (resolveResult.isErr) {
             return Err(resolveResult.error)
         }
@@ -458,8 +552,18 @@ class DefaultConfigResolutionPipeline(
                 val value = resolved.value
                 if (value == null) {
                     "null"
-                } else if (redact && redactionPolicy.shouldRedact(key, resolved.metadata)) {
-                    redactionPolicy.redact(value.toString())
+                } else if (
+                    redact &&
+                    (
+                        resolved.metadata.provenance.hasTaint(ResolutionTaint.SENSITIVE) ||
+                            effectiveRedactionPolicy.shouldRedact(key, resolved.metadata)
+                    )
+                ) {
+                    if (this.redactionPolicy.shouldRedact(key, resolved.metadata)) {
+                        this.redactionPolicy.redact(value.toString())
+                    } else {
+                        redactionPolicy.redact(value.toString())
+                    }
                 } else {
                     value.toString()
                 }
@@ -472,19 +576,88 @@ class DefaultConfigResolutionPipeline(
         key: String,
         context: ResolutionContext,
     ): Boolean {
-        val normalizedKey = keyNormalizer.normalize(key)
-        return cachedOrderedSourcesByScope().any { source ->
-            source.isPlatformSupported && source.hasProperty(normalizedKey)
+        if (!isWithinAuthority(context)) {
+            return false
         }
+        val normalizedKey = keyNormalizer.normalize(key)
+        val directResolver = ProtectedPropertySourcesResolver(propertySources, context.level, redactionPolicy)
+        if (directResolver.canReadProperty(normalizedKey, context.level).isErr) {
+            return false
+        }
+        for (source in cachedOrderedSourcesByScope()) {
+            if (!source.isPlatformSupported || !source.isDirectlyVisibleAt(context.level)) {
+                continue
+            }
+            val present = runCatching { source.hasProperty(normalizedKey) }.getOrDefault(false)
+            if (!present) {
+                continue
+            }
+            val value = runCatching { source.getProperty(normalizedKey, Any::class) }.getOrNull()
+            val sourceScope = (source as? ScopedPropertySource<*>)?.configLevel ?: return false
+            return runCatching {
+                validateConfigurationValueForRead(value, sourceScope)
+            }.isSuccess
+        }
+        return false
     }
 
     override suspend fun invalidate(
         keyOrPrefix: String,
         context: ResolutionContext,
     ) {
+        if (!isWithinAuthority(context)) {
+            return
+        }
         // Invalidate cached entries if cache is available
         snapshotCache?.invalidateByPrefix(keyOrPrefix)
     }
+
+    private fun isWithinAuthority(context: ResolutionContext): Boolean = context.level.level >= resolverLevel.level
+
+    private fun directMetadata(
+        source: PropertySource<*>,
+        sourceScope: ConfigLevel,
+        originalKey: String,
+        normalizedKey: String,
+    ): ResolutionMetadata =
+        ResolutionMetadata(
+            source = source.getName(),
+            scope = sourceScope,
+            originalKey = originalKey,
+            normalizedKey = normalizedKey,
+            order = source.getOrder(),
+            isSecret = false,
+            isInterpolated = false,
+            resolvedAt = Clock.System.now(),
+            ttl = null,
+            provenance = ResolutionProvenance.known(sourceScope),
+        )
+
+    private fun <T> policyDenied(): IdkResult<T, IdkError> =
+        Err(
+            ConfigErrors.interpolationError(
+                key = "policy",
+                reason = "configuration value is not permitted",
+            ),
+        )
+}
+
+/**
+ * A call-specific policy may make redaction stricter, but cannot remove sensitivity
+ * established by the pipeline's constructor-owned policy.
+ */
+private class CombinedSecretRedactionPolicy(
+    private val authoritative: SecretRedactionPolicy,
+    private val additional: SecretRedactionPolicy,
+) : SecretRedactionPolicy {
+    override fun shouldRedact(
+        key: String,
+        metadata: ResolutionMetadata,
+    ): Boolean =
+        authoritative.shouldRedact(key, metadata) ||
+            additional.shouldRedact(key, metadata)
+
+    override fun redact(value: String): String = authoritative.redact(value)
 }
 
 /**
@@ -512,18 +685,10 @@ object ConfigErrors {
     )
 
     fun maxDepthExceeded(
-        key: String,
+        @Suppress("UNUSED_PARAMETER") key: String,
         depth: Int,
     ) = IdkError.ILLEGAL_ARGUMENT_ERROR(
-        message = "Max interpolation depth ($depth) exceeded for property '$key'",
-    )
-
-    fun secretResolutionFailed(
-        key: String,
-        provider: String,
-        reason: String,
-    ) = IdkError.ILLEGAL_ARGUMENT_ERROR(
-        message = "Secret resolution failed for '$key' using provider '$provider': $reason",
+        message = "Max interpolation depth ($depth) exceeded for a configuration property",
     )
 
     fun conversionError(
@@ -541,9 +706,9 @@ object ConfigErrors {
         collectionType: String? = null,
         entry: String? = null,
         path: String? = null,
-        receivedValue: String? = null,
         failures: List<Map<String, String>> = emptyList(),
     ): IdkError {
+        val safeReason = "configuration value could not be bound to the expected type"
         val messagePrefix =
             if (collectionType != null) {
                 "Failed to bind $collectionType config for '$prefix' as '$expectedType'"
@@ -555,22 +720,40 @@ object ConfigErrors {
             mutableMapOf<String, Any?>(
                 "prefix" to prefix,
                 "expectedType" to expectedType,
-                "reason" to reason,
+                "reason" to safeReason,
             )
         collectionType?.let { meta["collectionType"] = it }
         entry?.let { meta["entry"] = it }
         path?.let { meta["path"] = it }
-        receivedValue?.let { meta["receivedValue"] = it }
         if (failures.isNotEmpty()) {
-            meta["failures"] = failures
+            meta["failures"] =
+                failures.map { failure ->
+                    failure.mapValues { (key, value) ->
+                        if (key == "reason") safeReason else value
+                    }
+                }
         }
+        val diagnosticPaths =
+            (
+                listOfNotNull(path) +
+                    failures.mapNotNull { failure -> failure["path"] }
+            ).distinct()
+        val pathSuffix =
+            if (diagnosticPaths.isEmpty()) {
+                ""
+            } else {
+                diagnosticPaths.joinToString(
+                    prefix = " at ",
+                    separator = ", ",
+                ) { diagnosticPath -> "'$diagnosticPath'" }
+            }
 
         return IdkError(
             code = "CONFIG_BIND_ERROR",
             message =
                 IdkError.Message(
                     i18nKey = "com.sphereon.core.error.config-bind-error",
-                    defaultMessage = "$messagePrefix: $reason",
+                    defaultMessage = "$messagePrefix$pathSuffix: $safeReason",
                 ),
             exception = null,
             meta = meta,

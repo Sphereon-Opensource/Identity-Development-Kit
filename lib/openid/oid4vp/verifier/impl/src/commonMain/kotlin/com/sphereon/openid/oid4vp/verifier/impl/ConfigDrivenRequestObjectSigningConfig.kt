@@ -23,8 +23,10 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.openid.oid4vp.verifier.impl.config.AbstractConfigOid4vpVerifierConfigProvider
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
+import com.sphereon.openid.oid4vp.verifier.spi.VerifierSigningKeyNameResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
@@ -49,11 +51,13 @@ class ConfigDrivenRequestObjectSigningConfig(
     managedIdentifierService: ManagedIdentifierService,
     kms: KeyManagerService,
     didProviderRegistry: DidProviderRegistry,
+    signingKeyNameResolver: Provider<VerifierSigningKeyNameResolver>? = null,
 ) : AbstractConfigOid4vpVerifierConfigProvider(
         execution = execution,
         managedIdentifierService = managedIdentifierService,
         kms = kms,
         didProviderRegistry = didProviderRegistry,
+        signingKeyNameResolver = signingKeyNameResolver,
         namespaceProvider = { NAMESPACE },
     ) {
     companion object {

@@ -89,9 +89,8 @@ class RetrieveAuthorizationRequestByUriCommandImpl(
         // Verify request_uri format (RFC 9126 Section 2.2)
         if (!requestUri.startsWith("urn:ietf:params:oauth:request_uri:")) {
             return Err(
-                AuthorizationServerError.InvalidRequest(
+                AuthorizationServerError.InvalidRequestUri(
                     details = "Invalid request_uri format",
-                    exception = null,
                 ),
             )
         }
@@ -112,7 +111,7 @@ class RetrieveAuthorizationRequestByUriCommandImpl(
         val stored =
             lookupResult.value
                 ?: return Err(
-                    AuthorizationServerError.InvalidRequest(
+                    AuthorizationServerError.InvalidRequestUri(
                         details = "Pushed authorization request_uri not found, expired, or already consumed: $requestUri",
                     ),
                 )

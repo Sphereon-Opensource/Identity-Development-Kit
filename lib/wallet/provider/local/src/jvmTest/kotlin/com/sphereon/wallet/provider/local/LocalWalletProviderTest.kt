@@ -43,6 +43,7 @@ import com.sphereon.wallet.provider.WalletUnitStatus
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.unit.WalletSolutionRef
 import com.sphereon.wallet.unit.attestation.KeyAttestationIssueRequest
+import com.sphereon.wallet.unit.attestation.LocalWalletProviderAttestationSignerResolver
 import com.sphereon.wallet.unit.attestation.WalletInstanceAttestationIssueRequest
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationProfile
 import com.sphereon.wallet.wsca.Wsca
@@ -406,7 +407,7 @@ class LocalWalletProviderTest {
                 version = "0.1.0",
             )
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId(sessionId)
+        val session = userContext.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
         val kms = session.graph.asKeyManagerServiceGraph().keyManagerService
         val kmsProviderConfig =
             SoftwareKmsProviderConfig(
@@ -434,6 +435,7 @@ class LocalWalletProviderTest {
                         ),
                     )
                 },
+                LocalWalletProviderAttestationSignerResolver(),
             )
         val providerConfig =
             object : LocalWalletProviderConfig {

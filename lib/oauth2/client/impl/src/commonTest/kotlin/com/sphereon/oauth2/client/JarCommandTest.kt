@@ -30,6 +30,12 @@ import com.sphereon.oauth2.client.testutil.createOAuth2ClientTestAppGraph
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -45,7 +51,7 @@ class JarCommandTest {
 
     val app = createOAuth2ClientTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("jar-test")
+    val session = context.sessionContextManager.createOrGetFromId("jar-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {
@@ -141,6 +147,35 @@ class JarCommandTest {
             assertTrue(parsed.claims.containsKey("jti"), "Should have 'jti' claim")
 
             println("Successfully parsed signed JAR and verified all claims")
+        }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    @Test
+    fun testCreateSignedJarPreservesCallerProvidedX5c() =
+        runTest {
+            val managedKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateKeyInfo = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val callerChain = listOf("protocol-leaf", "protocol-intermediate")
+
+            val result =
+                jarService.createSignedJar(
+                    CreateSignedJarArgs(
+                        authorizationRequest = AuthorizationRequest(clientId = "x509_hash:test", responseType = "vp_token"),
+                        signingKey = privateKeyInfo,
+                        issuer = "x509_hash:test",
+                        audience = "https://self-issued.me/v2",
+                        x5c = callerChain,
+                    ),
+                )
+
+            assertTrue(result.isOk, "Should create signed JAR with caller-provided x5c")
+            val encodedHeader = result.value.value.substringBefore('.')
+            val header =
+                Json.parseToJsonElement(
+                    Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT).decode(encodedHeader).decodeToString(),
+                ).jsonObject
+            assertEquals(callerChain, header.getValue("x5c").jsonArray.map { it.jsonPrimitive.content })
+            assertEquals("ES256", header.getValue("alg").jsonPrimitive.content)
         }
 
     @Test

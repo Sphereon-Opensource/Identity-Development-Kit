@@ -31,19 +31,19 @@ class SdJwtClaimResolverTest {
     private val resolver = SdJwtClaimResolver()
 
     @Test
-    fun `supportedFormats should include SD_JWT_DC and SD_JWT_VC`() {
-        assertTrue(resolver.supportedFormats.contains(CredentialFormat.SD_JWT_DC))
+    fun `supportedFormats should include IETF SD-JWT VC and W3C VC SD-JWT`() {
         assertTrue(resolver.supportedFormats.contains(CredentialFormat.SD_JWT_VC))
+        assertTrue(resolver.supportedFormats.contains(CredentialFormat.W3C_VC_SD_JWT))
     }
 
     @Test
-    fun `supports should return true for SD_JWT_DC`() {
-        assertTrue(resolver.supports(CredentialFormat.SD_JWT_DC))
-    }
-
-    @Test
-    fun `supports should return true for SD_JWT_VC`() {
+    fun `supports should return true for IETF SD-JWT VC`() {
         assertTrue(resolver.supports(CredentialFormat.SD_JWT_VC))
+    }
+
+    @Test
+    fun `supports should return true for W3C VC SD-JWT`() {
+        assertTrue(resolver.supports(CredentialFormat.W3C_VC_SD_JWT))
     }
 
     @Test
@@ -64,7 +64,7 @@ class SdJwtClaimResolverTest {
             val result =
                 resolver.extractClaim(
                     credential = "",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     claimPath = listOf("given_name"),
                     disclosedClaims = disclosedClaims,
                 )
@@ -90,7 +90,7 @@ class SdJwtClaimResolverTest {
             val result =
                 resolver.extractClaim(
                     credential = "",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     claimPath = listOf("address", "street"),
                     disclosedClaims = disclosedClaims,
                 )
@@ -110,7 +110,7 @@ class SdJwtClaimResolverTest {
             val result =
                 resolver.extractClaim(
                     credential = "",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     claimPath = listOf("email"),
                     disclosedClaims = disclosedClaims,
                 )
@@ -135,7 +135,7 @@ class SdJwtClaimResolverTest {
             val result =
                 resolver.extractClaim(
                     credential = "",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     claimPath = listOf("address", "country"),
                     disclosedClaims = disclosedClaims,
                 )
@@ -157,7 +157,7 @@ class SdJwtClaimResolverTest {
             val result =
                 resolver.extractClaims(
                     credential = "",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     claimPaths =
                         listOf(
                             listOf("given_name"),
@@ -183,7 +183,7 @@ class SdJwtClaimResolverTest {
             val result =
                 resolver.extractClaims(
                     credential = "",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     claimPaths =
                         listOf(
                             listOf("given_name"),
@@ -211,7 +211,7 @@ class SdJwtClaimResolverTest {
             val result =
                 resolver.extractAllClaims(
                     credential = "",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     disclosedClaims = disclosedClaims,
                 )
 

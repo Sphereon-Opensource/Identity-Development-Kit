@@ -28,6 +28,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.common.model.RequestedCredentialResponseEncryption
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import com.sphereon.oauth2.common.model.AuthorizationResponse
 import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -58,6 +59,8 @@ interface Oid4vciHolderService {
 
     suspend fun requestNonce(nonceEndpoint: String): IdkResult<NonceResponse, IdkError>
 
+    suspend fun requestAttestationChallenge(challengeEndpoint: String): IdkResult<AttestationChallengeResponse, IdkError>
+
     suspend fun exchangePreAuthorizedCode(
         tokenEndpoint: String,
         preAuthorizedCode: String,
@@ -70,7 +73,19 @@ interface Oid4vciHolderService {
         clientAuthentication: ClientAuthenticationConfig? = null,
     ): IdkResult<TokenResponseWithContext, IdkError>
 
+    suspend fun exchangeRefreshToken(
+        tokenEndpoint: String,
+        refreshToken: String,
+        clientId: String? = null,
+        dpopProofJwt: String? = null,
+        clientAttestationJwt: String? = null,
+        clientAttestationPopJwt: String? = null,
+        clientAuthentication: ClientAuthenticationConfig? = null,
+    ): IdkResult<TokenResponseWithContext, IdkError>
+
     suspend fun createCredentialRequestProof(
+        walletUnitId: String?,
+        operationBinding: String?,
         issuerUrl: String,
         cNonce: String? = null,
         signingKeyIds: List<String>,
@@ -98,6 +113,7 @@ interface Oid4vciHolderService {
     suspend fun requestDeferredCredential(
         deferredCredentialEndpoint: String,
         accessToken: String,
+        dpopProofJwt: String? = null,
         transactionId: String,
         credentialResponseEncryption: RequestedCredentialResponseEncryption? = null,
         requestEncryptionJwk: JsonObject? = null,
@@ -109,6 +125,7 @@ interface Oid4vciHolderService {
     suspend fun sendNotification(
         notificationEndpoint: String,
         accessToken: String,
+        dpopProofJwt: String? = null,
         notificationId: String,
         event: CredentialNotificationEvent,
         eventDescription: String? = null,
@@ -129,7 +146,22 @@ interface Oid4vciHolderService {
         parEndpoint: String? = null,
         credentialIdentifiers: Map<String, List<String>>? = null,
         locations: List<String>? = null,
+        clientAuthentication: ClientAuthenticationConfig? = null,
+        dpopProofJwt: String? = null,
+        clientAttestationJwt: String? = null,
+        clientAttestationPopJwt: String? = null,
     ): IdkResult<AuthorizationRequestResult, IdkError>
+
+    /**
+     * Parses and validates the OAuth authorization response before a token request is made.
+     * RFC 9207 issuer enforcement is selected by profiles such as FAPI 2.0 / HAIP.
+     */
+    suspend fun parseAndValidateAuthorizationResponse(
+        callbackUrl: String,
+        expectedState: String? = null,
+        expectedIssuer: String? = null,
+        requireIssuer: Boolean = false,
+    ): IdkResult<AuthorizationResponse, IdkError>
 
     suspend fun exchangeAuthorizationCode(
         tokenEndpoint: String,
@@ -191,7 +223,9 @@ interface Oid4vciHolder : Oid4vciHolderAdapter {
         val resolveIssuerMetadata: ResolveIssuerMetadataCommand
         val selectAuthorizationServer: SelectAuthorizationServerCommand
         val requestNonce: RequestNonceCommand
+        val requestAttestationChallenge: RequestAttestationChallengeCommand
         val exchangePreAuthorizedCode: ExchangePreAuthorizedCodeCommand
+        val exchangeRefreshToken: ExchangeRefreshTokenCommand
         val createCredentialRequestProof: CreateCredentialRequestProofCommand
         val requestCredential: RequestCredentialCommand
         val requestDeferredCredential: RequestDeferredCredentialCommand

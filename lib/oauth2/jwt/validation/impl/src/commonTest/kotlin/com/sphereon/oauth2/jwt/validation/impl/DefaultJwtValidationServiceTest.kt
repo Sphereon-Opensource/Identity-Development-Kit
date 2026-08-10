@@ -27,7 +27,10 @@ import com.sphereon.oauth2.jwt.validation.AccessTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdpConfig
 import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
+import com.sphereon.oauth2.jwt.validation.JwtValidationError
 import com.sphereon.oauth2.jwt.validation.JwtValidationErrorType
+import com.sphereon.oauth2.jwt.validation.OidcDiscoveryMetadata
+import com.sphereon.oauth2.jwt.validation.OidcDiscoveryService
 import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
 import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
 import com.sphereon.oauth2.server.resource.error.ResourceServerError
@@ -123,6 +126,7 @@ class DefaultJwtValidationServiceTest {
         strict: Boolean = true,
         defaultIdp: IdpConfig? = keycloakIdp,
         stub: StubVerifyJwtCommand,
+        discovery: OidcDiscoveryService = StubOidcDiscoveryService.conventionBased(),
     ): DefaultJwtValidationService {
         val tenantIdps =
             idps
@@ -136,8 +140,62 @@ class DefaultJwtValidationServiceTest {
                 strictIssuerMatching = strict,
             )
         val registry = DefaultIdpRegistry(config)
-        return DefaultJwtValidationService(verifyJwtCommand = stub, idpRegistry = registry)
+        return DefaultJwtValidationService(
+            verifyJwtCommand = stub,
+            idpRegistry = registry,
+            oidcDiscoveryService = discovery,
+        )
     }
+
+    @Test
+    fun testOidcIdpDiscoversJwksWhenUriIsAbsent() =
+        runTest {
+            val issuer = "https://tenant-as.example.com"
+            val discoveredJwksUri = "$issuer/keys/jwks.json"
+            val idp = IdpConfig.oidc(id = "tenant-as", issuer = issuer)
+            val token =
+                buildJwt(
+                    mapOf(
+                        "iss" to JsonPrimitive(issuer),
+                        "sub" to JsonPrimitive("service-client"),
+                    ),
+                )
+            val stub = StubVerifyJwtCommand.returning(token, Ok(jwtPayload(iss = issuer)))
+            val discovery = StubOidcDiscoveryService.returning(issuer, discoveredJwksUri)
+            val svc = service(defaultIdp = idp, stub = stub, discovery = discovery)
+
+            val result = svc.validateAccessToken(token)
+
+            assertTrue(result.isOk)
+            assertEquals(discoveredJwksUri, stub.lastArgs?.jwksUri)
+            assertEquals(1, discovery.invocationCount)
+        }
+
+    @Test
+    fun testOidcDiscoveryFailureDoesNotFallBackToManagedKmsLookup() =
+        runTest {
+            val issuer = "https://tenant-as.example.com"
+            val idp = IdpConfig.oidc(id = "tenant-as", issuer = issuer)
+            val token =
+                buildJwt(
+                    mapOf(
+                        "iss" to JsonPrimitive(issuer),
+                        "sub" to JsonPrimitive("service-client"),
+                    ),
+                )
+            val stub = StubVerifyJwtCommand.neverInvoked()
+            val discovery =
+                StubOidcDiscoveryService.failing(
+                    JwtValidationError.discoveryFailed(issuer, "metadata unavailable"),
+                )
+            val svc = service(defaultIdp = idp, stub = stub, discovery = discovery)
+
+            val result = svc.validateAccessToken(token)
+
+            assertTrue(result.isErr)
+            assertEquals(JwtValidationErrorType.DISCOVERY_FAILED, result.error.type)
+            assertEquals(0, stub.invocationCount)
+        }
 
     // ========== 1. Happy path access token ==========
 
@@ -651,7 +709,11 @@ class DefaultJwtValidationServiceTest {
                 )
             val registry = DefaultIdpRegistry(config)
             val svc =
-                DefaultJwtValidationService(verifyJwtCommand = stub, idpRegistry = registry)
+                DefaultJwtValidationService(
+                    verifyJwtCommand = stub,
+                    idpRegistry = registry,
+                    oidcDiscoveryService = StubOidcDiscoveryService.conventionBased(),
+                )
 
             val validations =
                 (1..10).map {
@@ -678,6 +740,55 @@ class DefaultJwtValidationServiceTest {
                 }
             }
         }
+}
+
+private class StubOidcDiscoveryService(
+    private val response: (String) -> IdkResult<OidcDiscoveryMetadata, JwtValidationError>,
+) : OidcDiscoveryService {
+    private val invocations = atomic(0)
+
+    val invocationCount: Int get() = invocations.value
+
+    override suspend fun discover(issuer: String): IdkResult<OidcDiscoveryMetadata, JwtValidationError> {
+        invocations.incrementAndGet()
+        return response(issuer)
+    }
+
+    override suspend fun getMetadata(issuer: String): IdkResult<OidcDiscoveryMetadata, JwtValidationError> = discover(issuer)
+
+    override suspend fun invalidateCache(issuer: String) = Unit
+
+    companion object {
+        fun conventionBased(): StubOidcDiscoveryService =
+            StubOidcDiscoveryService { issuer -> metadata(issuer, "${issuer.trimEnd('/')}/.well-known/jwks.json") }
+
+        fun returning(issuer: String, jwksUri: String): StubOidcDiscoveryService =
+            StubOidcDiscoveryService { requestedIssuer ->
+                if (requestedIssuer == issuer) {
+                    metadata(issuer, jwksUri)
+                } else {
+                    Err(JwtValidationError.discoveryFailed(requestedIssuer, "unexpected issuer"))
+                }
+            }
+
+        fun failing(error: JwtValidationError): StubOidcDiscoveryService =
+            StubOidcDiscoveryService { Err(error) }
+
+        private fun metadata(issuer: String, jwksUri: String): IdkResult<OidcDiscoveryMetadata, JwtValidationError> =
+            Ok(
+                OidcDiscoveryMetadata(
+                    issuer = issuer,
+                    jwksUri = jwksUri,
+                    authorizationEndpoint = null,
+                    tokenEndpoint = null,
+                    userinfoEndpoint = null,
+                    responseTypesSupported = null,
+                    subjectTypesSupported = null,
+                    idTokenSigningAlgValuesSupported = null,
+                    scopesSupported = null,
+                ),
+            )
+    }
 }
 
 /**

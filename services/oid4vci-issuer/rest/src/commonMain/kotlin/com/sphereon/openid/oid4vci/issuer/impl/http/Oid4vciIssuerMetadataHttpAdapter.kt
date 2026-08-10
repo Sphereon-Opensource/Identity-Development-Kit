@@ -18,13 +18,14 @@ package com.sphereon.openid.oid4vci.issuer.impl.http
 
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
-import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.RoutableSlugLookup
 import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.issuer.config.MutableOid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceResolver
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetIssuerMetadataEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.Oid4vciErrorRenderer
 import dev.zacsweers.metro.ContributesIntoSet
@@ -48,8 +49,10 @@ class Oid4vciIssuerMetadataHttpAdapter(
     execution: SessionExecution,
     slugLookup: RoutableSlugLookup,
     tenantIdProvider: MutableResolvedTenantIdProvider,
+    issuerInstanceResolver: Oid4vciIssuerInstanceResolver,
+    issuerInstanceIdProvider: MutableOid4vciIssuerInstanceIdProvider,
     private val getMetadataCommand: GetIssuerMetadataEndpointCommand,
-) : CommandBackedHttpAdapter(
+) : AbstractOid4vciIssuerHttpAdapter(
         id = ID,
         execution = execution,
         mount =
@@ -58,13 +61,13 @@ class Oid4vciIssuerMetadataHttpAdapter(
                 adapterBasePath = "",
             ),
         tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(maxDepth = 2),
-        errorRenderer = Oid4vciErrorRenderer(),
+        issuerInstanceResolver = issuerInstanceResolver,
+        issuerInstanceIdProvider = issuerInstanceIdProvider,
+        slugLookup = slugLookup,
+        tenantIdProvider = tenantIdProvider,
     ) {
-    override val routableSlugLookup: RoutableSlugLookup = slugLookup
-    override val resolvedTenantIdProvider: MutableResolvedTenantIdProvider = tenantIdProvider
-
     companion object {
-        const val ID: String = "OID4VCI_ISSUER_METADATA"
+        const val ID: String = "oid4vci.issuer-metadata.http"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

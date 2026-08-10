@@ -102,7 +102,6 @@ class DefaultTokenExchangePolicy : TokenExchangePolicy {
                 issuedTokenType = issuedTokenType,
                 grantedScope = downscope(request),
                 grantedAudience = request.requestedAudiences,
-                additionalClaims = authenticationContextClaims(request.subjectTokenClaims),
             ),
         )
     }
@@ -132,13 +131,6 @@ class DefaultTokenExchangePolicy : TokenExchangePolicy {
             .takeIf { it.isNotEmpty() }
             ?.joinToString(" ")
     }
-
-    private fun authenticationContextClaims(subjectClaims: Map<String, Any>): Map<String, Any> =
-        buildMap {
-            subjectClaims["acr"]?.let { put("acr", it) }
-            subjectClaims["amr"]?.let { put("amr", it) }
-            subjectClaims["auth_time"]?.let { put("auth_time", it) }
-        }
 
     @Suppress("UNCHECKED_CAST")
     private fun extractMayActSub(mayAct: Any): String? =

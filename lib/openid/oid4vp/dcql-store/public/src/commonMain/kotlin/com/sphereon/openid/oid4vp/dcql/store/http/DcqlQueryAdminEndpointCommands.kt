@@ -35,7 +35,7 @@ private const val DCQL_ADMIN_TAG = "oid4vp-dcql"
 @JsExportCompat
 interface ListDcqlQueriesEndpointCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.dcql.http.list"
+const val COMMAND_ID = "oid4vp.dcql-http.list"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
@@ -58,7 +58,7 @@ interface ListDcqlQueriesEndpointCommand : HttpEndpointCommand {
 @JsExportCompat
 interface CreateDcqlQueryEndpointCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.dcql.http.create"
+const val COMMAND_ID = "oid4vp.dcql-http.create"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
@@ -82,7 +82,7 @@ interface CreateDcqlQueryEndpointCommand : HttpEndpointCommand {
 @JsExportCompat
 interface GetDcqlQueryEndpointCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.dcql.http.get"
+const val COMMAND_ID = "oid4vp.dcql-http.get"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
@@ -105,7 +105,7 @@ interface GetDcqlQueryEndpointCommand : HttpEndpointCommand {
 @JsExportCompat
 interface ReplaceDcqlQueryEndpointCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.dcql.http.replace"
+const val COMMAND_ID = "oid4vp.dcql-http.replace"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
@@ -129,7 +129,7 @@ interface ReplaceDcqlQueryEndpointCommand : HttpEndpointCommand {
 @JsExportCompat
 interface PatchDcqlQueryEndpointCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.dcql.http.patch"
+const val COMMAND_ID = "oid4vp.dcql-http.patch"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
@@ -153,7 +153,7 @@ interface PatchDcqlQueryEndpointCommand : HttpEndpointCommand {
 @JsExportCompat
 interface DeleteDcqlQueryEndpointCommand : HttpEndpointCommand {
     companion object {
-        const val COMMAND_ID = "oid4vp.dcql.http.delete"
+const val COMMAND_ID = "oid4vp.dcql-http.delete"
 
         val ENDPOINT =
             HttpEndpointDescriptor(

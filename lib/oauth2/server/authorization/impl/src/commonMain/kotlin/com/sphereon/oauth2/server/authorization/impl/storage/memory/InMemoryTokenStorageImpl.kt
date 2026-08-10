@@ -29,6 +29,7 @@ import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.atomicfu.locks.synchronized
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
@@ -159,7 +160,8 @@ class InMemoryTokenStorageImpl(
         data: RefreshTokenData,
     ): IdkResult<Unit, AuthorizationServerError.StorageError> =
         try {
-            partition.refreshTokens[token] = data
+            val current = partition
+            synchronized(current) { current.refreshTokens[token] = data }
             Ok(Unit)
         } catch (expected: Exception) {
             Err(
@@ -173,7 +175,8 @@ class InMemoryTokenStorageImpl(
 
     override suspend fun getRefreshToken(token: String): IdkResult<RefreshTokenData?, AuthorizationServerError.StorageError> =
         try {
-            Ok(partition.refreshTokens[token])
+            val current = partition
+            Ok(synchronized(current) { current.refreshTokens[token] })
         } catch (expected: Exception) {
             Err(
                 AuthorizationServerError.StorageError(
@@ -189,27 +192,56 @@ class InMemoryTokenStorageImpl(
         revoke: Boolean,
     ): IdkResult<RefreshTokenData?, AuthorizationServerError.StorageError> =
         try {
-            val existing = partition.refreshTokens[token]
-            if (existing != null) {
-                val updated =
-                    existing.copy(
-                        used = true,
-                        revoked =
-                            if (revoke) {
-                                true
-                            } else {
-                                existing.revoked
-                            },
-                    )
-                partition.refreshTokens[token] = updated
-                Ok(updated)
-            } else {
-                Ok(null)
-            }
+            val current = partition
+            Ok(
+                synchronized(current) {
+                    val existing = current.refreshTokens[token] ?: return@synchronized null
+                    val updated =
+                        existing.copy(
+                            used = true,
+                            revoked = if (revoke) true else existing.revoked,
+                        )
+                    current.refreshTokens[token] = updated
+                    updated
+                },
+            )
         } catch (expected: Exception) {
             Err(
                 AuthorizationServerError.StorageError(
                     operation = "consumeRefreshToken",
+                    details = expected.message ?: "Unknown error",
+                    exception = expected,
+                ),
+            )
+        }
+
+    override suspend fun rotateRefreshToken(
+        token: String,
+        replacementRefreshToken: String,
+        rotatedAt: kotlin.time.Instant,
+    ): IdkResult<RefreshTokenData?, AuthorizationServerError.StorageError> =
+        try {
+            val current = partition
+            Ok(
+                synchronized(current) {
+                    val existing = current.refreshTokens[token] ?: return@synchronized null
+                    if (existing.replacementRefreshToken != null) {
+                        existing
+                    } else {
+                        existing
+                            .copy(
+                                used = true,
+                                revoked = true,
+                                rotatedAt = rotatedAt,
+                                replacementRefreshToken = replacementRefreshToken,
+                            ).also { current.refreshTokens[token] = it }
+                    }
+                },
+            )
+        } catch (expected: Exception) {
+            Err(
+                AuthorizationServerError.StorageError(
+                    operation = "rotateRefreshToken",
                     details = expected.message ?: "Unknown error",
                     exception = expected,
                 ),

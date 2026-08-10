@@ -1,0 +1,137 @@
+diff --git a/src/main/java/net/openid/conformance/vci10wallet/VCICredentialIssuerMetadataBuilder.java b/src/main/java/net/openid/conformance/vci10wallet/VCICredentialIssuerMetadataBuilder.java
+index 3dfd0eca..ac43aad6 100644
+--- a/src/main/java/net/openid/conformance/vci10wallet/VCICredentialIssuerMetadataBuilder.java
++++ b/src/main/java/net/openid/conformance/vci10wallet/VCICredentialIssuerMetadataBuilder.java
+@@ -19,7 +19,7 @@ import java.util.Map;
+  * <p>The builder writes a number of derived URLs into the supplied {@link Environment}
+  * for downstream conditions to read:
+  * <ul>
+- *   <li>{@code credential_issuer} — base URL with trailing slash</li>
++ *   <li>{@code credential_issuer} — canonical base URL without trailing slash</li>
+  *   <li>{@code credential_issuer_metadata_url} — well-known URL (path-suffix style)</li>
+  *   <li>{@code credential_issuer_credential_endpoint_url}</li>
+  *   <li>{@code credential_issuer_nonce_endpoint_url}</li>
+@@ -91,15 +91,10 @@ public final class VCICredentialIssuerMetadataBuilder {
+ 			throw new IllegalStateException("Base MTLS URL is empty");
+ 		}
+ 
+-		if (!baseUrl.endsWith("/")) {
+-			baseUrl = baseUrl + "/";
+-		}
+-		if (!mtlsBaseUrl.endsWith("/")) {
+-			mtlsBaseUrl = mtlsBaseUrl + "/";
+-		}
+-
+-		String credentialIssuer = baseUrl;
+-		String resourcesBase = config.useMtlsForResources ? mtlsBaseUrl : baseUrl;
++		String credentialIssuer = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
++		String endpointBase = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
++		String mtlsEndpointBase = mtlsBaseUrl.endsWith("/") ? mtlsBaseUrl : mtlsBaseUrl + "/";
++		String resourcesBase = config.useMtlsForResources ? mtlsEndpointBase : endpointBase;
+ 		String credentialEndpointUrl = resourcesBase + config.credentialPath;
+ 		String nonceEndpointUrl = resourcesBase + config.noncePath;
+ 		// Deferred URL is only kept when deferred issuance is enabled; the path may be null
+@@ -180,7 +175,8 @@ public final class VCICredentialIssuerMetadataBuilder {
+ 	 * https://github.com/openid/OpenID4VCI/issues/744.
+ 	 */
+ 	public static String generateCredentialIssuerMetadataUrl(String credentialIssuer) {
+-		URI serverIssuerUri = URI.create(credentialIssuer);
++		String canonicalCredentialIssuer = credentialIssuer.endsWith("/") ? credentialIssuer.substring(0, credentialIssuer.length() - 1) : credentialIssuer;
++		URI serverIssuerUri = URI.create(canonicalCredentialIssuer);
+ 		String serverIssuerPath = serverIssuerUri.getPath();
+ 		String wellKnownBaseUrl = serverIssuerUri.getScheme() + "://" + serverIssuerUri.getAuthority() + "/.well-known";
+ 		return wellKnownBaseUrl + "/openid-credential-issuer" + serverIssuerPath;
+diff --git a/src/main/java/net/openid/conformance/vci10wallet/condition/VCICheckIssuerMetadataRequestUrl.java b/src/main/java/net/openid/conformance/vci10wallet/condition/VCICheckIssuerMetadataRequestUrl.java
+index ce7a6648..d1e31fed 100644
+--- a/src/main/java/net/openid/conformance/vci10wallet/condition/VCICheckIssuerMetadataRequestUrl.java
++++ b/src/main/java/net/openid/conformance/vci10wallet/condition/VCICheckIssuerMetadataRequestUrl.java
+@@ -14,7 +14,7 @@ public class VCICheckIssuerMetadataRequestUrl extends AbstractCondition {
+ 
+ 		String serverIssuer = env.getString("server", "issuer");
+ 		URI serverIssuerUri = URI.create(serverIssuer);
+-		String serverIssuerPath = serverIssuerUri.getPath();
++		String serverIssuerPath = removeTerminatingSlash(serverIssuerUri.getPath());
+ 
+ 		String expectedPath = "/.well-known/openid-credential-issuer" + serverIssuerPath;
+ 		URI requestUri = URI.create(requestUrl);
+@@ -26,4 +26,11 @@ public class VCICheckIssuerMetadataRequestUrl extends AbstractCondition {
+ 		logSuccess("Issuer metadata request is for correct URL", args("request_url", requestUrl));
+ 		return env;
+ 	}
++
++	private static String removeTerminatingSlash(String path) {
++		if (path != null && path.endsWith("/")) {
++			return path.substring(0, path.length() - 1);
++		}
++		return path;
++	}
+ }
+diff --git a/src/test/java/net/openid/conformance/vci10wallet/VCICredentialIssuerMetadataBuilder_UnitTest.java b/src/test/java/net/openid/conformance/vci10wallet/VCICredentialIssuerMetadataBuilder_UnitTest.java
+index 1b87d6fa..3e886ef9 100644
+--- a/src/test/java/net/openid/conformance/vci10wallet/VCICredentialIssuerMetadataBuilder_UnitTest.java
++++ b/src/test/java/net/openid/conformance/vci10wallet/VCICredentialIssuerMetadataBuilder_UnitTest.java
+@@ -49,4 +49,22 @@ public class VCICredentialIssuerMetadataBuilder_UnitTest {
+ 
+ 		assertFalse(metadata.has("batch_credential_issuance"));
+ 	}
++
++	@Test
++	public void testBuild_canonicalizesCredentialIssuerButKeepsEndpointBaseSlash() {
++		env.putString("base_url", "https://issuer.example.com/test/a/abc/");
++
++		JsonObject metadata = VCICredentialIssuerMetadataBuilder.buildCredentialIssuerMetadata(env, config(null));
++
++		assertEquals("https://issuer.example.com/test/a/abc", metadata.get("credential_issuer").getAsString());
++		assertEquals("https://issuer.example.com/test/a/abc/credential", metadata.get("credential_endpoint").getAsString());
++		assertEquals("https://issuer.example.com/test/a/abc/nonce", metadata.get("nonce_endpoint").getAsString());
++	}
++
++	@Test
++	public void testGenerateCredentialIssuerMetadataUrl_canonicalizesTrailingSlash() {
++		assertEquals(
++			"https://issuer.example.com/.well-known/openid-credential-issuer/test/a/abc",
++			VCICredentialIssuerMetadataBuilder.generateCredentialIssuerMetadataUrl("https://issuer.example.com/test/a/abc/"));
++	}
+ }
+diff --git a/src/test/java/net/openid/conformance/vci10wallet/condition/VCICheckIssuerMetadataRequestUrl_UnitTest.java b/src/test/java/net/openid/conformance/vci10wallet/condition/VCICheckIssuerMetadataRequestUrl_UnitTest.java
+index 143aa208..abc1cf7e 100644
+--- a/src/test/java/net/openid/conformance/vci10wallet/condition/VCICheckIssuerMetadataRequestUrl_UnitTest.java
++++ b/src/test/java/net/openid/conformance/vci10wallet/condition/VCICheckIssuerMetadataRequestUrl_UnitTest.java
+@@ -45,22 +45,18 @@ public class VCICheckIssuerMetadataRequestUrl_UnitTest {
+ 	}
+ 
+ 	@Test
+-	public void passesWhenIssuerHasTrailingSlashAndRequestKeepsIt() {
+-		// OID4VCI 1.0 Final section 12.2.2 specifies that the well-known suffix is
+-		// inserted between the host and path components of the Credential Issuer
+-		// Identifier; the path is preserved verbatim, so a trailing "/" on the
+-		// identifier is also present on the well-known URL.
++	public void passesWhenIssuerHasTrailingSlashAndRequestStripsIt() {
++		// RFC8414 removes any terminating slash from the issuer before inserting the
++		// well-known suffix. OID4VCI issue 744 tracks restoring this rule explicitly.
+ 		setServerIssuer("https://example.com/tenant/");
+-		setIncomingRequestUrl("https://example.com/.well-known/openid-credential-issuer/tenant/");
++		setIncomingRequestUrl("https://example.com/.well-known/openid-credential-issuer/tenant");
+ 		assertDoesNotThrow(() -> cond.execute(env));
+ 	}
+ 
+ 	@Test
+-	public void failsWhenIssuerHasTrailingSlashAndRequestStripsIt() {
+-		// Stripping the trailing "/" diverges from the verbatim insert specified in
+-		// section 12.2.2. (See https://github.com/openid/OpenID4VCI/issues/744.)
++	public void failsWhenIssuerHasTrailingSlashAndRequestKeepsIt() {
+ 		setServerIssuer("https://example.com/tenant/");
+-		setIncomingRequestUrl("https://example.com/.well-known/openid-credential-issuer/tenant");
++		setIncomingRequestUrl("https://example.com/.well-known/openid-credential-issuer/tenant/");
+ 		assertThrows(ConditionError.class, () -> cond.execute(env));
+ 	}
+ 
+@@ -74,7 +70,7 @@ public class VCICheckIssuerMetadataRequestUrl_UnitTest {
+ 	@Test
+ 	public void passesForRealWorldDeepPath() {
+ 		setServerIssuer("https://demo.certification.openid.net/test/a/mymahi-staging-openid4vci-wallet-test/");
+-		setIncomingRequestUrl("https://demo.certification.openid.net/.well-known/openid-credential-issuer/test/a/mymahi-staging-openid4vci-wallet-test/");
++		setIncomingRequestUrl("https://demo.certification.openid.net/.well-known/openid-credential-issuer/test/a/mymahi-staging-openid4vci-wallet-test");
+ 		assertDoesNotThrow(() -> cond.execute(env));
+ 	}
+ 

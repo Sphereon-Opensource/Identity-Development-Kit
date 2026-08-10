@@ -37,22 +37,22 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Graph accessor so the test can pull the SD-JWT DC format handler out of SessionScope.
+ * Graph accessor so the test can pull the IETF SD-JWT VC format handler out of SessionScope.
  */
 @ContributesTo(SessionScope::class)
 interface SdJwtVcFormatHandlerTestGraph {
-    val sdJwtDcFormatHandler:
-        com.sphereon.openid.oid4vci.issuer.impl.format.SdJwtDcFormatHandler
+    val sdJwtVcFormatHandler:
+        com.sphereon.openid.oid4vci.issuer.impl.format.SdJwtVcFormatHandler
 }
 
 /**
  * Locks in draft-ietf-oauth-sd-jwt-vc §3.1: the SD-JWT VC's JWT protected header MUST
- * carry `typ: dc+sd-jwt` (or `vc+sd-jwt` for the legacy profile, when the credential
- * configuration declares format `vc+sd-jwt`). Without it, spec-compliant wallets
- * (e.g. credo-ts `SdJwtVcService.ts:339-341`) reject the credential.
+ * `dc+sd-jwt` identifies IETF SD-JWT VC, while `vc+sd-jwt` identifies a W3C VCDM
+ * credential secured using SD-JWT. These identifiers are distinct, not aliases.
  */
 class SdJwtVcTypHeaderE2ETest {
     private val ctx = Oid4vciTestContext(this, protocolBasePath = "/oid4vci")
@@ -70,7 +70,7 @@ class SdJwtVcTypHeaderE2ETest {
         keyAlias: String
     ): String {
         val graph = ctx.session.graph as SdJwtVcFormatHandlerTestGraph
-        val handler: CredentialFormatHandler = graph.sdJwtDcFormatHandler
+        val handler: CredentialFormatHandler = graph.sdJwtVcFormatHandler
         val kms =
             ctx.session.graph
                 .asKeyManagerServiceGraph()
@@ -130,7 +130,7 @@ class SdJwtVcTypHeaderE2ETest {
     @Test
     fun dcSdJwtFormatProducesDcHeaderType() =
         runTest {
-            val sdJwt = issue(format = CredentialFormat.SD_JWT_DC.value, keyAlias = "typ-test-dc")
+            val sdJwt = issue(format = CredentialFormat.SD_JWT_VC.value, keyAlias = "typ-test-dc")
             val header = decodeHeader(sdJwt)
             assertEquals(
                 "dc+sd-jwt",
@@ -140,21 +140,22 @@ class SdJwtVcTypHeaderE2ETest {
         }
 
     @Test
-    fun vcSdJwtFormatProducesVcHeaderType() =
+    fun dcHandlerDoesNotClaimW3cVcSdJwtFormat() =
         runTest {
-            val sdJwt = issue(format = CredentialFormat.SD_JWT_VC.value, keyAlias = "typ-test-vc")
-            val header = decodeHeader(sdJwt)
-            assertEquals(
-                "vc+sd-jwt",
-                header["typ"]?.jsonPrimitive?.content,
-                "Format `vc+sd-jwt` must produce JWT header `typ: vc+sd-jwt` per SD-JWT VC §3.1",
+            val handler = (ctx.session.graph as SdJwtVcFormatHandlerTestGraph).sdJwtVcFormatHandler
+            assertFalse(
+                handler.canHandle(
+                    request = com.sphereon.openid.oid4vci.common.model.CredentialRequest(format = CredentialFormat.W3C_VC_SD_JWT.value),
+                    configuration = CredentialConfigurationSupported(format = CredentialFormat.W3C_VC_SD_JWT.value),
+                ),
+                "The IETF SD-JWT VC handler must not treat W3C `vc+sd-jwt` as a `dc+sd-jwt` alias",
             )
         }
 
     @Test
     fun didJwkSigningModeAlsoSetsKidInHeader() =
         runTest {
-            val sdJwt = issue(format = CredentialFormat.SD_JWT_DC.value, keyAlias = "typ-test-kid")
+            val sdJwt = issue(format = CredentialFormat.SD_JWT_VC.value, keyAlias = "typ-test-kid")
             val header = decodeHeader(sdJwt)
             assertTrue(
                 header["typ"] != null,

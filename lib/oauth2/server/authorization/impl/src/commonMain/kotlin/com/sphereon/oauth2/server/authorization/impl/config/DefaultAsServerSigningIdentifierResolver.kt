@@ -96,10 +96,17 @@ class DefaultAsServerSigningIdentifierResolver(
         // ACTIVE key is present the deployment is unprovisioned/misconfigured (or — before the
         // resolution fix — the session resolved the wrong tenant): fail closed instead of
         // self-seeding a key or letting the mint silently fall back to an opaque token.
+        val activeResult = signingKeyStore.getActive(tenantId)
+        if (activeResult.isErr) {
+            throw IllegalStateException(
+                "OAuth2 signing-key store lookup failed for tenant '$tenantId': ${activeResult.error}",
+            )
+        }
         val active =
-            signingKeyStore.getActive(tenantId).let { if (it.isOk) it.value else null }
-                ?: throw IllegalStateException(
-                    "No ACTIVE OAuth2 signing key provisioned for tenant '$tenantId'. Provision it at tenant " +
+            activeResult.value
+                ?: throw OAuth2SigningKeyUnavailableException(
+                    tenantId = tenantId,
+                    message = "No ACTIVE OAuth2 signing key provisioned for tenant '$tenantId'. Provision it at tenant " +
                         "registration ('signing-key.auto-generate') or via SigningKeyStore.register; the AS does " +
                         "NOT self-seed signing keys.",
                 )
@@ -107,6 +114,18 @@ class DefaultAsServerSigningIdentifierResolver(
         return ManagedOptsKeyInfo(identifier = active.keyInfo)
     }
 }
+
+/**
+ * Expected fail-closed state while an authorization server has not been provisioned yet.
+ *
+ * Keeping this distinct from an arbitrary store or KMS failure lets the token command return the
+ * RFC 6749 `temporarily_unavailable` response during first-run bootstrap instead of escaping the
+ * command boundary as an endpoint exception and filling the platform log with stack traces.
+ */
+class OAuth2SigningKeyUnavailableException(
+    val tenantId: String,
+    message: String,
+) : IllegalStateException(message)
 
 /**
  * Resolve the tenant whose signing key this session mints with. There is NO `"default"`/anonymous

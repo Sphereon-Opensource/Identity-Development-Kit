@@ -708,8 +708,9 @@ class SoftwareKmsProviderImpl(
         var certChain: Array<Certificate>? = null
 
         // If certificate options are provided use them, otherwise see if we need to create a self signed cert and use the alias as CN
+        val supportsCertificate = keyType == KeyTypeMapping.EC || keyType == KeyTypeMapping.RSA
         val certOpts =
-            certificateOptions ?: if (!config.autoCreateCertificate) {
+            certificateOptions ?: if (!config.autoCreateCertificate || !supportsCertificate) {
                 null
             } else {
                 CertificateOptions(
@@ -738,6 +739,13 @@ class SoftwareKmsProviderImpl(
             keyInfo = certResult.certificate.amendJwkKeyInfo(keyInfo)
         }
 
+        // The certificate is persisted with the key above, but callers receive the generated
+        // pair, not the internal key-info object. Keep the public return value coherent with the
+        // persisted entry: downstream public-material caches must retain x5c rather than freezing
+        // the bare JWK that existed before automatic certificate creation.
+        val returnedPublicJwk = publicJwk.copy(kid = kid, x5c = keyInfo.x5c)
+        val returnedPrivateJwk = privateJwk.copy(kid = kid, x5c = keyInfo.x5c)
+
         val managedKeyPair =
             ManagedKeyPair(
                 providerId = id,
@@ -746,11 +754,11 @@ class SoftwareKmsProviderImpl(
                 jose =
                     JoseKeyPair(
                         if (config.exposePrivateKeysDuringGeneration) {
-                            privateJwk.copy(kid = kid)
+                            returnedPrivateJwk
                         } else {
                             null
                         },
-                        publicJwk.copy(kid = kid)
+                        returnedPublicJwk,
                     ),
                 cose =
                     CoseKeyPair(
@@ -1114,7 +1122,9 @@ class SoftwareKmsProviderImpl(
         keyDataLen: Int?,
     ): ByteArray {
         log.debug("Performing ECDH key agreement with algorithm: ${algorithm.identifier}")
-        return performKeyAgreementWithNativeKey(privateKeyInfo, publicKeyInfo, algorithm.identifier)
+        val resolvedPrivateKeyInfo = resolveKeyIfNeeded(privateKeyInfo)
+        val resolvedPublicKeyInfo = resolvePublicKeyIfNeeded(publicKeyInfo)
+        return performKeyAgreementWithNativeKey(resolvedPrivateKeyInfo, resolvedPublicKeyInfo, algorithm.identifier)
     }
 
     override suspend fun ecdhDerive(
@@ -1340,8 +1350,12 @@ class SoftwareKmsProviderImpl(
                 .getOrElse { aliasFailure ->
                     runCatching { keyStore.getKey(KeyInfo<Jwk>(kid = keyId)) }
                         .getOrElse { kidFailure ->
-                            kidFailure.addSuppressed(aliasFailure)
-                            throw kidFailure
+                            throw IllegalArgumentException(
+                                "HMAC key '$keyId' could not be resolved by provider '$id': " +
+                                    "alias lookup failed: ${aliasFailure.message}; " +
+                                    "kid lookup failed: ${kidFailure.message}",
+                                kidFailure,
+                            ).also { it.addSuppressed(aliasFailure) }
                         }
                 }
         val jwk =

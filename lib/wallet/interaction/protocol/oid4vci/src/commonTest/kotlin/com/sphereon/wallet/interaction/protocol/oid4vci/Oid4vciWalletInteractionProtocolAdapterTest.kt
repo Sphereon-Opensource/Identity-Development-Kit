@@ -23,6 +23,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.common.model.KeyAttestationsRequired
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
+import com.sphereon.openid.oid4vci.holder.AttestationChallengeResponse
 import com.sphereon.openid.oid4vci.common.model.PreAuthorizedCodeOfferGrant
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.common.model.RequestedCredentialResponseEncryption
@@ -38,6 +39,7 @@ import com.sphereon.openid.oid4vci.holder.TokenResponseWithContext
 import com.sphereon.openid.oid4vc.common.DisplayProperties
 import com.sphereon.openid.oid4vc.common.LogoProperties
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
+import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.oauth2.common.model.ClientAssertion
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.wallet.credential.BodyStorageKind
@@ -80,7 +82,7 @@ import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActionType
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
@@ -107,7 +109,9 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -120,11 +124,108 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
     @Test
     fun credentialOfferLinksAreStrongMatches() =
         runTest {
-            val adapter = Oid4vciWalletInteractionProtocolAdapter()
+            val adapter = Oid4vciWalletInteractionProtocolAdapter(issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured)
 
             val match = adapter.canHandle(WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret"))
 
             assertEquals(WalletProtocolMatchStrength.STRONG, match.strength)
+        }
+
+    @Test
+    fun walletInitiatedIssuanceIsClaimedAndConvertedToAnAuthorizationCodeOffer() =
+        runTest {
+            val holder = RecordingOid4vciHolderService()
+            val adapter =
+                Oid4vciWalletInteractionProtocolAdapter(
+                    holder = holder,
+                    issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured,
+                )
+            val entryPoint =
+                WalletEntryPoint.parsed(
+                    type = Oid4vciWalletInteractionProtocolAdapter.ISSUE_PARSED_TYPE,
+                    value =
+                        buildJsonObject {
+                            put("credentialIssuer", "https://issuer.example")
+                            put(
+                                "credentialConfigurationIds",
+                                kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("pid"))),
+                            )
+                        },
+                    source = "wallet",
+                )
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("s-wallet-initiated"),
+                    walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                )
+
+            val match = adapter.canHandle(entryPoint)
+            adapter.start(context, entryPoint)
+
+            assertEquals(WalletProtocolMatchStrength.STRONG, match.strength)
+            val parsedOffer = Json.decodeFromString<CredentialOffer>(requireNotNull(holder.lastRawOffer))
+            assertEquals("https://issuer.example", parsedOffer.credentialIssuer)
+            assertEquals(listOf("pid"), parsedOffer.credentialConfigurationIds)
+            assertNotNull(parsedOffer.grants?.authorizationCode)
+        }
+
+    @Test
+    fun malformedWalletInitiatedIssuanceFailsWithTypedError() =
+        runTest {
+            val adapter = Oid4vciWalletInteractionProtocolAdapter(issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured)
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("s-wallet-initiated-invalid"),
+                    walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                )
+            val entryPoint =
+                WalletEntryPoint.parsed(
+                    type = Oid4vciWalletInteractionProtocolAdapter.ISSUE_PARSED_TYPE,
+                    value = buildJsonObject { put("credentialIssuer", "https://issuer.example") },
+                    source = "wallet",
+                )
+
+            val session = adapter.start(context, entryPoint)
+
+            assertEquals(WalletInteractionStatus.Failed, session.state.status)
+            assertEquals("oid4vci.wallet_initiated_input_invalid", session.state.error?.code)
+            assertTrue(session.state.terminal)
+        }
+
+    @Test
+    fun digitalCredentialCreateRequestIsClaimedAndParsedAsCredentialOffer() =
+        runTest {
+            val holder = RecordingOid4vciHolderService()
+            val adapter =
+                Oid4vciWalletInteractionProtocolAdapter(
+                    holder = holder,
+                    issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured,
+                )
+            val entryPoint =
+                WalletEntryPoint.parsed(
+                    type = Oid4vciWalletInteractionProtocolAdapter.DIGITAL_CREDENTIAL_PROTOCOL,
+                    value =
+                        buildJsonObject {
+                            put("credential_issuer", JsonPrimitive("https://issuer.example"))
+                            put("credential_configuration_ids", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("pid"))))
+                            put("credential_issuer_metadata", buildJsonObject { put("credential_issuer", JsonPrimitive("https://issuer.example")) })
+                        },
+                )
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("s-dc-api"),
+                    walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                )
+
+            val match = adapter.canHandle(entryPoint)
+            adapter.start(context, entryPoint)
+
+            assertEquals(WalletProtocolMatchStrength.STRONG, match.strength)
+            assertTrue(requireNotNull(holder.lastRawOffer).startsWith("{"))
+            assertTrue(requireNotNull(holder.lastRawOffer).contains("credential_issuer_metadata"))
         }
 
     @Test
@@ -148,12 +249,16 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             ),
                         ),
                 )
-            val adapter = Oid4vciWalletInteractionProtocolAdapter(holder = RecordingOid4vciHolderService(metadata = metadata))
+            val adapter =
+                Oid4vciWalletInteractionProtocolAdapter(
+                    holder = RecordingOid4vciHolderService(metadata = metadata),
+                    issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured,
+                )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("issuer-branding"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = RecordingPrivateSessionStore(),
                 )
 
@@ -202,14 +307,18 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                         return WalletCounterpartyTrustSummary(input.counterparty, WalletTrustStatus.UNKNOWN)
                     }
                 }
-            val adapter = Oid4vciWalletInteractionProtocolAdapter(holder = RecordingOid4vciHolderService())
+            val adapter =
+                Oid4vciWalletInteractionProtocolAdapter(
+                    holder = RecordingOid4vciHolderService(),
+                    issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured,
+                )
 
             val first =
                 adapter.start(
                     WalletInteractionContext(
                         sessionId = WalletInteractionSessionId("first"),
                         walletUnitId = "wallet",
-                        executionMode = WalletInteractionExecutionMode.LOCAL,
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
                         counterpartyEncounterRegistry = encounterRegistry,
                         trustResolver = trustResolver,
                         trustPolicy = WalletTrustPolicy.allow,
@@ -221,7 +330,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                     WalletInteractionContext(
                         sessionId = WalletInteractionSessionId("returning"),
                         walletUnitId = "wallet",
-                        executionMode = WalletInteractionExecutionMode.LOCAL,
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
                         counterpartyEncounterRegistry = encounterRegistry,
                         trustResolver = trustResolver,
                         trustPolicy = WalletTrustPolicy.allow,
@@ -279,11 +388,15 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("issuer-association"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     counterpartyEncounterRegistry = encounterRegistry,
                     trustPolicy = WalletTrustPolicy.allow,
                 )
-            val adapter = Oid4vciWalletInteractionProtocolAdapter(holder = RecordingOid4vciHolderService())
+            val adapter =
+                Oid4vciWalletInteractionProtocolAdapter(
+                    holder = RecordingOid4vciHolderService(),
+                    issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured,
+                )
 
             val started =
                 adapter.start(
@@ -334,11 +447,15 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("new-issuer-without-candidates"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     counterpartyEncounterRegistry = encounterRegistry,
                     trustPolicy = WalletTrustPolicy.allow,
                 )
-            val adapter = Oid4vciWalletInteractionProtocolAdapter(holder = RecordingOid4vciHolderService())
+            val adapter =
+                Oid4vciWalletInteractionProtocolAdapter(
+                    holder = RecordingOid4vciHolderService(),
+                    issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured,
+                )
             val started = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=new-issuer")).state
 
             assertEquals(WalletInteractionStatus.CounterpartyNotice, started.status)
@@ -360,7 +477,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
     @Test
     fun startProjectsUiSafeOfferState() =
         runTest {
-            val adapter = Oid4vciWalletInteractionProtocolAdapter()
+            val adapter = Oid4vciWalletInteractionProtocolAdapter(issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured)
             val privateStore = RecordingPrivateSessionStore()
             val rawOffer = "openid-credential-offer://?credential_offer=pre-authorized_code-secret"
             val session =
@@ -368,7 +485,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                     WalletInteractionContext(
                         sessionId = WalletInteractionSessionId("s1"),
                         walletUnitId = "wallet",
-                        executionMode = WalletInteractionExecutionMode.LOCAL,
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
                         privateSessionStore = privateStore,
                     ),
                     WalletEntryPoint.rawQr(rawOffer),
@@ -382,14 +499,14 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
         }
 
     @Test
-    fun continueWithoutIssuanceExecutorDoesNotPretendCredentialWasReceived() =
+    fun explicitUnavailableIssuanceExecutorDoesNotPretendCredentialWasReceived() =
         runTest {
-            val adapter = Oid4vciWalletInteractionProtocolAdapter()
+            val adapter = Oid4vciWalletInteractionProtocolAdapter(issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured)
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x"))
 
@@ -411,7 +528,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.SPLIT,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     securityGate = securityGate,
                     attributes =
                         mapOf(
@@ -450,7 +567,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x"))
@@ -480,7 +597,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x"))
 
@@ -495,7 +612,8 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
     fun holderIssuanceExecutorRequestsCredentialAndKeepsSecretsPrivate() =
         runTest {
             val privateStore = RecordingPrivateSessionStore()
-            val holder = RecordingOid4vciHolderService()
+            val dpopProofsProvider = RecordingDeferredDpopProofsProvider()
+            val holder = RecordingOid4vciHolderService(notificationEndpointDpopNonceChallenge = "notification-dpop-nonce")
             val receiver = RecordingCredentialResponseReceiver()
             val adapter =
                 Oid4vciWalletInteractionProtocolAdapter(
@@ -506,17 +624,19 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                             optionsProvider = StaticIssuanceOptionsProvider(),
                             credentialReceiver = receiver,
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                             credentialStore = RecordingWalletCredentialStore(existingRecord = null),
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
                             keyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported,
+                            tokenEndpointProofsProvider = dpopProofsProvider,
                         ),
                 )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
@@ -528,11 +648,63 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
             assertEquals(null, holder.exchangedTxCode)
             assertEquals("access-token-secret", holder.requestedAccessToken)
             assertEquals(CredentialNotificationEvent.CREDENTIAL_ACCEPTED, holder.notificationEvent)
+            assertEquals(
+                listOf<String?>("notification-dpop-initial", "notification-dpop-nonce-notification-dpop-nonce"),
+                holder.notificationDpopProofJwtHistory,
+            )
+            assertEquals("https://issuer.example/notification", dpopProofsProvider.requestedUrls.last())
+            assertEquals("notification-dpop-nonce", dpopProofsProvider.requestedNonces.last())
             assertEquals("credential-secret", receiver.receivedCredentialValue)
             assertFalse(encoded.contains("tx-secret"))
             assertFalse(encoded.contains("access-token-secret"))
             assertFalse(encoded.contains("proof-secret"))
             assertFalse(encoded.contains("credential-secret"))
+        }
+
+    @Test
+    fun holderIssuanceExecutorUsesExactMetadataCredentialIssuerIdentifierForProofAudience() =
+        runTest {
+            val metadataIssuer = "https://issuer.example/tenant"
+            val holder =
+                RecordingOid4vciHolderService(
+                    offer =
+                        RecordingOid4vciHolderService
+                            .preAuthorizedOffer()
+                            .copy(credentialIssuer = "$metadataIssuer/"),
+                    metadata =
+                        RecordingOid4vciHolderService
+                            .issuerMetadata()
+                            .copy(credentialIssuer = metadataIssuer),
+                )
+            val adapter =
+                Oid4vciWalletInteractionProtocolAdapter(
+                    holder = holder,
+                    issuanceExecutor =
+                        Oid4vciHolderIssuanceExecutor(
+                            holder = holder,
+                            credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
+                            optionsProvider = StaticIssuanceOptionsProvider(),
+                            credentialReceiver = RecordingCredentialResponseReceiver(),
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
+                            credentialStore = RecordingWalletCredentialStore(existingRecord = null),
+                            issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
+                            refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
+                            keyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported,
+                        ),
+                )
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("s1"),
+                    walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                    privateSessionStore = RecordingPrivateSessionStore(),
+                )
+
+            val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
+            val result = adapter.handle(context, session.state, session.state.acceptOfferAction())
+
+            assertEquals(WalletInteractionStatus.Completed, result.status)
+            assertEquals(metadataIssuer, holder.receivedCredentialProofIssuerUrl)
         }
 
     // ---------------------------------------------------------------------------------------
@@ -560,13 +732,14 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
                             keyAttestationProvider = keyAttestationProvider,
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                         ),
                 )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = RecordingPrivateSessionStore(),
                 )
 
@@ -599,13 +772,14 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
                             keyAttestationProvider = keyAttestationProvider,
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                         ),
                 )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = RecordingPrivateSessionStore(),
                 )
 
@@ -630,6 +804,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                             optionsProvider = StaticIssuanceOptionsProvider(),
                             credentialReceiver = receiver,
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                             credentialStore = RecordingWalletCredentialStore(existingRecord = null),
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -640,7 +815,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = RecordingPrivateSessionStore(),
                 )
 
@@ -694,6 +869,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                                         ),
                                     credentialDpopProof = "credential-dpop.jwt",
                                 ),
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                             credentialStore = RecordingWalletCredentialStore(existingRecord = null),
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -704,7 +880,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
@@ -738,6 +914,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             optionsProvider = StaticIssuanceOptionsProvider(),
                             credentialReceiver = receiver,
                             tokenEndpointProofsProvider = tokenProofsProvider,
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                             credentialStore = RecordingWalletCredentialStore(existingRecord = null),
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -748,7 +925,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
@@ -772,7 +949,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
             val offer =
                 CredentialOffer(
                     credentialIssuer = "https://issuer.example",
-                    credentialConfigurationIds = listOf("legacy", "identity"),
+                    credentialConfigurationIds = listOf("w3c-sd-jwt", "identity"),
                     grants =
                         CredentialOfferGrants(
                             preAuthorizedCode =
@@ -787,7 +964,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                     credentialEndpoint = "https://issuer.example/credential",
                     credentialConfigurationsSupported =
                         mapOf(
-                            "legacy" to CredentialConfigurationSupported(format = "vc+sd-jwt"),
+                            "w3c-sd-jwt" to CredentialConfigurationSupported(format = "vc+sd-jwt"),
                             "identity" to CredentialConfigurationSupported(format = "dc+sd-jwt"),
                         ),
                 )
@@ -802,6 +979,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                             optionsProvider = StaticIssuanceOptionsProvider(credentialConfigurationId = null),
                             credentialReceiver = RecordingCredentialResponseReceiver(),
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                             credentialStore = RecordingWalletCredentialStore(existingRecord = null),
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -812,7 +990,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
@@ -826,8 +1004,10 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
     fun holderIssuanceExecutorPollsDeferredCredentialOnRetry() =
         runTest {
             val privateStore = RecordingPrivateSessionStore()
+            val dpopProofsProvider = RecordingDeferredDpopProofsProvider()
             val holder =
                 RecordingOid4vciHolderService(
+                    deferredEndpointDpopNonceChallenge = "deferred-dpop-nonce",
                     credentialResponse =
                         CredentialResponse(
                             transactionId = "deferred-transaction-secret",
@@ -853,13 +1033,15 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
                             keyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported,
+                            tokenEndpointProofsProvider = dpopProofsProvider,
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                         ),
                 )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
@@ -879,6 +1061,20 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
             assertEquals(WalletInteractionStatus.Completed, retrieved.status)
             assertEquals("deferred-transaction-secret", holder.deferredTransactionId)
             assertEquals("access-token-secret", holder.deferredAccessToken)
+            assertEquals(
+                listOf<String?>("deferred-dpop-initial", "deferred-dpop-nonce-deferred-dpop-nonce"),
+                holder.deferredDpopProofJwtHistory,
+            )
+            assertEquals(
+                listOf(
+                    "https://issuer.example/credential",
+                    "https://issuer.example/deferred",
+                    "https://issuer.example/deferred",
+                    "https://issuer.example/notification",
+                ),
+                dpopProofsProvider.requestedUrls,
+            )
+            assertEquals(listOf<String?>(null, null, "deferred-dpop-nonce", null), dpopProofsProvider.requestedNonces)
             assertEquals("deferred-credential-secret", receiver.receivedCredentialValue)
             assertFalse(deferredEncoded.contains("deferred-transaction-secret"))
             assertFalse(deferredEncoded.contains("access-token-secret"))
@@ -913,6 +1109,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                             optionsProvider = StaticIssuanceOptionsProvider(),
                             credentialReceiver = receiver,
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                             credentialStore = RecordingWalletCredentialStore(existingRecord = null),
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -923,7 +1120,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=secret-offer"))
@@ -945,7 +1142,11 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
     fun holderIssuanceExecutorBuildsAuthorizationRedirectForAuthorizationCodeGrant() =
         runTest {
             val privateStore = RecordingPrivateSessionStore()
-            val holder = RecordingOid4vciHolderService(offer = RecordingOid4vciHolderService.authorizationCodeOffer())
+            val holder =
+                RecordingOid4vciHolderService(
+                    offer = RecordingOid4vciHolderService.authorizationCodeOffer(),
+                    requirePar = true,
+                )
             val adapter =
                 Oid4vciWalletInteractionProtocolAdapter(
                     holder = holder,
@@ -955,6 +1156,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                             credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                             optionsProvider = StaticIssuanceOptionsProvider(),
                             credentialReceiver = RecordingCredentialResponseReceiver(),
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                             credentialStore = RecordingWalletCredentialStore(existingRecord = null),
                             issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                             refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -965,7 +1167,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=auth-code"))
@@ -992,6 +1194,9 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 ),
             )
             assertEquals("code-verifier-secret", privateStore.oid4vciState(next.sessionId).authorization?.codeVerifier)
+            assertEquals(true, holder.authorizationRequestUsePar)
+            assertEquals("https://as.example/par", holder.authorizationRequestParEndpoint)
+            assertEquals("identity", holder.authorizationRequestScope)
             assertFalse(encoded.contains("code-verifier-secret"))
 
             val afterCallback =
@@ -1009,6 +1214,55 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
             assertFalse(afterCallbackEncoded.contains("authorization-code-secret"))
             assertFalse(afterCallbackEncoded.contains("code-verifier-secret"))
             assertFalse(afterCallbackEncoded.contains("access-token-from-code-secret"))
+        }
+
+    @Test
+    fun holderIssuanceExecutorAuthenticatesParAndRegeneratesProofsForDpopNonceRetry() =
+        runTest {
+            val privateStore = RecordingPrivateSessionStore()
+            val holder =
+                RecordingOid4vciHolderService(
+                    offer = RecordingOid4vciHolderService.authorizationCodeOffer(),
+                    requirePar = true,
+                    parEndpointDpopNonceChallenge = "par-dpop-nonce",
+                )
+            val proofsProvider = RotatingTokenEndpointProofsProvider()
+            val adapter =
+                Oid4vciWalletInteractionProtocolAdapter(
+                    holder = holder,
+                    issuanceExecutor =
+                        Oid4vciHolderIssuanceExecutor(
+                            holder = holder,
+                            credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
+                            optionsProvider = StaticIssuanceOptionsProvider(),
+                            credentialReceiver = RecordingCredentialResponseReceiver(),
+                            tokenEndpointProofsProvider = proofsProvider,
+                            nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
+                            credentialStore = RecordingWalletCredentialStore(existingRecord = null),
+                            issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
+                            refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
+                            keyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported,
+                        ),
+                )
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("s1"),
+                    walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                    privateSessionStore = privateStore,
+                )
+            val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=auth-code"))
+
+            val next = adapter.handle(context, session.state, session.state.acceptOfferAction())
+
+            assertEquals(WalletInteractionStatus.AuthorizationRequired, next.status)
+            assertEquals(listOf<String?>("token-dpop-1", "token-dpop-2-nonce-par-dpop-nonce"), holder.authorizationRequestDpopProofJwtHistory)
+            val assertions =
+                holder.authorizationRequestClientAuthenticationHistory.map {
+                    (it as ClientAuthenticationConfig.PrivateKeyJwt).assertion.assertion
+                }
+            assertEquals(listOf("client-assertion-1", "client-assertion-2"), assertions)
+            assertEquals(listOf<String?>(null, "par-dpop-nonce"), proofsProvider.requestedNonces)
         }
 
     @Test
@@ -1042,7 +1296,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=iae"))
@@ -1096,7 +1350,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
     @Test
     fun refreshParsedEntryPointIsAStrongMatch() =
         runTest {
-            val adapter = Oid4vciWalletInteractionProtocolAdapter()
+            val adapter = Oid4vciWalletInteractionProtocolAdapter(issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured)
 
             val match =
                 adapter.canHandle(
@@ -1113,14 +1367,14 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
     @Test
     fun refreshEntryPointWithoutCredentialRecordIdFailsFastWithATypedError() =
         runTest {
-            // No issuanceExecutor is even configured - proves the adapter's own entry-point
-            // validation rejects a malformed refresh payload before ever touching the executor.
-            val adapter = Oid4vciWalletInteractionProtocolAdapter()
+            // An explicitly unavailable test executor proves the adapter's own entry-point
+            // validation rejects a malformed refresh payload before touching the executor.
+            val adapter = Oid4vciWalletInteractionProtocolAdapter(issuanceExecutor = Oid4vciIssuanceExecutor.notConfigured)
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val entryPoint =
                 WalletEntryPoint.parsed(
@@ -1144,7 +1398,20 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
             val issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = "stored-refresh-token")
             val grantProvider =
                 FixedOid4vciRefreshTokenGrantProvider(
-                    Ok(TokenResponseWithContext(accessToken = "refreshed-access-token", tokenType = "Bearer")),
+                    Ok(
+                        TokenResponseWithContext(
+                            accessToken = "refreshed-access-token",
+                            tokenType = "Bearer",
+                            authorizationDetails =
+                                listOf(
+                                    buildJsonObject {
+                                        put("type", "openid_credential")
+                                        put("credential_configuration_id", "identity")
+                                        put("credential_identifiers", buildJsonArray { add("reminted-identity-identifier") })
+                                    },
+                                ),
+                        ),
+                    ),
                 )
             val holder = RecordingOid4vciHolderService()
             val receiver = RecordingCredentialResponseReceiver()
@@ -1154,6 +1421,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                     credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                     optionsProvider = StaticIssuanceOptionsProvider(),
                     credentialReceiver = receiver,
+                    nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                     credentialStore = credentialStore,
                     issuanceSessionStore = issuanceSessionStore,
                     refreshTokenGrantProvider = grantProvider,
@@ -1165,7 +1433,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val entryPoint =
@@ -1181,7 +1449,8 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
             assertTrue(session.state.terminal)
             assertEquals("credential-secret", receiver.receivedCredentialValue)
             assertEquals("refreshed-access-token", holder.requestedAccessToken)
-            assertEquals("identity", holder.requestedCredentialConfigurationId)
+            assertEquals("reminted-identity-identifier", holder.requestedCredentialIdentifier)
+            assertEquals(null, holder.requestedCredentialConfigurationId)
             assertEquals("stored-refresh-token", grantProvider.lastRequest?.refreshToken, "the STORED refresh token must be used, not a caller-supplied one")
             // REUSE, not mint: the existing active instance's holder key must be the one presented on
             // reissuance, never a fresh key from the (unlinkability-minting) options provider.
@@ -1202,6 +1471,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                     credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                     optionsProvider = StaticIssuanceOptionsProvider(),
                     credentialReceiver = RecordingCredentialResponseReceiver(),
+                    nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                     credentialStore = credentialStore,
                     issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = "unused"),
                     refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -1212,7 +1482,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val entryPoint =
                 WalletEntryPoint.parsed(
@@ -1239,6 +1509,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                     credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                     optionsProvider = StaticIssuanceOptionsProvider(),
                     credentialReceiver = RecordingCredentialResponseReceiver(),
+                    nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                     credentialStore = RecordingWalletCredentialStore(existingRecord),
                     issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = null),
                     refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -1249,7 +1520,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val entryPoint =
                 WalletEntryPoint.parsed(
@@ -1276,6 +1547,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                     credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                     optionsProvider = StaticIssuanceOptionsProvider(),
                     credentialReceiver = RecordingCredentialResponseReceiver(),
+                    nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                     credentialStore = RecordingWalletCredentialStore(existingRecord),
                     issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = "stored-refresh-token"),
                     refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -1286,7 +1558,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val entryPoint =
                 WalletEntryPoint.parsed(
@@ -1317,6 +1589,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                     credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                     optionsProvider = StaticIssuanceOptionsProvider(),
                     credentialReceiver = RecordingCredentialResponseReceiver(),
+                    nestedPresentationExecutor = WalletNestedPresentationExecutor.notConfigured,
                     credentialStore = RecordingWalletCredentialStore(existingRecord),
                     issuanceSessionStore = RecordingWalletIssuanceSessionStore(refreshToken = "stored-refresh-token"),
                     refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
@@ -1327,7 +1600,7 @@ class Oid4vciWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val entryPoint =
                 WalletEntryPoint.parsed(
@@ -1402,7 +1675,7 @@ private fun refreshableRecord(
             id = "$id-instance-1",
             walletUnitId = "wallet",
             credentialRecordId = id,
-            format = CredentialFormat.SD_JWT_DC,
+            format = CredentialFormat.SD_JWT_VC,
             raw = "existing-credential-body",
             bodyStorageRef = BodyStorageRef(kind = BodyStorageKind.WALLET_STORE, path = "wallet-units/wallet/credentials/$id/instances/$id-instance-1/body"),
             holderKeyRef = KeyRef(alias = holderKeyAlias),
@@ -1414,11 +1687,11 @@ private fun refreshableRecord(
         id = id,
         walletUnitId = "wallet",
         issuerRef = IdentifierRef(type = IdentifierType("https"), value = "https://issuer.example"),
-        format = CredentialFormat.SD_JWT_DC,
+        format = CredentialFormat.SD_JWT_VC,
         credentialTypeRefs =
             setOf(
                 CredentialTypeRef(
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     kind = CredentialTypeRefKind.SD_JWT_VCT,
                     value = "https://credentials.example.com/employee",
                     source = CredentialTypeRefSource.CREDENTIAL_PAYLOAD,
@@ -1621,6 +1894,27 @@ private class RotatingTokenEndpointProofsProvider : Oid4vciTokenEndpointProofsPr
     override suspend fun dpopProof(request: Oid4vciDpopProofRequest): IdkResult<String?, IdkError> = Ok("credential-dpop.jwt").asResult()
 }
 
+private class RecordingDeferredDpopProofsProvider : Oid4vciTokenEndpointProofsProvider {
+    val requestedUrls = mutableListOf<String>()
+    val requestedNonces = mutableListOf<String?>()
+
+    override suspend fun proofs(request: Oid4vciTokenEndpointProofRequest): IdkResult<Oid4vciTokenEndpointProofs, IdkError> =
+        Ok(Oid4vciTokenEndpointProofs()).asResult()
+
+    override suspend fun dpopProof(request: Oid4vciDpopProofRequest): IdkResult<String?, IdkError> {
+        requestedUrls += request.httpUrl
+        requestedNonces += request.nonce
+        val endpoint =
+            when {
+                request.httpUrl.endsWith("/deferred") -> "deferred"
+                request.httpUrl.endsWith("/notification") -> "notification"
+                else -> "credential"
+            }
+        val suffix = request.nonce?.let { "nonce-$it" } ?: "initial"
+        return Ok("$endpoint-dpop-$suffix").asResult()
+    }
+}
+
 private class RecordingCredentialResponseReceiver : Oid4vciCredentialResponseReceiver {
     var receivedCredentialValue: String? = null
 
@@ -1691,7 +1985,11 @@ private class RecordingOid4vciHolderService(
     private val offer: CredentialOffer = preAuthorizedOffer(),
     private val metadata: CredentialIssuerMetadata = issuerMetadata(),
     private val interactiveAuthorization: Boolean = false,
+    private val requirePar: Boolean = false,
     private val tokenEndpointDpopNonceChallenge: String? = null,
+    private val parEndpointDpopNonceChallenge: String? = null,
+    private val deferredEndpointDpopNonceChallenge: String? = null,
+    private val notificationEndpointDpopNonceChallenge: String? = null,
     private val credentialResponse: CredentialResponse =
         CredentialResponse(
             credentials = listOf(CredentialResponseItem(JsonPrimitive("credential-secret"))),
@@ -1703,6 +2001,7 @@ private class RecordingOid4vciHolderService(
             notificationId = "deferred-notification-secret",
         ),
 ) : Oid4vciHolderService {
+    var lastRawOffer: String? = null
     var exchangedTxCode: String? = null
     var exchangedAuthorizationCode: String? = null
     var exchangedCodeVerifier: String? = null
@@ -1715,13 +2014,24 @@ private class RecordingOid4vciHolderService(
     var requestedAccessToken: String? = null
     var requestedDpopProofJwt: String? = null
     var requestedCredentialConfigurationId: String? = null
+    var requestedCredentialIdentifier: String? = null
     var deferredAccessToken: String? = null
     var deferredTransactionId: String? = null
+    val deferredDpopProofJwtHistory = mutableListOf<String?>()
     var notificationEvent: CredentialNotificationEvent? = null
+    val notificationDpopProofJwtHistory = mutableListOf<String?>()
     var lastInitiateIaeArgs: InitiateIaeArgs? = null
     var lastFollowUpIaeArgs: FollowUpIaeArgs? = null
+    var authorizationRequestUsePar: Boolean? = null
+    var authorizationRequestParEndpoint: String? = null
+    var authorizationRequestScope: String? = null
+    val authorizationRequestDpopProofJwtHistory = mutableListOf<String?>()
+    val authorizationRequestClientAuthenticationHistory = mutableListOf<ClientAuthenticationConfig?>()
 
-    override suspend fun parseCredentialOffer(rawOffer: String): IdkResult<CredentialOffer, IdkError> = Ok(offer).asResult()
+    override suspend fun parseCredentialOffer(rawOffer: String): IdkResult<CredentialOffer, IdkError> {
+        lastRawOffer = rawOffer
+        return Ok(offer).asResult()
+    }
 
     override suspend fun resolveCredentialOffer(offer: CredentialOffer): IdkResult<ResolvedCredentialOffer, IdkError> =
         Ok(
@@ -1745,12 +2055,17 @@ private class RecordingOid4vciHolderService(
                         issuer = "https://as.example",
                         tokenEndpoint = "https://as.example/token",
                         authorizationEndpoint = "https://as.example/authorize",
+                        requirePushedAuthorizationRequests = requirePar,
+                        pushedAuthorizationRequestEndpoint = if (requirePar) "https://as.example/par" else null,
                         interactiveAuthorizationEndpoint = if (interactiveAuthorization) "https://as.example/iae" else null,
                     ),
             ),
         ).asResult()
 
     override suspend fun requestNonce(nonceEndpoint: String): IdkResult<NonceResponse, IdkError> = error("requestNonce is not used in these tests")
+
+    override suspend fun requestAttestationChallenge(challengeEndpoint: String): IdkResult<AttestationChallengeResponse, IdkError> =
+        error("requestAttestationChallenge is not used in these tests")
 
     override suspend fun exchangePreAuthorizedCode(
         tokenEndpoint: String,
@@ -1788,9 +2103,29 @@ private class RecordingOid4vciHolderService(
         ).asResult()
     }
 
+    override suspend fun exchangeRefreshToken(
+        tokenEndpoint: String,
+        refreshToken: String,
+        clientId: String?,
+        dpopProofJwt: String?,
+        clientAttestationJwt: String?,
+        clientAttestationPopJwt: String?,
+        clientAuthentication: ClientAuthenticationConfig?,
+    ): IdkResult<TokenResponseWithContext, IdkError> =
+        Ok(
+            TokenResponseWithContext(
+                accessToken = "refreshed-access-token-secret",
+                tokenType = "Bearer",
+                cNonce = "refreshed-nonce",
+            ),
+        ).asResult()
+
     var receivedKeyAttestationJwt: String? = null
+    var receivedCredentialProofIssuerUrl: String? = null
 
     override suspend fun createCredentialRequestProof(
+        walletUnitId: String?,
+        operationBinding: String?,
         issuerUrl: String,
         cNonce: String?,
         signingKeyIds: List<String>,
@@ -1800,6 +2135,7 @@ private class RecordingOid4vciHolderService(
         keyAttestationJwt: String?,
         proofType: String,
     ): IdkResult<CreatedProof, IdkError> {
+        receivedCredentialProofIssuerUrl = issuerUrl
         receivedKeyAttestationJwt = keyAttestationJwt
         return Ok(CreatedProof(CredentialRequestProofs.jwt("proof-secret"))).asResult()
     }
@@ -1820,12 +2156,14 @@ private class RecordingOid4vciHolderService(
         requestedAccessToken = accessToken
         requestedDpopProofJwt = dpopProofJwt
         requestedCredentialConfigurationId = credentialConfigurationId
+        requestedCredentialIdentifier = credentialIdentifier
         return Ok(credentialResponse).asResult()
     }
 
     override suspend fun requestDeferredCredential(
         deferredCredentialEndpoint: String,
         accessToken: String,
+        dpopProofJwt: String?,
         transactionId: String,
         credentialResponseEncryption: RequestedCredentialResponseEncryption?,
         requestEncryptionJwk: JsonObject?,
@@ -1835,17 +2173,38 @@ private class RecordingOid4vciHolderService(
     ): IdkResult<CredentialResponse, IdkError> {
         deferredAccessToken = accessToken
         deferredTransactionId = transactionId
+        deferredDpopProofJwtHistory += dpopProofJwt
+        if (deferredEndpointDpopNonceChallenge != null && deferredDpopProofJwtHistory.size == 1) {
+            return Err(
+                IdkError(
+                    code = "use_dpop_nonce",
+                    message = IdkError.Message(i18nKey = "use_dpop_nonce", defaultMessage = "Deferred endpoint requires DPoP nonce"),
+                    meta = mapOf("dpop_nonce" to deferredEndpointDpopNonceChallenge),
+                ),
+            ).asResult()
+        }
         return Ok(deferredCredentialResponse).asResult()
     }
 
     override suspend fun sendNotification(
         notificationEndpoint: String,
         accessToken: String,
+        dpopProofJwt: String?,
         notificationId: String,
         event: CredentialNotificationEvent,
         eventDescription: String?,
     ): IdkResult<Unit, IdkError> {
         notificationEvent = event
+        notificationDpopProofJwtHistory += dpopProofJwt
+        if (notificationEndpointDpopNonceChallenge != null && notificationDpopProofJwtHistory.size == 1) {
+            return Err(
+                IdkError(
+                    code = "use_dpop_nonce",
+                    message = IdkError.Message(i18nKey = "use_dpop_nonce", defaultMessage = "Notification endpoint requires DPoP nonce"),
+                    meta = mapOf("dpop_nonce" to notificationEndpointDpopNonceChallenge),
+                ),
+            ).asResult()
+        }
         return Ok(Unit).asResult()
     }
 
@@ -1883,14 +2242,33 @@ private class RecordingOid4vciHolderService(
         parEndpoint: String?,
         credentialIdentifiers: Map<String, List<String>>?,
         locations: List<String>?,
-    ): IdkResult<AuthorizationRequestResult, IdkError> =
-        Ok(
+        clientAuthentication: ClientAuthenticationConfig?,
+        dpopProofJwt: String?,
+        clientAttestationJwt: String?,
+        clientAttestationPopJwt: String?,
+    ): IdkResult<AuthorizationRequestResult, IdkError> {
+        authorizationRequestUsePar = usePar
+        authorizationRequestParEndpoint = parEndpoint
+        authorizationRequestScope = scope
+        authorizationRequestDpopProofJwtHistory += dpopProofJwt
+        authorizationRequestClientAuthenticationHistory += clientAuthentication
+        if (parEndpointDpopNonceChallenge != null && authorizationRequestDpopProofJwtHistory.size == 1) {
+            return Err(
+                IdkError(
+                    code = "use_dpop_nonce",
+                    message = IdkError.Message(i18nKey = "use_dpop_nonce", defaultMessage = "PAR endpoint requires nonce in DPoP proof"),
+                    meta = mapOf("dpop_nonce" to parEndpointDpopNonceChallenge),
+                ),
+            ).asResult()
+        }
+        return Ok(
             AuthorizationRequestResult(
                 authorizationUrl = "https://as.example/authorize?request=123",
                 codeVerifier = "code-verifier-secret",
                 state = "oauth-state",
             ),
         ).asResult()
+    }
 
     override suspend fun exchangeAuthorizationCode(
         tokenEndpoint: String,
@@ -1916,6 +2294,34 @@ private class RecordingOid4vciHolderService(
                 cNonce = "nonce-from-code",
             ),
         ).asResult()
+    }
+
+    override suspend fun parseAndValidateAuthorizationResponse(
+        callbackUrl: String,
+        expectedState: String?,
+        expectedIssuer: String?,
+        requireIssuer: Boolean,
+    ): IdkResult<AuthorizationResponse, IdkError> {
+        val parameters =
+            callbackUrl
+                .substringAfter('?', "")
+                .substringBefore('#')
+                .split('&')
+                .filter(String::isNotBlank)
+                .associate { it.substringBefore('=') to it.substringAfter('=', "") }
+        val code = parameters["code"]?.takeIf(String::isNotBlank)
+            ?: return Err(IdkError.fromString(code = "invalid_request", message = "Authorization response missing code"))
+        if (expectedState != null && parameters["state"] != expectedState) {
+            return Err(IdkError.fromString(code = "invalid_grant", message = "Authorization response state mismatch"))
+        }
+        val issuer = parameters["iss"]?.takeIf(String::isNotBlank)
+        if (requireIssuer && issuer == null) {
+            return Err(IdkError.fromString(code = "invalid_grant", message = "Authorization response missing issuer"))
+        }
+        if (issuer != null && expectedIssuer != null && issuer != expectedIssuer) {
+            return Err(IdkError.fromString(code = "invalid_grant", message = "Authorization response issuer mismatch"))
+        }
+        return Ok(AuthorizationResponse(code = code, state = parameters["state"])).asResult()
     }
 
     companion object {
@@ -1951,7 +2357,7 @@ private class RecordingOid4vciHolderService(
                 credentialEndpoint = "https://issuer.example/credential",
                 notificationEndpoint = "https://issuer.example/notification",
                 deferredCredentialEndpoint = "https://issuer.example/deferred",
-                credentialConfigurationsSupported = mapOf("identity" to CredentialConfigurationSupported(format = "dc+sd-jwt")),
+                credentialConfigurationsSupported = mapOf("identity" to CredentialConfigurationSupported(format = "dc+sd-jwt", scope = "identity")),
             )
 
         /** Same as [issuerMetadata], except the "identity" config's `jwt` proof type requires a key attestation. */
@@ -1987,3 +2393,15 @@ private class FixedOid4vciKeyAttestationProvider(
         return result
     }
 }
+
+private val Oid4vciRefreshTokenGrantProvider.Companion.unsupported: Oid4vciRefreshTokenGrantProvider
+    get() =
+        Oid4vciRefreshTokenGrantProvider {
+            Err(IdkError.fromString("test.oid4vci.refresh_token_grant_unavailable", "Refresh-token exchange is not exercised by this test"))
+        }
+
+private val Oid4vciKeyAttestationProvider.Companion.unsupported: Oid4vciKeyAttestationProvider
+    get() =
+        Oid4vciKeyAttestationProvider {
+            Err(IdkError.fromString("test.oid4vci.key_attestation_unavailable", "Key attestation is not exercised by this test"))
+        }

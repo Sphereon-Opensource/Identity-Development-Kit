@@ -59,6 +59,31 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
     private val fakeHandleDeferred = FakeHandleDeferredCredentialRequestCommand()
     private val fakeHandleNotification = FakeHandleNotificationCommand()
 
+    @Test
+    fun metadataCommandConstructionDoesNotRequireDefaultIssuerIdentifier() {
+        val unconfiguredProvider =
+            object : com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider by fakeConfigProvider {
+                override val issuerIdentifier: String
+                    get() = throw IllegalArgumentException("oid4vci.issuer.identifier is required")
+            }
+
+        val command =
+            GetIssuerMetadataEndpointCommandImpl(
+                execution,
+                fakeBuildMetadata,
+                fakeBuildSignedMetadata,
+                unconfiguredProvider,
+                fakeRestConfigProvider,
+                FakeMultiManagedIdentifierService,
+                DefaultOid4vciIssuerPublicUrlResolver(NoOpAppConfigService),
+            )
+
+        assertEquals(
+            com.sphereon.openid.oid4vci.issuer.impl.http.command.GetIssuerMetadataEndpointCommand.COMMAND_ID,
+            command.id,
+        )
+    }
+
     // Real endpoint commands with fake dependencies
     private val fakeRestConfigProvider =
         object : com.sphereon.openid.oid4vci.rest.Oid4vciRestConfigProvider {
@@ -124,6 +149,8 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             execution,
             NoOpRoutableSlugLookup(),
             testTenantIdProvider(),
+            com.sphereon.openid.oid4vci.issuer.impl.config.DefaultOid4vciIssuerInstanceResolver(),
+            com.sphereon.openid.oid4vci.issuer.impl.config.DefaultOid4vciIssuerInstanceIdProvider(),
             metadataCommand,
         )
     private val protocolAdapter =
@@ -132,6 +159,8 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
             NoOpRoutableSlugLookup(),
             testTenantIdProvider(),
             NoOpAppConfigService,
+            com.sphereon.openid.oid4vci.issuer.impl.config.DefaultOid4vciIssuerInstanceResolver(),
+            com.sphereon.openid.oid4vci.issuer.impl.config.DefaultOid4vciIssuerInstanceIdProvider(),
             credentialOfferCommand,
             nonceCommand,
             credentialCommand,
@@ -210,6 +239,8 @@ class Oid4vciIssuerProtocolHttpAdapterTest {
                     execution,
                     NoOpRoutableSlugLookup(),
                     testTenantIdProvider(),
+                    com.sphereon.openid.oid4vci.issuer.impl.config.DefaultOid4vciIssuerInstanceResolver(),
+                    com.sphereon.openid.oid4vci.issuer.impl.config.DefaultOid4vciIssuerInstanceIdProvider(),
                     command,
                 )
             val request =

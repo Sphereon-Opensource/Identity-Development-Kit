@@ -90,7 +90,7 @@ INYu69YIwTpPO4RKcaXVys9MLz1MhcHvEWwGp14=
 class X509CertificateServiceJvmTest {
     val app = createJvmCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("test").graph
+    val session = context.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER).graph
 
 //    @OptIn(ExperimentalStdlibApi::class)
     @Test

@@ -59,7 +59,7 @@ class Oid4vciRestHttpAdapter(
             ),
     ) {
     companion object {
-        const val ID: String = "OID4VCI_REST"
+        const val ID: String = "oid4vci.backend.http"
 
         const val BACKEND_BASE_PATH: String = "/api/oid4vci/v1/backend/credential/offers"
     }

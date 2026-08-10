@@ -12,6 +12,8 @@ import com.sphereon.data.store.party.model.Identity
 import com.sphereon.data.store.party.model.IdentityIdentifier
 import com.sphereon.data.store.party.model.IdentityPartyBinding
 import com.sphereon.data.store.party.model.IdentityPrivacyMode
+import com.sphereon.data.store.party.model.IdentityRole
+import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.data.store.party.model.Party
 import com.sphereon.data.store.party.model.PartyOrigin
 import com.sphereon.data.store.party.model.PartyType
@@ -53,12 +55,14 @@ class LocalWalletPartyDirectory(
     private val scope: CoroutineScope,
     private val json: Json = walletPartyJson,
     private val registrableDomains: WalletRegistrableDomainResolver = PublicSuffixRegistrableDomainResolver,
-) : WalletPartyDirectory {
+) : WalletPartyDirectory,
+    LocalWalletIdentityDirectory {
     override val authority: WalletPartyDirectoryAuthority = WalletPartyDirectoryAuthority.LOCAL
 
     private val mutex = Mutex()
     private val states = mutableMapOf<String, MutableStateFlow<List<WalletKnownOrganization>>>()
     private val businessUnitStates = mutableMapOf<String, MutableStateFlow<WalletBusinessUnit?>>()
+    private val holderIdentityStates = mutableMapOf<String, List<LocalWalletHolderIdentity>>()
     private val loaded = mutableSetOf<String>()
 
     override suspend fun provisionBusinessUnit(
@@ -93,6 +97,69 @@ class LocalWalletPartyDirectory(
                     )
                 persistSnapshotLocked(key, WalletPartySnapshot(businessUnit = businessUnit))
                 businessUnit
+            }
+        }
+
+    override suspend fun resolveOrCreateIdentifier(
+        scope: WalletPartyScope,
+        type: IdentifierType,
+        value: String,
+        role: IdentityRole,
+    ): IdkResult<String, IdkError> =
+        runDirectoryOperation("wallet_holder_identifier_resolution_failed") {
+            require(value.isNotBlank()) { "wallet_holder_identifier_value_blank" }
+            mutex.withLock {
+                loadLocked(scope)
+                val key = authorityStorageKey(scope.tenantId, scope.walletUnitId)
+                val current = holderIdentityStates[key].orEmpty().toMutableList()
+                val roleIndex = current.indexOfFirst { holder -> holder.identity.identityRole == role }
+                val roleIdentity = current.getOrNull(roleIndex)
+                roleIdentity?.identifiers?.firstOrNull { identifier ->
+                    identifier.identifierType == type && identifier.lookupValue == value && identifier.deletedAt == null
+                }?.let { return@withLock it.identityIdentifierId.toString() }
+
+                val now = Clock.System.now()
+                val identity =
+                    roleIdentity?.identity
+                        ?: Identity(
+                            partyId = Uuid.random(),
+                            tenantId = scope.tenantId,
+                            identityRole = role,
+                            isDefault = true,
+                            privacyMode = IdentityPrivacyMode.PARTY_PROFILED,
+                            createdAt = now,
+                            updatedAt = now,
+                        )
+                val identifier =
+                    IdentityIdentifier(
+                        identityIdentifierId = Uuid.random(),
+                        identityId = identity.identityId,
+                        tenantId = scope.tenantId,
+                        identifierType = type,
+                        lookupValue = value,
+                        isPrimary = roleIdentity?.identifiers?.none { it.identifierType == type } != false,
+                        validFrom = now,
+                        createdAt = now,
+                        updatedAt = now,
+                    )
+                val updated =
+                    if (roleIdentity == null) {
+                        current + LocalWalletHolderIdentity(identity, listOf(identifier))
+                    } else {
+                        current.also { identities ->
+                            identities[roleIndex] = roleIdentity.copy(identifiers = roleIdentity.identifiers + identifier)
+                        }
+                    }
+                holderIdentityStates[key] = updated
+                persistSnapshotLocked(
+                    key,
+                    WalletPartySnapshot(
+                        businessUnit = requireNotNull(businessUnitStates[key]?.value),
+                        organizations = states[key]?.value.orEmpty(),
+                        holderIdentities = updated,
+                    ),
+                )
+                identifier.identityIdentifierId.toString()
             }
         }
 
@@ -258,7 +325,11 @@ class LocalWalletPartyDirectory(
         val businessUnit = requireNotNull(businessUnitState(scope).value) { "wallet_business_unit_not_provisioned" }
         persistSnapshotLocked(
             authorityStorageKey(scope.tenantId, scope.walletUnitId),
-            WalletPartySnapshot(businessUnit = businessUnit, organizations = organizations),
+            WalletPartySnapshot(
+                businessUnit = businessUnit,
+                organizations = organizations,
+                holderIdentities = holderIdentityStates[authorityStorageKey(scope.tenantId, scope.walletUnitId)].orEmpty(),
+            ),
         )
     }
 
@@ -269,18 +340,20 @@ class LocalWalletPartyDirectory(
             stored?.let {
                 businessUnitStates.getOrPut(key) { MutableStateFlow(null) }.value = it.businessUnit
                 states.getOrPut(key) { MutableStateFlow(emptyList()) }.value = sortOrganizations(it.organizations)
+                holderIdentityStates[key] = it.holderIdentities
             }
             loaded += key
             return stored
         }
         val businessUnit = businessUnitStates[key]?.value ?: return null
-        return WalletPartySnapshot(businessUnit, states[key]?.value.orEmpty())
+        return WalletPartySnapshot(businessUnit, states[key]?.value.orEmpty(), holderIdentityStates[key].orEmpty())
     }
 
     private suspend fun persistSnapshotLocked(key: String, snapshot: WalletPartySnapshot) {
         documents.write(key, json.encodeToString(snapshot))
         businessUnitStates.getOrPut(key) { MutableStateFlow(null) }.value = snapshot.businessUnit
         states.getOrPut(key) { MutableStateFlow(emptyList()) }.value = sortOrganizations(snapshot.organizations)
+        holderIdentityStates[key] = snapshot.holderIdentities
         loaded += key
     }
 
@@ -586,4 +659,20 @@ private fun mergeLocalizedBranding(
 private data class WalletPartySnapshot(
     val businessUnit: WalletBusinessUnit,
     val organizations: List<WalletKnownOrganization> = emptyList(),
+    val holderIdentities: List<LocalWalletHolderIdentity> = emptyList(),
 )
+
+@Serializable
+private data class LocalWalletHolderIdentity(
+    val identity: Identity,
+    val identifiers: List<IdentityIdentifier>,
+)
+
+interface LocalWalletIdentityDirectory {
+    suspend fun resolveOrCreateIdentifier(
+        scope: WalletPartyScope,
+        type: IdentifierType,
+        value: String,
+        role: IdentityRole,
+    ): IdkResult<String, IdkError>
+}

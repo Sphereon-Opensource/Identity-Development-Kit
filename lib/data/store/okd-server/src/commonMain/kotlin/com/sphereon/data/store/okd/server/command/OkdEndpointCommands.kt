@@ -108,7 +108,7 @@ class OkdGetDocumentCommandImpl(
         val req = request.withExtractedParams(endpoint.pathPattern)
         val documentId = req.requirePathParam("documentId").getOrElse { return Err(it) }
 
-        val tenantId = resolveTenantId(request)
+        val tenantId = execution.tenantId
         val result = blobService.getBlob(info = BlobInfo(tenantId = tenantId, path = documentId))
 
         if (result.isErr) {
@@ -176,7 +176,7 @@ class OkdUpdateDocumentCommandImpl(
             request.bodyContent.asBytesOrNull()
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Missing request body"))
 
-        val tenantId = resolveTenantId(request)
+        val tenantId = execution.tenantId
         val contentType = request.contentType
 
         val result =
@@ -239,7 +239,7 @@ class OkdDeleteDocumentCommandImpl(
         val req = request.withExtractedParams(endpoint.pathPattern)
         val documentId = req.requirePathParam("documentId").getOrElse { return Err(it) }
 
-        val tenantId = resolveTenantId(request)
+        val tenantId = execution.tenantId
         val result = blobService.deleteBlob(info = BlobInfo(tenantId = tenantId, path = documentId))
 
         if (result.isErr) {
@@ -291,7 +291,7 @@ class OkdGetDocumentMetadataCommandImpl(
         val req = request.withExtractedParams(endpoint.pathPattern)
         val documentId = req.requirePathParam("documentId").getOrElse { return Err(it) }
 
-        val tenantId = resolveTenantId(request)
+        val tenantId = execution.tenantId
         val result = blobService.getBlobInfo(info = BlobInfo(tenantId = tenantId, path = documentId))
 
         if (result.isErr) {
@@ -350,7 +350,7 @@ class OkdUploadDocumentCommandImpl(
             request.bodyContent.asBytesOrNull()
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Missing request body"))
 
-        val tenantId = resolveTenantId(request)
+        val tenantId = execution.tenantId
         val contentType = request.contentType
 
         val result =
@@ -417,7 +417,7 @@ class OkdListPersonsCommandImpl(
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
         checkScope(request, listOf(OkdScopes.STUDENT_INFO))?.let { return Err(it) }
-        val tenantId = resolveTenantId(request)
+        val tenantId = execution.tenantId
         val primaryCode = request.queryParameters["primaryCode"]
 
         // Search blob metadata for persons by primaryCode
@@ -492,7 +492,7 @@ class OkdGetPersonCommandImpl(
         val req = request.withExtractedParams(endpoint.pathPattern)
         val personId = req.requirePathParam("personId").getOrElse { return Err(it) }
 
-        val tenantId = resolveTenantId(request)
+        val tenantId = execution.tenantId
 
         // Search blob metadata for documents belonging to this person
         val query =
@@ -559,11 +559,6 @@ class OkdServiceMetadataCommandImpl(
 // ================================================================================================
 // Shared helpers
 // ================================================================================================
-
-private fun resolveTenantId(request: GenericHttpRequest): String =
-    request.headers["X-Tenant-ID"]
-        ?: request.queryParameters["tenantId"]
-        ?: "default"
 
 private fun checkScope(
     request: GenericHttpRequest,

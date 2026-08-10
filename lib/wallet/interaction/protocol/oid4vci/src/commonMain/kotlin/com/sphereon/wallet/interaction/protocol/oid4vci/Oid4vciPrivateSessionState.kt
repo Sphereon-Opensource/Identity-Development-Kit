@@ -53,6 +53,7 @@ data class Oid4vciPrivateSessionState(
         val state: String? = null,
         val redirectUri: String? = null,
         val clientId: String? = null,
+        val attestationChallenge: String? = null,
     )
 
     @Serializable

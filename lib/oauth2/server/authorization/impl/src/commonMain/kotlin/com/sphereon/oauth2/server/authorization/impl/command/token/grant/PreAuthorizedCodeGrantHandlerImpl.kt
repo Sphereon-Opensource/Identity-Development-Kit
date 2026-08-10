@@ -80,17 +80,7 @@ class PreAuthorizedCodeGrantHandlerImpl : GrantHandler {
         // the proof presented at /token establishes the binding for the access token.
         val authorizationDetails =
             if (verified.useCredentialIdentifiers && verified.credentialConfigurationIds.isNotEmpty()) {
-                JsonArray(
-                    verified.credentialConfigurationIds.map { configId ->
-                        buildJsonObject {
-                            put("type", JsonPrimitive("openid_credential"))
-                            put("credential_configuration_id", JsonPrimitive(configId))
-                            putJsonArray("credential_identifiers") {
-                                add(JsonPrimitive(verified.sessionId))
-                            }
-                        }
-                    },
-                )
+                buildAuthorizationCodeCredentialAuthorizationDetails(verified.credentialConfigurationIds)
             } else {
                 null
             }
@@ -98,6 +88,10 @@ class PreAuthorizedCodeGrantHandlerImpl : GrantHandler {
         val accessTokenClaims =
             buildMap<String, Any> {
                 putAll(context.walletInstanceAttestation?.accessTokenClaims().orEmpty())
+                // Preserve exact offer/session correlation separately from the public
+                // authorization_details that are returned to the wallet. This namespaced claim
+                // is consumed through issuer-authenticated introspection.
+                put(INTERNAL_OID4VCI_ISSUER_STATE_CLAIM, verified.sessionId)
                 authorizationDetails?.let { put("authorization_details", it) }
             }
         val accessToken =
@@ -121,5 +115,9 @@ class PreAuthorizedCodeGrantHandlerImpl : GrantHandler {
                 authorizationDetails = authorizationDetails,
             ),
         )
+    }
+
+    private companion object {
+        const val INTERNAL_OID4VCI_ISSUER_STATE_CLAIM = "oid4vci.internal.issuer_state"
     }
 }

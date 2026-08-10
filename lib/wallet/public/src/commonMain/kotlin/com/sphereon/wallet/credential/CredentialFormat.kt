@@ -24,10 +24,10 @@ enum class CredentialFormat(
     val value: String,
 ) {
     @SerialName("dc+sd-jwt")
-    SD_JWT_DC("dc+sd-jwt"),
+    SD_JWT_VC("dc+sd-jwt"),
 
     @SerialName("vc+sd-jwt")
-    SD_JWT_VC("vc+sd-jwt"),
+    W3C_VC_SD_JWT("vc+sd-jwt"),
 
     @SerialName("mso_mdoc")
     MSO_MDOC("mso_mdoc"),
@@ -43,7 +43,7 @@ enum class CredentialFormat(
     ;
 
     val isSdJwt: Boolean
-        get() = this == SD_JWT_DC || this == SD_JWT_VC
+        get() = this == SD_JWT_VC || this == W3C_VC_SD_JWT
 
     val isJwt: Boolean
         get() = this == JWT_VC_JSON || this == JWT_VP_JSON
@@ -59,7 +59,8 @@ enum class CredentialFormat(
 
             val lowerValue = value.lowercase()
             return when {
-                lowerValue.contains("sd-jwt") || lowerValue.contains("sd_jwt") -> SD_JWT_DC
+                lowerValue == "application/dc+sd-jwt" -> SD_JWT_VC
+                lowerValue == "application/vc+sd-jwt" -> W3C_VC_SD_JWT
                 lowerValue == "mso_mdoc" || lowerValue.contains("mdoc") -> MSO_MDOC
                 lowerValue.contains("jwt_vc") || lowerValue == "jwt_vc_json" -> JWT_VC_JSON
                 lowerValue.contains("jwt_vp") || lowerValue == "jwt_vp_json" -> JWT_VP_JSON

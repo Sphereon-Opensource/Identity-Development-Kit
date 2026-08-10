@@ -24,6 +24,7 @@ import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.did.capabilities.DidMethodCapabilities
 import com.sphereon.did.manager.DidCreateOptions
 import com.sphereon.did.manager.DidDeactivateOptions
@@ -74,17 +75,56 @@ data class DidIdInput(
     val did: String,
 )
 
+/** Create-key representation. KMS references are resolved in the active tenant only. */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("DidCreateKeyMaterialKind", exact = true)
+@Serializable
+enum class DidCreateKeyMaterialKind {
+    PUBLIC_JWK,
+    KMS,
+}
+
 /**
- * Wire payload for POST /dids — mirrors the OpenAPI `DidCreateRequest` shape (providerId/kid/
- * alias/didAlias) instead of leaking the SDK [DidCreateOptions] type to clients. The service
- * command impl maps this to a [DidCreateOptions] with a single VerificationMethodConfig pinned
- * to the KMS key resolved from [keyInfo].
- *
- * Key material is **never** supplied by the caller. [keyInfo] references an already-registered
- * KMS key by `(providerId, alias)` or `(providerId, kid)`; the server resolves the public JWK
- * from KMS and uses it for did:key / did:jwk derivation (and for did:web document
- * generation). The caller is responsible for first registering the key with the KMS via the
- * KMS API; this endpoint never accepts wire-supplied JWK material.
+ * Strict DID-create key envelope. PUBLIC_JWK accepts public material only; KMS resolves an
+ * existing active-tenant key and becomes a durable key binding.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("DidCreateKeyMaterial", exact = true)
+@Serializable
+data class DidCreateKeyMaterial(
+    val kind: DidCreateKeyMaterialKind,
+    val publicJwk: Jwk? = null,
+    val providerId: String? = null,
+    val alias: String? = null,
+    val kid: String? = null,
+) {
+    init {
+        when (kind) {
+            DidCreateKeyMaterialKind.PUBLIC_JWK -> {
+                require(publicJwk != null && !publicJwk.kid.isNullOrBlank()) {
+                    "DidCreateKeyMaterial.publicJwk.kid must be non-blank"
+                }
+                require(providerId == null && alias == null && kid == null) {
+                    "PUBLIC_JWK must not contain KMS coordinates"
+                }
+                require(
+                    publicJwk.d == null && publicJwk.p == null && publicJwk.q == null &&
+                        publicJwk.dP == null && publicJwk.dQ == null && publicJwk.qInv == null && publicJwk.k == null,
+                ) { "DidCreateKeyMaterial.publicJwk must not contain private or symmetric key material" }
+            }
+            DidCreateKeyMaterialKind.KMS -> {
+                require(!providerId.isNullOrBlank() && (alias.isNullOrBlank() != kid.isNullOrBlank())) {
+                    "KMS requires providerId and exactly one of alias or kid"
+                }
+                require(publicJwk == null) { "KMS must not contain publicJwk" }
+            }
+        }
+    }
+}
+
+/**
+ * Wire payload for POST /dids. PUBLIC_JWK remains unbound; KMS is resolved into a same-tenant
+ * verification-method configuration before provider creation and persistence.
  *
  * `alsoKnownAs` is accepted for spec parity but currently rejected with `UNPROCESSABLE_ENTITY`
  * at the impl layer pending manager support — create the DID first, then POST to
@@ -95,7 +135,7 @@ data class DidIdInput(
 @Serializable
 data class CreateDidInput(
     val method: String,
-    val keyInfo: KeyInfo<KeyType>,
+    val keyInfo: DidCreateKeyMaterial,
     val didAlias: String? = null,
     val controllers: List<String>? = null,
     val alsoKnownAs: List<String>? = null,

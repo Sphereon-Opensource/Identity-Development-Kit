@@ -59,7 +59,7 @@ import kotlin.test.assertTrue
 class ExchangeTokenCommandClientAuthShapeTest {
     private val app = createOAuth2ClientTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("exchange-token-auth-shape-test")
+    private val session = context.sessionContextManager.createOrGetFromId("exchange-token-auth-shape-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     private val execution = session.asCoreApiServiceGraph().serviceExecution
 
     private val tokenEndpoint = "https://as.example.com/token"

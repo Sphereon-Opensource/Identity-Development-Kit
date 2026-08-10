@@ -18,7 +18,7 @@ package com.sphereon.oauth2.client.util
 
 import com.sphereon.core.api.conf.Env
 import io.ktor.http.decodeURLQueryComponent
-import io.ktor.http.encodeURLQueryComponent
+import io.ktor.http.encodeURLParameter
 
 /**
  * Whether HTTP is allowed for non-localhost URLs. Set the environment variable
@@ -83,7 +83,7 @@ fun encodeQueryParameters(parameters: Map<String, String?>): String =
     parameters
         .filterValues { it != null }
         .map { (key, value) ->
-            "${key.encodeURLQueryComponent()}=${value!!.encodeURLQueryComponent()}"
+            "${key.encodeURLParameter()}=${value!!.encodeURLParameter()}"
         }.joinToString("&")
 
 /**

@@ -55,6 +55,12 @@ class RequireCommandIdValidTest {
         val result = requireCommandId("core1.session2.create3")
         assertTrue(result.isOk)
     }
+
+    @Test
+    fun validKebabCaseInEverySegmentSucceeds() {
+        val result = requireCommandId("open-id.session-manager.create-record-v2")
+        assertTrue(result.isOk)
+    }
 }
 
 class RequireCommandIdInvalidTest {
@@ -171,6 +177,18 @@ class RequireCommandIdInvalidTest {
         val result = requireCommandId("core.session.1create")
         assertTrue(result.isErr)
     }
+
+    @Test
+    fun segmentWithTrailingHyphenFails() {
+        assertTrue(requireCommandId("core.session-.create").isErr)
+        assertTrue(requireCommandId("core.session.create-").isErr)
+    }
+
+    @Test
+    fun segmentWithDoubledHyphenFails() {
+        assertTrue(requireCommandId("core.session--manager.create").isErr)
+        assertTrue(requireCommandId("core.session.create--record").isErr)
+    }
 }
 
 class IsValidCommandIdTest {
@@ -227,5 +245,13 @@ class IsValidCommandIdTest {
     @Test
     fun segmentStartingWithDigitReturnsFalse() {
         assertFalse(isValidCommandId("4vp.verifier.create"))
+    }
+
+    @Test
+    fun nonCanonicalHyphensReturnFalse() {
+        assertFalse(isValidCommandId("core-.session.create"))
+        assertFalse(isValidCommandId("core.session-.create"))
+        assertFalse(isValidCommandId("core.session.create-"))
+        assertFalse(isValidCommandId("core.session--manager.create"))
     }
 }

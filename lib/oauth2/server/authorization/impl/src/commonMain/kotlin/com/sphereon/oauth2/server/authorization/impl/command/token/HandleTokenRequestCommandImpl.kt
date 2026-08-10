@@ -26,6 +26,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -45,6 +46,7 @@ import com.sphereon.oauth2.server.authorization.impl.command.token.grant.errOf
 import com.sphereon.oauth2.server.authorization.impl.command.token.grant.invalidDpopProof
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -69,7 +71,7 @@ class HandleTokenRequestCommandImpl(
     execution: SessionExecution,
     private val authorizationServerService: AuthorizationServerService,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
-    private val clientRegistry: ClientRegistry,
+    @Suppress("unused") private val clientRegistry: ClientRegistry,
     private val verifyDpopProofCommand: VerifyDpopProofCommand,
     private val dpopProofJtiCache: DpopProofJtiCache,
     private val dpopNonceManager: DpopNonceManager,
@@ -145,12 +147,17 @@ class HandleTokenRequestCommandImpl(
                     ),
                 ).getOrElse { error -> return Err(error) }
 
-        val certThumbprint = computeCertThumbprintIfBound(applied.clientCertificateDer, tokenRequest.clientId)
+        val certThumbprint =
+            computeCertThumbprintIfBound(
+                clientCertificateDer = applied.clientCertificateDer,
+                clientAuthorization = verifiedAuth.clientAuthorization,
+            )
 
         val context =
             GrantContext(
                 tokenRequest = tokenRequest,
                 resolvedClientId = verifiedAuth.clientId,
+                clientInstanceKeyJkt = verifiedAuth.clientInstanceKey?.let(::generateJwkThumbprint),
                 proofJkt = proofJkt,
                 certThumbprintS256 = certThumbprint,
                 applied = applied,
@@ -165,7 +172,12 @@ class HandleTokenRequestCommandImpl(
                     AuthorizationServerError.UnsupportedGrantType(grantType = tokenRequest.grantType.value),
                 )
 
-        return handler.handle(tokenRequest.grantParameters, context)
+        return dispatchWithVerifiedClientAuthorization(
+            handler = handler,
+            params = tokenRequest.grantParameters,
+            context = context,
+            clientAuthorization = verifiedAuth.clientAuthorization,
+        )
     }
 
     /**
@@ -246,19 +258,11 @@ class HandleTokenRequestCommandImpl(
      */
     private suspend fun computeCertThumbprintIfBound(
         clientCertificateDer: ByteArray?,
-        clientId: String,
+        clientAuthorization: VerifiedClientAuthorization?,
     ): String? =
         clientCertificateDer?.let { certDer ->
             val serverConfig = serversConfigProvider.serverConfig
-            val clientOptIn =
-                if (clientId.isNotEmpty()) {
-                    clientRegistry
-                        .getClient(clientId)
-                        .getOrElse { null }
-                        ?.tlsClientCertificateBoundAccessTokens ?: false
-                } else {
-                    false
-                }
+            val clientOptIn = clientAuthorization?.tlsClientCertificateBoundAccessTokens ?: false
             val serverOptIn = serverConfig.tlsClientCertificateBoundAccessTokens
             if (clientOptIn || serverOptIn) {
                 hash(certDer, DigestAlg.SHA256).encodeToBase64Url()

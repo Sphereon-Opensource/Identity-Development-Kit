@@ -66,6 +66,9 @@ import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionStore
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionStoreError
 import com.sphereon.oauth2.server.authorization.storage.PendingAuthorizationSessionStore
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -148,6 +151,22 @@ class SessionEvaluationTest {
             assertEquals("https://client.example/cb?code=fake-code", completed.authorizationResponseData.redirectUri)
             assertEquals(authTime.epochSeconds, capturedCodeArgs?.session?.authTime)
             assertEquals(session.sub, capturedCodeArgs?.userId)
+        }
+
+    @Test
+    fun loginSessionAuthorizationClaimsSurviveUnavailableUserInfo() =
+        runTest {
+            val roles = JsonArray(listOf(JsonPrimitive("tenant-admin")))
+            val session = newLoginSession(claims = mapOf("roles" to roles))
+
+            val outcome = runOnce(prompt = "none", session = session)
+
+            assertIs<AuthorizationRequestOutcome.WalletCompleted>(outcome)
+            assertEquals(
+                roles,
+                capturedCodeArgs?.userClaims?.get("roles"),
+                "server-authenticated session roles must reach the authorization code when split-AS userinfo is unavailable",
+            )
         }
 
     @Test
@@ -320,12 +339,14 @@ class SessionEvaluationTest {
         sessionId: String = "oidc-sid",
         sub: String = "alice",
         authTime: Instant = NOW - kotlin.time.Duration.parse("PT1M"),
+        claims: Map<String, JsonElement> = emptyMap(),
     ): OidcLoginSession =
         OidcLoginSession(
             sessionId = sessionId,
             sub = sub,
             authTime = authTime,
             authMethod = AuthenticationMethod.PASSWORD,
+            claims = claims,
             createdAt = authTime,
             absoluteExpiresAt = authTime + kotlin.time.Duration.parse("PT8H"),
             idleExpiresAt = authTime + kotlin.time.Duration.parse("PT30M"),

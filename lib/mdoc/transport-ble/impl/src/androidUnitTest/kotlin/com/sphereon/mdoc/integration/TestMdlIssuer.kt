@@ -60,8 +60,10 @@ class TestMdlIssuer(
     private val certificateService: CertificateService
 ) {
 
-    private val softwareKmsProvider: SoftwareKmsProvider = kms.getProviderById("test-software") as SoftwareKmsProvider
-    private val keyStore = softwareKmsProvider.keyStore as com.sphereon.crypto.core.kms.KeyStore // Can be either MemoryKeyStoreService or SoftwareKeyStoreService
+    // Resolved per use rather than held: reaching a provider suspends, and a property initializer cannot.
+    // Can be either MemoryKeyStoreService or SoftwareKeyStoreService.
+    private suspend fun keyStore(): com.sphereon.crypto.core.kms.KeyStore =
+        (kms.getProviderById("test-software") as SoftwareKmsProvider).keyStore as com.sphereon.crypto.core.kms.KeyStore
 
     // Cache only for certificate to avoid repeated lookups (certificates are public information)
     private var cachedIssuerCertificate: Certificate? = null
@@ -74,12 +76,12 @@ class TestMdlIssuer(
     }
 
     private suspend fun getOrCreateIssuerKeyInfo(): ManagedKeyInfoType<CoseKeyType> = withContext(Dispatchers.IO) {
-        val keyRef = keyStore.listKeys().firstOrNull { it.alias == MDL_ISSUER_KEY_ALIAS }
+        val keyRef = keyStore().listKeys().firstOrNull { it.alias == MDL_ISSUER_KEY_ALIAS }
         if (keyRef != null) {
-            val fullKeyInfo = keyStore.getKey(KeyInfo(alias = keyRef.alias, kid = keyRef.kid, providerId = keyRef.providerId))
+            val fullKeyInfo = keyStore().getKey(KeyInfo(alias = keyRef.alias, kid = keyRef.kid, providerId = keyRef.providerId))
             return@withContext ManagedKeyInfo(
                 alias = MDL_ISSUER_KEY_ALIAS,
-                providerId = keyStore.id,
+                providerId = keyStore().id,
                 resolvedKeyInfo = CoseJoseKeyMappingService.toResolvedCoseKeyInfo(fullKeyInfo)
             )
         }
@@ -101,7 +103,7 @@ class TestMdlIssuer(
             // Double-check pattern for certificate only
             cachedIssuerCertificate?.let { return@withLock it }
 
-            if (!keyStore.listCertificateAliases().contains(MDL_ISSUER_KEY_ALIAS)) {
+            if (!keyStore().listCertificateAliases().contains(MDL_ISSUER_KEY_ALIAS)) {
                 val issuerCn = X509DistinguishedNameElements(
                     commonName = MDL_ISSUER_KEY_ALIAS,
                     organizationName = "Test DMV",
@@ -116,13 +118,13 @@ class TestMdlIssuer(
                         subject = issuerCn,
                         serialNumber = CERT_SERIAL_NUMBER
                     )
-                keyStore.storeCertificateChain(
+                keyStore().storeCertificateChain(
                     MDL_ISSUER_KEY_ALIAS,
                     arrayOf(issuerCertResult.certificate),
                     issuerKeyInfo
                 )
             }
-            val certificate = keyStore.getCertificate(MDL_ISSUER_KEY_ALIAS)
+            val certificate = keyStore().getCertificate(MDL_ISSUER_KEY_ALIAS)
             cachedIssuerCertificate = certificate
             certificate
         }

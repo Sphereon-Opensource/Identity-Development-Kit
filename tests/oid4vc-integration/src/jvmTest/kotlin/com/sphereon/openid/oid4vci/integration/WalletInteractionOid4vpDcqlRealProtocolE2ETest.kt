@@ -17,16 +17,21 @@
 package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.http.GenericHttpRequest
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.command.DpopProofAssembly
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
+import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
@@ -42,7 +47,7 @@ import com.sphereon.wallet.interaction.WalletCredentialSelection
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionClient
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletProtocol
@@ -53,26 +58,33 @@ import com.sphereon.wallet.interaction.WalletSecurityGateResult
 import com.sphereon.wallet.interaction.WalletSecurityGrant
 import com.sphereon.wallet.interaction.WalletSecurityOperation
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStore
 import com.sphereon.wallet.interaction.impl.WscdAwareExecutionPlanner
 import com.sphereon.wallet.interaction.impl.WscdExecutionProfileSource
-import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciCredentialRequestProofProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceExecutor
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceOptions
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuanceOptionsProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuedCredentialAcceptance
-import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciKeyAttestationProvider
-import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciWalletInteractionProtocolAdapter
+import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciCredentialRequestProofProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciRefreshTokenGrantProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.SecureComponentOid4vciKeyAttestationProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.WalletStoreOid4vciCredentialResponseReceiver
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpPresentationSecurityAttributes
+import com.sphereon.wallet.interaction.protocol.oid4vp.SecureComponentOid4vpSdJwtHolderBindingProvider
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpWalletConfigProvider
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpWalletInteractionProtocolAdapter
-import dev.zacsweers.metro.ContributesBinding
+import com.sphereon.wallet.wsca.Wsca
+import com.sphereon.wallet.wsca.impl.LocalWsca
+import com.sphereon.wallet.wsca.impl.WalletUserAuthenticator
+import com.sphereon.wallet.unit.attestation.LocalWalletProviderAttestationSignerResolver
+import com.sphereon.wallet.wscd.ActivationProof
+import com.sphereon.wallet.wscd.ActivationProofKind
+import com.sphereon.wallet.wscd.Wscd
 import dev.zacsweers.metro.ContributesTo
-import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -81,14 +93,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import com.sphereon.openid.oid4vp.holder.WalletConfig as Oid4vpWalletConfig
 
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<WalletInteractionClient>())
-class Oid4vcIntegrationWalletInteractionClient :
-    WalletInteractionClient by DefaultWalletInteractionEngine(
-        sensitiveInputAuthority = integrationSensitiveInputAuthority(),
-    )
-
 @ContributesTo(SessionScope::class)
 interface WalletInteractionOid4vpStoreTestGraph {
     val walletCredentialStore: WalletCredentialStore
@@ -96,6 +100,11 @@ interface WalletInteractionOid4vpStoreTestGraph {
     val walletIdentityResolver: WalletIdentityResolver
     val credentialSubjectExtractor: CredentialSubjectExtractor
     val verifySdJwtVcCommand: VerifySdJwtVcCommand
+}
+
+@ContributesTo(SessionScope::class)
+interface WalletInteractionOid4vpWscdTestGraph {
+    val wscd: Wscd
 }
 
 class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
@@ -218,11 +227,11 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 wireInProcessAdapters()
                 ctx.ensureAsSigningKey()
                 ensureIssuerSigningKey()
-                ensureHolderSigningKey()
                 ensureVerifierSigningKey()
 
                 val credentialStore = (ctx.session.graph as WalletInteractionOid4vpStoreTestGraph).walletCredentialStore
-                val sdJwtRecord = issueSdJwtCredential(credentialStore)
+                val wsca = createPromptlessWsca()
+                val sdJwtRecord = issueSdJwtCredential(credentialStore, wsca)
                 val request = createVerifierAuthorizationRequest()
 
                 val holder = (ctx.session.graph as Oid4vpPresentationTestGraph).oid4vpHolder
@@ -230,6 +239,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                     Oid4vpWalletInteractionProtocolAdapter.walletStoreBacked(
                         holder = holder,
                         credentialStore = credentialStore,
+                        sdJwtHolderBindingProvider = SecureComponentOid4vpSdJwtHolderBindingProvider(wsca),
                         walletConfigProvider =
                             object : Oid4vpWalletConfigProvider {
                                 override suspend fun walletConfig(
@@ -242,6 +252,8 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 val engine =
                     DefaultWalletInteractionEngine(
                         sensitiveInputAuthority = integrationSensitiveInputAuthority(),
+                        privateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
+                        sessionStore = InMemoryWalletInteractionSessionStore(),
                         adapters = listOf(adapter),
                         protocolExecutor =
                             WscdAwareExecutionPlanner(
@@ -258,7 +270,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                     WalletInteractionInput(
                         walletUnitId = SESSION_WALLET_UNIT_ID,
                         entryPoint = WalletEntryPoint.rawQr(request.requestUri),
-                        executionMode = WalletInteractionExecutionMode.SPLIT,
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
                         metadata =
                             mapOf(
                                 Oid4vpPresentationSecurityAttributes.WALLET_UNIT_ID to WALLET_UNIT_ID,
@@ -271,12 +283,17 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                     )
                 val session = engine.start(input)
 
-                assertEquals(WalletInteractionExecutionMode.SPLIT, input.executionMode)
+                assertEquals(ProtocolExecutionOwner.WALLET_APP, input.executionOwner)
                 assertEquals(WalletProtocol.OID4VP, session.state.protocol)
-                assertEquals(WalletInteractionStatus.CredentialSelection, session.state.status)
+                // A first interaction with this verifier surfaces the trust review step before
+                // credential selection.
+                assertEquals(WalletInteractionStatus.TrustReview, session.state.status)
+                engine.dispatch(session.sessionId, WalletInteractionAction.continueFlow())
+                val selectionState = engine.observe(session.sessionId).value
+                assertEquals(WalletInteractionStatus.CredentialSelection, selectionState.status)
                 val requirement =
                     assertNotNull(
-                        session.state.credentialSelection
+                        selectionState.credentialSelection
                             ?.requirements
                             ?.singleOrNull()
                     )
@@ -327,7 +344,10 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         holder.adapters = adapters
     }
 
-    private suspend fun issueSdJwtCredential(credentialStore: WalletCredentialStore): CredentialRecord {
+    private suspend fun issueSdJwtCredential(
+        credentialStore: WalletCredentialStore,
+        wsca: Wsca,
+    ): CredentialRecord {
         val issuer = (ctx.session.graph as Oid4vciIssuanceTestGraph).oid4vciIssuerService
         val holder = (ctx.session.graph as Oid4vciIssuanceTestGraph).oid4vciHolder
         val storeGraph = ctx.session.graph as WalletInteractionOid4vpStoreTestGraph
@@ -341,6 +361,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         val offerResult =
             issuer.createCredentialOffer(
                 CreateCredentialOfferArgs(
+                    instanceId = "oid4vc-integration-issuer",
                     issuerId = issuerUrl,
                     credentialConfigurationIds = listOf(SD_JWT_CONFIG_ID),
                     preAuthorizedCodeGrant = true,
@@ -369,19 +390,22 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                                     )
                             },
                         credentialReceiver = WalletStoreOid4vciCredentialResponseReceiver(credentialStore, issuanceSessionStore, acceptance),
+                        nestedPresentationExecutor = com.sphereon.wallet.interaction.WalletNestedPresentationExecutor.notConfigured,
                         credentialStore = credentialStore,
                         issuanceSessionStore = issuanceSessionStore,
-                        refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
-                        keyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported,
-                        // HOLDER_SIGNING_KEY_ALIAS is provisioned directly in the KMS (see
-                        // ensureHolderSigningKey()), not through Wsca, so the generic
-                        // KMS-resolving provider is correct here.
+                        refreshTokenGrantProvider = HolderServiceOid4vciRefreshTokenGrantProvider(holder),
+                        keyAttestationProvider = SecureComponentOid4vciKeyAttestationProvider(wsca),
                         credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                     ),
             )
         val engine =
             DefaultWalletInteractionEngine(
                 sensitiveInputAuthority = integrationSensitiveInputAuthority(),
+                privateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
+                sessionStore = InMemoryWalletInteractionSessionStore(),
+                // Promptless protocol test: the attended security ceremony is exercised by the
+                // wallet-product/runner suites, not here.
+                securityGate = WalletSecurityGate.allow,
                 adapters = listOf(adapter),
             )
 
@@ -393,14 +417,17 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 ),
             )
         assertEquals(WalletProtocol.OID4VCI, session.state.protocol)
-        assertEquals(WalletInteractionStatus.CredentialOfferReview, session.state.status)
+        // A first interaction with this issuer surfaces the trust review step before the offer.
+        assertEquals(WalletInteractionStatus.TrustReview, session.state.status)
+        engine.dispatch(session.sessionId, WalletInteractionAction.continueFlow())
+        assertEquals(WalletInteractionStatus.CredentialOfferReview, engine.observe(session.sessionId).value.status)
 
         engine.dispatch(
             session.sessionId,
             WalletInteractionAction.selectCredentials(
                 WalletCredentialSelection(
                     selectedCredentialIdsByRequirement =
-                        mapOf("oid4vci-offer" to session.state.credentialOffer!!.credentialConfigurationIds),
+                        mapOf("oid4vci-offer" to engine.observe(session.sessionId).value.credentialOffer!!.credentialConfigurationIds),
                 ),
             ),
         )
@@ -424,6 +451,25 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         return assertNotNull(recordResult.value)
     }
 
+    private fun createPromptlessWsca(): Wsca =
+        LocalWsca(
+            wscd = (ctx.session.graph as WalletInteractionOid4vpWscdTestGraph).wscd,
+            dpopProofAssembly = DpopProofAssembly(defaultSecureRandom()),
+            userAuthenticator =
+                WalletUserAuthenticator { request ->
+                    Ok(
+                        ActivationProof(
+                            kind = ActivationProofKind.LOCAL_USER_AUTH,
+                            token = "oid4vp-integration-local-user-auth",
+                            digestBinding = request.digestBinding,
+                            nonce = request.nonce,
+                            evidence = mapOf("factor" to "pin"),
+                        ),
+                    )
+                },
+            walletProviderAttestationSignerResolver = LocalWalletProviderAttestationSignerResolver(),
+        )
+
     private suspend fun createVerifierAuthorizationRequest(): VerifierRequest {
         val dcqlQuery =
             DcqlQuery(
@@ -432,7 +478,8 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                         DcqlCredentialQuery(
                             id = SD_JWT_CONFIG_ID,
                             format = "dc+sd-jwt",
-                            claims = listOf(DcqlClaimQuery(path = listOf("degree"))),
+                            meta = sdJwtVcMeta(SD_JWT_CONFIG_ID),
+                            claims = listOf(DcqlClaimQuery(path = claimsPathPointer("degree"))),
                         ),
                     ),
             )
@@ -510,23 +557,6 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         assertTrue(
             result.isOk,
             "Verifier JAR signing key generation should succeed: ${if (result.isErr) result.error.message.defaultMessage else ""}",
-        )
-    }
-
-    private suspend fun ensureHolderSigningKey() {
-        val kms =
-            ctx.session.graph
-                .asKeyManagerServiceGraph()
-                .keyManagerService
-        val result =
-            kms.generateKeyResult(
-                alias = HOLDER_SIGNING_KEY_ALIAS,
-                use = JwkUse.sig,
-                alg = SignatureAlgorithm.ECDSA_SHA256,
-            )
-        assertTrue(
-            result.isOk,
-            "Holder proof key generation should succeed: ${if (result.isErr) result.error.message.defaultMessage else ""}",
         )
     }
 

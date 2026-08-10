@@ -66,6 +66,7 @@ kotlin {
 
                 // DID provider registry (for signing key mode DID resolution)
                 api(projects.libDidManagerPublic)
+                api(projects.libDidResolverPublic)
                 // DID hosting SPI — contribute a provider that serves the issuer's own did:web
                 // document (derived from its signing key) over the generic hosting endpoint.
                 api(projects.libDidHostingPublic)

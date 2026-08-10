@@ -31,17 +31,10 @@ import com.sphereon.wallet.credential.StorageProfile
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
 import com.sphereon.wallet.credential.WalletStorageMode
 import com.sphereon.wallet.credential.WalletStorageProfileResolver
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 
 /**
  * Routes wallet issuance-session operations through the same [StorageProfile] as credentials.
  */
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<WalletIssuanceSessionStore>())
 class StorageProfileRoutingWalletIssuanceSessionStore(
     private val storageProfileResolver: WalletStorageProfileResolver,
     private val localStore: LocalWalletIssuanceSessionStore,

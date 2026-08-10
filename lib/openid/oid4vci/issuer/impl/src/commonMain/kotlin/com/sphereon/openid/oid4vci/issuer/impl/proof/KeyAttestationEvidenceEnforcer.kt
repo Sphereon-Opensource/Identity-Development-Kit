@@ -49,8 +49,9 @@ internal class KeyAttestationEvidenceEnforcer(
         claims: JsonObject,
         policy: KeyAttestationsRequired?,
         attestedKeyCount: Int,
+        requireWalletUnitEvidence: Boolean,
     ): IdkResult<VerifiedKeyAttestation?, IdkError> {
-        val productionRequired = policy != null
+        val productionRequired = requireWalletUnitEvidence
         val evidence = collectEvidence(claims)
 
         if (!productionRequired) {
@@ -113,7 +114,7 @@ internal class KeyAttestationEvidenceEnforcer(
         }
 
         val actualStorage = keyStorage.canonical
-        policy.keyStorage.orEmpty().forEach { required ->
+        policy?.keyStorage.orEmpty().forEach { required ->
             if (canonical(required) !in actualStorage) {
                 return invalid(
                     "production key attestation key_storage does not include required level '$required' " +
@@ -122,7 +123,7 @@ internal class KeyAttestationEvidenceEnforcer(
             }
         }
         val actualUserAuthentication = userAuthentication.canonical
-        policy.userAuthentication.orEmpty().forEach { required ->
+        policy?.userAuthentication.orEmpty().forEach { required ->
             if (canonical(required) !in actualUserAuthentication) {
                 return invalid(
                     "production key attestation user_authentication does not include required level '$required' " +

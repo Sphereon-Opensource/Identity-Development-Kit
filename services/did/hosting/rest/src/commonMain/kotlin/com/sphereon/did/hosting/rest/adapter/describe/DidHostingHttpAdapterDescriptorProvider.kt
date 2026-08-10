@@ -21,6 +21,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.did.hosting.rest.DidHostingConfig
+import com.sphereon.did.hosting.rest.adapter.DidHostingHttpAdapter
 import com.sphereon.did.hosting.rest.http.GetDidJsonEndpointCommand
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
@@ -40,7 +41,7 @@ import dev.zacsweers.metro.binding
 class DidHostingHttpAdapterDescriptorProvider(
     private val hostingConfig: DidHostingConfig,
 ) : HttpAdapterDescriptorProvider {
-    override val id: String = "did-hosting"
+    override val id: String = DidHostingHttpAdapter.ID
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(

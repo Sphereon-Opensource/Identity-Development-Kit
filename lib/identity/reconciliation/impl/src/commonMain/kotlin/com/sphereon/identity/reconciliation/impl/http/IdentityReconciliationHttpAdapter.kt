@@ -60,7 +60,7 @@ class IdentityReconciliationHttpAdapter(
     private val cancelCommand: CancelReconciliationSessionCommand,
 ) : RoutedHttpAdapter() {
     companion object {
-        const val ID: String = "IDENTITY_RECONCILIATION"
+        const val ID: String = "identity.reconciliation.http"
     }
 
     override val id: String = ID

@@ -107,7 +107,12 @@ class UserContextInstanceImpl(
         sessionId: String,
         correlationId: String,
         makeActive: Boolean,
-    ): SessionInstance = sessionContextManager.createOrGetFromId(sessionId, correlationId, makeActive)
+    ): SessionInstance = sessionContextManager.createOrGetFromId(
+        sessionId = sessionId,
+        correlationId = correlationId,
+        makeActive = makeActive,
+        principalType = context.principalType,
+    )
 
     override fun getOrCreateAnonymousSession(makeActive: Boolean): SessionInstance = sessionContextManager.getAnonymous(makeActive)
 

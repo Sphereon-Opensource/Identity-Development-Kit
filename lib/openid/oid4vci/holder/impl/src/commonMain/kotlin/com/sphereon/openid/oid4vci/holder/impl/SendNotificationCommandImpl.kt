@@ -28,13 +28,14 @@ import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.withClient
 import com.sphereon.openid.oid4vci.common.Oid4vciJson
 import com.sphereon.openid.oid4vci.common.model.CredentialNotification
+import com.sphereon.openid.oid4vci.common.model.Oid4vciErrorResponse
 import com.sphereon.openid.oid4vci.holder.SendNotificationArgs
 import com.sphereon.openid.oid4vci.holder.SendNotificationCommand
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -45,7 +46,7 @@ import io.ktor.http.isSuccess
 /**
  * Sends a credential event notification to the issuer.
  *
- * Per OID4VCI 1.1 Section 12.1: HTTP POST to notification endpoint with Bearer auth.
+ * Per OID4VCI 1.1 Section 12.1: HTTP POST to notification endpoint with access-token auth.
  * Successful response: HTTP 2xx (204 No Content expected).
  */
 @Inject
@@ -87,7 +88,11 @@ class SendNotificationCommandImpl(
                 val response =
                     httpClient.post(applied.notificationEndpoint) {
                         contentType(ContentType.Application.Json)
-                        bearerAuth(applied.accessToken)
+                        headers {
+                            val scheme = if (applied.dpopProofJwt != null) "DPoP" else "Bearer"
+                            append("Authorization", "$scheme ${applied.accessToken}")
+                            applied.dpopProofJwt?.let { append("DPoP", it) }
+                        }
                         setBody(requestBody)
                     }
 
@@ -99,6 +104,28 @@ class SendNotificationCommandImpl(
                             log.debug("Failed to read notification error response body: ${expected.message}")
                             ""
                         }
+                    val errorResponse =
+                        try {
+                            Oid4vciJson.lenient.decodeFromString(Oid4vciErrorResponse.serializer(), errorBody)
+                        } catch (expected: Exception) {
+                            log.debug("Failed to parse notification error response JSON: ${expected.message}")
+                            null
+                        }
+                    val dpopNonce = response.headers["DPoP-Nonce"]
+                    val wwwAuthenticate = response.headers["WWW-Authenticate"].orEmpty()
+                    if (dpopNonce != null && (errorResponse?.error == "use_dpop_nonce" || wwwAuthenticate.contains("use_dpop_nonce"))) {
+                        return@withClient Err(
+                            IdkError(
+                                code = "use_dpop_nonce",
+                                message =
+                                    IdkError.Message(
+                                        i18nKey = "use_dpop_nonce",
+                                        defaultMessage = "Notification endpoint requires nonce in DPoP proof",
+                                    ),
+                                meta = mapOf("dpop_nonce" to dpopNonce),
+                            ),
+                        )
+                    }
                     return@withClient Err(
                         IdkError.fromString(
                             message = "Notification endpoint returned HTTP ${response.status.value}: $errorBody",

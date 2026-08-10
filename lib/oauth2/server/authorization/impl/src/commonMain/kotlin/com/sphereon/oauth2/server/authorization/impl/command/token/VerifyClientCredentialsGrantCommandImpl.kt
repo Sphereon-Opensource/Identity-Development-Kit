@@ -26,9 +26,11 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientCredentialsGrant
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.clientauth.toVerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -78,24 +80,37 @@ class VerifyClientCredentialsGrantCommandImpl(
         applyDuring: (VerifyClientCredentialsGrantArgs) -> VerifyClientCredentialsGrantArgs,
     ): IdkResult<VerifiedClientCredentialsGrant, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied.clientId, applied.requestedScope, applied.requestedAudience).mapError { IdkError.fromDTO(it) }
+        return executeInternal(applied, null).mapError { IdkError.fromDTO(it) }
     }
 
+    internal suspend fun verifyWithTrustedClientAuthorization(
+        args: VerifyClientCredentialsGrantArgs,
+        clientAuthorization: VerifiedClientAuthorization,
+    ): IdkResult<VerifiedClientCredentialsGrant, IdkError> =
+        executeInternal(args, clientAuthorization).mapError { IdkError.fromDTO(it) }
+
     private suspend fun executeInternal(
-        clientId: String,
-        requestedScope: String?,
-        requestedAudience: List<String>,
+        args: VerifyClientCredentialsGrantArgs,
+        clientAuthorization: VerifiedClientAuthorization?,
     ): IdkResult<VerifiedClientCredentialsGrant, AuthorizationServerError> {
-        // Retrieve client registration
+        val clientId = args.clientId
+        val requestedScope = args.requestedScope
+        val requestedAudience = args.requestedAudience
+        if (clientAuthorization != null && clientAuthorization.clientId != clientId) {
+            return Err(AuthorizationServerError.InvalidClient(details = "Authenticated client does not match requested client"))
+        }
         val client =
-            clientRegistry.getClient(clientId).getOrElse { error ->
-                return Err(
-                    AuthorizationServerError.ServerError(
-                        details = "Failed to retrieve client registration: $error",
-                        exception = null,
-                    ),
-                )
-            }
+            clientAuthorization
+                ?: clientRegistry
+                    .getClient(clientId)
+                    .getOrElse { error ->
+                        return Err(
+                            AuthorizationServerError.ServerError(
+                                details = "Failed to retrieve client registration: $error",
+                                exception = null,
+                            ),
+                        )
+                    }?.toVerifiedClientAuthorization()
 
         if (client == null) {
             return Err(
@@ -187,7 +202,14 @@ class VerifyClientCredentialsGrantCommandImpl(
                 clientId = clientId,
                 scope = grantedScope,
                 audience = grantedAudience,
+                additionalClaims = client.tenantId
+                    ?.let { mapOf(TENANT_ID_CLAIM to it) }
+                    .orEmpty(),
             ),
         )
+    }
+
+    private companion object {
+        const val TENANT_ID_CLAIM = "tenant_id"
     }
 }

@@ -60,9 +60,13 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -175,6 +179,26 @@ class VerifyClientAuthenticationCommandImplTest {
             assertTrue(result.isErr)
         }
 
+    @Test
+    fun basicCredentialsForAnotherClientAreRejectedBeforeRegistryAccess() =
+        runTest {
+            val registry = StubClientRegistry()
+
+            val result =
+                createCommand(clientRegistry = registry).execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication = ClientAuthenticationConfig.Basic(ClientCredentials("client-a", "secret")),
+                        clientId = "client-b",
+                        tokenEndpointUrl = "https://auth.example.com/token",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+            assertEquals(0, registry.getClientCount)
+            assertEquals(0, registry.verifyCredentialsCount)
+        }
+
     // ========================================================================
     // Post Auth
     // ========================================================================
@@ -241,6 +265,26 @@ class VerifyClientAuthenticationCommandImplTest {
             assertTrue(result.isErr)
         }
 
+    @Test
+    fun postCredentialsForAnotherClientAreRejectedBeforeRegistryAccess() =
+        runTest {
+            val registry = StubClientRegistry()
+
+            val result =
+                createCommand(clientRegistry = registry).execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication = ClientAuthenticationConfig.Post(ClientCredentials("client-a", "secret")),
+                        clientId = "client-b",
+                        tokenEndpointUrl = "https://auth.example.com/token",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+            assertEquals(0, registry.getClientCount)
+            assertEquals(0, registry.verifyCredentialsCount)
+        }
+
     // ========================================================================
     // None / Anonymous
     // ========================================================================
@@ -277,7 +321,8 @@ class VerifyClientAuthenticationCommandImplTest {
     @Test
     fun testAnonymousAuthPassesThrough() =
         runTest {
-            val command = createCommand()
+            val registry = StubClientRegistry()
+            val command = createCommand(clientRegistry = registry)
 
             val result =
                 command.execute(
@@ -290,6 +335,9 @@ class VerifyClientAuthenticationCommandImplTest {
 
             assertTrue(result.isOk)
             assertEquals(ClientAuthenticationMethod.NONE, result.value.method)
+            assertNull(result.value.clientAuthorization)
+            assertEquals(0, registry.getClientCount)
+            assertEquals(0, registry.verifyCredentialsCount)
         }
 
     // ========================================================================
@@ -447,6 +495,9 @@ class VerifyClientAuthenticationCommandImplTest {
                 )
 
             assertTrue(result.isOk)
+            val clientAuthorization = assertNotNull(result.value.clientAuthorization)
+            assertEquals("client1", clientAuthorization.clientId)
+            assertEquals(listOf(GrantType.CLIENT_CREDENTIALS), clientAuthorization.grantTypes)
         }
 
     // ========================================================================
@@ -575,6 +626,7 @@ class VerifyClientAuthenticationCommandImplTest {
                             tokenEndpointAuthSigningAlg = listOf("ES256"),
                         ),
                 )
+            val jwtService = StubJwtService(claimsOverride = assertionClaims())
             val command =
                 createCommand(
                     clientRegistry = registry,
@@ -582,7 +634,7 @@ class VerifyClientAuthenticationCommandImplTest {
                     // Stub jwt service returns valid; claim checks inside verifyJwtAssertion still run
                     // against the parsed payload. Provide a jwt service that feeds back a full set
                     // of conformant claims ((spec-aligned) requires iss/sub/aud/exp/jti).
-                    jwtService = StubJwtService(claimsOverride = assertionClaims()),
+                    jwtService = jwtService,
                 )
 
             val result =
@@ -603,6 +655,10 @@ class VerifyClientAuthenticationCommandImplTest {
 
             assertTrue(result.isOk, "expected accept; got: ${if (result.isErr) result.error.message.defaultMessage else ""}")
             assertEquals(ClientAuthenticationMethod.PRIVATE_KEY_JWT, result.value.method)
+            val trustedJwks = assertNotNull(jwtService.lastVerifyArgs?.trustedJwks)
+            val trustedKeys = assertNotNull(trustedJwks["keys"]).jsonArray
+            assertEquals(1, trustedKeys.size)
+            assertEquals("registered-key", trustedKeys.single().jsonObject["kid"]?.jsonPrimitive?.content)
         }
 
     @Test
@@ -1173,7 +1229,15 @@ class VerifyClientAuthenticationCommandImplTest {
         private val client: ClientRegistration? = null,
         private val verifyResult: Boolean = true,
     ) : ClientRegistry {
-        override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> = Ok(client)
+        var getClientCount: Int = 0
+            private set
+        var verifyCredentialsCount: Int = 0
+            private set
+
+        override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> {
+            getClientCount++
+            return Ok(client)
+        }
 
         override suspend fun registerClient(registration: ClientRegistration): IdkResult<ClientRegistration, AuthorizationServerError.StorageError> = Ok(registration)
 
@@ -1196,7 +1260,10 @@ class VerifyClientAuthenticationCommandImplTest {
         override suspend fun verifyClientCredentials(
             clientId: String,
             clientSecret: String,
-        ): IdkResult<Boolean, AuthorizationServerError.StorageError> = Ok(verifyResult)
+        ): IdkResult<Boolean, AuthorizationServerError.StorageError> {
+            verifyCredentialsCount++
+            return Ok(verifyResult)
+        }
     }
 
     private class StubClientJwksResolver(
@@ -1231,6 +1298,9 @@ class VerifyClientAuthenticationCommandImplTest {
         private val verifyValid: Boolean = true,
         private val claimsOverride: JsonObject? = null,
     ) : JwtService {
+        var lastVerifyArgs: VerifyJwsArgs? = null
+            private set
+
         private val notImpl = IdkError(code = "not_implemented", message = IdkError.Message(i18nKey = "", defaultMessage = "Not implemented"))
 
         override suspend fun prepareJws(args: CreateJwsJsonArgs): IdkResult<PreparedJwsObject, IdkError> = Err(notImpl)
@@ -1242,6 +1312,7 @@ class VerifyClientAuthenticationCommandImplTest {
         override suspend fun createJwsJsonGeneral(args: CreateJwsJsonArgs): IdkResult<JwsJsonGeneral, IdkError> = Err(notImpl)
 
         override suspend fun verifyJws(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> {
+            lastVerifyArgs = args
             if (!verifyValid) {
                 return Err(
                     IdkError(

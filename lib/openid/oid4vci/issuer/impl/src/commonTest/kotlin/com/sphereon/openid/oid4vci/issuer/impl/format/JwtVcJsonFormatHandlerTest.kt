@@ -32,7 +32,10 @@ import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
+import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
+import com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -50,6 +53,36 @@ class JwtVcJsonFormatHandlerTest {
 
         override suspend fun resolvePublicJwk(keyAlias: String,): IdkResult<kotlinx.serialization.json.JsonObject, IdkError> =
             error("StubIssuerKeyIdResolver should not be invoked under SigningKeyMode.None")
+    }
+
+    private class RecordingIssuerKeyIdResolver : IssuerKeyIdResolver {
+        var resolvedIssuerIdentifier: String? = null
+        var validatedVerificationMethodId: String? = null
+
+        override suspend fun resolveDidVerificationMethodId(
+            keyAlias: String,
+            didMethod: String,
+        ): IdkResult<String, IdkError> = error("Hosted DID issuance must use the issuer-aware resolver overload")
+
+        override suspend fun resolveDidVerificationMethodId(
+            keyAlias: String,
+            didMethod: String,
+            issuerIdentifier: String,
+        ): IdkResult<String, IdkError> {
+            resolvedIssuerIdentifier = issuerIdentifier
+            return Ok("did:web:issuer.example.com#$keyAlias")
+        }
+
+        override suspend fun resolvePublicJwk(keyAlias: String): IdkResult<JsonObject, IdkError> =
+            error("resolvePublicJwk is not used by this test")
+
+        override suspend fun validateDidVerificationMethodId(
+            keyAlias: String,
+            verificationMethodId: String,
+        ): IdkResult<String, IdkError> {
+            validatedVerificationMethodId = verificationMethodId
+            return Ok(verificationMethodId)
+        }
     }
 
     private val handler =
@@ -80,6 +113,7 @@ class JwtVcJsonFormatHandlerTest {
         credentialConfiguration = config,
         holderBindingKey = null,
         attributes = attributes,
+        signingKeyAlias = "issuer-signing-jwt-vc",
     )
 
     @Test
@@ -91,7 +125,7 @@ class JwtVcJsonFormatHandlerTest {
         }
 
     @Test
-    fun canHandleReturnsFalseForSdJwtDcFormat() =
+    fun canHandleReturnsFalseForSdJwtVcFormat() =
         runTest {
             val config = makeConfig("dc+sd-jwt")
             val request = makeRequest()
@@ -148,6 +182,29 @@ class JwtVcJsonFormatHandlerTest {
             val result = handler.issueCredential(request, context)
 
             assertTrue(result.isOk)
+        }
+
+    @Test
+    fun didSigningUsesTheExactSelectedAssertionMethod() =
+        runTest {
+            val resolver = RecordingIssuerKeyIdResolver()
+            val didWebHandler =
+                JwtVcJsonFormatHandler(
+                    jwtService = FakeJwtService(),
+                    kms = TestKmsMock(),
+                    issuerKeyIdResolver = resolver,
+                )
+            val context =
+                makeContext(makeConfig("jwt_vc_json")).copy(
+                    issuerIdentifier = "https://issuer.example.com/oid4vci",
+                    signingKeyMode = SigningKeyMode.Did("web"),
+                    signingVerificationMethodId = "did:web:issuer.example.com#issuer-assertion",
+                )
+
+            val result = didWebHandler.issueCredential(makeRequest("jwt_vc_json"), context)
+
+            assertTrue(result.isOk)
+            assertEquals("did:web:issuer.example.com#issuer-assertion", resolver.validatedVerificationMethodId)
         }
 
     /**

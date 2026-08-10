@@ -76,15 +76,6 @@ data class CreateAuthorizationRequestArgs(
     val clientMetadataUri: String? = null,
     val clientIdScheme: ClientIdScheme = ClientIdScheme.REDIRECT_URI,
     /**
-     * KMS reference for the wallet→verifier JARM response encryption keypair. Caller
-     * generates the keypair in an ephemeral KMS provider and passes the alias/providerId
-     * so they land on the persisted `AuthorizationSession`; the response endpoint resolves
-     * the alias back to a `KeyInfo` for JWE decryption. Required for `direct_post.jwt`;
-     * ignored for unencrypted modes.
-     */
-    val jarmEncryptionKeyAlias: String? = null,
-    val jarmEncryptionKeyProviderId: String? = null,
-    /**
      * HTTP method the wallet must use when fetching the JAR from `request_uri` per OID4VP
      * §5.10 (`get` or `post`). Lands as a `request_uri_method` query parameter on the OUTER
      * OAuth2 authorization URL (the `openid4vp://` deeplink), NOT inside the signed Request
@@ -129,6 +120,13 @@ data class CreateAuthorizationRequestArgs(
      * to resolve verifier-level and verifier/DCQL trust-domain defaults during response validation.
      */
     val verifierId: String? = null,
+    /**
+     * Optional identifier of the verification template this request was created from (see
+     * `createAuthorizationRequestFromVerificationTemplate`). Threaded onto the resulting
+     * [com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession] so EDK can resolve
+     * TEMPLATE-scoped trust-domain defaults during response validation.
+     */
+    val templateId: String? = null,
     /**
      * Optional per-DCQL-credential-query credential status policy, keyed by the DCQL credential query
      * `id`. Decides how the verifier treats a received credential's resolved status (accept revoked /
@@ -246,6 +244,13 @@ data class ValidateAuthorizationResponseArgs(
      * a DCQL credential query id inside the vp_token.
      */
     val dcqlQueryId: String? = null,
+    /**
+     * Optional identifier of the verification template the authorization request was created
+     * from. When null, [ValidateAuthorizationResponseCommandImpl] falls back to the persisted
+     * [com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession.templateId] so TEMPLATE-scoped
+     * trust-domain defaults still apply without every caller having to resend it.
+     */
+    val templateId: String? = null,
 )
 
 /**
@@ -291,6 +296,8 @@ data class MatchedCredential(
  * @property format The credential format
  * @property expectedNonce The expected nonce value
  * @property expectedAudience The expected audience (verifier client_id)
+ * @property requireCryptographicHolderBinding Whether the Credential Query requires a
+ * Cryptographic Holder Binding proof. OpenID4VP 1.0 Final Section 6.1 defaults this to true.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VerifyHolderBindingArgs", exact = true)
@@ -300,6 +307,7 @@ data class VerifyHolderBindingArgs(
     val format: String,
     val expectedNonce: String,
     val expectedAudience: String,
+    val requireCryptographicHolderBinding: Boolean = true,
     /**
      * mDoc-only: the verifier's OID4VP `client_id` (after §5.9.3 prefixing). Used with
      * [responseUri] and [verifierEncryptionJwkThumbprint] to reconstruct the
@@ -321,7 +329,8 @@ data class VerifyHolderBindingArgs(
 /**
  * Result of verifying holder binding.
  *
- * OpenID4VP 1.0 Final Section 7.3 requires verification of cryptographic holder binding:
+ * OpenID4VP 1.0 Final Sections 5.3 and 6.1 define whether cryptographic holder binding is
+ * required for a Credential Query. When it is required, format-specific verification includes:
  * - SD-JWT: KB-JWT signature verification, nonce/audience validation, sd_hash verification
  * - mDoc: DeviceAuth COSE signature verification over SessionTranscript
  * - JWT VP: JWT proof signature verification with nonce/audience
@@ -502,6 +511,11 @@ data class HandleDirectPostResponseArgs(
     val responseCodeTtlSeconds: Long = 300,
     val verifierId: String? = null,
     val dcqlQueryId: String? = null,
+    /**
+     * Optional identifier of the verification template the authorization request was created
+     * from, forwarded into [ValidateAuthorizationResponseArgs.templateId].
+     */
+    val templateId: String? = null,
     /**
      * mDoc-only: raw 32-byte SHA-256 thumbprint (RFC 7638) of the verifier's encryption-
      * key JWK, threaded into the §B.2.6 OpenID4VPHandover during DeviceAuth verification.

@@ -10,7 +10,7 @@ import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletCounterpartyAssociationDecision
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
@@ -30,6 +30,8 @@ import com.sphereon.wallet.interaction.WalletSecurityGateResult
 import com.sphereon.wallet.interaction.WalletSecurityGrant
 import com.sphereon.wallet.interaction.WalletSecurityOperation
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStore
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -42,7 +44,7 @@ class Iso18013WalletInteractionProtocolAdapterTest {
     @Test
     fun proximityMdocUriFormsMapToStrongMatchesWithoutClaimingOpenid4vp() =
         runTest {
-            val adapter = Iso18013WalletInteractionProtocolAdapter()
+            val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
 
             assertEquals(WalletProtocolMatchStrength.STRONG, adapter.canHandle(WalletEntryPoint.rawQr("mdoc:abc")).strength)
             assertEquals(WalletProtocolMatchStrength.STRONG, adapter.canHandle(WalletEntryPoint.rawQr("mdoc://abc")).strength)
@@ -52,7 +54,7 @@ class Iso18013WalletInteractionProtocolAdapterTest {
     @Test
     fun nfcAndBleHandoverEntryPointsMapToStrongMatches() =
         runTest {
-            val adapter = Iso18013WalletInteractionProtocolAdapter()
+            val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
 
             assertEquals(WalletProtocolMatchStrength.STRONG, adapter.canHandle(WalletEntryPoint.nfc(byteArrayOf(1, 2, 3))).strength)
             assertEquals(WalletProtocolMatchStrength.STRONG, adapter.canHandle(WalletEntryPoint.ble(byteArrayOf(4, 5, 6))).strength)
@@ -61,12 +63,12 @@ class Iso18013WalletInteractionProtocolAdapterTest {
     @Test
     fun nfcAndBleHandoverStartAsDisclosureConsentWithoutLeakingPayloads() =
         runTest {
-            val adapter = Iso18013WalletInteractionProtocolAdapter()
+            val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
 
             val nfc = adapter.start(context, WalletEntryPoint.nfc("nfc-private-payload".encodeToByteArray()))
@@ -85,12 +87,12 @@ class Iso18013WalletInteractionProtocolAdapterTest {
     @Test
     fun counterpartyContactResolutionIsRejectedWithoutAdvancingProximityFlow() =
         runTest {
-            val adapter = Iso18013WalletInteractionProtocolAdapter()
+            val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("contact-resolution-rejected"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val started = adapter.start(context, WalletEntryPoint.rawQr("mdoc:reader-engagement")).state
 
@@ -111,13 +113,13 @@ class Iso18013WalletInteractionProtocolAdapterTest {
     @Test
     fun wifiAwareEntryPointIsExplicitlyTransportUnavailable() =
         runTest {
-            val adapter = Iso18013WalletInteractionProtocolAdapter()
+            val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
             val session =
                 adapter.start(
                     WalletInteractionContext(
                         sessionId = WalletInteractionSessionId("s1"),
                         walletUnitId = "wallet",
-                        executionMode = WalletInteractionExecutionMode.LOCAL,
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     ),
                     WalletEntryPoint.wifiAware(byteArrayOf(1, 2, 3)),
                 )
@@ -129,12 +131,12 @@ class Iso18013WalletInteractionProtocolAdapterTest {
     @Test
     fun continueWithoutDisclosureExecutorDoesNotPretendDeviceResponseWasSent() =
         runTest {
-            val adapter = Iso18013WalletInteractionProtocolAdapter()
+            val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("mdoc:abc"))
 
@@ -155,7 +157,7 @@ class Iso18013WalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 )
             val session = adapter.start(context, WalletEntryPoint.rawQr("mdoc:abc"))
 
@@ -177,7 +179,7 @@ class Iso18013WalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.SPLIT,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     securityGate = securityGate,
                     attributes =
                         mapOf(
@@ -212,6 +214,8 @@ class Iso18013WalletInteractionProtocolAdapterTest {
             val engine =
                 DefaultWalletInteractionEngine(
                     sensitiveInputAuthority = Iso18013TestSensitiveInputAuthority,
+                    privateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
+                    sessionStore = InMemoryWalletInteractionSessionStore(),
                     securityGate = WalletSecurityGate.allow,
                     adapters = listOf(Iso18013WalletInteractionProtocolAdapter(disclosureExecutor = executor)),
                 )
@@ -245,7 +249,7 @@ class Iso18013WalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val state =

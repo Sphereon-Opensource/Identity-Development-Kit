@@ -188,6 +188,29 @@ interface KmsProvider :
         get() = true
 
     /**
+     * Whether this provider records the keys it creates in the managed key-reference index itself.
+     *
+     * A generic caller that generates or stores a key through a provider normally indexes the key
+     * it gets back, under the provider id that key reports. A provider that already wrote the
+     * authoritative row must not have that repeated: the same key would be indexed a second time,
+     * and if the provider answers to more than one id, the second row lands under a different
+     * provider id and becomes a duplicate of one key. Two rows for one key then drift apart on
+     * every lifecycle operation, and a delete that removes one of them leaves the other pointing at
+     * a backing key that is gone.
+     *
+     * Ordinary providers own key material and nothing else, so this is false for them and the
+     * generic indexing stands.
+     */
+    val maintainsKeyReferenceIndex: Boolean
+        get() = false
+
+    /**
+     * Releases provider-owned network clients when a session registry evicts or replaces this
+     * provider. Local providers normally have nothing to release.
+     */
+    fun close() = Unit
+
+    /**
      * Returns the full capabilities of this KMS provider.
      * This method provides a comprehensive view of what operations, algorithms, and features
      * the provider supports, making it easier to query provider capabilities programmatically.

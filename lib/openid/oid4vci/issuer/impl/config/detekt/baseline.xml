@@ -14,19 +14,19 @@
     <ID>BracesOnIfStatements:KeyAttestationVerifier.kt$KeyAttestationVerifier$else</ID>
     <ID>BracesOnIfStatements:KeyAttestationVerifier.kt$KeyAttestationVerifier$if</ID>
     <ID>BracesOnIfStatements:PostIssuanceHookDispatcher.kt$PostIssuanceHookDispatcher$if</ID>
-    <ID>BracesOnIfStatements:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$if</ID>
+    <ID>BracesOnIfStatements:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$if</ID>
     <ID>ClassOrdering:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$/** * Session correlation context captured during [doExecuteInternal]. Set * only when an [IssuanceSession] was resolved for the request; stays * null for sessionless flows. Read by [dispatchPostIssuanceHooks] to * populate [PostIssuanceHookArgs.boundUsageToken] / `preAuthCode` / * `subject` from the offer-side source of truth without re-resolving. * * Instance state is safe here: the command is session-scoped and a * single HTTP request is processed sequentially within its session. */ private var pendingHookContext: HookContext? = null</ID>
     <ID>CyclomaticComplexMethod:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$private fun buildCredentialConfiguration(configId: String): CredentialConfigurationSupported</ID>
     <ID>CyclomaticComplexMethod:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$private suspend fun doExecuteInternal( args: HandleCredentialRequestArgs, applyDuring: (HandleCredentialRequestArgs) -> HandleCredentialRequestArgs, ): IdkResult&lt;CredentialResponse, IdkError></ID>
     <ID>CyclomaticComplexMethod:KeyAttestationVerifier.kt$KeyAttestationVerifier$@Suppress("LongMethod", "ReturnCount") suspend fun verify( keyAttestationJwt: String, trustConfig: KeyAttesterTrustConfig?, policy: KeyAttestationsRequired?, expectedNonce: String? = null, clockSkewSeconds: Long = DEFAULT_CLOCK_SKEW_SECONDS, ): IdkResult&lt;ValidatedKeyAttestation, IdkError></ID>
     <ID>CyclomaticComplexMethod:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$@Suppress("UNCHECKED_CAST") override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
-    <ID>CyclomaticComplexMethod:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
+    <ID>CyclomaticComplexMethod:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
     <ID>LongMethod:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$private fun buildCredentialConfiguration(configId: String): CredentialConfigurationSupported</ID>
     <ID>LongMethod:CredentialResponseEncryptor.kt$CredentialResponseEncryptor$suspend fun encryptIfRequested( response: CredentialResponse, encryption: RequestedCredentialResponseEncryption?, ): IdkResult&lt;MaybeEncryptedCredentialResponse, IdkError></ID>
     <ID>LongMethod:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$private suspend fun doExecuteInternal( args: HandleCredentialRequestArgs, applyDuring: (HandleCredentialRequestArgs) -> HandleCredentialRequestArgs, ): IdkResult&lt;CredentialResponse, IdkError></ID>
     <ID>LongMethod:JwtVcJsonFormatHandler.kt$JwtVcJsonFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
     <ID>LongMethod:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$@Suppress("UNCHECKED_CAST") override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
-    <ID>LongMethod:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
+    <ID>LongMethod:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
     <ID>LongMethod:SphereonAsBridge.kt$SphereonAsBridge$override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult&lt;ValidatedTokenContext, IdkError></ID>
     <ID>LongParameterList:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$( proofType: String, proofValue: JsonElement, audience: String, expectedClientId: String?, credentialConfigId: String, proofTypeSupported: com.sphereon.openid.oid4vci.common.model.ProofTypeSupported? = null, )</ID>
     <ID>LongParameterList:Oid4vciIssuerServiceImpl.kt$Oid4vciIssuerServiceImpl$( private val createCredentialOfferCommand: CreateCredentialOfferCommand, private val buildIssuerMetadataCommand: BuildIssuerMetadataCommand, private val issueNonceCommand: IssueNonceCommand, private val handleCredentialRequestCommand: HandleCredentialRequestCommand, private val handleDeferredCredentialRequestCommand: HandleDeferredCredentialRequestCommand, private val handleNotificationCommand: HandleNotificationCommand, private val buildSignedIssuerMetadataCommand: BuildSignedIssuerMetadataCommand, )</ID>
@@ -55,8 +55,8 @@
     <ID>ReturnCount:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$@Suppress("UNCHECKED_CAST") override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
     <ID>ReturnCount:MsoMdocFormatHandler.kt$MsoMdocFormatHandler.Companion$fun jsonElementToNativeValue(element: JsonElement): Any</ID>
     <ID>ReturnCount:NonceManager.kt$NonceManager$suspend fun consume(nonce: String): IdkResult&lt;NonceEntry?, IdkError></ID>
-    <ID>ReturnCount:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
-    <ID>ReturnCount:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$private suspend fun resolveX5cHeader( keyAlias: String, certChainPath: String?, ): JsonObject?</ID>
+    <ID>ReturnCount:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
+    <ID>ReturnCount:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$private suspend fun resolveX5cHeader( keyAlias: String, certChainPath: String?, ): JsonObject?</ID>
     <ID>ReturnCount:SphereonAsBridge.kt$SphereonAsBridge$override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult&lt;ValidatedTokenContext, IdkError></ID>
     <ID>SpreadOperator:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$( proofTypeKey, *algValues.toTypedArray(), keyAttestationsRequired = proofTypeAttestations[proofTypeKey], )</ID>
     <ID>SpreadOperator:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$(*credentialDefinitionTypes.toTypedArray())</ID>
@@ -69,9 +69,9 @@
     <ID>TooGenericExceptionCaught:JwtProofVerifier.kt$JwtProofVerifier$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:KeyAttestationVerifier.kt$KeyAttestationVerifier$t: Throwable</ID>
     <ID>UnusedParameter:JwtProofVerifier.kt$JwtProofVerifier$jwkIfPresent: JsonElement?</ID>
-    <ID>UnusedParameter:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$certChainPath: String?</ID>
+    <ID>UnusedParameter:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$certChainPath: String?</ID>
     <ID>UnusedPrivateProperty:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$private val encryptor: CredentialResponseEncryptor</ID>
     <ID>UnusedPrivateProperty:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$private val nonceManager: NonceManager</ID>
-    <ID>UnusedPrivateProperty:SdJwtDcFormatHandler.kt$SdJwtDcFormatHandler$private val didProviderRegistry: DidProviderRegistry</ID>
+    <ID>UnusedPrivateProperty:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$private val didProviderRegistry: DidProviderRegistry</ID>
   </CurrentIssues>
 </SmellBaseline>

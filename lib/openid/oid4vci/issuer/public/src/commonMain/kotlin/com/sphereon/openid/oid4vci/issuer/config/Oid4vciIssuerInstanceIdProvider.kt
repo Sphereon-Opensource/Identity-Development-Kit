@@ -28,6 +28,9 @@ import com.sphereon.core.compat.JsExportCompat
  */
 const val INSTANCES_NAMESPACE: String = "oid4vci.issuers"
 
+/** Stable persistence identity for the singular, config-only issuer deployment. */
+const val DEFAULT_OID4VCI_ISSUER_INSTANCE_ID: String = "default"
+
 /**
  * Per-request seam exposing the active OID4VCI issuer instance id.
  *
@@ -47,6 +50,10 @@ const val INSTANCES_NAMESPACE: String = "oid4vci.issuers"
 interface Oid4vciIssuerInstanceIdProvider {
     fun currentInstanceId(): String?
 }
+
+/** Resolve the routed instance or the canonical identity of the singular issuer deployment. */
+fun Oid4vciIssuerInstanceIdProvider.currentInstanceIdOrDefault(): String =
+    currentInstanceId()?.trim()?.takeIf(String::isNotEmpty) ?: DEFAULT_OID4VCI_ISSUER_INSTANCE_ID
 
 /**
  * Mutable counterpart of [Oid4vciIssuerInstanceIdProvider]. The HTTP adapter (or any other request

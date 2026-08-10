@@ -155,6 +155,8 @@ interface SendNotificationWithRetryCommand : ServiceCommand<SendNotificationWith
  */
 data class RequestCredentialWithFlowArgs(
     val sessionId: String,
+    val walletUnitId: String,
+    val operationBinding: String,
     val credentialEndpoint: String,
     val accessToken: String,
     val issuerUrl: String,

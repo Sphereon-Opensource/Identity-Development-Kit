@@ -15,6 +15,7 @@ import com.sphereon.core.api.log.LogService
 import com.sphereon.core.api.log.LoggerConfig
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.SessionLogService
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.UserContext
@@ -77,7 +78,9 @@ fun createTestSessionExecution(
             override fun createOrGetFromId(
                 sessionId: String,
                 correlationId: String,
-                makeActive: Boolean
+                makeActive: Boolean,
+                secureDetails: SecuredTenantContextDetails?,
+                principalType: PrincipalType
             ) = throw NotImplementedError()
 
             override fun destroyById(sessionId: String) {}

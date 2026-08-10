@@ -37,6 +37,7 @@ class HttpErrorRendererTest {
         val body = json.decodeFromString<RestErrorBody>(response.body!!)
         assertEquals("NOT_FOUND_ERROR", body.error.code)
         assertEquals("User not found: 123", body.error.message)
+        assertEquals(ErrorCategory.NOT_FOUND, body.error.category)
     }
 
     @Test
@@ -85,6 +86,7 @@ class HttpErrorRendererTest {
         val response = renderer.render(error)
         assertEquals(500, response.statusCode)
         val body = json.decodeFromString<RestErrorBody>(response.body!!)
+        assertEquals(ErrorCategory.INTERNAL, body.error.category)
         assertEquals("abc-123", body.error.details["requestId"])
         assertEquals("extra info", body.error.details["detail"])
     }

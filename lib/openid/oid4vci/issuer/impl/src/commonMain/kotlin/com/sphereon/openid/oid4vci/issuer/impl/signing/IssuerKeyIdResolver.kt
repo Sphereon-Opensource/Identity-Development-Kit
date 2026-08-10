@@ -28,6 +28,8 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.did.manager.DidCreateOptions
 import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.did.models.VerificationPurpose
+import com.sphereon.did.resolver.DidResolutionResult
+import com.sphereon.did.resolver.DidResolverRegistry
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -35,10 +37,14 @@ import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.JsonObject
 
 /**
- * Resolves the `kid` string and bare public JWK for a signing key alias, in exactly the
+ * Resolves the `kid` string and bare public JWK for a signing key, in exactly the
  * same way the credential issuance path does. Centralising this here guarantees the
  * JWT-protected-header `kid` and the `kid` published in the issuer's JWKS are always
  * byte-identical.
+ *
+ * The key name reaching this resolver is server-resolved. It selects an existing key and never
+ * creates one, and it is process-internal: it must not appear on a DTO, a REST response, or in an
+ * error a caller can see.
  *
  * The resolver is DID-method-aware: for a DID-bound issuer (`did:jwk`, `did:key`, ...)
  * the kid is the DID URL of the assertion-method verification method — e.g.
@@ -58,6 +64,43 @@ interface IssuerKeyIdResolver {
         didMethod: String,
     ): IdkResult<String, IdkError>
 
+    /**
+     * Resolve a DID verification method for a known issuer identifier. Issuance callers already
+     * hold the validated public issuer URL and must pass it here so hosted DID methods do not
+     * depend on a generic principal-config lookup losing the active issuer-instance prefix.
+     *
+     * The default keeps third-party/test implementations source-compatible. Implementations that
+     * support hosted DID methods should override it and use [issuerIdentifier] as the authoritative
+     * host source.
+     */
+    suspend fun resolveDidVerificationMethodId(
+        keyAlias: String,
+        didMethod: String,
+        issuerIdentifier: String,
+    ): IdkResult<String, IdkError> = resolveDidVerificationMethodId(keyAlias, didMethod)
+
+    /**
+     * Validates an operator-selected assertionMethod DID URL against the actual signing key.
+     * Implementations must fail when the DID cannot be resolved, the method is not an
+     * assertionMethod, or its public material does not match [keyAlias].
+     */
+    suspend fun validateDidVerificationMethodId(
+        keyAlias: String,
+        verificationMethodId: String,
+    ): IdkResult<String, IdkError> {
+        val did = verificationMethodId.substringBefore('#')
+        val method = did.removePrefix("did:").substringBefore(':')
+        if (!did.startsWith("did:") || '#' !in verificationMethodId || method.isBlank()) {
+            return Err(IdkError.fromString(code = "invalid_signing_verification_method", message = "The selected DID assertion method does not match the issuer signing key"))
+        }
+        val resolved = resolveDidVerificationMethodId(keyAlias, method).getOrElse { return Err(it) }
+        return if (resolved == verificationMethodId) {
+            Ok(resolved)
+        } else {
+            Err(IdkError.fromString(code = "invalid_signing_verification_method", message = "The selected DID assertion method does not match the issuer signing key"))
+        }
+    }
+
     /** Returns the bare public JWK (as a JsonObject) for [keyAlias]. */
     suspend fun resolvePublicJwk(keyAlias: String): IdkResult<JsonObject, IdkError>
 }
@@ -68,11 +111,39 @@ interface IssuerKeyIdResolver {
 class DefaultIssuerKeyIdResolver(
     private val kms: KeyManagerService,
     private val didProviderRegistry: DidProviderRegistry,
+    private val didResolverRegistry: DidResolverRegistry,
     private val configService: PrincipalConfigService,
 ) : IssuerKeyIdResolver {
     override suspend fun resolveDidVerificationMethodId(
         keyAlias: String,
         didMethod: String,
+    ): IdkResult<String, IdkError> = resolveDidVerificationMethodIdInternal(keyAlias, didMethod, issuerIdentifier = null)
+
+    override suspend fun resolveDidVerificationMethodId(
+        keyAlias: String,
+        didMethod: String,
+        issuerIdentifier: String,
+    ): IdkResult<String, IdkError> = resolveDidVerificationMethodIdInternal(keyAlias, didMethod, issuerIdentifier)
+
+    override suspend fun validateDidVerificationMethodId(
+        keyAlias: String,
+        verificationMethodId: String,
+    ): IdkResult<String, IdkError> {
+        val did = verificationMethodId.substringBefore('#')
+        if (!did.startsWith("did:") || '#' !in verificationMethodId) {
+            return Err(IdkError.fromString(code = "invalid_signing_verification_method", message = SIGNING_IDENTIFIER_INVALID))
+        }
+        val jwk = loadPublicJwk(keyAlias).getOrElse { return Err(it) }
+        val resolution = didResolverRegistry.resolve(did).getOrElse { return Err(it) }
+        val exactMatch = findPublishedAssertionMethodId(resolution, jwk)
+        return exactMatch?.takeIf { it == verificationMethodId }?.let(::Ok)
+            ?: Err(IdkError.fromString(code = "invalid_signing_verification_method", message = SIGNING_IDENTIFIER_INVALID))
+    }
+
+    private suspend fun resolveDidVerificationMethodIdInternal(
+        keyAlias: String,
+        didMethod: String,
+        issuerIdentifier: String?,
     ): IdkResult<String, IdkError> {
         val jwk = loadPublicJwk(keyAlias).getOrElse { return Err(it) }
         val provider =
@@ -83,7 +154,7 @@ class DefaultIssuerKeyIdResolver(
         // supplied. It is the host of the issuer identifier (the public HTTPS base URL).
         val domain =
             if (didMethod in WEB_RESOLVED_METHODS) {
-                resolveDidWebDomain()
+                resolveDidWebDomain(issuerIdentifier)
                     ?: return Err(
                         IdkError.fromString(
                             code = "did_web_domain_unresolved",
@@ -110,6 +181,24 @@ class DefaultIssuerKeyIdResolver(
                         verificationMethodId = if (didMethod in WEB_RESOLVED_METHODS) keyAlias else null,
                     ),
                 ).getOrElse { return Err(it) }
+        // A hosted DID is not derived from this key. The authoritative document may use a
+        // code-owned verification-method fragment that differs from the private KMS alias
+        // (for example `issuer-assertion-tenant` vs `issuer-signing-tenant`). Resolve the
+        // published document and select the assertion method by public material; emitting the
+        // locally synthesised alias fragment would advertise a kid that the document does not
+        // contain and verifiers could silently try the wrong key.
+        if (didMethod in WEB_RESOLVED_METHODS) {
+            val resolution = didResolverRegistry.resolve(created.did).getOrElse { return Err(it) }
+            val publishedVmId =
+                findPublishedAssertionMethodId(resolution, jwk)
+                    ?: return Err(
+                        IdkError.fromString(
+                            code = "did_signing_method_unresolved",
+                            message = SIGNING_IDENTIFIER_UNAVAILABLE,
+                        ),
+                    )
+            return Ok(publishedVmId)
+        }
         val vmId =
             created.verificationMethodsByPurpose[VerificationPurpose.ASSERTION_METHOD]
                 ?.firstOrNull()
@@ -139,19 +228,28 @@ class DefaultIssuerKeyIdResolver(
      * Resolve the did:web/webvh host: an explicit override, else the host of the issuer identifier
      * (the public HTTPS base URL, e.g. `https://issuer.example/oid4vci` -> `issuer.example`).
      */
-    private fun resolveDidWebDomain(): String? {
+    private fun resolveDidWebDomain(issuerIdentifier: String?): String? {
+        issuerIdentifier?.let(::hostOf)?.let { return it }
         configService.getPropertyAsString(DID_WEB_DOMAIN_KEY)?.takeIf { it.isNotBlank() }?.let { return hostOf(it) }
         return configService.getPropertyAsString(IDENTIFIER_KEY)?.let { hostOf(it) }
     }
 
-    private suspend fun loadPublicJwk(keyAlias: String): IdkResult<Jwk, IdkError> {
-        val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyAlias))
+    /**
+     * Loads the stored JWK for a server-resolved key name. The key must already exist; nothing is
+     * created here. Both failure shapes answer identically and without echoing the name, which is
+     * process-internal and must not reach a caller through an error message.
+     */
+    private suspend fun loadPublicJwk(keyName: String): IdkResult<Jwk, IdkError> {
+        if (keyName.isBlank()) {
+            return Err(IdkError.fromString(code = "signing_key_unavailable", message = SIGNING_KEY_UNAVAILABLE))
+        }
+        val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyName))
         if (keyResult.isErr) {
-            return Err(IdkError.fromString(code = "signing_key_unavailable", message = "KMS did not return key '$keyAlias': ${keyResult.error.message}"))
+            return Err(IdkError.fromString(code = "signing_key_unavailable", message = SIGNING_KEY_UNAVAILABLE))
         }
         val jwk =
             keyResult.value.key?.key as? Jwk
-                ?: return Err(IdkError.fromString(code = "signing_key_unavailable", message = "KMS key '$keyAlias' is not a JWK"))
+                ?: return Err(IdkError.fromString(code = "signing_key_unavailable", message = SIGNING_KEY_UNAVAILABLE))
         return Ok(jwk)
     }
 
@@ -166,19 +264,79 @@ class DefaultIssuerKeyIdResolver(
 
         /** Methods whose DID is hosted at a web host (so the host must be supplied, not derived from the key). */
         private val WEB_RESOLVED_METHODS = setOf("web", "webvh")
+
+        /**
+         * Single refusal for every reason the signing key cannot be used, stated without the key
+         * name so it cannot become a discovery oracle over the deployment's key material.
+         */
+        internal const val SIGNING_KEY_UNAVAILABLE = "The issuer signing key is unavailable"
+        internal const val SIGNING_IDENTIFIER_UNAVAILABLE = "The issuer signing identifier is unavailable"
+        internal const val SIGNING_IDENTIFIER_INVALID = "The selected DID assertion method does not match the issuer signing key"
         private const val IDENTIFIER_KEY = "oid4vci.issuer.identifier"
         private const val DID_WEB_DOMAIN_KEY = "oid4vci.issuer.signing.did-web-domain"
 
-        /** Host (authority without scheme/port/path) of an absolute http(s) URL, or null. */
+        /**
+         * Authority of an absolute URL or bare authority. Non-default ports are significant in a
+         * did:web identifier and must be retained for encoding by the DID provider.
+         */
         internal fun hostOf(url: String): String? {
+            val trimmed = url.trim()
+            if (trimmed.isBlank()) return null
             val authority =
-                url
-                    .substringAfter("://", "")
+                (if (trimmed.contains("://")) trimmed.substringAfter("://") else trimmed)
                     .substringBefore('/')
                     .substringBefore('?')
                     .substringBefore('#')
-            val host = authority.substringBefore('@').substringBefore(':')
-            return host.takeIf { it.isNotBlank() }
+            if ('@' in authority) return null
+            return authority.takeIf { it.isNotBlank() }
+        }
+    }
+}
+
+/**
+ * Finds the single assertion method whose public key material matches [signingKey]. Identity and
+ * certificate metadata (`kid`, `use`, `alg`, `x5c`, ...) are deliberately ignored: DID documents
+ * own the verification-method id while KMS owns the signing alias.
+ */
+internal fun findPublishedAssertionMethodId(
+    resolution: DidResolutionResult,
+    signingKey: Jwk,
+): String? {
+    if (!resolution.isSuccess()) return null
+    val did = resolution.didDocument?.id?.takeIf { it.startsWith("did:") } ?: return null
+    val expected = signingKey.publicMaterial()
+    val matches =
+        resolution
+            .getAssertionMethods()
+            .filter { method -> method.publicKeyJwk?.publicMaterial() == expected }
+            .mapNotNull { method -> absoluteDidVerificationMethodId(did, method.id) }
+            .distinct()
+    return matches.singleOrNull()
+}
+
+/**
+ * Converts a DID-document verification-method id to the full absolute DID URL required in a
+ * JOSE `kid`. Only an already absolute id or a document-relative fragment is accepted.
+ */
+internal fun absoluteDidVerificationMethodId(
+    did: String,
+    verificationMethodId: String,
+): String? =
+    when {
+        !did.startsWith("did:") -> null
+        verificationMethodId.startsWith("$did#") && verificationMethodId.length > did.length + 1 -> verificationMethodId
+        verificationMethodId.startsWith("#") && verificationMethodId.length > 1 -> "$did$verificationMethodId"
+        else -> null
+    }
+
+private fun Jwk.publicMaterial(): JsonObject {
+    val full =
+        kotlinx.serialization.json
+            .Json { encodeDefaults = false }
+            .let { json -> json.parseToJsonElement(json.encodeToString(this)) as JsonObject }
+    return kotlinx.serialization.json.buildJsonObject {
+        full.forEach { (key, value) ->
+            if (key in setOf("kty", "crv", "x", "y", "n", "e")) put(key, value)
         }
     }
 }

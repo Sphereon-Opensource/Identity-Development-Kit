@@ -55,7 +55,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -65,7 +65,7 @@ class HttpCommandDiIntegrationTest {
             // Create endpoint command with execution
             val endpoint = TestGetEndpointCommand(execution)
             assertNotNull(endpoint)
-            assertEquals("test.get", endpoint.id)
+            assertEquals("test.items.get", endpoint.id)
             assertTrue(endpoint.isEnabled)
 
             app.destroy()
@@ -78,7 +78,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -112,7 +112,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -138,14 +138,14 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
 
             val adapter = TestItemsHttpAdapter(execution)
             assertNotNull(adapter)
-            assertEquals("test-items-adapter", adapter.id)
+            assertEquals("test.items.adapter", adapter.id)
 
             app.destroy()
         }
@@ -157,7 +157,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -165,7 +165,7 @@ class HttpCommandDiIntegrationTest {
             val adapter = TestItemsHttpAdapter(execution)
             val description = adapter.describe()
 
-            assertEquals("test-items-adapter", description.id)
+            assertEquals("test.items.adapter", description.id)
             assertEquals("/api", description.mount.serverPrefix)
             assertEquals("/items", description.mount.adapterBasePath)
             assertEquals(3, description.endpoints.size)
@@ -185,7 +185,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -222,7 +222,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -245,7 +245,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -270,7 +270,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -294,7 +294,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -315,7 +315,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -345,7 +345,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -366,7 +366,7 @@ class HttpCommandDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val execution = coreApiGraph.serviceExecution
@@ -387,7 +387,7 @@ class HttpCommandDiIntegrationTest {
     private class TestGetEndpointCommand(
         execution: SessionExecution,
     ) : HttpEndpointCommandAdapter(
-            id = "test.get",
+            id = "test.items.get",
             execution = execution,
             endpoint =
                 HttpEndpointDescriptor(
@@ -413,7 +413,7 @@ class HttpCommandDiIntegrationTest {
     private class TestItemsHttpAdapter(
         execution: SessionExecution,
     ) : CommandBackedHttpAdapter(
-            id = "test-items-adapter",
+            id = "test.items.adapter",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
         ) {
@@ -482,14 +482,14 @@ class HttpCommandDiIntegrationTest {
         execution: SessionExecution,
         private val errorCode: String = "ILLEGAL_ARGUMENT_ERROR",
     ) : CommandBackedHttpAdapter(
-            id = "test-error-adapter",
+            id = "test.errors.adapter",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/error"),
         ) {
         override val endpointCommands: List<HttpEndpointCommand> by lazy {
             listOf(
                 object : HttpEndpointCommandAdapter(
-                    id = "test.error",
+                    id = "test.errors.raise",
                     execution = execution,
                     endpoint =
                         HttpEndpointDescriptor(
@@ -522,7 +522,7 @@ class HttpCommandDiIntegrationTest {
     private class TestDisabledHttpAdapter(
         execution: SessionExecution,
     ) : CommandBackedHttpAdapter(
-            id = "test-disabled-adapter",
+            id = "test.items.disabled",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
             isEnabled = false,
@@ -536,7 +536,7 @@ class HttpCommandDiIntegrationTest {
     private class TestNoBasePathHttpAdapter(
         execution: SessionExecution,
     ) : CommandBackedHttpAdapter(
-            id = "test-no-base-path-adapter",
+            id = "test.resources.adapter",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = ""),
         ) {

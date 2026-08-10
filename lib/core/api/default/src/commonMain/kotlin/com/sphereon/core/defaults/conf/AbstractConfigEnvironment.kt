@@ -19,14 +19,15 @@ package com.sphereon.core.defaults.conf
 
 import com.sphereon.core.api.conf.CachingPropertySourcesPropertyResolver
 import com.sphereon.core.api.conf.ConfigEnvironment
+import com.sphereon.core.api.conf.DefaultInterpolationPolicyProvider
 import com.sphereon.core.api.conf.DefaultPropertyInterpolator
 import com.sphereon.core.api.conf.DefaultPropertySources
 import com.sphereon.core.api.conf.Env
+import com.sphereon.core.api.conf.InterpolationPolicyProvider
 import com.sphereon.core.api.conf.PropertyInterpolator
 import com.sphereon.core.api.conf.PropertyResolver
 import com.sphereon.core.api.conf.PropertyResolverFactory
 import com.sphereon.core.api.conf.PropertySources
-import com.sphereon.core.api.conf.SecretResolver
 import com.sphereon.core.api.conf.StaticProtectedEnvPropertySourceObject
 import com.sphereon.core.api.conf.SyncConfigSnapshotCache
 import com.sphereon.core.api.conf.TtlConfig
@@ -43,8 +44,11 @@ abstract class AbstractConfigEnvironment(
     protected val principalId: String? = null,
     protected val ttlConfig: TtlConfig = TtlConfig(),
     protected val interpolator: PropertyInterpolator? = null,
-    protected val secretResolver: SecretResolver? = null,
+    interpolationPolicyProvider: InterpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
 ) : ConfigEnvironment {
+    private val interpolationPolicyProviderValue: InterpolationPolicyProvider = interpolationPolicyProvider
+    final override val interpolationPolicyProvider: InterpolationPolicyProvider
+        get() = interpolationPolicyProviderValue
     private var _propertyResolver: PropertyResolver? = null
     private var propertySourcesRevision: Long = 0L
 
@@ -63,11 +67,16 @@ abstract class AbstractConfigEnvironment(
                             ttlConfig = ttlConfig,
                             interpolator =
                                 interpolator
-                                    ?: secretResolver?.let { DefaultPropertyInterpolator(secretResolver = it) }
                                     ?: DefaultPropertyInterpolator(),
+                            interpolationPolicyProvider = interpolationPolicyProvider,
                         )
                     } else {
-                        createResolver(getPropertySources(true), interpolator, secretResolver)
+                        createResolver(
+                            sources = getPropertySources(true),
+                            interpolator = interpolator,
+                            resolverLevel = level,
+                            interpolationPolicyProvider = interpolationPolicyProvider,
+                        )
                     }
                 propertySourcesRevision = currentRevision
             }
@@ -162,29 +171,27 @@ abstract class AbstractConfigEnvironment(
          *
          * When [interpolator] is provided, creates an interpolating resolver for:
          * - Property interpolation (${...} placeholders)
-         * - Secret resolution (${secret:<logical.key>} cascade and ${secret:@<provider>:<key>} pinned references)
-         *
-         * When [interpolator] is null but [secretResolver] is provided, creates a
-         * default interpolator with the secret resolver.
+         * Provider-backed secret references are not part of regular property interpolation.
          *
          * @param sources The property sources to use
-         * @param interpolator Optional interpolator for variable substitution and secret resolution
-         * @param secretResolver Optional resolver for secret references (used when creating default interpolator)
+         * @param interpolator Optional interpolator for variable substitution
          * @return A PropertyResolver instance
          */
         fun createResolver(
             sources: PropertySources,
             interpolator: PropertyInterpolator? = null,
-            secretResolver: SecretResolver? = null,
+            resolverLevel: com.sphereon.core.api.conf.ConfigLevel,
+            interpolationPolicyProvider: InterpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
         ): PropertyResolver {
             val effectiveInterpolator =
                 interpolator
-                    ?: secretResolver?.let { DefaultPropertyInterpolator(secretResolver = it) }
                     ?: DefaultPropertyInterpolator()
 
             return PropertyResolverFactory.create(
                 propertySources = sources,
                 interpolator = effectiveInterpolator,
+                resolverLevel = resolverLevel,
+                interpolationPolicyProvider = interpolationPolicyProvider,
             )
         }
     }

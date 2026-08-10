@@ -49,7 +49,7 @@ class SessionLogServiceTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution
             val logService = sessionExecution.log
 
@@ -68,7 +68,7 @@ class SessionLogServiceTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution
             val logService = sessionExecution.log
 
@@ -88,7 +88,7 @@ class SessionLogServiceTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution
             val logService = sessionExecution.log
 
@@ -107,7 +107,7 @@ class SessionLogServiceTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution
             val logService = sessionExecution.log
 
@@ -133,7 +133,7 @@ class SessionLogServiceTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution
             val logService = sessionExecution.log
 
@@ -161,7 +161,7 @@ class SessionLogServiceTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution
             val logService = sessionExecution.log
 
@@ -182,7 +182,7 @@ class SessionLogServiceTest {
                         DefaultTenantInputString("test-tenant"),
                         DefaultPrincipalInputString("test-user"),
                     )
-                val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+                val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
                 val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution
                 val logService = sessionExecution.log
 
@@ -205,7 +205,7 @@ class SessionLogServiceTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution
             val logService = sessionExecution.log
 
@@ -229,7 +229,7 @@ class SessionLogServiceTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Verify we can access log service via session execution
             val sessionExecution = (sessionInstance.graph as SessionExecution.Graph).sessionExecution

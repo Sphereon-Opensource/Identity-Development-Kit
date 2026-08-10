@@ -57,46 +57,12 @@ interface RestClientKmsProviderConfigType : KmsProviderConfigBase {
 @ObjCName("RestClientAuthConfig", exact = true)
 data class RestClientAuthConfig(
     /**
-     * List of allowed authentication methods
-     * Supported values: "header", "oauth2", "oidc"
+     * JWT presented to the remote KMS as an OAuth 2.0 bearer token.
+     *
+     * Tenant, principal, and workload identity are carried only by validated
+     * claims in this token. They are never configured as separate HTTP headers.
      */
-    val methods: List<String> = listOf("header"),
-    /**
-     * HTTP header name for authentication token (used when "header" method is enabled)
-     */
-    val authHeader: String = "Authorization",
-    /**
-     * HTTP header name for tenant ID
-     */
-    val tenantHeader: String = "X-Tenant-ID",
-    /**
-     * HTTP header name for principal/user ID
-     */
-    val principalHeader: String = "X-User-ID",
-    /**
-     * Optional static token to use for authentication
-     */
-    val token: String? = null,
-    /**
-     * Use tenant ID from current user context (default: true)
-     * If false, only static tenantId value will be used
-     */
-    val useTenantFromContext: Boolean = true,
-    /**
-     * Optional static tenant ID to include in requests
-     * If useTenantFromContext is true, this is used as fallback when context has no tenant
-     */
-    val tenantId: String? = null,
-    /**
-     * Use principal ID from current user context (default: true)
-     * If false, only static principalId value will be used
-     */
-    val usePrincipalFromContext: Boolean = true,
-    /**
-     * Optional static principal ID to include in requests
-     * If usePrincipalFromContext is true, this is used as fallback when context has no principal
-     */
-    val principalId: String? = null,
+    val bearerJwt: String? = null,
 )
 
 object RestClientKmsProviderConfigSerializer : JsonContentPolymorphicSerializer<KmsProviderConfigBase>(KmsProviderConfigBase::class) {

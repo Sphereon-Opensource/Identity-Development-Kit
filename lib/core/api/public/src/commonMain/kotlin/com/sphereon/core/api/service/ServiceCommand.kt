@@ -307,7 +307,7 @@ abstract class TypedServiceCommandAdapter<TInput : Any, TOutput : Any, TError : 
  * class HealthCheckCommand(
  *     execution: SessionExecution
  * ) : UnitInputServiceCommandAdapter<HealthStatus>(
- *     commandId = "health.check",
+ *     commandId = "system.health.check",
  *     execution = execution,
  *     outputTypeToken = typeToken<HealthStatus>()
  * ) {

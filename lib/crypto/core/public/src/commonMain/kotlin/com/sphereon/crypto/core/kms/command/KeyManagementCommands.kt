@@ -59,13 +59,9 @@ GenerateKeyArgs
     constructor(
         val providerId: String? = null,
         val alias: String? = null,
-        @kotlinx.serialization.Transient
         val use: JwkUse? = null,
-        @kotlinx.serialization.Transient
         val keyOperations: Array<out KeyOperations>? = null,
-        @kotlinx.serialization.Transient
         val alg: SignatureAlgorithm? = null,
-        @kotlinx.serialization.Transient
         val keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
     ) {
         override fun equals(other: Any?): Boolean {

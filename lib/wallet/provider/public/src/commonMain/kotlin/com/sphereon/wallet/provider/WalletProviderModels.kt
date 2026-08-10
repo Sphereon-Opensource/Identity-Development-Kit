@@ -31,16 +31,18 @@ data class UnitProvisioningRequest(
 data class WalletUnitDescriptor(
     val walletUnitId: String,
     val walletInstanceId: String,
-    /** Required Business Unit Party assigned to this logical Wallet Unit. */
-    val organizationUnitRef: PartyRef,
+    /** Business Unit Party for a professional Wallet Unit; absent for a personal Wallet Unit. */
+    val organizationUnitRef: PartyRef? = null,
     val wscdProfile: WscdProfile,
     val status: WalletUnitStatus,
 ) {
     init {
-        require(organizationUnitRef.type == PartyType.ORGANIZATION_UNIT) {
-            "wallet_unit_business_unit_ref_wrong_party_type"
+        organizationUnitRef?.let {
+            require(it.type == PartyType.ORGANIZATION_UNIT) {
+                "wallet_unit_business_unit_ref_wrong_party_type"
+            }
+            require(it.partyId.isNotBlank()) { "wallet_unit_business_unit_ref_blank" }
         }
-        require(organizationUnitRef.partyId.isNotBlank()) { "wallet_unit_business_unit_ref_blank" }
     }
 }
 

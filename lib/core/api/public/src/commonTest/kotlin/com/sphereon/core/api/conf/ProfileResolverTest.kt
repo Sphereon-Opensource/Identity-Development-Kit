@@ -250,7 +250,6 @@ class ProfileMetadataTest {
         val metadata = ProfileMetadata()
 
         assertEquals("default", metadata.profile)
-        assertFalse(metadata.isSecretRef)
         assertTrue(metadata.additionalMetadata.isEmpty())
     }
 
@@ -259,13 +258,11 @@ class ProfileMetadataTest {
         val metadata =
             ProfileMetadata(
                 profile = "production",
-                isSecretRef = true,
-                additionalMetadata = mapOf("source" to "vault"),
+                additionalMetadata = mapOf("source" to "deployment"),
             )
 
         assertEquals("production", metadata.profile)
-        assertTrue(metadata.isSecretRef)
-        assertEquals("vault", metadata.additionalMetadata["source"])
+        assertEquals("deployment", metadata.additionalMetadata["source"])
     }
 }
 

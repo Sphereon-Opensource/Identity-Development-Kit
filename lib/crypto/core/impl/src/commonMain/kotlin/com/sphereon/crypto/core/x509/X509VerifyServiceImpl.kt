@@ -81,7 +81,9 @@ class X509VerifyServiceImpl : X509VerifyVerifyPlatformCallbackCoroutines {
     override fun getTrustedCerts(): Array<String>? = this.trustedCerts
 
     override suspend fun verifyCertificateChain(req: X509VerificationRequestType): X509VerificationResultType {
-        val request = X509VerificationRequest.fromDto(req, enable = this.isEnabled())
+        // A caller may disable anchor validation for key extraction while the service remains
+        // globally enabled. A globally disabled service must still override every request.
+        val request = X509VerificationRequest.fromDto(req, enable = this.isEnabled() && req.enabled)
         val context = request.validateToContext()
         if (context.isErr) {
             return context.error

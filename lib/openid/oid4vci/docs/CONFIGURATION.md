@@ -79,7 +79,7 @@ sphereon.oid4vci.issuer.credentials.<credentialConfigurationId>.*
 |---|---|---|---|
 | `format` | String | `dc+sd-jwt` | OID4VCI credential format: `dc+sd-jwt`, `vc+sd-jwt`, `jwt_vc_json`, `mso_mdoc` |
 | `scope` | String | _(none)_ | OAuth2 scope string for this credential configuration |
-| `vct` | String | _(none)_ | Verifiable Credential Type URI (SD-JWT DC / vc+sd-jwt formats) |
+| `vct` | String | _(none)_ | Verifiable Credential Type URI for the IETF `dc+sd-jwt` format |
 | `doctype` | String | _(none)_ | Document type (mso_mdoc format) |
 | `signingAlgorithms` | String (comma-separated) | _(none)_ | Signing algorithms for credential signing, e.g. `ES256,ES384` |
 | `bindingMethods` | String (comma-separated) | _(none)_ | Cryptographic binding methods, e.g. `jwk,did:key,did:jwk` |
@@ -580,4 +580,3 @@ For long-lived deferred issuance (hours/days), EDK can call the command from a p
 | Nonce endpoint | 1.1 Section 8 |
 | Deferred credential | 1.1 Section 10 |
 | Credential response encryption | 1.1 Section 11 |
-

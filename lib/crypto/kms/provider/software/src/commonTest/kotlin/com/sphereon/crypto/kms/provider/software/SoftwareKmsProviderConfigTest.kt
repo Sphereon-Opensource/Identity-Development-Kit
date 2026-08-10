@@ -18,12 +18,15 @@ package com.sphereon.crypto.kms.provider.software
 
 import com.sphereon.core.api.conf.DefaultAppMapPropertySource
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.json.CryptoJsonSupport
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
+import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
 import com.sphereon.crypto.core.kms.KmsProviderConfigBinderImpl
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.kms.keystore.software.Pkcs12KeyStoreConfig
@@ -31,6 +34,7 @@ import com.sphereon.crypto.kms.keystore.software.TenantKeyStorePathResolver
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import com.sphereon.di.Order
 import dev.whyoleg.cryptography.CryptographyProvider
+import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -249,12 +253,57 @@ class SoftwareKmsProviderConfigTest {
 
             ctx.app.userContextManager.destroyAll()
             val contextInstance = ctx.app.userContextManager.getAnonymous()
-            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-2kms").graph
+            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-2kms", principalType = com.sphereon.di.context.PrincipalType.USER).graph
             val kms = sessionGraph.asKeyManagerServiceGraph().keyManagerService
             assertNotNull(kms.defaultProviderId())
             assertEquals(2, kms.getProviderIds().size)
             assertNotNull(kms.getProvider("test-software"))
             assertNotNull(kms.generateKeyAsync())
+        }
+
+    @Test
+    fun tenantSecretKekProvisioningThroughKeyManagerServiceCreatesOctKeyAndRoundTripsA256Kw() =
+        runTest {
+            clearConfigCache()
+            DefaultPrincipalMapPropertySource.addProperties(
+                mapOf(
+                    "kms.providers.default.type" to "software",
+                    "kms.providers.default.id" to "default",
+                    "kms.providers.default.keystore.type" to "memory",
+                    "kms.providers.default.keystore.id" to "tenant-secret-kek-test-store",
+                    "kms.providers.default.keystore.keyVisibility" to "private",
+                    "kms.providers.default.keystore.overwriteAlias" to "false",
+                ),
+            )
+
+            ctx.app.userContextManager.destroyAll()
+            val sessionGraph =
+                ctx.app.userContextManager
+                    .getAnonymous()
+                    .sessionContextManager
+                    .createOrGetFromId("tenant-secret-kek-a256kw", principalType = com.sphereon.di.context.PrincipalType.USER)
+                    .graph
+            val kms = sessionGraph.asKeyManagerServiceGraph().keyManagerService
+            val alias = "tenant-secret-kek"
+            val generated =
+                kms.generateKeyResult(
+                    providerId = "default",
+                    alias = alias,
+                    use = JwkUse.enc,
+                    keyOperations = arrayOf(KeyOperations.WRAP_KEY, KeyOperations.UNWRAP_KEY),
+                    alg = null,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                )
+            assertTrue(generated.isOk)
+            assertEquals(JwaKeyType.oct, generated.value.keyPair?.jose?.privateJwk?.kty)
+
+            val dek = CryptographyRandom.nextBytes(32)
+            val keyInfo = KeyInfo<Nothing>(alias = alias, providerId = "default")
+            val wrapped = kms.wrapKeyResult(keyInfo, dek, KeyWrapAlgorithm.A256KW)
+            assertTrue(wrapped.isOk)
+            val unwrapped = kms.unwrapKeyResult(keyInfo, wrapped.value.wrappedKey, KeyWrapAlgorithm.A256KW)
+            assertTrue(unwrapped.isOk)
+            assertContentEquals(dek, unwrapped.value.unwrappedKey)
         }
 
     @Test
@@ -273,7 +322,7 @@ class SoftwareKmsProviderConfigTest {
 
             ctx.app.userContextManager.destroyAll()
             val contextInstance = ctx.app.userContextManager.getAnonymous()
-            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-ecdh").graph
+            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-ecdh", principalType = com.sphereon.di.context.PrincipalType.USER).graph
             val kms = sessionGraph.asKeyManagerServiceGraph().keyManagerService
 
             val aliceKeyPair =

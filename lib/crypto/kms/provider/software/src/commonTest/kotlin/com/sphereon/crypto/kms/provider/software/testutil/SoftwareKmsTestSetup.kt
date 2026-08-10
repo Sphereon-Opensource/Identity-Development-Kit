@@ -34,7 +34,7 @@ class SoftwareKmsTestContext(
 ) {
     val app: AppGraph = createSoftwareKmsTestAppGraph(testInstance)
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
 
     private val appExtension: CoreApiAppExtensionGraph
         get() = app as CoreApiAppExtensionGraph

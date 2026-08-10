@@ -118,12 +118,22 @@ class HttpClientFactoryIosImpl(
 ) : HttpClientFactory {
     val keyStores: MutableSet<KeyStore> = mutableSetOf()
     private val log = execution.log.logManager.withTag("HttpClientFactory")
+    private var providerKeyStoresLoaded = false
 
     init {
         keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.app))
         keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.tenant))
         keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.principal))
         log.debug("Keystores for factory: ${keyStores.joinToString { it.id }}")
+    }
+
+    /**
+     * Adds the keystores that KMS providers own. Resolving a provider suspends, so this cannot run
+     * from the constructor and instead runs on the first path that needs a keystore by id.
+     */
+    private suspend fun addProviderKeystores() {
+        if (providerKeyStoresLoaded) return
+        providerKeyStoresLoaded = true
         kms.getProviderIds().forEach { providerId ->
             val keyStoreService = (kms.getProvider(providerId) as? HasKeyStoreService)?.keyStore ?: return@forEach
             (keyStoreService as? KeyStore)?.let {
@@ -261,6 +271,7 @@ class HttpClientFactoryIosImpl(
      */
     @OptIn(ExperimentalForeignApi::class)
     private suspend fun buildIdentityMap(sslConfig: ClientSslConfig): Map<String, SecIdentityRef> {
+        addProviderKeystores()
         val identityMap = mutableMapOf<String, SecIdentityRef>()
 
         // Process default certificate
@@ -924,6 +935,7 @@ class HttpClientFactoryIosImpl(
      */
     @OptIn(ExperimentalForeignApi::class)
     private suspend fun buildServerTrustAnchors(caOpts: CaOpts): List<SecCertificateRef> {
+        addProviderKeystores()
         val anchors = mutableListOf<SecCertificateRef>()
 
         // Add additional CAs from keystores

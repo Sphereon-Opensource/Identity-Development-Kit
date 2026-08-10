@@ -23,6 +23,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.statuslist.AllocateEntryArgs
 import com.sphereon.statuslist.EntryRef
+import com.sphereon.statuslist.StatusListDefinitionsProvider
 import com.sphereon.statuslist.StatusListErrors
 import com.sphereon.statuslist.StatusListRef
 import com.sphereon.statuslist.StatusListSpec
@@ -35,6 +36,7 @@ import com.sphereon.statuslist.spi.StatusListDriver
 import com.sphereon.statuslist.spi.StatusReservationHandle
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.buildJsonObject
@@ -51,9 +53,14 @@ import kotlinx.serialization.json.putJsonObject
 @ContributesBinding(SessionScope::class, binding = binding<CredentialStatusEnricher>())
 class CredentialStatusEnricherImpl(
     private val driver: StatusListDriver,
+    private val definitionsProvider: Provider<StatusListDefinitionsProvider>? = null,
 ) : CredentialStatusEnricher {
     override suspend fun reserve(context: StatusEnrichmentContext): IdkResult<ReservedStatus, IdkError> {
         val listRef = StatusListRef(correlationId = context.statusListCorrelationId)
+        definitionsProvider
+            ?.invoke()
+            ?.byId(context.statusListCorrelationId)
+            ?.let { definition -> driver.refreshStatusListDefinition(definition).getOrElse { return Err(it) } }
         val list =
             driver.getStatusList(listRef).getOrElse { return Err(it) }
                 ?: return Err(StatusListErrors.listNotFound(context.statusListCorrelationId))

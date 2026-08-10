@@ -32,12 +32,16 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.isRequired
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationCodeGrant
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.clientauth.toVerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.storage.AuthorizationCodeStorage
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.impl.time.OAUTH2_ARTIFACT_CLOCK
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -76,6 +80,7 @@ class VerifyAuthorizationCodeGrantCommandImpl(
     private val tokenStorage: com.sphereon.oauth2.server.authorization.storage.TokenStorage,
     private val clientRegistry: ClientRegistry,
     private val configProvider: OAuth2ServersConfigProvider,
+    @param:Named(OAUTH2_ARTIFACT_CLOCK) private val artifactClock: Clock = Clock.System,
 ) : TypedServiceCommandAdapter<VerifyAuthorizationCodeGrantArgs, VerifiedAuthorizationCodeGrant, IdkError>(
         commandId = VerifyAuthorizationCodeGrantCommand.COMMAND_ID,
         execution = execution,
@@ -98,8 +103,22 @@ class VerifyAuthorizationCodeGrantCommandImpl(
             applied.clientId,
             applied.codeVerifier,
             applied.requestedResource,
+            null,
         ).mapError { IdkError.fromDTO(it) }
     }
+
+    internal suspend fun verifyWithTrustedClientAuthorization(
+        args: VerifyAuthorizationCodeGrantArgs,
+        clientAuthorization: VerifiedClientAuthorization,
+    ): IdkResult<VerifiedAuthorizationCodeGrant, IdkError> =
+        executeInternal(
+            args.code,
+            args.redirectUri,
+            args.clientId,
+            args.codeVerifier,
+            args.requestedResource,
+            clientAuthorization,
+        ).mapError { IdkError.fromDTO(it) }
 
     private suspend fun executeInternal(
         code: String,
@@ -107,6 +126,7 @@ class VerifyAuthorizationCodeGrantCommandImpl(
         clientId: String,
         codeVerifier: String?,
         requestedResource: List<String>,
+        clientAuthorization: VerifiedClientAuthorization?,
     ): IdkResult<VerifiedAuthorizationCodeGrant, AuthorizationServerError> {
         // Retrieve and consume authorization code (atomic operation)
         // This prevents replay attacks by ensuring the code can only be used once
@@ -146,7 +166,7 @@ class VerifyAuthorizationCodeGrantCommandImpl(
         }
 
         // Verify code is not expired
-        val now = Clock.System.now()
+        val now = artifactClock.now()
         if (codeData.expiresAt < now) {
             return Err(
                 AuthorizationServerError.InvalidGrant(
@@ -253,15 +273,21 @@ class VerifyAuthorizationCodeGrantCommandImpl(
             }
         } else {
             // No PKCE was used - check if it's required for this client
+            if (clientAuthorization != null && clientAuthorization.clientId != clientId) {
+                return Err(AuthorizationServerError.InvalidClient(details = "Authenticated client does not match requested client"))
+            }
             val client =
-                clientRegistry.getClient(clientId).getOrElse { error ->
-                    return Err(
-                        AuthorizationServerError.ServerError(
-                            details = "Failed to retrieve client registration: $error",
-                            exception = null,
-                        ),
-                    )
-                }
+                clientAuthorization
+                    ?: clientRegistry
+                        .getClient(clientId)
+                        .getOrElse { error ->
+                            return Err(
+                                AuthorizationServerError.ServerError(
+                                    details = "Failed to retrieve client registration: $error",
+                                    exception = null,
+                                ),
+                            )
+                        }?.toVerifiedClientAuthorization()
 
             if (client == null) {
                 return Err(

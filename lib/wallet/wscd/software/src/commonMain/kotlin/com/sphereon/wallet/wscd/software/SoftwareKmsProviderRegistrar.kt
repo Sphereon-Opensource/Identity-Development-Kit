@@ -13,6 +13,7 @@ package com.sphereon.wallet.wscd.software
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KeyStoreConfig
+import com.sphereon.crypto.kms.keystore.software.AppleKeyStoreConfig
 import com.sphereon.crypto.kms.keystore.software.EncryptedFileKeyStoreConfig
 import com.sphereon.crypto.kms.keystore.software.Pkcs12KeyStoreConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
@@ -90,9 +91,13 @@ class SoftwareKmsProviderRegistrar(
 
     private fun keyStore(providerId: String): KeyStoreConfig =
         when (val configured = keyStoreConfiguration) {
-            SoftwareWscdKeyStoreConfiguration.PersistentStorageRequired ->
-                error("software_wscd_persistent_keystore_required")
             SoftwareWscdKeyStoreConfiguration.InMemoryForTestingOnly -> SoftwareKmsProviderConfig(id = providerId).keyStore
+            SoftwareWscdKeyStoreConfiguration.AppleKeychain -> {
+                check(app.platformInfo.osFamily == PlatformInfo.OsFamily.IOS) {
+                    "software_wscd_apple_keychain_requires_ios"
+                }
+                AppleKeyStoreConfig(id = providerId)
+            }
             is SoftwareWscdKeyStoreConfiguration.PersistentEncryptedFile ->
                 when (app.platformInfo.osFamily) {
                     PlatformInfo.OsFamily.JS, PlatformInfo.OsFamily.WASM_JS ->
@@ -101,7 +106,7 @@ class SoftwareKmsProviderRegistrar(
                             path = configured.path,
                             password = configured.password,
                         )
-                    PlatformInfo.OsFamily.JVM ->
+                    PlatformInfo.OsFamily.JVM, PlatformInfo.OsFamily.ANDROID ->
                         Pkcs12KeyStoreConfig(
                             id = providerId,
                             path = configured.path,

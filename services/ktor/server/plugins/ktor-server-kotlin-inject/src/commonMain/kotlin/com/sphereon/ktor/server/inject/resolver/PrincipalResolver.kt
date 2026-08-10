@@ -27,10 +27,9 @@ import io.ktor.server.application.ApplicationCall
  * (e.g., from JWT claims, Ktor authentication, OAuth token, etc.).
  *
  * **Default Implementation:**
- * [DefaultPrincipalResolver] extracts principal from:
- * 1. Configured HTTP header
- * 2. Ktor authentication principal (if available)
- * 3. Falls back to "anonymous"
+ * [DefaultPrincipalResolver] uses the principal established by the platform's
+ * validated JWT authentication, or the canonical anonymous principal when no
+ * JWT was validated. It never reads identity from request headers.
  *
  * **Custom Implementation Example:**
  * ```kotlin

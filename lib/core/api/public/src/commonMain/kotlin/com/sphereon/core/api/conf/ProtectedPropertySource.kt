@@ -96,9 +96,11 @@ open class ProtectedMutableMapPropertySource(
     private val order: Int = Order.MEDIUM.orderValue,
     private val keyParser: ProtectionKeyParser = DefaultProtectionKeyParser,
 ) : ProtectedPropertySource<MutableMap<String, Any>>,
-    ScopedPropertySource<MutableMap<String, Any>> {
+    ScopedPropertySource<MutableMap<String, Any>>,
+    RefreshablePropertySource {
     private val keyNormalizer: PropertyKeyNormalizer = PropertyKeyNormalizerImpl.Default
     private val properties = mutableMapOf<String, Any>()
+    private val contentRevisionRef = kotlinx.atomicfu.atomic(0L)
 
     // Protection registry: normalized canonical key -> protection metadata
     private val protectionRegistry = mutableMapOf<String, PropertyProtection>()
@@ -106,6 +108,12 @@ open class ProtectedMutableMapPropertySource(
     override val isPlatformSupported: Boolean = true
 
     override val configLevel: ConfigLevel = sourceLevel
+    open override val contentRevision: Long
+        get() = contentRevisionRef.value
+
+    open override fun refreshIfNeeded() {
+        // All mutation is owned by add/update/delete operations below.
+    }
 
     /**
      * Add a property, parsing protection from key prefix.
@@ -118,6 +126,7 @@ open class ProtectedMutableMapPropertySource(
         name: String,
         value: Any,
     ) = apply {
+        validateEnvironmentReferencesForWrite(value, sourceLevel)
         val parsed = keyParser.parse(name)
         val normalizedKey = keyNormalizer.normalize(parsed.canonicalKey)
 
@@ -126,6 +135,7 @@ open class ProtectedMutableMapPropertySource(
         if (parsed.protection.hasRestrictions) {
             protectionRegistry[normalizedKey] = parsed.protection.withScope(sourceLevel)
         }
+        contentRevisionRef.incrementAndGet()
     }
 
     /**
@@ -150,11 +160,13 @@ open class ProtectedMutableMapPropertySource(
         value: Any,
         protection: PropertyProtection,
     ) = apply {
+        validateEnvironmentReferencesForWrite(value, sourceLevel)
         val normalizedKey = keyNormalizer.normalize(name)
         properties[normalizedKey] = value
         if (protection.hasRestrictions) {
             protectionRegistry[normalizedKey] = protection.withScope(sourceLevel)
         }
+        contentRevisionRef.incrementAndGet()
     }
 
     /**
@@ -163,8 +175,11 @@ open class ProtectedMutableMapPropertySource(
     open fun deleteProperty(name: String) =
         apply {
             val normalizedKey = keyNormalizer.normalize(name)
-            properties.remove(normalizedKey)
-            protectionRegistry.remove(normalizedKey)
+            val removedProperty = properties.remove(normalizedKey)
+            val removedProtection = protectionRegistry.remove(normalizedKey)
+            if (removedProperty != null || removedProtection != null) {
+                contentRevisionRef.incrementAndGet()
+            }
         }
 
     override fun getProtection(canonicalKey: String): PropertyProtection? {
@@ -209,7 +224,12 @@ open class ProtectedMutableMapPropertySource(
 
     // PropertySource implementation
 
-    override fun hasProperty(name: String): Boolean = properties.containsKey(keyNormalizer.normalize(name))
+    override fun hasProperty(name: String): Boolean {
+        val normalizedKey = keyNormalizer.normalize(name)
+        val value = properties[normalizedKey] ?: return false
+        validateConfigurationValueForRead(value, sourceLevel)
+        return true
+    }
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> getProperty(
@@ -217,6 +237,7 @@ open class ProtectedMutableMapPropertySource(
         targetType: KClass<T>,
     ): T? {
         val value = properties[keyNormalizer.normalize(name)] ?: return null
+        validateConfigurationValueForRead(value, sourceLevel)
         if (targetType.isInstance(value)) {
             return value as T?
         }
@@ -269,6 +290,7 @@ open class ProtectedMutableMapPropertySource(
 
     override fun getPropertyAsString(name: String): String? {
         val value = properties[keyNormalizer.normalize(name)] ?: return null
+        validateConfigurationValueForRead(value, sourceLevel)
         return "$value"
     }
 
@@ -278,9 +300,14 @@ open class ProtectedMutableMapPropertySource(
 
     override fun getName(): String = sourceName
 
-    override fun getSource(): MutableMap<String, Any> = properties
+    override fun getSource(): MutableMap<String, Any> = properties.toMutableMap()
 
-    override fun getAllPropertyNames(): Set<String> = properties.keys.map { keyNormalizer.normalize(it) }.toSet()
+    override fun getAllPropertyNames(): Set<String> {
+        if (sourceLevel != ConfigLevel.APP) {
+            properties.values.forEach { validateConfigurationValueForRead(it, sourceLevel) }
+        }
+        return properties.keys.map { keyNormalizer.normalize(it) }.toSet()
+    }
 
     override fun getOrder(): Int = order
 

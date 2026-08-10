@@ -22,9 +22,11 @@ import com.sphereon.core.api.Ok
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.storage.PushedAuthorizationRequestStorage
+import com.sphereon.oauth2.server.authorization.impl.time.OAUTH2_ARTIFACT_CLOCK
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlin.time.Clock
@@ -43,7 +45,7 @@ import kotlin.time.Instant
 @ContributesBinding(AppScope::class, binding = binding<PushedAuthorizationRequestStorage>())
 class InMemoryPushedAuthorizationRequestStorageImpl(
     private val backingStorage: InMemoryOAuth2BackingStorage,
-    private val clock: Clock,
+    @param:Named(OAUTH2_ARTIFACT_CLOCK) private val clock: Clock,
 ) : PushedAuthorizationRequestStorage {
     private val partitionKey = OAuth2StoragePartitionKey.appLevel()
     private val partition get() = backingStorage.getPartition(partitionKey)

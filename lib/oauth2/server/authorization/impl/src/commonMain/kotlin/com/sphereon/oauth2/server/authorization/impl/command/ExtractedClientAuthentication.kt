@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.decodeFromBase64
+import io.ktor.http.decodeURLQueryComponent
 import com.sphereon.core.api.http.command.headerIgnoreCase
 import com.sphereon.core.defaults.context.JwtClaimsParser
 import com.sphereon.oauth2.common.model.ClientAssertion
@@ -114,7 +115,11 @@ public fun extractClientAuthentication(
             }
 
             assertionType != null && assertion != null -> {
-                val assertionClientId = clientId ?: ""
+                // RFC 7523 client authentication carries the client identity in the signed
+                // assertion's `sub` claim. A form `client_id` is therefore optional. Decode the
+                // unverified claim only to select the registered client; the verifier still pins
+                // the signature to that registration and requires iss == sub == client_id.
+                val assertionClientId = clientId ?: extractClientIdFromJwtSubject(assertion).orEmpty()
                 when (assertionType) {
                     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" -> {
                         ClientAuthenticationConfig.PrivateKeyJwt(ClientAssertion(assertionClientId, assertionType, assertion))
@@ -150,10 +155,12 @@ public fun extractClientAuthentication(
     // Attestation-JWT client auth carries the client_id inside the attestation's `sub` claim;
     // when the body didn't supply one, extract it for downstream lookups.
     val resolvedClientId =
-        if (clientAuthentication is ClientAuthenticationConfig.AttestationJwt && clientId == null) {
-            extractClientIdFromAttestationJwt(attestationHeader)
-        } else {
-            clientId
+        when {
+            clientId != null -> clientId
+            clientAuthentication is ClientAuthenticationConfig.AttestationJwt -> extractClientIdFromAttestationJwt(attestationHeader)
+            clientAuthentication is ClientAuthenticationConfig.PrivateKeyJwt -> clientAuthentication.assertion.clientId.takeIf(String::isNotBlank)
+            clientAuthentication is ClientAuthenticationConfig.SecretJwt -> clientAuthentication.assertion.clientId.takeIf(String::isNotBlank)
+            else -> null
         }
 
     return Ok(ExtractedClientAuthentication(clientAuthentication, resolvedClientId))
@@ -167,7 +174,14 @@ private fun parseBasicAuthHeader(authHeader: String?): Pair<String?, String?> {
     return try {
         val decoded = parts[1].decodeFromBase64().decodeToString()
         val credentials = decoded.split(":", limit = 2)
-        if (credentials.size == 2) Pair(credentials[0], credentials[1]) else Pair(null, null)
+        if (credentials.size == 2) {
+            Pair(
+                credentials[0].decodeURLQueryComponent(plusIsSpace = true),
+                credentials[1].decodeURLQueryComponent(plusIsSpace = true),
+            )
+        } else {
+            Pair(null, null)
+        }
     } catch (_: Exception) {
         Pair(null, null)
     }
@@ -178,4 +192,14 @@ private fun extractClientIdFromAttestationJwt(attestationJwt: String?): String? 
     if (attestationJwt == null) return null
     val claims = JwtClaimsParser.parseClaimsOrNull(attestationJwt) ?: return null
     return claims["sub"]?.jsonPrimitive?.content
+}
+
+/**
+ * Decode the RFC 7523 assertion subject for registered-client selection. This is not an
+ * authentication decision: signature and iss/sub/aud/time/replay validation happen downstream in
+ * VerifyClientAuthenticationCommandImpl before the identity is accepted.
+ */
+private fun extractClientIdFromJwtSubject(assertionJwt: String): String? {
+    val claims = JwtClaimsParser.parseClaimsOrNull(assertionJwt) ?: return null
+    return claims["sub"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
 }

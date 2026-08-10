@@ -16,16 +16,16 @@
 package com.sphereon.openid.oid4vp.dcql.dsl
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
-import com.sphereon.openid.oid4vp.dcql.DcqlClaimSet
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
-import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetOption
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlTrustedAuthority
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.native.ObjCName
@@ -99,7 +99,7 @@ class DcqlQueryScope {
     @PublishedApi
     internal fun build(): DcqlQuery =
         DcqlQuery(
-            credentials = credentials.takeIf { it.isNotEmpty() },
+            credentials = credentials,
             credential_sets = credentialSets.takeIf { it.isNotEmpty() },
         )
 }
@@ -115,7 +115,7 @@ class DcqlQueryScope {
  * - Format and format-specific metadata
  * - Required claims
  * - Trusted authorities
- * - Options like holder binding and multi-credential support
+ * - Multi-credential presentation support
  *
  * Example:
  * ```kotlin
@@ -129,7 +129,6 @@ class DcqlQueryScope {
  *     trustedAuthorities {
  *         openIdFederation("https://federation.example.com")
  *     }
- *     requireHolderBinding(true)
  * }
  * ```
  */
@@ -143,7 +142,7 @@ class DcqlCredentialQueryScope(
     private var format: String? = null
     private var meta: JsonObject? = null
     private val claims = mutableListOf<DcqlClaimQuery>()
-    private val claimSets = mutableListOf<DcqlClaimSet>()
+    private val claimSets = mutableListOf<List<String>>()
     private var trustedAuthorities: List<DcqlTrustedAuthority>? = null
     private var requireCryptographicHolderBinding: Boolean = true
     private var multiple: Boolean = false
@@ -157,7 +156,7 @@ class DcqlCredentialQueryScope(
      *
      * Sets format to "dc+sd-jwt" and allows configuring SD-JWT specific metadata.
      */
-    fun sdJwtVc(builder: SdJwtVcMetaScope.() -> Unit = {}) {
+    fun sdJwtVc(builder: SdJwtVcMetaScope.() -> Unit) {
         format = DcqlFormats.SD_JWT_VC
         val scope = SdJwtVcMetaScope()
         scope.builder()
@@ -165,22 +164,11 @@ class DcqlCredentialQueryScope(
     }
 
     /**
-     * Configures this credential query for SD-JWT VC format without metadata.
-     *
-     * Sets format to "dc+sd-jwt".
-     */
-    @JsName("sdJwtVcNoMeta")
-    fun sdJwtVc() {
-        format = DcqlFormats.SD_JWT_VC
-        meta = null
-    }
-
-    /**
      * Configures this credential query for ISO mDoc format.
      *
      * Sets format to "mso_mdoc" and allows configuring mDoc specific metadata.
      */
-    fun mDoc(builder: MdocMetaScope.() -> Unit = {}) {
+    fun mDoc(builder: MdocMetaScope.() -> Unit) {
         format = DcqlFormats.MSO_MDOC
         val scope = MdocMetaScope()
         scope.builder()
@@ -192,7 +180,7 @@ class DcqlCredentialQueryScope(
      *
      * Sets format to "jwt_vc_json" and allows configuring JWT VC specific metadata.
      */
-    fun jwtVcJson(builder: JwtVcJsonMetaScope.() -> Unit = {}) {
+    fun jwtVcJson(builder: JwtVcJsonMetaScope.() -> Unit) {
         format = DcqlFormats.JWT_VC_JSON
         val scope = JwtVcJsonMetaScope()
         scope.builder()
@@ -204,7 +192,7 @@ class DcqlCredentialQueryScope(
      *
      * Sets format to "ldp_vc" and allows configuring LDP VC specific metadata.
      */
-    fun ldpVc(builder: LdpVcMetaScope.() -> Unit = {}) {
+    fun ldpVc(builder: LdpVcMetaScope.() -> Unit) {
         format = DcqlFormats.LDP_VC
         val scope = LdpVcMetaScope()
         scope.builder()
@@ -222,7 +210,7 @@ class DcqlCredentialQueryScope(
      */
     @JsName("claimSimple")
     fun claim(name: String) {
-        claims.add(DcqlClaimQuery(path = listOf(name)))
+        claims.add(DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive(name)))))
     }
 
     /**
@@ -232,6 +220,12 @@ class DcqlCredentialQueryScope(
      */
     @JsName("claimPath")
     fun claim(path: List<String>) {
+        claims.add(DcqlClaimQuery(path = ClaimsPathPointer(path.map(::JsonPrimitive))))
+    }
+
+    /** Adds a claim request using the complete Final Claims Path Pointer type. */
+    @JsName("claimPointer")
+    fun claim(path: ClaimsPathPointer) {
         claims.add(DcqlClaimQuery(path = path))
     }
 
@@ -241,8 +235,19 @@ class DcqlCredentialQueryScope(
      * @param path The path to the claim
      * @param builder Configuration for value constraints and retention intent
      */
+    @JsName("claimPathBuilder")
     fun claim(
         path: List<String>,
+        builder: DcqlClaimQueryScope.() -> Unit,
+    ) {
+        val scope = DcqlClaimQueryScope(ClaimsPathPointer(path.map(::JsonPrimitive)))
+        scope.builder()
+        claims.add(scope.build())
+    }
+
+    /** Adds a configured claim request using the complete Final Claims Path Pointer type. */
+    fun claim(
+        path: ClaimsPathPointer,
         builder: DcqlClaimQueryScope.() -> Unit,
     ) {
         val scope = DcqlClaimQueryScope(path)
@@ -251,16 +256,11 @@ class DcqlCredentialQueryScope(
     }
 
     /**
-     * Adds a claim set (logical grouping of claims).
-     *
-     * @param id Unique identifier for this claim set
-     * @param claimIds List of claim IDs belonging to this set
+     * Adds one preferred combination of Claim Query identifiers to `claim_sets`.
      */
-    fun claimSet(
-        id: String,
-        claimIds: List<String>,
-    ) {
-        claimSets.add(DcqlClaimSet(id = id, claims = claimIds))
+    fun claimSet(vararg claimIds: String) {
+        require(claimIds.isNotEmpty()) { "A claim_sets option must contain at least one Claim Query id" }
+        claimSets.add(claimIds.toList())
     }
 
     // ========================================================================
@@ -282,14 +282,7 @@ class DcqlCredentialQueryScope(
     // Options
     // ========================================================================
 
-    /**
-     * Sets whether cryptographic holder binding is required.
-     *
-     * When true (default), the credential must have holder binding that can be
-     * cryptographically verified. When false, non-cryptographic binding is acceptable.
-     *
-     * @param required Whether to require holder binding
-     */
+    /** Sets whether the requested Credential requires cryptographic Holder Binding. */
     fun requireHolderBinding(required: Boolean) {
         requireCryptographicHolderBinding = required
     }
@@ -309,8 +302,8 @@ class DcqlCredentialQueryScope(
     internal fun build(): DcqlCredentialQuery =
         DcqlCredentialQuery(
             id = id,
-            format = format,
-            meta = meta,
+            format = requireNotNull(format) { "Credential Query '$id' requires a format" },
+            meta = requireNotNull(meta) { "Credential Query '$id' requires format-specific meta" },
             claims = claims.takeIf { it.isNotEmpty() },
             claim_sets = claimSets.takeIf { it.isNotEmpty() },
             require_cryptographic_holder_binding = requireCryptographicHolderBinding,
@@ -326,18 +319,12 @@ class DcqlCredentialQueryScope(
 /**
  * Builder scope for individual claim queries with constraints.
  *
- * Allows specifying:
- * - Value constraints (acceptable values)
- * - Intent to retain flag
+ * Allows specifying a Claim Query identifier and value constraints.
  *
  * Example:
  * ```kotlin
  * claim(listOf("over_18")) {
  *     values(true)
- * }
- *
- * claim(listOf("email")) {
- *     intentToRetain()
  * }
  * ```
  */
@@ -346,10 +333,21 @@ class DcqlCredentialQueryScope(
 @ObjCName("DcqlClaimQueryScope", exact = true)
 @JsExportCompat
 class DcqlClaimQueryScope(
-    private val path: List<String>,
+    private val path: ClaimsPathPointer,
 ) {
+    private var id: String? = null
     private var values: List<JsonElement>? = null
     private var intentToRetain: Boolean? = null
+
+    /** Assigns the Claim Query identifier referenced by `claim_sets`. */
+    fun id(value: String) {
+        id = value
+    }
+
+    /** Sets the ISO mdoc IntentToRetain value defined by OpenID4VP 1.0 Final Appendix B.2.4. */
+    fun intentToRetain(value: Boolean) {
+        intentToRetain = value
+    }
 
     /**
      * Sets acceptable string values for this claim.
@@ -376,8 +374,8 @@ class DcqlClaimQueryScope(
      *
      * @param acceptedValues One or more acceptable numeric values
      */
-    @JsName("valuesNumber")
-    fun values(vararg acceptedValues: Number) {
+    @JsName("valuesInteger")
+    fun values(vararg acceptedValues: Long) {
         values = acceptedValues.map { JsonPrimitive(it) }
     }
 
@@ -391,18 +389,10 @@ class DcqlClaimQueryScope(
         values = acceptedValues.toList()
     }
 
-    /**
-     * Indicates that the verifier intends to retain this claim.
-     *
-     * This is an informational flag per privacy regulations.
-     */
-    fun intentToRetain() {
-        intentToRetain = true
-    }
-
     internal fun build(): DcqlClaimQuery =
         DcqlClaimQuery(
             path = path,
+            id = id,
             values = values,
             intent_to_retain = intentToRetain,
         )
@@ -433,8 +423,8 @@ class DcqlClaimQueryScope(
 @ObjCName("DcqlCredentialSetScope", exact = true)
 @JsExportCompat
 class DcqlCredentialSetScope {
-    private var required: Boolean = false
-    private val options = mutableListOf<DcqlCredentialSetOption>()
+    private var required: Boolean = true
+    private val options = mutableListOf<List<String>>()
 
     /**
      * Marks this credential set as required.
@@ -445,6 +435,11 @@ class DcqlCredentialSetScope {
         required = true
     }
 
+    /** Marks this Credential Set Query as optional. */
+    fun optional() {
+        required = false
+    }
+
     /**
      * Adds an option with a single credential ID.
      *
@@ -452,7 +447,7 @@ class DcqlCredentialSetScope {
      */
     @JsName("optionSingle")
     fun option(credentialId: String) {
-        options.add(DcqlCredentialSetOption(credential_ids = listOf(credentialId)))
+        options.add(listOf(credentialId))
     }
 
     /**
@@ -465,7 +460,8 @@ class DcqlCredentialSetScope {
      */
     @JsName("optionMultiple")
     fun option(vararg credentialIds: String) {
-        options.add(DcqlCredentialSetOption(credential_ids = credentialIds.toList()))
+        require(credentialIds.isNotEmpty()) { "A credential_sets option must contain at least one Credential Query id" }
+        options.add(credentialIds.toList())
     }
 
     internal fun build(): DcqlCredentialSetQuery =

@@ -23,8 +23,11 @@ import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.session.SessionInstance
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import kotlinx.serialization.json.JsonPrimitive
 import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.dcql.store.command.CreateDcqlQueryArgs
 import com.sphereon.openid.oid4vp.dcql.store.command.CreateDcqlQueryServiceCommand
@@ -91,7 +94,8 @@ class DcqlQueryAdminCommandsDiTest {
                     DcqlCredentialQuery(
                         id = credentialId,
                         format = "dc+sd-jwt",
-                        claims = listOf(DcqlClaimQuery(path = listOf("first_name"))),
+                        meta = sdJwtVcMeta("urn:test:$credentialId"),
+                        claims = listOf(DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("first_name"))))),
                     ),
                 ),
         )

@@ -40,6 +40,8 @@ import com.sphereon.openid.oid4vp.common.vpTokenOf
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
@@ -61,6 +63,7 @@ import io.ktor.http.Url
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -121,7 +124,7 @@ class UniversalOid4vpE2ETest {
 
             // 4. Create session
             val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("verifier-session")
+            val session = context.sessionContextManager.createOrGetFromId("verifier-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionGraph = session.graph
 
             // 5. Get the HTTP adapter dispatcher from DI (includes all contributed adapters)
@@ -135,11 +138,12 @@ class UniversalOid4vpE2ETest {
                             DcqlCredentialQuery(
                                 id = "pid_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:pid"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("given_name")),
-                                        DcqlClaimQuery(path = listOf("family_name")),
-                                        DcqlClaimQuery(path = listOf("birthdate")),
+                                        DcqlClaimQuery(path = claimsPathPointer("given_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("family_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("birthdate")),
                                     ),
                             ),
                         ),
@@ -219,7 +223,7 @@ class UniversalOid4vpE2ETest {
             app.userContextManager.destroyAll()
 
             val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("verifier-session")
+            val session = context.sessionContextManager.createOrGetFromId("verifier-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionGraph = session.graph
 
             val dispatcher = (sessionGraph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
@@ -230,7 +234,7 @@ class UniversalOid4vpE2ETest {
                         DcqlQuery(
                             credentials =
                                 listOf(
-                                    DcqlCredentialQuery(id = "test_cred", format = "dc+sd-jwt"),
+                                    DcqlCredentialQuery(id = "test_cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")),
                                 ),
                         ),
                     clientId = "https://test.example.com",
@@ -275,7 +279,7 @@ class UniversalOid4vpE2ETest {
             app.userContextManager.destroyAll()
 
             val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("verifier-session")
+            val session = context.sessionContextManager.createOrGetFromId("verifier-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionGraph = session.graph
 
             val dispatcher = (sessionGraph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
@@ -317,7 +321,7 @@ class UniversalOid4vpE2ETest {
             app.userContextManager.destroyAll()
 
             val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("verifier-session")
+            val session = context.sessionContextManager.createOrGetFromId("verifier-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionGraph = session.graph
 
             val dispatcher = (sessionGraph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
@@ -350,7 +354,7 @@ class UniversalOid4vpE2ETest {
             app.userContextManager.destroyAll()
 
             val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("verifier-session")
+            val session = context.sessionContextManager.createOrGetFromId("verifier-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val sessionGraph = session.graph
 
             val dispatcher = (sessionGraph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
@@ -394,7 +398,7 @@ class UniversalOid4vpE2ETest {
 
             // ====== VERIFIER SETUP ======
             val verifierContext = app.userContextManager.getAnonymous()
-            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier-session")
+            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val verifierGraph = verifierSession.graph
 
             val rpService = (verifierGraph as Oid4VpVerifierServiceImpl.Graph).oid4vpVerifierService
@@ -407,11 +411,12 @@ class UniversalOid4vpE2ETest {
                             DcqlCredentialQuery(
                                 id = "pid_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:pid"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("given_name")),
-                                        DcqlClaimQuery(path = listOf("family_name")),
-                                        DcqlClaimQuery(path = listOf("birthdate")),
+                                        DcqlClaimQuery(path = claimsPathPointer("given_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("family_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("birthdate")),
                                     ),
                             ),
                         ),
@@ -451,7 +456,7 @@ class UniversalOid4vpE2ETest {
 
             // ====== HOLDER SETUP ======
             val holderContext = app.userContextManager.getAnonymous()
-            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder-session")
+            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val holderGraph = holderSession.graph
 
             val holderKms = holderGraph.asKeyManagerServiceGraph().keyManagerService
@@ -672,7 +677,7 @@ class UniversalOid4vpE2ETest {
 
             // ====== VERIFIER SETUP ======
             val verifierContext = app.userContextManager.getAnonymous()
-            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier-jarm-session")
+            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier-jarm-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val verifierGraph = verifierSession.graph
 
             val rpService = (verifierGraph as Oid4VpVerifierServiceImpl.Graph).oid4vpVerifierService
@@ -699,10 +704,11 @@ class UniversalOid4vpE2ETest {
                             DcqlCredentialQuery(
                                 id = "pid_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:pid"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("given_name")),
-                                        DcqlClaimQuery(path = listOf("family_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("given_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("family_name")),
                                     ),
                             ),
                         ),
@@ -741,7 +747,7 @@ class UniversalOid4vpE2ETest {
 
             // ====== HOLDER SETUP ======
             val holderContext = app.userContextManager.getAnonymous()
-            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder-jarm-session")
+            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder-jarm-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val holderGraph = holderSession.graph
 
             val holderKms = holderGraph.asKeyManagerServiceGraph().keyManagerService

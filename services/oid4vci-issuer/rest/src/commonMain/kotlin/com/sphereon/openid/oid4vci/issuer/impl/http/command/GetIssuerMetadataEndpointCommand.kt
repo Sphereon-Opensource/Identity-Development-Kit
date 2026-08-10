@@ -150,6 +150,22 @@ interface GetIssuerMetadataEndpointCommand : HttpEndpointCommand {
         }
 
         /**
+         * Resolve the most precise metadata routes available while the session graph is built.
+         *
+         * A multi-product issuer process constructs every HTTP adapter before dispatching the
+         * selected request. An unrelated public route, such as a credential-design asset, must
+         * therefore not fail merely because the default OID4VCI instance is not configured. In
+         * that case the generic descriptor keeps metadata routing available and the actual
+         * metadata request still performs strict identifier validation in [doExecute].
+         */
+        fun descriptorFor(configProvider: Oid4vciIssuerConfigProvider): HttpEndpointDescriptor =
+            try {
+                descriptorFor(configProvider.issuerIdentifier)
+            } catch (_: IllegalArgumentException) {
+                descriptorFor("")
+            }
+
+        /**
          * Spec-compliant OID4VCI 1.0 discovery descriptor. For issuer identifier
          * `https://host/<issuer-path>`, metadata lives at
          * `https://host/.well-known/openid-credential-issuer/<issuer-path>`.
@@ -188,7 +204,7 @@ class GetIssuerMetadataEndpointCommandImpl(
 ) : HttpEndpointCommandAdapter(
         id = GetIssuerMetadataEndpointCommand.COMMAND_ID,
         execution = execution,
-        endpoint = GetIssuerMetadataEndpointCommand.descriptorFor(configProvider.issuerIdentifier),
+        endpoint = GetIssuerMetadataEndpointCommand.descriptorFor(configProvider),
     ),
     GetIssuerMetadataEndpointCommand {
     override suspend fun doExecute(
@@ -248,7 +264,7 @@ class GetIssuerMetadataEndpointCommandImpl(
                 .withAbsoluteAssetUris(publicUrls.endpointBaseUrl)
                 .withHostedVctUrls(publicUrls.issuerIdentifier)
 
-        val signingKey = configProvider.signingKey
+        val signingKey = configProvider.signingKey()
 
         if (wantsJwt) {
             if (signingKey == null) {
@@ -298,8 +314,12 @@ class GetIssuerMetadataEndpointCommandImpl(
         if (template == null) return Ok(null)
 
         val decryptionOpts =
-            configProvider.credentialRequestDecryptionKey
-                ?: return Ok(template) // static-jwks path or null jwks — already correct on the template
+            configProvider.credentialRequestDecryptionKey()
+                // A static-jwks template already carries real keys and is published as-is. A KMS-backed
+                // template that resolves no key is dropped entirely rather than published with the
+                // empty placeholder JWKS: advertising request encryption the issuer cannot honour
+                // would invite wallets to encrypt to nothing.
+                ?: return Ok(template.takeIf { it.jwks.publishesKeys() })
 
         val resolvedIdentifier: ManagedIdentifierOptsOrResult =
             if (decryptionOpts is ManagedIdentifierOpts && decryptionOpts !is ManagedIdentifierResult<*>) {
@@ -330,11 +350,7 @@ class GetIssuerMetadataEndpointCommandImpl(
                 ?.let { keyInfoKid ->
                     if (publicJwk.kid == keyInfoKid) publicJwk else publicJwk.copy(kid = keyInfoKid)
                 } ?: publicJwk
-        val annotatedJwk =
-            publishedJwk.copy(
-                use = publishedJwk.use ?: "enc",
-                alg = publishedJwk.alg ?: JwaAlgorithm.ECDH_ES,
-            )
+        val annotatedJwk = publishedJwk.asCredentialRequestEncryptionJwk()
 
         val publicJwkElement =
             Json.Default.encodeToJsonElement(Jwk.serializer(), annotatedJwk).let {
@@ -344,6 +360,19 @@ class GetIssuerMetadataEndpointCommandImpl(
         return Ok(template.copy(jwks = realJwks))
     }
 }
+
+/**
+ * Projects a KMS public JWK into the OID4VCI credential-request-encryption contract.
+ *
+ * KMS provisioning uses the signature algorithm to select a P-256 keypair, so its public
+ * JWK can carry `ES256`. That value is not valid JWE key-management metadata for a JWK
+ * advertised with `use=enc`; holders must use ECDH-ES for this recipient key.
+ */
+internal fun Jwk.asCredentialRequestEncryptionJwk(): Jwk =
+    copy(
+        use = use ?: "enc",
+        alg = JwaAlgorithm.ECDH_ES,
+    )
 
 /**
  * Returns a copy of this [CredentialIssuerMetadata] with every design-asset (logo / background)
@@ -399,6 +428,9 @@ fun String.toHostedVctUrl(externalBaseUrl: String?): String {
 fun String.isHostedVctMetadataUrl(): Boolean = indexOf(HOSTED_VCT_PATH_MARKER) >= 0
 
 private const val HOSTED_VCT_PATH_MARKER = "/public/schema/vct/"
+
+/** True when a `credential_request_encryption.jwks` value carries at least one real key. */
+private fun JsonObject.publishesKeys(): Boolean = (this["keys"] as? JsonArray)?.isNotEmpty() == true
 
 private fun String.publicOrigin(): String {
     val base = trimEnd('/')

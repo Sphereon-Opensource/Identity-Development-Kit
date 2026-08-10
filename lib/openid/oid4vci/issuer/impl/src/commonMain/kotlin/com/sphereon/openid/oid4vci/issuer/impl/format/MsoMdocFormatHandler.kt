@@ -31,6 +31,7 @@ import com.sphereon.crypto.core.cose.CoseHeaderCbor
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.x509.x5cWithoutTerminalSelfSignedRoot
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.MdocSignService
 import com.sphereon.mdoc.data.device.DataElementIdentifier
@@ -52,7 +53,10 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -92,14 +96,24 @@ class MsoMdocFormatHandler(
             context.credentialConfiguration.doctype
                 ?: return Err(IdkError.fromString(code = "invalid_credential_request", message = "mso_mdoc requires doctype in credential configuration"))
 
-        val keyAlias = context.signingKeyAlias ?: context.credentialConfigurationId
+        // Server-resolved signing key; a credential is never signed under a name derived from a
+        // caller-visible identifier such as the credential configuration id or the doctype.
+        val keyAlias = context.requireSigningKeyName().getOrElse { return Err(it) }
         val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyAlias))
         if (keyResult.isErr) {
-            return Err(IdkError.fromString(message = "Failed to resolve issuer signing key '$keyAlias': ${keyResult.error.message.defaultMessage}"))
+            return Err(IdkError.fromString(code = "signing_key_unavailable", message = CREDENTIAL_SIGNING_KEY_UNAVAILABLE))
         }
         val issuerKeyInfo =
             keyResult.value.key
-                ?: return Err(IdkError.fromString(message = "Signing key '$keyAlias' not found in KMS"))
+                ?: return Err(IdkError.fromString(code = "signing_key_unavailable", message = CREDENTIAL_SIGNING_KEY_UNAVAILABLE))
+        val x5cChain =
+            issuerKeyInfo.x5c?.takeIf { it.isNotEmpty() }
+                ?: return Err(
+                    IdkError.fromString(
+                        code = "signing_certificate_chain_unavailable",
+                        message = "mso_mdoc signing requires an X.509 certificate chain",
+                    ),
+                )
         val signingKeyInfo =
             ManagedKeyInfo(
                 alias = issuerKeyInfo.alias,
@@ -112,7 +126,7 @@ class MsoMdocFormatHandler(
                         keyVisibility = issuerKeyInfo.keyVisibility,
                         signatureAlgorithm = issuerKeyInfo.signatureAlgorithm,
                         alias = issuerKeyInfo.alias,
-                        x5c = issuerKeyInfo.x5c,
+                        x5c = x5cWithoutTerminalSelfSignedRoot(x5cChain),
                         providerId = issuerKeyInfo.providerId,
                         keyType = issuerKeyInfo.keyType,
                         keyEncoding = issuerKeyInfo.keyEncoding,
@@ -120,25 +134,23 @@ class MsoMdocFormatHandler(
                     ),
             )
 
-        // For mdoc, ensure at least the mandatory claims have values.
-        // If the caller didn't provide age_over_18 for the EU AV doctype, default it to true.
-        val effectiveAttributes =
-            context.attributes.ifEmpty {
-                mapOf("age_over_18" to JsonPrimitive(true))
-            }
+        // A claimless mdoc is never a valid fallback. All issuer-signed items must come from the
+        // resolved design/pipeline attributes for this request.
+        val effectiveAttributes = requireMdocAttributes(context.attributes).getOrElse { return Err(it) }
         val namespacedAttributes = groupAttributesByNamespace(effectiveAttributes, doctype)
 
-        // ISO 18013-5 §9.1.2.4 MSO validity timestamps. `signed` and `validFrom` are
-        // shifted backward by the configured issuance clock-skew so wallets whose clocks
-        // are slightly ahead of ours still see the MSO as already-valid on receipt —
-        // same rationale and config knob (`issuanceClockSkewInSeconds`) as the SD-JWT
-        // VC `iat` treatment. Without this, wallets that verify the MSO immediately
-        // upon issuance reject with "MSO must be valid at time of verification".
+        // ISO 18013-5 §9.1.2.4 MSO validity timestamps. Apply clock-skew tolerance and
+        // round to the hour so a batch does not carry a precise shared issuance instant.
+        // The whole-day validity duration keeps `validUntil` on the same coarse boundary.
         val nowEpochSeconds =
             kotlin.time.Clock.System
                 .now()
                 .epochSeconds
-        val signedEpochSeconds = nowEpochSeconds - context.issuanceClockSkewInSeconds
+        val signedEpochSeconds =
+            roundedCredentialIssuanceEpochSeconds(
+                nowEpochSeconds = nowEpochSeconds,
+                issuanceClockSkewInSeconds = context.issuanceClockSkewInSeconds,
+            )
         val validFromEpochSeconds = signedEpochSeconds
         val validUntilEpochSeconds =
             signedEpochSeconds + ((context.expirationInDays ?: DEFAULT_VALIDITY_DAYS).toLong() * SECONDS_PER_DAY)
@@ -186,14 +198,9 @@ class MsoMdocFormatHandler(
         // ISO 18013-5 requires x5chain in the COSE unprotected header.
         // The certificate chain is on the ManagedKeyInfo but the signing service
         // reads it from the inner key type which may not carry it. Pass it explicitly.
-        val x5cChain = issuerKeyInfo.x5c
         val unprotectedHeader =
-            if (!x5cChain.isNullOrEmpty()) {
-                val header = CoseHeaderCbor()
+            CoseHeaderCbor().also { header ->
                 header.x5chain = x5cChain.encodeToCborByteArray(Encoding.BASE64)
-                header
-            } else {
-                null
             }
 
         // Resolve the signing algorithm: prefer key's algorithm, then credential config, then default ES256 for EC keys
@@ -236,12 +243,31 @@ class MsoMdocFormatHandler(
         /** Fallback MSO validity when no `expirationInDays` is configured on the credential. */
         private const val DEFAULT_VALIDITY_DAYS: Int = 365
 
+        internal fun requireMdocAttributes(
+            attributes: Map<String, JsonElement>,
+        ): IdkResult<Map<String, JsonElement>, IdkError> =
+            if (attributes.isEmpty()) {
+                Err(
+                    IdkError.fromString(
+                        code = "invalid_credential_request",
+                        message = "mso_mdoc issuance requires at least one resolved credential claim",
+                    ),
+                )
+            } else {
+                Ok(attributes)
+            }
+
         fun groupAttributesByNamespace(
             attributes: Map<String, JsonElement>,
             doctype: String,
         ): Map<String, List<Pair<String, JsonElement>>> {
             val result = mutableMapOf<String, MutableList<Pair<String, JsonElement>>>()
-            for ((key, value) in attributes) {
+            for ((rawKey, value) in attributes) {
+                // Attribute paths produced by the claims mapper are JSON-pointer-like and may
+                // carry one leading slash. That slash is path syntax, not part of the ISO mdoc
+                // namespace. Persisting it yielded `/org.iso.18013.5.1`, which is a different
+                // namespace and made every mandatory mDL element invisible to wallets.
+                val key = rawKey.removePrefix("/")
                 val lastDot = key.lastIndexOf('.')
                 val (namespace, element) =
                     if (lastDot > 0) {
@@ -254,17 +280,34 @@ class MsoMdocFormatHandler(
             return result
         }
 
-        fun jsonElementToNativeValue(element: JsonElement): Any {
-            if (element is JsonPrimitive) {
-                if (element.isString) {
-                    return element.content
+        fun jsonElementToNativeValue(element: JsonElement): Any =
+            when (element) {
+                is JsonPrimitive -> {
+                    if (element.isString) {
+                        element.content.toStructuredMdocValueOrNull()
+                            ?.let(::jsonElementToNativeValue)
+                            ?: element.content
+                    } else {
+                        element.booleanOrNull
+                            ?: element.longOrNull
+                            ?: element.doubleOrNull
+                            ?: element.content
+                    }
                 }
-                element.booleanOrNull?.let { return it }
-                element.longOrNull?.let { return it }
-                element.doubleOrNull?.let { return it }
-                return element.content
+                is JsonArray -> element.map(::jsonElementToNativeValue)
+                is JsonObject -> element.mapValues { (_, value) -> jsonElementToNativeValue(value) }
             }
-            return element.toString()
+
+        /**
+         * The developer form represents nested mdoc values as editable JSON text. Parse only
+         * object/array-shaped text here so ordinary string claims remain ordinary strings.
+         */
+        private fun String.toStructuredMdocValueOrNull(): JsonElement? {
+            val trimmed = trim()
+            if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return null
+            return runCatching { Json.parseToJsonElement(trimmed) }
+                .getOrNull()
+                ?.takeIf { it is JsonArray || it is JsonObject }
         }
     }
 }

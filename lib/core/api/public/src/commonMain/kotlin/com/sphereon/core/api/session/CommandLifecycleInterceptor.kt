@@ -22,6 +22,8 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Provides
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 private const val DEFAULT_INTERCEPTOR_ORDER = 100
 
@@ -89,6 +91,18 @@ interface CommandLifecycleInterceptor {
         context: CommandExecutionContext,
         args: Any,
     ): InterceptorVerdict = InterceptorVerdict.Continue
+
+    /**
+     * Contributes execution-local coroutine context that remains active for the
+     * command body and the matching [afterExecute] callbacks.
+     *
+     * Implementations must not retain thread-local scopes in [beforeExecute];
+     * use a [kotlinx.coroutines.ThreadContextElement] here instead.
+     */
+    fun executionCoroutineContext(
+        context: CommandExecutionContext,
+        args: Any,
+    ): CoroutineContext = EmptyCoroutineContext
 
     /**
      * Called after command execution (or denial). Always runs, even on exceptions.

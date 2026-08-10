@@ -17,8 +17,20 @@
 package com.sphereon.openid.oid4vp.holder.impl
 
 import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.jose.jws.JwsJsonGeneral
+import com.sphereon.crypto.jose.jws.JwsJsonGeneralWithIdentifiers
+import com.sphereon.crypto.jose.jws.JwsJsonSignature
+import com.sphereon.crypto.jose.jws.JwsValidationResult
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.Oid4vpJson
+import com.sphereon.openid.oid4vp.common.ParsedTransactionDataEntry
+import com.sphereon.openid.oid4vp.common.TransactionDataEntry
+import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
+import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.ktor.http.client.getOptional
 import com.sphereon.ktor.http.client.getOrDefault
 import com.sphereon.ktor.http.client.getRequired
@@ -28,9 +40,15 @@ import io.ktor.http.parametersOf
 import io.ktor.http.parseQueryString
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -42,6 +60,40 @@ import kotlin.test.assertTrue
  * Full integration tests with DI, HTTP mocking, and JWT parsing would require additional setup.
  */
 class ParseAuthorizationRequestCommandImplTest {
+    @Test
+    fun `transaction data request is rejected when referenced query disables holder binding`() {
+        val dcqlQuery =
+            DcqlQuery(
+                credentials =
+                    listOf(
+                        DcqlCredentialQuery(
+                            id = "pid",
+                            format = "dc+sd-jwt",
+                            meta =
+                                JsonObject(
+                                    mapOf(
+                                        "vct_values" to JsonArray(listOf(JsonPrimitive("https://credentials.example/pid"))),
+                                    ),
+                                ),
+                            require_cryptographic_holder_binding = false,
+                        ),
+                    ),
+            )
+        val transactionData =
+            listOf(
+                ParsedTransactionDataEntry(
+                    transactionData = TransactionDataEntry(type = "payment", credentialIds = listOf("pid")),
+                    transactionDataIndex = 0,
+                    encoded = "encoded-transaction-data",
+                ),
+            )
+
+        val result = validateTransactionDataHolderBinding(dcqlQuery, transactionData)
+
+        assertIs<Err<*>>(result)
+        assertTrue(result.error.message.defaultMessage.contains("require_cryptographic_holder_binding is false"))
+    }
+
     @Test
     fun `test parse URI with all required parameters`() =
         runTest {
@@ -126,7 +178,7 @@ class ParseAuthorizationRequestCommandImplTest {
     @Test
     fun `test parse URI with dcql_query in parameters`() =
         runTest {
-            val dcqlQuery = """{"credentials":[{"format":"vc+sd-jwt"}]}"""
+            val dcqlQuery = """{"credentials":[{"format":"dc+sd-jwt"}]}"""
             val uri = "openid4vp://?client_id=test-client&redirect_uri=https://example.com/callback&response_type=vp_token&nonce=abc&dcql_query=$dcqlQuery"
 
             val params = parseQueryString(uri.substringAfter('?'))
@@ -209,13 +261,6 @@ class ParseAuthorizationRequestCommandImplTest {
         }
 
     @Test
-    fun `prefixed OID4VP client id remains intact for JAR issuer validation`() {
-        val clientId = "x509_hash:Wqugw4oG6VggvcQp94a-TFC7jx01I14_GM27MOXRv5A"
-
-        assertEquals(clientId, oid4vpJarIssuer(clientId))
-    }
-
-    @Test
     fun `signed x509_san_dns declaration selects x5c verification for bare ISO client id`() {
         assertEquals(
             ClientIdScheme.X509_SAN_DNS,
@@ -225,6 +270,43 @@ class ParseAuthorizationRequestCommandImplTest {
             ),
         )
     }
+
+    @Test
+    fun `multi-signed request accepts a later valid signature and rejects an all-invalid set`() =
+        runTest {
+            val payload =
+                buildJsonObject {
+                    put("response_type", "vp_token")
+                    put("response_mode", "dc_api.jwt")
+                    put("nonce", "nonce-12345678")
+                }
+            val general =
+                JwsJsonGeneral(
+                    payload = payload.toString().encodeToByteArray().encodeToBase64Url(),
+                    signatures =
+                        listOf(
+                            testDigitalCredentialSignature("x509_hash:first", "invalid"),
+                            testDigitalCredentialSignature("x509_hash:second", "valid"),
+                        ),
+                )
+            val element = Oid4vpJson.wire.encodeToJsonElement(JwsJsonGeneral.serializer(), general).let { it as JsonObject }
+
+            val accepted = verifyDigitalCredentialsSignatures(element, ::testSignatureVerification)
+
+            assertTrue(accepted is Ok, accepted.toString())
+            assertEquals("x509_hash:second", (accepted as Ok).value.clientId)
+
+            val allInvalid =
+                general.copy(
+                    signatures = general.signatures.map { it.copy(signature = "invalid") },
+                )
+            val rejected =
+                verifyDigitalCredentialsSignatures(
+                    Oid4vpJson.wire.encodeToJsonElement(JwsJsonGeneral.serializer(), allInvalid) as JsonObject,
+                    ::testSignatureVerification,
+                )
+            assertTrue(rejected is Err, rejected.toString())
+        }
 
     @Test
     fun `ISO mdoc presentation definition is normalized to the wallet credential query`() {
@@ -250,17 +332,45 @@ class ParseAuthorizationRequestCommandImplTest {
 
         val result = presentationDefinitionToDcql(presentationDefinition)
 
-        assertTrue(result is Ok)
-        val query = (result as Ok).value.credentials!!.single()
-        assertEquals("eu.europa.ec.eudi.pid.1", query.id)
+        assertTrue(result is Ok, result.toString())
+        val query = (result as Ok).value.credentials.single()
+        assertEquals("presentation_credential_0", query.id)
         assertEquals("mso_mdoc", query.format)
-        assertEquals("eu.europa.ec.eudi.pid.1", query.meta!!["doctype_value"]!!.jsonPrimitive.content)
+        assertEquals("eu.europa.ec.eudi.pid.1", query.meta["doctype_value"]!!.jsonPrimitive.content)
         assertEquals(
             listOf(
                 listOf("eu.europa.ec.eudi.pid.1", "family_name"),
                 listOf("eu.europa.ec.eudi.pid.1", "given_name"),
             ),
-            query.claims!!.map { it.path },
+            query.claims!!.map { claim -> claim.path.components.map { it.jsonPrimitive.content } },
         )
+        assertTrue(query.claims!!.all { it.intent_to_retain == false })
     }
 }
+
+private fun testDigitalCredentialSignature(
+    clientId: String,
+    signature: String,
+): JwsJsonSignature =
+    JwsJsonSignature(
+        protected =
+            buildJsonObject {
+                put("alg", "ES256")
+                put("typ", "oauth-authz-req+jwt")
+                put("client_id", clientId)
+            }.toString().encodeToByteArray().encodeToBase64Url(),
+        signature = signature,
+    )
+
+private suspend fun testSignatureVerification(jws: JwsJsonGeneral): IdkResult<JwsValidationResult, IdkError> =
+    jws.signatures.single().signature.let { signature ->
+        Ok(
+            JwsValidationResult(
+                jws = JwsJsonGeneralWithIdentifiers(payload = jws.payload, signatures = emptyList()),
+                isValid = signature == "valid",
+                parsedPayload = JsonObject(emptyMap()),
+                trustEstablished = true,
+                cryptoVerified = signature == "valid",
+            ),
+        )
+    }

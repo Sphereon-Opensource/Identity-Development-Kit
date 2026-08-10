@@ -49,7 +49,7 @@ class DidServiceHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-DID-SERVICE"
+        const val ID: String = "did.manager.service"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

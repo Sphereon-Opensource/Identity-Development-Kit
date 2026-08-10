@@ -249,6 +249,11 @@ data class AuthenticatedUser(
      * OpenID Connect Core 1.0 Section 2
      */
     val amr: List<String>? = null,
+    /**
+     * Server-resolved authorization roles bound to the authenticated
+     * credential. These are never accepted from browser input.
+     */
+    val roles: List<String> = emptyList(),
 )
 
 /**

@@ -24,7 +24,6 @@ import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.TenantPathMode
-import com.sphereon.core.api.http.describe.TenantResolutionPriority
 import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.di.Order
 import com.sphereon.di.session.SessionScope
@@ -127,7 +126,11 @@ class DefaultHttpAdapterDispatcher(
 
         val adapter =
             adapterById[best.description.id]?.singleOrNull()
-                ?: return errorResponse(404, "Not found: ${request.method} ${request.path}")
+                ?: return errorResponse(
+                    500,
+                    "Route ${request.method} ${request.path} matched descriptor '${best.description.id}' " +
+                        "but no runtime HttpAdapter with that id is registered in this session",
+                )
 
         val normalizedRequest = best.applyTo(request)
         return adapter.handleRequest(normalizedRequest)
@@ -205,12 +208,9 @@ private data class Candidate(
     val score: CandidateScore,
 ) {
     fun applyTo(request: GenericHttpRequest): GenericHttpRequest {
-        val effectiveTenantId =
-            resolveTenantId(
-                existingTenantId = request.pathParameters["tenantId"],
-                pathTenantId = tenantIdFromPath,
-                priority = description.mount.tenantResolutionPriority,
-            )
+        // Authenticated authority always wins. A path tenant is a public-routing
+        // fallback only when no validated JWT tenant was attached by ingress.
+        val effectiveTenantId = request.resolvedTenantId ?: tenantIdFromPath
 
         val newPathParams =
             if (effectiveTenantId != null) {
@@ -418,16 +418,6 @@ private fun mountMatches(
 
     return results
 }
-
-private fun resolveTenantId(
-    existingTenantId: String?,
-    pathTenantId: String?,
-    priority: TenantResolutionPriority,
-): String? =
-    when (priority) {
-        TenantResolutionPriority.HEADER_THEN_PATH -> existingTenantId ?: pathTenantId
-        TenantResolutionPriority.PATH_THEN_HEADER -> pathTenantId ?: existingTenantId
-    }
 
 private fun splitSegments(path: String): List<String> = path.split('/').filter { it.isNotBlank() }
 

@@ -29,6 +29,7 @@ import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.data.DeviceAuthValidation
+import com.sphereon.mdoc.data.MdocVerification
 import com.sphereon.mdoc.data.MdocValidations
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
@@ -38,7 +39,6 @@ import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.sdjwt.VerifySdJwtArgs
 import com.sphereon.sdjwt.command.VerifySdJwtCommand
-import com.sphereon.trust.x509.X509TrustAnchorLoader
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
@@ -66,7 +66,6 @@ class VerifyHolderBindingCommandImpl(
     private val mdocValidations: MdocValidations,
     private val deviceAuthValidation: DeviceAuthValidation,
     private val deviceResponseCborCodec: DeviceResponseCborCodec,
-    private val x509TrustAnchorLoader: X509TrustAnchorLoader,
 ) : TypedServiceCommandAdapter<VerifyHolderBindingArgs, HolderBindingResult, IdkError>(
         commandId = VerifyHolderBindingCommand.COMMAND_ID,
         execution = execution,
@@ -98,7 +97,12 @@ class VerifyHolderBindingCommandImpl(
 
         return when {
             credentialFormat?.isSdJwt == true -> {
-                verifySdJwtHolderBinding(presentation, expectedNonce, expectedAudience)
+                verifySdJwtHolderBinding(
+                    presentation = presentation,
+                    expectedNonce = expectedNonce,
+                    expectedAudience = expectedAudience,
+                    requireCryptographicHolderBinding = processedArgs.requireCryptographicHolderBinding,
+                )
             }
 
             credentialFormat?.isMdoc == true -> {
@@ -139,6 +143,7 @@ class VerifyHolderBindingCommandImpl(
         presentation: String,
         expectedNonce: String,
         expectedAudience: String,
+        requireCryptographicHolderBinding: Boolean,
     ): IdkResult<HolderBindingResult, IdkError> {
         log.debug("Verifying SD-JWT holder binding with KB-JWT verification")
 
@@ -168,6 +173,7 @@ class VerifyHolderBindingCommandImpl(
         }
 
         val result = verifyResult.value
+        val keyBindingPresent = result.sdJwt.keyBindingJwt != null
 
         // Extract holder key from cnf claim if present
         val holderKeyJson = extractHolderKeyFromSdJwt(result.sdJwt.payload.fullPayload)
@@ -177,16 +183,24 @@ class VerifyHolderBindingCommandImpl(
         val audienceError = result.errorMessages.any { it.contains("aud", ignoreCase = true) }
         val sdHashError = result.errorMessages.any { it.contains("sd_hash", ignoreCase = true) }
 
+        val errors = result.errorMessages.toMutableList()
+        if (requireCryptographicHolderBinding && !keyBindingPresent) {
+            errors += "Credential Query requires cryptographic holder binding, but the SD-JWT presentation has no Key Binding JWT"
+        }
+
         return Ok(
             HolderBindingResult(
-                verified = result.keyBindingValid && result.signatureValid,
+                // Issuer authenticity and disclosure integrity remain mandatory when the query
+                // accepts a presentation without KB-JWT. An optional KB-JWT, when supplied, is
+                // still verified and result.isValid fails closed if that proof is invalid.
+                verified = result.isValid && (!requireCryptographicHolderBinding || keyBindingPresent),
                 holderKey = holderKeyJson,
-                bindingMethod = "kb-jwt",
+                bindingMethod = if (keyBindingPresent) "kb-jwt" else null,
                 signatureValid = result.signatureValid,
-                nonceValid = !nonceError,
-                audienceValid = !audienceError,
-                sdHashValid = !sdHashError,
-                errors = result.errorMessages,
+                nonceValid = if (keyBindingPresent) !nonceError else !requireCryptographicHolderBinding,
+                audienceValid = if (keyBindingPresent) !audienceError else !requireCryptographicHolderBinding,
+                sdHashValid = if (keyBindingPresent) !sdHashError else null,
+                errors = errors,
                 // Surface trust vs. crypto split so the wire-level error message can
                 // distinguish "issuer key never resolved" (relative-kid / did:web fetch
                 // / trust anchor) from a real ECDSA/EdDSA mismatch.
@@ -292,37 +306,29 @@ class VerifyHolderBindingCommandImpl(
         var allDocsVerified = true
         var allDeviceAuthsValid = true
 
-        // mDoc IACA anchors are X.509 per ISO 18013-5, so they flow through the
-        // shared `lib/trust/x509` loader (config keys: `trust.anchors.x509.*`).
-        // The same loader feeds X509TrustValidationService; consumers (mdoc IACA,
-        // SD-JWT issuer x5c, generic chain validation) share one config surface.
-        // When no anchors are configured, the X.509 service's default trust store
-        // is used and chain validation fails closed for unknown roots.
-        val trustedCerts = x509TrustAnchorLoader.loadTrustedCerts().takeIf { it.isNotEmpty() }?.toTypedArray()
+        // Certificate trust is intentionally evaluated later by the shared OID4VP
+        // credential-trust validator, consistently with SD-JWT and W3C credentials. Empty
+        // effective trust domains reject every issuer by default (fail-closed); only an
+        // explicitly configured issuerTrustMode=UNRESTRICTED trusts every issuer, while
+        // issuer-auth and device-auth signatures still have to verify.
 
-        // Track per-step outcomes separately so reporting doesn't conflate failures: a missing
-        // trust anchor (CERTIFICATE_CHAIN) is NOT a signature failure (ISSUER_AUTH_SIGNATURE),
-        // even though both contribute to overall rejection. The §10 verdict is `verified` AND
-        // of all steps; the wire-level `signatureValid` field reflects ONLY the cryptographic
-        // signature checks (issuer-auth + device-auth) so a downstream consumer can distinguish
-        // a trust-policy fail (caller misconfiguration) from a forgery (genuine attack).
-        var anyTrustChainFailed = false
+        // Track issuer-auth signature failures separately from document content/validity failures.
         var anyIssuerAuthSignatureFailed = false
 
         documents.forEach { document ->
             val mdocResults =
-                mdocValidations.fromDocument(
+                mdocValidations.withParams(
+                    issuerAuth = null,
                     document = document,
-                    trustedCerts = trustedCerts,
+                    mdocVerificationTypes = OID4VP_MDOC_HOLDER_BINDING_VALIDATIONS,
+                    trustedCerts = null,
                     verificationTime = null,
                     keyInfo = null,
                     allowNotYetValidDocuments = false,
                     allowExpiredDocuments = false,
                 )
-            // Walk verifications by index (mirrors MdocVerification.DOCUMENT order: cert chain,
-            // issuer-auth signature, digests, docType, validity). Map each critical failure to
-            // the right outcome bucket — never to "signatureValid=false" unless the actual
-            // signature step failed.
+            // Only the COSE issuer-auth failure contributes to signatureValid. Content or
+            // validity failures still reject the document, and trust-domain results are handled later.
             val docTypeStr = document.docType.toString()
             mdocResults.verifications.forEach { v ->
                 if (v.error && v.critical) {
@@ -330,7 +336,6 @@ class VerifyHolderBindingCommandImpl(
                     errors += detail
                     allDocsVerified = false
                     when (v.name) {
-                        com.sphereon.crypto.core.CryptoConst.X509_LITERAL -> anyTrustChainFailed = true
                         com.sphereon.crypto.core.CryptoConst.COSE_LITERAL -> anyIssuerAuthSignatureFailed = true
                     }
                 }
@@ -349,9 +354,7 @@ class VerifyHolderBindingCommandImpl(
         }
 
         // Cryptographic-signature outcome bucket: TRUE iff every issuer-auth signature AND every
-        // device-auth signature actually verified. A trust-chain failure does NOT flip this —
-        // the COSE adapter still ran the signature check using the leaf cert from x5chain (in
-        // either header per RFC 9052 §3.1), independently of trust-anchor configuration.
+        // device-auth signature actually verified.
         val allSigsValid = !anyIssuerAuthSignatureFailed && allDeviceAuthsValid
         return Ok(
             HolderBindingResult(
@@ -570,3 +573,11 @@ class VerifyHolderBindingCommandImpl(
         private const val BINDING_METHOD_JWT_PROOF = "jwt-proof"
     }
 }
+
+internal val OID4VP_MDOC_HOLDER_BINDING_VALIDATIONS =
+    setOf(
+        MdocVerification.ISSUER_AUTH_SIGNATURE,
+        MdocVerification.DIGEST_VALUES,
+        MdocVerification.DOC_TYPE,
+        MdocVerification.VALIDITY,
+    )

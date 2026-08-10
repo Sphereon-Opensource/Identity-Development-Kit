@@ -72,7 +72,7 @@ class VctHostingHttpAdapter(
         )
 
     companion object {
-        const val ID: String = "oid4vci-vct-hosting"
+        const val ID: String = "oid4vci.vct-hosting.http"
 
         /**
          * Public, unauthenticated hosting mount for SD-JWT VC type metadata. Unversioned and stable:

@@ -18,12 +18,16 @@ package com.sphereon.conf.theme.core.resolve
 
 import com.sphereon.conf.theme.core.feature.DefaultFeatureRegistry
 import com.sphereon.conf.theme.core.feature.FeatureDescriptorProvider
-import com.sphereon.conf.theme.core.model.DesignElement
+import com.sphereon.conf.theme.core.model.AssetDesignElement
+import com.sphereon.conf.theme.core.model.AssetElementValue
+import com.sphereon.conf.theme.core.model.ChoiceDesignElement
+import com.sphereon.conf.theme.core.model.ChoiceElementValue
 import com.sphereon.conf.theme.core.model.ElementBinding
-import com.sphereon.conf.theme.core.model.ElementKind
 import com.sphereon.conf.theme.core.model.ElementOrigin
 import com.sphereon.conf.theme.core.model.FeatureDefinition
 import com.sphereon.conf.theme.core.model.ProductType
+import com.sphereon.conf.theme.core.model.TextDesignElement
+import com.sphereon.conf.theme.core.model.TextElementValue
 import com.sphereon.conf.theme.core.model.ThemeDefinition
 import com.sphereon.conf.theme.core.model.ThemeScope
 import com.sphereon.conf.theme.core.model.ThemeVariant
@@ -54,24 +58,20 @@ class DefaultFeatureResolverTest {
             builtIn = true,
             elements =
                 listOf(
-                    DesignElement(
+                    AssetDesignElement(
                         elementId = "logo",
-                        kind = ElementKind.ASSET,
                         fallbackTokenKey = TokenKeyConstants.BRANDING_LOGO_URL,
                     ),
-                    DesignElement(
+                    AssetDesignElement(
                         elementId = "background",
-                        kind = ElementKind.ASSET,
-                        defaultAsset = ThemeAssetReference(uri = "/defaults/login-background.png"),
+                        default = ThemeAssetReference(uri = "/defaults/login-background.png"),
                     ),
-                    DesignElement(
+                    TextDesignElement(
                         elementId = "tagline",
-                        kind = ElementKind.TEXT,
                         fallbackTokenKey = TokenKeyConstants.BRANDING_TAGLINE,
                     ),
-                    DesignElement(
+                    TextDesignElement(
                         elementId = "legalNotice",
-                        kind = ElementKind.TEXT,
                         required = true,
                     ),
                 ),
@@ -101,7 +101,7 @@ class DefaultFeatureResolverTest {
             elementId = "logo",
             variant = variant,
             applicationId = applicationId,
-            asset = ThemeAssetReference(uri = uri),
+            value = AssetElementValue(ThemeAssetReference(uri = uri)),
         )
 
     @Test
@@ -117,7 +117,7 @@ class DefaultFeatureResolverTest {
 
             val logo = assertNotNull(resolved).elements["logo"]
             assertNotNull(logo)
-            assertEquals("https://cdn.example.com/app-dark.svg", logo.asset?.uri)
+            assertEquals(AssetElementValue(ThemeAssetReference(uri = "https://cdn.example.com/app-dark.svg")), logo.value)
             assertEquals(ElementOrigin.APPLICATION, logo.origin)
         }
 
@@ -133,7 +133,7 @@ class DefaultFeatureResolverTest {
 
             val logo = assertNotNull(resolved).elements["logo"]
             assertNotNull(logo)
-            assertEquals("https://cdn.example.com/app.svg", logo.asset?.uri)
+            assertEquals(AssetElementValue(ThemeAssetReference(uri = "https://cdn.example.com/app.svg")), logo.value)
             assertEquals(ElementOrigin.APPLICATION, logo.origin)
         }
 
@@ -148,7 +148,7 @@ class DefaultFeatureResolverTest {
 
             val logo = assertNotNull(resolved).elements["logo"]
             assertNotNull(logo)
-            assertEquals("https://cdn.example.com/tenant-dark.svg", logo.asset?.uri)
+            assertEquals(AssetElementValue(ThemeAssetReference(uri = "https://cdn.example.com/tenant-dark.svg")), logo.value)
             assertEquals(ElementOrigin.TENANT, logo.origin)
         }
 
@@ -162,7 +162,7 @@ class DefaultFeatureResolverTest {
 
             val logo = assertNotNull(resolved).elements["logo"]
             assertNotNull(logo)
-            assertEquals("https://cdn.example.com/tenant.svg", logo.asset?.uri)
+            assertEquals(AssetElementValue(ThemeAssetReference(uri = "https://cdn.example.com/tenant.svg")), logo.value)
             assertEquals(ElementOrigin.TENANT, logo.origin)
         }
 
@@ -175,7 +175,7 @@ class DefaultFeatureResolverTest {
 
             val background = assertNotNull(resolved).elements["background"]
             assertNotNull(background)
-            assertEquals("/defaults/login-background.png", background.asset?.uri)
+            assertEquals(AssetElementValue(ThemeAssetReference(uri = "/defaults/login-background.png")), background.value)
             assertEquals(ElementOrigin.PRODUCT_DEFAULT, background.origin)
         }
 
@@ -191,10 +191,9 @@ class DefaultFeatureResolverTest {
                     name = "Consent screen",
                     elements =
                         listOf(
-                            DesignElement(
+                            TextDesignElement(
                                 elementId = "consentCopy",
-                                kind = ElementKind.TEXT,
-                                defaultText = "Please review the requested access.",
+                                default = "Please review the requested access.",
                             ),
                         ),
                 ),
@@ -204,7 +203,7 @@ class DefaultFeatureResolverTest {
 
             val consentCopy = assertNotNull(resolved).elements["consentCopy"]
             assertNotNull(consentCopy)
-            assertEquals("Please review the requested access.", consentCopy.text)
+            assertEquals(TextElementValue("Please review the requested access."), consentCopy.value)
             assertEquals(ElementOrigin.ELEMENT_DEFAULT, consentCopy.origin)
         }
 
@@ -226,8 +225,7 @@ class DefaultFeatureResolverTest {
 
             val logo = assertNotNull(resolved).elements["logo"]
             assertNotNull(logo)
-            assertEquals("https://cdn.example.com/acme.svg", logo.asset?.uri)
-            assertNull(logo.text)
+            assertEquals(AssetElementValue(ThemeAssetReference(uri = "https://cdn.example.com/acme.svg")), logo.value)
             assertEquals(ElementOrigin.TOKEN_FALLBACK, logo.origin)
         }
 
@@ -249,7 +247,7 @@ class DefaultFeatureResolverTest {
 
             val tagline = assertNotNull(resolved).elements["tagline"]
             assertNotNull(tagline)
-            assertEquals("Credentials for everyone", tagline.text)
+            assertEquals(TextElementValue("Credentials for everyone"), tagline.value)
             assertEquals(ElementOrigin.TOKEN_FALLBACK, tagline.origin)
         }
 
@@ -287,5 +285,72 @@ class DefaultFeatureResolverTest {
             assertEquals(tenant, resolved.tenantId)
             assertEquals(applicationId, resolved.applicationId)
             assertEquals(ThemeVariant.DARK, resolved.variant)
+        }
+
+    @Test
+    fun choiceElementFallsBackFromBindingToDefault() =
+        runTest {
+            val store = InMemoryThemeStore()
+            store.saveFeature(
+                tenant,
+                FeatureDefinition(
+                    featureId = "checkout",
+                    productType = productType,
+                    name = "Checkout",
+                    elements =
+                        listOf(
+                            ChoiceDesignElement(
+                                elementId = "headerStyle",
+                                allowedValues = listOf("panel", "hairline", "logoOnly"),
+                                default = "panel",
+                            ),
+                        ),
+                ),
+            )
+
+            val resolved = resolver(store).resolve(tenant, productType, "checkout", applicationId)
+
+            val headerStyle = assertNotNull(resolved).elements["headerStyle"]
+            assertNotNull(headerStyle)
+            assertEquals(ChoiceElementValue("panel"), headerStyle.value)
+            assertEquals(ElementOrigin.ELEMENT_DEFAULT, headerStyle.origin)
+        }
+
+    @Test
+    fun choiceBindingWinsOverTheElementDefault() =
+        runTest {
+            val store = InMemoryThemeStore()
+            store.saveFeature(
+                tenant,
+                FeatureDefinition(
+                    featureId = "checkout",
+                    productType = productType,
+                    name = "Checkout",
+                    elements =
+                        listOf(
+                            ChoiceDesignElement(
+                                elementId = "headerStyle",
+                                allowedValues = listOf("panel", "hairline", "logoOnly"),
+                                default = "panel",
+                            ),
+                        ),
+                ),
+            )
+            store.setElementBinding(
+                tenant,
+                ElementBinding(
+                    productType = productType,
+                    featureId = "checkout",
+                    elementId = "headerStyle",
+                    value = ChoiceElementValue("hairline"),
+                ),
+            )
+
+            val resolved = resolver(store).resolve(tenant, productType, "checkout", applicationId)
+
+            val headerStyle = assertNotNull(resolved).elements["headerStyle"]
+            assertNotNull(headerStyle)
+            assertEquals(ChoiceElementValue("hairline"), headerStyle.value)
+            assertEquals(ElementOrigin.TENANT, headerStyle.origin)
         }
 }

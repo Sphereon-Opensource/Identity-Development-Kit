@@ -93,9 +93,8 @@ data class WscaClientAttestationAuthResult(
  * The returned [WalletAttestedKeyRef] is the ONLY handle a caller receives. Its
  * [WalletAttestedKeyRef.keyRef] is an opaque, secure-component-scoped signing identifier that only
  * the WSCA/WSCD implementation knows how to resolve; callers treat it as a black box and hand it
- * back to [sign] (or, on the OSS local profile, forward it as the credential-request proof signing
- * key identifier). The mapping from that opaque reference to concrete KMS key material lives
- * entirely inside the implementation.
+ * back to [sign]. The mapping from that opaque reference to concrete KMS key material lives entirely
+ * inside the WSCD implementation.
  */
 interface Wsca {
     /**

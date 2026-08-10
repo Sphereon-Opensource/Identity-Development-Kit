@@ -25,12 +25,11 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
+import com.sphereon.crypto.core.CoseJoseKeyMappingService
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
-import com.sphereon.crypto.core.generic.KeyOperations
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkSet
-import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KmsProviderCapabilities
@@ -42,6 +41,7 @@ import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryResolver
 import com.sphereon.openid.oid4vp.universal.CreateAuthRequestServiceCommand
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
+import com.sphereon.openid.oid4vp.universal.AuthorizationRequestMethod
 import com.sphereon.openid.oid4vp.universal.UniversalOid4vpConfigProvider
 import com.sphereon.openid.oid4vp.universal.UniversalOid4vpEventTypes
 import com.sphereon.openid.oid4vp.verifier.BuildAuthorizationRequestUriArgs
@@ -52,6 +52,8 @@ import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionCallbackCon
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.model.Oid4vpSessionIdentity
 import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceIdProvider
+import com.sphereon.openid.oid4vp.verifier.config.ResponseEncryptionKeyConfig
+import com.sphereon.openid.oid4vp.verifier.config.currentInstanceIdOrDefault
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import com.sphereon.openid.oid4vp.verifier.store.ClientMetadataConfigurationStore
@@ -87,6 +89,7 @@ class CreateAuthRequestServiceCommandImpl(
     private val qrCodeService: QrCodeService,
     private val configProvider: UniversalOid4vpConfigProvider,
     private val requestObjectSigningConfig: RequestObjectSigningConfig,
+    private val responseEncryptionKeyConfig: ResponseEncryptionKeyConfig,
     private val kms: KeyManagerService,
 ) : TypedServiceCommandAdapter<CreateAuthorizationRequestInput, CreateAuthorizationRequestOutput, IdkError>(
         commandId = CreateAuthRequestServiceCommand.COMMAND_ID,
@@ -106,12 +109,7 @@ class CreateAuthRequestServiceCommandImpl(
             try {
                 Oid4vpSessionIdentity.normalize(
                     "instanceId",
-                    instanceIdProvider.currentInstanceId()
-                        ?: return Err(
-                            IdkError.ILLEGAL_ARGUMENT_ERROR(
-                                message = "A verifier instance must be resolved before creating an OID4VP authorization session",
-                            ),
-                        ),
+                    instanceIdProvider.currentInstanceIdOrDefault(),
                 )
             } catch (e: IllegalArgumentException) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = e.message ?: "Invalid verifier instanceId"))
@@ -154,8 +152,8 @@ class CreateAuthRequestServiceCommandImpl(
                 allConfigs?.values?.firstOrNull()
             }
 
-        // Pre-generate the session correlation id BEFORE generating the JARM key, so the
-        // JWK we publish in client_metadata can carry kid = correlationId. Per OID4VP §8.3
+        // Derive the session correlation id BEFORE resolving the JARM key, so the JWK we
+        // publish in client_metadata can carry kid = correlationId. Per OID4VP §8.3
         // the wallet echoes the JWK's kid in the JWE header; the response endpoint then
         // uses JWE.kid → correlationId for a direct session lookup (no secondary index in
         // the session store needed).
@@ -167,14 +165,17 @@ class CreateAuthRequestServiceCommandImpl(
         // config returns a binding whose JOSE header / prefix match. Same KMS alias /
         // cert / key serves all schemes; only the client_id prefix and JOSE header switch.
         val derivedFromSigner =
-            if (requestObjectSigningConfig.enabled) {
+            if (
+                requestObjectSigningConfig.enabled &&
+                input.authorizationRequestMethod == AuthorizationRequestMethod.REQUEST_URI
+            ) {
                 requestObjectSigningConfig.resolveSignerBinding(input.clientIdScheme)?.clientId
             } else {
                 null
             }
+        val universalConfig = configProvider.getConfig()
         val configuredVerifierBaseUrl =
-            configProvider
-                .getConfig()
+            universalConfig
                 .externalBaseUrl
                 ?.trimEnd('/')
                 ?.takeIf { base -> base.startsWith("https://") || base.startsWith("http://") }
@@ -205,7 +206,7 @@ class CreateAuthRequestServiceCommandImpl(
         // RFC 7591. response_uri sourcing belongs to verifier deployment configuration.
         val responseUri =
             input.responseUri
-                ?: configProvider.getConfig().responseUri
+                ?: universalConfig.responseUri
                 ?: "$clientId/response"
 
         // 6. Resolve client_id_scheme: explicit > detect from client_id prefix > default
@@ -228,51 +229,51 @@ class CreateAuthRequestServiceCommandImpl(
                         ),
                     )
             } ?: ResponseMode.DIRECT_POST
-        // For direct_post.jwt the wallet encrypts the response with the verifier's
-        // public key. Generate an ephemeral ECDH-ES P-256 keypair in the dedicated
-        // `ephemeral` KMS provider (memory-backed, APP-scoped — see oid4vp-verifier.yml)
-        // so it never touches the persistent PKCS12 keystore. The alias is persisted on
-        // the AuthorizationSession so the response endpoint can resolve the private key
-        // back from the KMS at decryption time. No key material crosses session storage.
-        val jarmKey: JarmEphemeralKey? =
+        // For direct_post.jwt the wallet encrypts the response with the verifier's public key. That
+        // key belongs to the verifier instance and is provisioned durably out of band: the server
+        // resolves its name from its own binding for the active tenant and instance, publishes the
+        // public half here, and performs the ECDH key agreement with the private half when the
+        // response arrives. Nothing is minted on this path, and no alias or provider id from
+        // configuration or from the request takes part in the selection.
+        val jarmKey: JarmEncryptionKey? =
             if (resolvedResponseMode == ResponseMode.DIRECT_POST_JWT) {
-                val keyResult =
-                    kms.generateKeyResult(
-                        providerId = EPHEMERAL_PROVIDER_ID,
-                        alias = "jarm-enc-${ByteArray(16).also { Random.nextBytes(it) }.encodeToBase64Url()}",
-                        use = JwkUse.enc,
-                        keyOperations = arrayOf(KeyOperations.DERIVE_KEY),
-                        alg = SignatureAlgorithm.ECDSA_SHA256,
-                        keyVisibility = KeyVisibility.PRIVATE,
-                    )
-                if (keyResult.isErr) {
-                    return Err(
-                        IdkError.UNKNOWN_ERROR(
-                            message = "Failed to generate ephemeral JARM encryption key in '$EPHEMERAL_PROVIDER_ID' KMS provider: ${keyResult.error.message}",
+                val encryptionKeyName =
+                    responseEncryptionKeyConfig.resolveEncryptionKeyName(instanceId)
+                        ?: return Err(
+                            IdkError.UNKNOWN_ERROR(message = ResponseEncryptionKeyConfig.RESPONSE_ENCRYPTION_KEY_UNAVAILABLE),
+                        )
+                // PUBLIC: only the public half leaves the KMS. The private half never crosses this
+                // process, and the resolved name is the sole handle the response endpoint uses.
+                val publicKeyResult =
+                    kms.getKeyResult(
+                        KeyInfo<Nothing>(
+                            alias = encryptionKeyName,
+                            keyVisibility = KeyVisibility.PUBLIC,
                         ),
                     )
+                if (publicKeyResult.isErr) {
+                    return Err(IdkError.UNKNOWN_ERROR(message = ResponseEncryptionKeyConfig.RESPONSE_ENCRYPTION_KEY_UNAVAILABLE))
                 }
-                val pair =
-                    keyResult.value.keyPair
-                        ?: return Err(IdkError.UNKNOWN_ERROR(message = "Ephemeral JARM key generation returned no key pair"))
-
-                // Pull the provider's capabilities so the metadata advertises only what the
-                // verifier can actually decrypt. Hardcoding alg/enc lists here would drift
-                // away from what DecryptJweCommandImpl supports the moment a new alg lands;
-                // capabilities-driven advertisement keeps the metadata honest.
-                val capabilities =
-                    resolveProviderCapabilities(EPHEMERAL_PROVIDER_ID)
+                val publicKeyInfo =
+                    publicKeyResult.value.key
                         ?: return Err(
-                            IdkError.UNKNOWN_ERROR(
-                                message = "KMS provider '$EPHEMERAL_PROVIDER_ID' returned no capabilities — cannot advertise JARM enc algorithm support",
-                            ),
+                            IdkError.UNKNOWN_ERROR(message = ResponseEncryptionKeyConfig.RESPONSE_ENCRYPTION_KEY_UNAVAILABLE),
+                        )
+                val publicJwk = CoseJoseKeyMappingService.toJoseJwk(publicKeyInfo.key).copy(d = null)
+
+                // Pull the capabilities of the provider the resolved key actually lives in, so the
+                // metadata advertises only what the verifier can decrypt. Hardcoding alg/enc lists
+                // here would drift away from what DecryptJweCommandImpl supports the moment a new
+                // alg lands; capabilities-driven advertisement keeps the metadata honest.
+                val capabilities =
+                    resolveProviderCapabilities(publicKeyInfo.providerId)
+                        ?: return Err(
+                            IdkError.UNKNOWN_ERROR(message = ResponseEncryptionKeyConfig.RESPONSE_ENCRYPTION_KEY_UNAVAILABLE),
                         )
 
-                JarmEphemeralKey(
-                    alias = pair.alias,
-                    providerId = pair.providerId,
+                JarmEncryptionKey(
                     publicJwk =
-                        pair.jose.publicJwk.copy(
+                        publicJwk.copy(
                             // Pin kid to the session's correlationId (NOT the KMS alias). Per
                             // OID4VP §8.3 the wallet echoes this kid in the JWE header — by
                             // making it equal to the correlationId the response endpoint can
@@ -319,14 +320,13 @@ class CreateAuthRequestServiceCommandImpl(
                 state = correlationId,
                 clientMetadata = effectiveClientMetadata,
                 clientIdScheme = resolvedScheme,
-                jarmEncryptionKeyAlias = jarmKey?.alias,
-                jarmEncryptionKeyProviderId = jarmKey?.providerId,
                 // OID4VP §5.10: surfaces as `&request_uri_method=…` on the outer OAuth2 URL.
                 // Caller-supplied; we don't second-guess (verifier-impl validates the value).
                 requestUriMethod = input.requestUriMethod?.takeIf { it.isNotBlank() },
                 dcqlQueryId = resolvedQuery?.dcqlQueryId,
                 dcqlQueryVersion = resolvedQuery?.version,
                 verifierId = input.verifierId,
+                templateId = input.templateId,
                 credentialStatusPolicies = input.credentialStatusPolicies,
             )
 
@@ -351,15 +351,24 @@ class CreateAuthRequestServiceCommandImpl(
                     ),
                 )
 
-        // 8. Update session with callback config if provided
+        // 8. Persist response-endpoint behavior that is intentionally not part of the
+        // authorization request. `direct_post_response_redirect_uri` tells this verifier
+        // what to return after successful processing; it is not the wallet-facing OAuth
+        // authorization request `redirect_uri`.
         val inputCallback = input.callback
-        if (inputCallback != null) {
-            val callbackConfig =
-                AuthorizationSessionCallbackConfig(
-                    url = inputCallback.url,
-                    statuses = inputCallback.statuses,
+        val directPostResponseRedirectUri = input.directPostResponseRedirectUri?.takeIf { it.isNotBlank() }
+        if (inputCallback != null || directPostResponseRedirectUri != null) {
+            persistedSession =
+                persistedSession.copy(
+                    callback =
+                        inputCallback?.let {
+                            AuthorizationSessionCallbackConfig(
+                                url = it.url,
+                                statuses = it.statuses,
+                            )
+                        },
+                    directPostResponseRedirectUri = directPostResponseRedirectUri,
                 )
-            persistedSession = persistedSession.copy(callback = callbackConfig)
             oid4vpVerifierService.authorizationSessionStore
                 .put(
                     sessionId,
@@ -413,14 +422,26 @@ class CreateAuthRequestServiceCommandImpl(
                 )
             deeplinkPrefix = null
         }
+        if (input.authorizationRequestMethod == AuthorizationRequestMethod.URL_QUERY && !input.requestUriMethod.isNullOrBlank()) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "request_uri_method is only valid when authorization_request_method is request_uri",
+                ),
+            )
+        }
         val requestUri =
             oid4vpVerifierService
                 .buildAuthorizationRequestUri(
                     BuildAuthorizationRequestUriArgs(
                         request = created.request,
                         scheme = outerScheme,
-                        useRequestUri = true,
-                        requestUri = buildRequestUri(sessionId, input.requestUriBase),
+                        useRequestUri = input.authorizationRequestMethod == AuthorizationRequestMethod.REQUEST_URI,
+                        requestUri =
+                            if (input.authorizationRequestMethod == AuthorizationRequestMethod.REQUEST_URI) {
+                                buildRequestUri(sessionId, input.requestUriBase)
+                            } else {
+                                null
+                            },
                         deeplinkPrefix = deeplinkPrefix,
                     ),
                 ).getOrElse { error ->
@@ -443,6 +464,7 @@ class CreateAuthRequestServiceCommandImpl(
         // 12. Build response per Universal OID4VP spec
         val output =
             CreateAuthorizationRequestOutput(
+                sessionId = persistedSession.sessionId,
                 correlationId = sessionId,
                 queryId = input.queryId,
                 requestUri = requestUri,
@@ -476,7 +498,7 @@ class CreateAuthRequestServiceCommandImpl(
      * ClientRegistration fields (the wallet "MUST ignore unrecognized parameters", but
      * emitting them is non-canonical noise that confuses conformance and pollutes the JAR).
      */
-    private fun buildOid4vpClientMetadata(jarmKey: JarmEphemeralKey?): com.sphereon.openid.oid4vp.common.ClientMetadata {
+    private fun buildOid4vpClientMetadata(jarmKey: JarmEncryptionKey?): com.sphereon.openid.oid4vp.common.ClientMetadata {
         val vpFormats =
             mapOf(
                 "dc+sd-jwt" to
@@ -510,15 +532,12 @@ class CreateAuthRequestServiceCommandImpl(
     }
 
     /**
-     * Bundle of the just-generated ephemeral encryption key plus the KMS-advertised
-     * algorithms the verifier can actually decrypt under. The KMS holds the private
-     * material under [alias] in the [providerId] provider; only [publicJwk] crosses the
-     * wire (in client_metadata.jwks). The session stores [alias] + [providerId] so the
-     * response endpoint can resolve the private half via the KMS at decrypt time.
+     * Public half of the verifier's response-encryption key plus the KMS-advertised algorithms it
+     * can actually decrypt under. Only [publicJwk] crosses the wire (in client_metadata.jwks); the
+     * private half stays in the KMS and is reached again at decrypt time through the same
+     * server-resolved key name, which is why no selector is carried anywhere.
      */
-    private data class JarmEphemeralKey(
-        val alias: String,
-        val providerId: String,
+    private data class JarmEncryptionKey(
         val publicJwk: Jwk,
         val supportedEncs: List<ContentEncryptionAlgorithm>,
         val supportsKeyAgreement: Boolean,
@@ -533,10 +552,6 @@ class CreateAuthRequestServiceCommandImpl(
         val result = kms.getAllCapabilities()
         if (result.isErr) return null
         return result.value.capabilities[providerId]
-    }
-
-    private companion object {
-        const val EPHEMERAL_PROVIDER_ID: String = "ephemeral"
     }
 
     /**
@@ -573,9 +588,11 @@ class CreateAuthRequestServiceCommandImpl(
                                 protocolSessionId = session.sessionId,
                                 instanceId = session.instanceId,
                                 newState = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED.name,
+                                templateId = session.templateId,
                                 creationSnapshot = buildJsonObject {
                                     put("correlationId", session.correlationId)
                                     session.queryId?.let { put("queryId", it) }
+                                    session.templateId?.let { put("templateId", it) }
                                 },
                                 currentResult = buildJsonObject {
                                     put("correlationId", session.correlationId)

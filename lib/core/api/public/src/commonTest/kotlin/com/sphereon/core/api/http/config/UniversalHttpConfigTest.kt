@@ -18,7 +18,6 @@ package com.sphereon.core.api.http.config
 
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.TenantPathMode
-import com.sphereon.core.api.http.describe.TenantResolutionPriority
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -168,31 +167,6 @@ class UniversalHttpConfigTest {
     }
 
     @Test
-    fun resolveMountAppliesTenantResolutionPriority() {
-        val config =
-            universalHttpConfig {
-                defaults {
-                    tenantResolutionPriority = TenantResolutionPriority.PATH_THEN_HEADER
-                }
-                adapter("HEADER_FIRST") {
-                    tenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH
-                }
-            }
-
-        val declaredMount =
-            HttpAdapterMount(
-                serverPrefix = "/api",
-                adapterBasePath = "/items",
-            )
-
-        val resolvedDefault = config.resolveMount("OTHER", declaredMount)
-        assertEquals(TenantResolutionPriority.PATH_THEN_HEADER, resolvedDefault.tenantResolutionPriority)
-
-        val resolvedOverride = config.resolveMount("HEADER_FIRST", declaredMount)
-        assertEquals(TenantResolutionPriority.HEADER_THEN_PATH, resolvedOverride.tenantResolutionPriority)
-    }
-
-    @Test
     fun resolveMountUsesDeclaredTenantSegmentPatternWhenNonDefault() {
         val config =
             universalHttpConfig {
@@ -212,29 +186,6 @@ class UniversalHttpConfigTest {
         val resolved = config.resolveMount("ADAPTER", declaredMount)
         // Should use declared value since it's not the default
         assertEquals("/custom/{tenantId}", resolved.tenantSegmentPattern)
-    }
-
-    @Test
-    fun resolveMountUsesDeclaredTenantResolutionPriorityWhenNonDefault() {
-        val config =
-            universalHttpConfig {
-                defaults {
-                    // defaults to HEADER_THEN_PATH, we set it explicitly here
-                    tenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH
-                }
-            }
-
-        // Declared mount has a non-default priority (PATH_THEN_HEADER instead of HEADER_THEN_PATH)
-        val declaredMount =
-            HttpAdapterMount(
-                serverPrefix = "/api",
-                adapterBasePath = "/items",
-                tenantResolutionPriority = TenantResolutionPriority.PATH_THEN_HEADER,
-            )
-
-        val resolved = config.resolveMount("ADAPTER", declaredMount)
-        // Should use declared value since it's not HEADER_THEN_PATH (the default)
-        assertEquals(TenantResolutionPriority.PATH_THEN_HEADER, resolved.tenantResolutionPriority)
     }
 
     @Test

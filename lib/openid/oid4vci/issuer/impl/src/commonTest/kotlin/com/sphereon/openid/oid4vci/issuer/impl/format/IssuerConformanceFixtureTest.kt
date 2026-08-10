@@ -58,7 +58,7 @@ import kotlin.test.assertTrue
 /**
  * Issuer conformance fixture tests for credential format handlers.
  *
- * Tests SD-JWT DC, JWT VC JSON, and MSO mDoc format handlers with
+ * Tests IETF SD-JWT VC, JWT VC JSON, and MSO mDoc format handlers with
  * fake service implementations to verify issuance logic.
  */
 class IssuerConformanceFixtureTest {
@@ -148,11 +148,14 @@ class IssuerConformanceFixtureTest {
         override fun getSupportedMethods(): List<String> = emptyList()
     }
 
+    /** Stands in for the name the issuer key seam resolves server side before a handler runs. */
+    private val SERVER_RESOLVED_SIGNING_KEY = "issuer-signing-conformance"
+
     /**
-     * Creates an SdJwtDcFormatHandler with in-memory KMS for tests.
+     * Creates an SdJwtVcFormatHandler with in-memory KMS for tests.
      */
-    private fun createSdJwtDcHandler(sdJwtService: SdJwtService): SdJwtDcFormatHandler =
-        SdJwtDcFormatHandler(
+    private fun createSdJwtVcHandler(sdJwtService: SdJwtService): SdJwtVcFormatHandler =
+        SdJwtVcFormatHandler(
             sdJwtService = sdJwtService,
             kms = TestKmsMock(),
             didProviderRegistry = StubDidProviderRegistry(),
@@ -183,7 +186,7 @@ class IssuerConformanceFixtureTest {
             credentialDefinition = types?.let { CredentialDefinition(type = it) },
         )
 
-    private fun makeSdJwtDcConfig(vct: String? = null) =
+    private fun makeSdJwtVcConfig(vct: String? = null) =
         CredentialConfigurationSupported(
             format = "dc+sd-jwt",
             vct = vct,
@@ -211,19 +214,20 @@ class IssuerConformanceFixtureTest {
         holderBindingKey = holderBindingKey,
         attributes = attributes,
         sdPolicies = sdPolicies,
+        signingKeyAlias = SERVER_RESOLVED_SIGNING_KEY,
     )
 
     // ========================================================================
-    // SD-JWT DC Conformance
+    // IETF SD-JWT VC conformance
     // ========================================================================
 
     @Test
-    fun sdJwtDcIssuesWithVct() =
+    fun sdJwtVcIssuesWithVct() =
         runTest {
             val fakeSdJwtService = FakeSdJwtService()
-            val handler = createSdJwtDcHandler(fakeSdJwtService)
+            val handler = createSdJwtVcHandler(fakeSdJwtService)
 
-            val config = makeSdJwtDcConfig(vct = "https://example.com/credentials/identity")
+            val config = makeSdJwtVcConfig(vct = "https://example.com/credentials/identity")
             val context =
                 makeContext(
                     config = config,
@@ -233,7 +237,7 @@ class IssuerConformanceFixtureTest {
 
             val result = handler.issueCredential(request, context)
 
-            assertTrue(result.isOk, "SD-JWT DC issuance with vct should succeed")
+            assertTrue(result.isOk, "IETF SD-JWT VC issuance with vct should succeed")
             val envelope = result.getOrThrow()
             assertEquals("dc+sd-jwt", envelope.format, "Envelope format should match the configuration format")
 
@@ -243,12 +247,12 @@ class IssuerConformanceFixtureTest {
         }
 
     @Test
-    fun sdJwtDcRequiresVct() =
+    fun sdJwtVcRequiresVct() =
         runTest {
             val fakeSdJwtService = FakeSdJwtService()
-            val handler = createSdJwtDcHandler(fakeSdJwtService)
+            val handler = createSdJwtVcHandler(fakeSdJwtService)
 
-            val config = makeSdJwtDcConfig(vct = null)
+            val config = makeSdJwtVcConfig(vct = null)
             val context =
                 makeContext(
                     config = config,
@@ -258,16 +262,16 @@ class IssuerConformanceFixtureTest {
 
             val result = handler.issueCredential(request, context)
 
-            assertTrue(result.isErr, "SD-JWT DC issuance without vct should fail")
+            assertTrue(result.isErr, "IETF SD-JWT VC issuance without vct should fail")
         }
 
     @Test
-    fun sdJwtDcAppliesSdPolicies() =
+    fun sdJwtVcAppliesSdPolicies() =
         runTest {
             val fakeSdJwtService = FakeSdJwtService()
-            val handler = createSdJwtDcHandler(fakeSdJwtService)
+            val handler = createSdJwtVcHandler(fakeSdJwtService)
 
-            val config = makeSdJwtDcConfig(vct = "https://example.com/credentials/identity")
+            val config = makeSdJwtVcConfig(vct = "https://example.com/credentials/identity")
             val context =
                 makeContext(
                     config = config,
@@ -288,7 +292,7 @@ class IssuerConformanceFixtureTest {
 
             val result = handler.issueCredential(request, context)
 
-            assertTrue(result.isOk, "SD-JWT DC issuance with SD policies should succeed")
+            assertTrue(result.isOk, "IETF SD-JWT VC issuance with SD policies should succeed")
 
             // Verify the payload builder received the correct policies by checking the DSL payload
             val issuedPayload = fakeSdJwtService.lastArgs!!.payload
@@ -309,10 +313,10 @@ class IssuerConformanceFixtureTest {
         }
 
     @Test
-    fun sdJwtDcIncludesHolderBinding() =
+    fun sdJwtVcIncludesHolderBinding() =
         runTest {
             val fakeSdJwtService = FakeSdJwtService()
-            val handler = createSdJwtDcHandler(fakeSdJwtService)
+            val handler = createSdJwtVcHandler(fakeSdJwtService)
 
             val holderKey =
                 buildJsonObject {
@@ -322,7 +326,7 @@ class IssuerConformanceFixtureTest {
                     put("y", "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0")
                 }
 
-            val config = makeSdJwtDcConfig(vct = "https://example.com/credentials/identity")
+            val config = makeSdJwtVcConfig(vct = "https://example.com/credentials/identity")
             val context =
                 makeContext(
                     config = config,
@@ -333,7 +337,7 @@ class IssuerConformanceFixtureTest {
 
             val result = handler.issueCredential(request, context)
 
-            assertTrue(result.isOk, "SD-JWT DC issuance with holder binding should succeed")
+            assertTrue(result.isOk, "IETF SD-JWT VC issuance with holder binding should succeed")
 
             // Verify the cnf claim was added to the payload
             val issuedPayload = fakeSdJwtService.lastArgs!!.payload

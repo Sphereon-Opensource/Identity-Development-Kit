@@ -39,7 +39,6 @@ IDK uses a consistent three-way split per domain area:
 - `lib-crypto-kms-provider-aws`: AWS KMS provider.
 - `lib-crypto-kms-provider-azure`: Azure Key Vault provider.
 - `lib-crypto-kms-provider-mobile`: iOS Secure Enclave / Android Keystore provider.
-- `lib-crypto-kms-provider-rest`: remote KMS provider using `services-kms-rest`.
 - `lib-crypto-key-persistence-api` / `lib-crypto-key-persistence-impl` / `lib-crypto-key-persistence-sqlite`: tenant-aware key reference store (pointers, not key material).
 
 ### DID
@@ -127,7 +126,7 @@ IDK uses a consistent three-way split per domain area:
 ### Services (REST)
 
 - `ktor-server-kotlin-inject`: Ktor plugin that bridges Metro dependency graphs into request handling (the artifact name is retained from the pre-Metro codebase for compatibility).
-- `services-kms-rest`: deployable KMS REST server.
+- `services-kms-rest`: Ktor wiring a KMS host embeds (per-request DI, JSON negotiation, liveness). It mounts no KMS endpoints of its own; the hosting assembly contributes the tenant typed KMS resource surface, addressed by opaque resource handles.
 - `services-oid4vp-verifier-rest`: deployable OID4VP verifier server.
 - `services-oauth2-as-rest`: deployable OAuth2/OIDC Authorization Server.
 - `services-oid4vci-issuer-rest`: deployable OID4VCI issuer server.

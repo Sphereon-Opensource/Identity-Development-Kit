@@ -251,7 +251,6 @@ class JwtProofVerifier(
                         keyAttestationJwt = attestationJwt,
                         trustConfig = trustConfig,
                         policy = attestationPolicy,
-                        expectedAudience = expectedAudience.takeIf { attestationPolicy != null },
                         expectedNonce = nonce,
                     ).getOrElse { return Err(it) }
             keyAttestationEvidence = validated.keyAttestation

@@ -35,6 +35,7 @@ import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.putClaims
 import com.sphereon.oauth2.server.authorization.model.AccessTokenData
 import com.sphereon.oauth2.server.authorization.model.RefreshTokenData
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
@@ -99,6 +100,7 @@ class AuthServerIntrospectTokenCommandImpl(
     execution: SessionExecution,
     private val tokenStorage: TokenStorage,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val internalClientAuthorizer: InternalIntrospectionClientAuthorizer,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<IntrospectTokenArgs, TokenIntrospectionResponse, IdkError>(
         commandId = IntrospectTokenCommand.COMMAND_ID,
@@ -264,10 +266,15 @@ class AuthServerIntrospectTokenCommandImpl(
         // clients (e.g. the OID4VCI credential endpoint introspecting a wallet's access token).
         // RFC 7662 §4 explicitly calls this out as the canonical resource-server use-case for
         // introspection. The §2.2 confused-deputy ownership rule still applies to ordinary
-        // clients.
+        // clients. Internal registrations are matched across ALL configured servers, not just
+        // the active instance: hosted per-tenant AS instances share the service's resource
+        // servers, whose registrations live under the static server ids (e.g. `default`).
+        // A blank caller id never matches — anonymous-client tokens must not make an
+        // unidentified caller look internal.
         val isInternalClient =
-            configProvider.serverConfig.internalClients.values
-                .any { it.clientId == callerClientId }
+            internalClientAuthorizer
+                .isInternalClient(callerClientId)
+                .getOrElse { false }
 
         // Handle based on token type
         return when (tokenData) {
@@ -309,6 +316,14 @@ class AuthServerIntrospectTokenCommandImpl(
                         iss = tokenData.issuer,
                         jti = null,
                         cnf = buildJwtConfirmation(tokenData.dpopJkt, tokenData.certificateThumbprintS256),
+                        additionalClaims =
+                            if (isInternalClient) {
+                                buildJsonObject {
+                                    putClaims(tokenData.additionalData, reservedClaims = emptySet())
+                                }
+                            } else {
+                                emptyMap()
+                            },
                     ),
                 )
             }
@@ -355,6 +370,14 @@ class AuthServerIntrospectTokenCommandImpl(
                         iss = null,
                         jti = null,
                         cnf = buildJwtConfirmation(tokenData.dpopJkt, certThumbprintS256 = null),
+                        additionalClaims =
+                            if (isInternalClient) {
+                                buildJsonObject {
+                                    putClaims(tokenData.additionalData, reservedClaims = emptySet())
+                                }
+                            } else {
+                                emptyMap()
+                            },
                     ),
                 )
             }

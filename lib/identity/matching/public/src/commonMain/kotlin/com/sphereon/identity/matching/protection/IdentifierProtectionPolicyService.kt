@@ -38,9 +38,11 @@ interface IdentifierProtectionPolicyService {
  * Built-in [IdentifierProtectionPolicyService] with safe defaults and no tenant overrides.
  *
  * Defaults:
- * - PII, natural-person official identifiers, x509, did, and unknown identifiers are searchable
+ * - PII, natural-person official identifiers, x509, and unknown identifiers are searchable
  *   encrypted values.
- * - Public business and endpoint identifiers stay plaintext unless tenant policy overrides them.
+ * - Public protocol, business, and endpoint identifiers stay plaintext unless tenant policy
+ *   overrides them. A DID is intentionally public protocol material: encrypting it makes
+ *   management and trust-anchor responses expose only a blind index instead of the DID.
  */
 class DefaultIdentifierProtectionPolicyService : IdentifierProtectionPolicyService {
     override suspend fun policyFor(
@@ -67,7 +69,7 @@ class DefaultIdentifierProtectionPolicyService : IdentifierProtectionPolicyServi
             "did" -> {
                 IdentifierProtectionPolicy(
                     identifierType = type,
-                    mode = IdentifierProtectionMode.SEARCHABLE_ENCRYPTED,
+                    mode = IdentifierProtectionMode.PLAINTEXT,
                     normalization = NormalizationProfile.DID,
                 )
             }

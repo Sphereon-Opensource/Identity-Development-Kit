@@ -305,11 +305,16 @@ class DidManagerServiceImpl(
         val keyMappings = mutableListOf<DidKeyMappingRecord>()
 
         when {
+            // no VMs emitted — unusual but legal
             docVms.isEmpty() && configs.isEmpty() -> {
                 Unit
             }
 
-            // no VMs emitted — unusual but legal
+            docVms.size == 1 && configs.isEmpty() && options.publicKeyJwk != null -> {
+                // Strict PUBLIC_JWK create path. The provider-emitted public VM is persisted
+                // inline; deliberately do not create a KMS binding or DidKeyMappingRecord.
+                Unit
+            }
 
             docVms.size == configs.size -> {
                 docVms.zip(configs).forEach { (vm, cfg) ->
@@ -317,15 +322,21 @@ class DidManagerServiceImpl(
                         findKeyReferenceId(
                             providerId = cfg.kmsProviderId,
                             alias = cfg.kmsKeyAlias,
-                            kid = null,
-                            role = DidRole.MANAGED,
+                            kid = cfg.kmsKid,
+                            requireKeyReference = cfg.publicKeyJwk == null,
                         ).getOrElse { return Err(it) }
-                    bindings[vm.id] =
+                    // Did providers may emit a fragment here (for example `#0` for did:jwk),
+                    // while persistence decomposes verification methods under their absolute DID
+                    // URL. Bind with that canonical id so the persisted VM receives the same
+                    // KMS coordinates as the accompanying did_key_mapping row.
+                    val absoluteVmId = if (vm.id.startsWith("#")) "${result.did}${vm.id}" else vm.id
+                    bindings[absoluteVmId] =
                         VmKmsBinding(
                             keyInfo =
                                 KeyInfo<KeyType>(
                                     providerId = cfg.kmsProviderId,
                                     alias = cfg.kmsKeyAlias,
+                                    kid = cfg.kmsKid,
                                 ),
                             keyReferenceId = keyReferenceId,
                         )
@@ -334,9 +345,10 @@ class DidManagerServiceImpl(
                             id = idGen.next(),
                             didRecordId = recordId,
                             verificationMethodId = vm.id,
+                            verificationMethodDidUrl = vm.id,
                             kmsProviderId = cfg.kmsProviderId,
                             kmsKeyAlias = cfg.kmsKeyAlias,
-                            kmsKid = null,
+                            kmsKid = cfg.kmsKid,
                             keyReferenceId = keyReferenceId,
                             purposesJson = cfg.purposes.toWireJsonArray(),
                             createdAt = now,
@@ -422,7 +434,7 @@ class DidManagerServiceImpl(
                 providerId = config.kmsProviderId,
                 alias = config.kmsKeyAlias,
                 kid = null,
-                role = composite.record.role,
+                requireKeyReference = composite.record.role == DidRole.MANAGED && config.publicKeyJwk == null,
             ).getOrElse { return Err(it) }
         val publicKeyJwk =
             config.publicKeyJwk
@@ -1604,10 +1616,10 @@ class DidManagerServiceImpl(
         providerId: String,
         alias: String,
         kid: String?,
-        role: DidRole = DidRole.EXTERNAL,
+        requireKeyReference: Boolean = false,
     ): IdkResult<String?, IdkError> {
         if (!keyReferenceStore.isAvailable) {
-            return if (role == DidRole.MANAGED) {
+            return if (requireKeyReference) {
                 Err(
                     IdkError.INVALID_STATE(
                         message =
@@ -1633,6 +1645,15 @@ class DidManagerServiceImpl(
                     .findByAlias(tenantId = tenantId, alias = alias, providerId = providerId)
                     .getOrElse { return Err(it) }
             }
+        if (record == null && requireKeyReference) {
+            return Err(
+                IdkError.NOT_FOUND_ERROR(
+                    message =
+                        "No same-tenant key reference exists for managed KMS key " +
+                            "(providerId=$providerId, alias=$alias, kid=$kid). Refusing to persist an unbound key.",
+                ),
+            )
+        }
         return Ok(record?.id)
     }
 

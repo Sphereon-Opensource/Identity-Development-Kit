@@ -84,7 +84,7 @@ class CredentialIssuerMetadataSerializationTest {
                     mapOf(
                         "UniversityDegree" to
                             CredentialConfigurationSupported(
-                                format = "vc+sd-jwt",
+                                format = "dc+sd-jwt",
                                 scope = "UniversityDegree",
                                 vct = "https://credentials.example.com/university_degree",
                                 cryptographicBindingMethodsSupported = listOf("did:example", "did:key"),
@@ -183,7 +183,7 @@ class CredentialIssuerMetadataSerializationTest {
                 "nonce_endpoint": "https://credential-issuer.example.com/nonce",
                 "credential_configurations_supported": {
                     "UniversityDegreeCredential": {
-                        "format": "vc+sd-jwt",
+                        "format": "dc+sd-jwt",
                         "scope": "UniversityDegree",
                         "vct": "https://credentials.example.com/identity_credential",
                         "cryptographic_binding_methods_supported": ["did:example"],
@@ -218,7 +218,7 @@ class CredentialIssuerMetadataSerializationTest {
 
         val config = decoded.credentialConfigurationsSupported["UniversityDegreeCredential"]
         assertNotNull(config)
-        assertEquals("vc+sd-jwt", config.format)
+        assertEquals("dc+sd-jwt", config.format)
         assertEquals("UniversityDegree", config.scope)
         assertEquals("https://credentials.example.com/identity_credential", config.vct)
         assertEquals(listOf("did:example"), config.cryptographicBindingMethodsSupported)
@@ -452,7 +452,7 @@ class CredentialIssuerMetadataSerializationTest {
                 "credential_endpoint": "https://issuer.example.com/credential",
                 "credential_configurations_supported": {
                     "IdentityCredential": {
-                        "format": "vc+sd-jwt",
+                        "format": "dc+sd-jwt",
                         "vct": "https://credentials.example.com/identity_credential",
                         "credential_metadata": {
                             "display": [

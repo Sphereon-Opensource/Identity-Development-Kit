@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.OpaqueSecretResolver
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.api.context.SessionExecution
@@ -28,24 +29,28 @@ import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.ResponseType
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.OpaqueInternalClientCredential
 import dev.zacsweers.metro.Inject
+import kotlin.time.TimeSource
 
 @Inject
 class OAuth2ClientsConfigBinder(
     private val execution: SessionExecution,
+    private val opaqueSecretResolver: OpaqueSecretResolver,
 ) {
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
 
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
-    fun loadClientRegistrations(serverId: String? = null): IdkResult<Map<String, ClientRegistration>, AuthorizationServerError.StorageError> =
+    suspend fun loadClientRegistrations(serverId: String? = null): IdkResult<Map<String, ClientRegistration>, AuthorizationServerError.StorageError> =
         try {
             val configuredClients = loadConfiguredClients(serverId)
             val registrations = linkedMapOf<String, ClientRegistration>()
@@ -54,7 +59,7 @@ class OAuth2ClientsConfigBinder(
             configuredClients.values
                 .filter { it.enabled }
                 .forEach { client ->
-                    val registration = client.toClientRegistration()
+                    val registration = client.toClientRegistration(resolveClientSecret(client))
                     val previous = registrations[registration.clientId]
                     if (previous == null) {
                         registrations[registration.clientId] = registration
@@ -78,9 +83,111 @@ class OAuth2ClientsConfigBinder(
             )
         }
 
+    /**
+     * Loads server-to-server clients whose credentials are persisted outside configuration.
+     * An entry either names an opaque tenant-secret handle via `client-secret-id`, or carries no
+     * locator at all: the verifier then derives the secret binding from the tenant and client
+     * identity. Deployment bootstrap clients with a plaintext `client-secret` originate from the
+     * server configuration model and are loaded separately by the authorization-server registry.
+     *
+     * This loader deliberately re-reads principal configuration for every registry operation.
+     * Tenant onboarding can therefore publish a new tenant-bound workload client and have the
+     * platform authorization server recognize it after config invalidation, without a process
+     * restart or a shared ambient client.
+     */
+    suspend fun loadOpaqueInternalClientRegistrations(serverId: String): IdkResult<Map<String, OpaqueInternalClientRegistration>, AuthorizationServerError.StorageError> =
+        try {
+            val configPrefix = internalClientsConfigPrefix(serverId)
+            val registrations = linkedMapOf<String, OpaqueInternalClientRegistration>()
+            val ownersByClientId = linkedMapOf<String, String>()
+
+            loadGroupedProperties(configPrefix).forEach { (entryKey, properties) ->
+                val clientSecretId = readString(properties, "clientSecretId")
+                if (readString(properties, "clientSecret") != null) {
+                    require(clientSecretId == null) {
+                        "Internal client '$entryKey' cannot configure both client-secret and client-secret-id"
+                    }
+                    // Deployment bootstrap client owned by the typed server configuration model;
+                    // the authorization-server registry loads it from there.
+                    return@forEach
+                }
+                val clientId =
+                    readString(properties, "clientId")
+                        ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.client-id'")
+                val tenantId =
+                    readString(properties, "tenantId")
+                        ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.tenant-id'")
+                val registration =
+                    ClientRegistration(
+                        clientId = clientId,
+                        clientSecret = null,
+                        clientType = ClientType.CONFIDENTIAL,
+                        grantTypes =
+                            readStringList(properties, "grantTypes")
+                                ?.map { parseGrantType(it, entryKey) }
+                                ?.takeIf { it.isNotEmpty() }
+                                ?: listOf(GrantType.CLIENT_CREDENTIALS),
+                        defaultAccessTokenAudience = readString(properties, "defaultAccessTokenAudience"),
+                        allowedAccessTokenAudiences = readStringList(properties, "allowedAccessTokenAudiences")?.toSet().orEmpty(),
+                        tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                        additionalMetadata = mapOf(TENANT_ID_CLAIM to tenantId),
+                    )
+                val previous = registrations[clientId]
+                require(previous == null) {
+                    val previousOwner = ownersByClientId[clientId] ?: "unknown"
+                    "Duplicate internal clientId '$clientId' configured under '$previousOwner' and '$entryKey'"
+                }
+                registrations[clientId] =
+                    OpaqueInternalClientRegistration(
+                        registration = registration,
+                        credential =
+                            OpaqueInternalClientCredential(
+                                clientId = clientId,
+                                tenantId = tenantId,
+                                secretId = clientSecretId,
+                            ),
+                    )
+                ownersByClientId[clientId] = entryKey
+            }
+
+            Ok(registrations)
+        } catch (expected: Exception) {
+            Err(
+                AuthorizationServerError.StorageError(
+                    operation = "loadInternalClientRegistryConfig",
+                    details = expected.message ?: "Failed to load internal oauth2 client registry configuration",
+                    exception = expected,
+                ),
+            )
+        }
+
+    /** Resolves only a validated opaque handle in the authenticated runtime session. */
+    private suspend fun resolveClientSecret(client: ConfiguredOAuth2Client): String? {
+        val secretId = client.clientSecretId ?: return null
+        require(OPAQUE_SECRET_ID_PATTERN.matches(secretId)) {
+            "Client secret id for '${client.clientId}' is not an opaque server-generated identifier"
+        }
+        val resolved = opaqueSecretResolver.resolve(secretId)
+        require(resolved.isOk) {
+            "Client secret for '${client.clientId}' could not be resolved"
+        }
+        return resolved.value
+    }
+
     private fun loadConfiguredClients(serverId: String?): Map<String, ConfiguredOAuth2Client> {
         val configPrefix = configPrefix(serverId)
+        return loadGroupedProperties(configPrefix).mapValues { (entryKey, entryProperties) ->
+            parseClient(configPrefix, entryKey, entryProperties)
+        }
+    }
+
+    private fun loadGroupedProperties(configPrefix: String): Map<String, Map<String, Any>> {
+        val started = TimeSource.Monotonic.markNow()
         val properties = configService.getSubProperties(setOf(configPrefix), stripPrefix = true)
+        execution.log.debug(
+            "OAuth2ClientConfig read prefix '$configPrefix' in " +
+                "${started.elapsedNow().inWholeMilliseconds}ms (properties=${properties.size})",
+        )
         if (properties.isEmpty()) {
             return emptyMap()
         }
@@ -102,9 +209,7 @@ class OAuth2ClientsConfigBinder(
             grouped.getOrPut(groupPrefix) { linkedMapOf() }[nestedKey] = value
         }
 
-        return grouped.mapValues { (entryKey, entryProperties) ->
-            parseClient(configPrefix, entryKey, entryProperties)
-        }
+        return grouped
     }
 
     /**
@@ -132,6 +237,9 @@ class OAuth2ClientsConfigBinder(
         entryKey: String,
         properties: Map<String, Any>,
     ): ConfiguredOAuth2Client {
+        require(keyNormalizer.normalize("clientSecret") !in properties) {
+            "Legacy plaintext/reference client-secret configuration is not supported for '$entryKey'"
+        }
         val clientType = parseClientType(readString(properties, "clientType") ?: ClientType.CONFIDENTIAL.name, entryKey)
         val grantTypes =
             readStringList(properties, "grantTypes")
@@ -153,7 +261,7 @@ class OAuth2ClientsConfigBinder(
             clientId =
                 readString(properties, "clientId")
                     ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.client-id'"),
-            clientSecret = readString(properties, "clientSecret"),
+            clientSecretId = readString(properties, "clientSecretId"),
             clientName = readString(properties, "clientName"),
             clientType = clientType,
             grantTypes = grantTypes,
@@ -163,6 +271,7 @@ class OAuth2ClientsConfigBinder(
             defaultAccessTokenAudience = readString(properties, "defaultAccessTokenAudience"),
             allowedAccessTokenAudiences = readStringList(properties, "allowedAccessTokenAudiences")?.toSet().orEmpty(),
             tokenEndpointAuthMethod = tokenEndpointAuthMethod,
+            tokenEndpointAuthSigningAlg = readStringList(properties, "tokenEndpointAuthSigningAlg"),
             jwks = readJwks(configPrefix, properties, "jwks", entryKey),
             jwksUri = readString(properties, "jwksUri"),
             requirePkce = readBoolean(properties, "requirePkce") ?: (clientType == ClientType.PUBLIC),
@@ -213,6 +322,20 @@ class OAuth2ClientsConfigBinder(
         entryKey: String,
     ): List<Jwk>? {
         val normalizedFieldName = keyNormalizer.normalize(fieldName)
+        val compactJwkSet = properties[normalizedFieldName]?.toString()?.trim().orEmpty()
+        if (compactJwkSet.isNotEmpty()) {
+            return runCatching { JwkSet.fromJsonString(compactJwkSet).keys.toList() }
+                .getOrElse {
+                    throw IllegalArgumentException(
+                        "Invalid JWK Set JSON at '$configPrefix.$entryKey.$fieldName': ${it.message}",
+                        it,
+                    )
+                }
+                .takeIf { it.isNotEmpty() }
+                ?: throw IllegalArgumentException(
+                    "JWK Set at '$configPrefix.$entryKey.$fieldName' must contain at least one key",
+                )
+        }
         val grouped = linkedMapOf<Int, MutableMap<String, Any>>()
         properties.forEach { (key, value) ->
             if (!key.startsWith("$normalizedFieldName.")) return@forEach
@@ -505,8 +628,11 @@ class OAuth2ClientsConfigBinder(
     companion object {
         const val CONFIG_PREFIX = "oauth2.clients"
         const val SERVER_CLIENTS_SUFFIX = "clients"
+        const val INTERNAL_CLIENTS_SUFFIX = "internal-clients"
 
         fun configPrefix(serverId: String?): String = serverId?.let { "oauth2.servers.$it.$SERVER_CLIENTS_SUFFIX" } ?: CONFIG_PREFIX
+
+        fun internalClientsConfigPrefix(serverId: String): String = "oauth2.servers.$serverId.$INTERNAL_CLIENTS_SUFFIX"
 
         /**
          * Normalized form of the `client-id` config leaf used as the discovery anchor for client
@@ -514,5 +640,14 @@ class OAuth2ClientsConfigBinder(
          * source key `client-id` is stored as `client.id`.
          */
         private const val CLIENT_ID_LEAF: String = "client.id"
+        private const val TENANT_ID_CLAIM: String = "tenant_id"
+        private val OPAQUE_SECRET_ID_PATTERN = Regex("^sec_[A-Za-z0-9_-]{16,128}$")
     }
+}
+
+data class OpaqueInternalClientRegistration(
+    val registration: ClientRegistration,
+    val credential: OpaqueInternalClientCredential,
+) {
+    override fun toString(): String = "OpaqueInternalClientRegistration([REDACTED])"
 }

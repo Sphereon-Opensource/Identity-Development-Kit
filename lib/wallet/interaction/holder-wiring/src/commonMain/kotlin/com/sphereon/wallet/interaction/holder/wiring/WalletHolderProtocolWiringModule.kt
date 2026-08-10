@@ -21,35 +21,40 @@ import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
 import com.sphereon.sdjwt.vc.command.VerifySdJwtVcCommand
 import com.sphereon.di.session.SessionScope
+import com.sphereon.data.store.kv.impl.KvStoreService
 import com.sphereon.wallet.WalletIdentityResolver
 import com.sphereon.wallet.credential.CredentialSubjectExtractor
 import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry
+import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.WalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.WalletProtocolExecutor
 import com.sphereon.wallet.interaction.WalletSecurityGate
 import com.sphereon.wallet.interaction.WalletTrustPolicy
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
-import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.impl.KvWalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.impl.KvWalletInteractionSessionStore
 import com.sphereon.wallet.interaction.impl.LocalWalletInteractionClient
 import com.sphereon.wallet.interaction.impl.StoreBackedWalletInteractionSensitiveInputAuthority
-import com.sphereon.wallet.interaction.protocol.iso18013.Iso18013WalletInteractionProtocolAdapter
+import com.sphereon.wallet.interaction.impl.WalletInteractionSessionStore
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceExecutor
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuanceOptionsProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuedCredentialAcceptance
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciKeyAttestationProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciTokenEndpointProofsProvider
-import com.sphereon.wallet.interaction.protocol.oid4vci.SecureComponentOid4vciCredentialRequestProofProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciCredentialRequestProofProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.WalletStoreOid4vciCredentialResponseReceiver
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciWalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpJarmOptionsProvider
+import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpNestedPresentationExecutor
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpWalletConfigProvider
 import com.sphereon.wallet.interaction.protocol.oid4vp.Oid4vpWalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.protocol.oid4vp.SecureComponentOid4vpSdJwtHolderBindingProvider
+import com.sphereon.wallet.interaction.protocol.oid4vp.WalletStoreOid4vpCredentialResolver
 import com.sphereon.wallet.wsca.Wsca
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.IntoSet
@@ -58,8 +63,8 @@ import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
 
 /**
- * The ONE SessionScope declaration of the OID4VCI, OID4VP, and ISO 18013 holder protocol wiring: the
- * extensible adapter multibinding, the three protocol-adapter contributions, the default
+ * The ONE SessionScope declaration of the mandatory OID4VCI and OID4VP holder protocol wiring: the
+ * extensible adapter multibinding, the two executable protocol-adapter contributions, the default
  * security-gate/protocol-executor policies, and the [WalletInteractionClient] this module's
  * consumers drive Tier 2 flows through.
  *
@@ -96,7 +101,7 @@ interface WalletHolderProtocolWiringModule {
 
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideWalletProtocolExecutor(): WalletProtocolExecutor = WalletProtocolExecutor.local
+    fun provideWalletProtocolExecutor(): WalletProtocolExecutor = WalletProtocolExecutor.walletApp
 
     /**
      * Real OID4VCI credential-receive adapter, backed by the DI-wired [Oid4vciHolderService] (which
@@ -107,16 +112,18 @@ interface WalletHolderProtocolWiringModule {
     @IntoSet
     fun provideOid4vciAdapter(
         holder: Oid4vciHolderService,
+        oid4vpHolder: Oid4vpHolderService,
         credentialStore: WalletCredentialStore,
         issuanceSessionStore: WalletIssuanceSessionStore,
         optionsProvider: Oid4vciIssuanceOptionsProvider,
+        walletConfigProvider: Oid4vpWalletConfigProvider,
         tokenEndpointProofsProvider: Oid4vciTokenEndpointProofsProvider,
         refreshTokenGrantProvider: Oid4vciRefreshTokenGrantProvider,
         keyAttestationProvider: Oid4vciKeyAttestationProvider,
-        walletUnitCryptoSurface: Wsca,
         walletIdentityResolver: WalletIdentityResolver,
         credentialSubjectExtractor: CredentialSubjectExtractor,
         verifySdJwtVcCommand: VerifySdJwtVcCommand,
+        walletUnitCryptoSurface: Wsca,
     ): WalletInteractionProtocolAdapter =
         Oid4vciWalletInteractionProtocolAdapter(
             holder = holder,
@@ -134,17 +141,22 @@ interface WalletHolderProtocolWiringModule {
                                 identityResolver = walletIdentityResolver,
                             ),
                         ),
+                    nestedPresentationExecutor =
+                        Oid4vpNestedPresentationExecutor(
+                            holder = oid4vpHolder,
+                            selectedCredentialResolver = WalletStoreOid4vpCredentialResolver(credentialStore),
+                            sdJwtHolderBindingProvider = SecureComponentOid4vpSdJwtHolderBindingProvider(walletUnitCryptoSurface),
+                            walletConfigProvider = walletConfigProvider,
+                        ),
                     tokenEndpointProofsProvider = tokenEndpointProofsProvider,
                     credentialStore = credentialStore,
                     issuanceSessionStore = issuanceSessionStore,
                     refreshTokenGrantProvider = refreshTokenGrantProvider,
                     keyAttestationProvider = keyAttestationProvider,
-                    // Holder proof keys are minted via Wsca.createCredentialKey (see
-                    // DefaultOid4vciIssuanceOptionsProvider); on js those keys may be held in
-                    // non-extractable browser WebCrypto custody that never round-trips through the
-                    // KMS, so proof signing MUST go through the same Wsca surface, never the
-                    // KMS-resolving holder.createCredentialRequestProof path.
-                    credentialRequestProofProvider = SecureComponentOid4vciCredentialRequestProofProvider(walletUnitCryptoSurface),
+                    // Holder proof keys are managed through Wsca.createCredentialKey (see
+                    // DefaultOid4vciIssuanceOptionsProvider). Proof signing MUST use the same WSCA
+                    // surface: WSCA selects the WSCD, and that WSCD uses its configured KMS.
+                    credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                 ),
         )
 
@@ -169,49 +181,62 @@ interface WalletHolderProtocolWiringModule {
             walletConfigProvider = walletConfigProvider,
             jarmOptionsProvider = jarmOptionsProvider,
             responseMode = responseModeOverride,
-            // Holder keys for OID4VCI issuance are minted via Wsca.createCredentialKey; on js those
-            // keys may be held in non-extractable browser WebCrypto custody that never round-trips
-            // through the KMS, so the SD-JWT Key Binding JWT signed here at presentation time must go
-            // through the same Wsca surface, never the KMS-resolving generic Oid4vpHolderService path
-            // (see SecureComponentOid4vpSdJwtHolderBindingProvider).
+            // Holder keys for OID4VCI issuance are managed through Wsca.createCredentialKey. The
+            // SD-JWT Key Binding JWT must use the same WSCA surface: WSCA selects the WSCD, and that
+            // WSCD resolves the key and signs with its configured KMS.
             sdJwtHolderBindingProvider = SecureComponentOid4vpSdJwtHolderBindingProvider(walletUnitCryptoSurface),
         )
 
-    /**
-     * ISO 18013 holder intake for QR, NFC, and BLE engagement. Platform transport managers and
-     * disclosure execution are attached through the adapter's dedicated ports by platform
-     * assemblies; the headless core still exposes the protocol-neutral consent state without UI.
-     */
     @Provides
-    @IntoSet
-    fun provideIso18013Adapter(): WalletInteractionProtocolAdapter = Iso18013WalletInteractionProtocolAdapter()
+    @SingleIn(SessionScope::class)
+    fun provideWalletInteractionPrivateSessionStore(kvStoreService: KvStoreService): WalletInteractionPrivateSessionStore =
+        KvWalletInteractionPrivateSessionStore(kvStoreService.getStore(WALLET_INTERACTION_KV_STORE_ID))
 
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideWalletInteractionSensitiveInputAuthority(): WalletInteractionSensitiveInputAuthority =
-        StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore())
+    fun provideWalletInteractionSessionStore(kvStoreService: KvStoreService): WalletInteractionSessionStore =
+        KvWalletInteractionSessionStore(kvStoreService.getStore(WALLET_INTERACTION_KV_STORE_ID))
 
     @Provides
     @SingleIn(SessionScope::class)
-    fun provideWalletInteractionClient(
+    fun provideWalletInteractionSensitiveInputAuthority(
+        privateSessionStore: WalletInteractionPrivateSessionStore,
+    ): WalletInteractionSensitiveInputAuthority =
+        StoreBackedWalletInteractionSensitiveInputAuthority(privateSessionStore)
+
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun provideWalletInteractionEngine(
         adapters: Set<WalletInteractionProtocolAdapter>,
         securityGate: WalletSecurityGate,
         protocolExecutor: WalletProtocolExecutor,
         counterpartyEncounterRegistry: WalletCounterpartyEncounterRegistry,
         trustPolicy: WalletTrustPolicy,
         sensitiveInputAuthority: WalletInteractionSensitiveInputAuthority,
-    ): WalletInteractionClient =
-        LocalWalletInteractionClient(
-            DefaultWalletInteractionEngine(
-                adapters = adapters.toList(),
-                protocolExecutor = protocolExecutor,
-                counterpartyEncounterRegistry = counterpartyEncounterRegistry,
-                securityGate = securityGate,
-                trustPolicy = trustPolicy,
-                sensitiveInputAuthority = sensitiveInputAuthority,
-            ),
+        privateSessionStore: WalletInteractionPrivateSessionStore,
+        sessionStore: WalletInteractionSessionStore,
+    ): DefaultWalletInteractionEngine =
+        DefaultWalletInteractionEngine(
+            adapters = adapters.toList(),
+            protocolExecutor = protocolExecutor,
+            counterpartyEncounterRegistry = counterpartyEncounterRegistry,
+            securityGate = securityGate,
+            trustPolicy = trustPolicy,
+            sensitiveInputAuthority = sensitiveInputAuthority,
+            privateSessionStore = privateSessionStore,
+            sessionStore = sessionStore,
         )
+
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun provideWalletInteractionClient(engine: DefaultWalletInteractionEngine): WalletInteractionClient =
+        LocalWalletInteractionClient(engine)
+
 }
+
+// WalletApp platform graphs expose their durable, tenant-scoped KV substrate under this ID.
+// Interaction records use dedicated namespaces inside that store and never share blob payloads.
+private const val WALLET_INTERACTION_KV_STORE_ID = "blob.metadata"
 
 /**
  * Session-graph accessor for [WalletInteractionClient], consumed by composition roots

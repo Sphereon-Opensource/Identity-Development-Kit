@@ -21,7 +21,9 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
+import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
+import kotlinx.serialization.Serializable
 
 enum class ClientAuthenticationEndpoint {
     TOKEN,
@@ -42,6 +44,23 @@ data class VerifyClientAuthenticationArgs(
 )
 
 /**
+ * Non-secret registration facts established during client authentication and safe to pass to
+ * subsequent typed commands. This deliberately excludes client secrets, secret references,
+ * private keys, JWKS, redirect URIs, and arbitrary registration metadata.
+ */
+@Serializable
+data class VerifiedClientAuthorization(
+    val clientId: String,
+    val grantTypes: List<GrantType>,
+    val allowedScopes: List<String>? = null,
+    val defaultAccessTokenAudience: String? = null,
+    val allowedAccessTokenAudiences: Set<String> = emptySet(),
+    val requirePkce: Boolean = false,
+    val tlsClientCertificateBoundAccessTokens: Boolean = false,
+    val tenantId: String? = null,
+)
+
+/**
  * Result of successful client authentication verification.
  */
 data class VerifiedClientAuthentication(
@@ -49,6 +68,7 @@ data class VerifiedClientAuthentication(
     val method: ClientAuthenticationMethod,
     val clientInstanceKey: Jwk? = null,
     val walletInstanceAttestation: WalletInstanceAttestationEvidence? = null,
+    val clientAuthorization: VerifiedClientAuthorization? = null,
 )
 
 /**

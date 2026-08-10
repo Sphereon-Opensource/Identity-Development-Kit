@@ -44,6 +44,21 @@ import com.sphereon.statuslist.UpdateEntryStatusArgs
 interface StatusListDriver {
     suspend fun createStatusList(args: CreateStatusListArgs): IdkResult<StatusListResult, IdkError>
 
+    /**
+     * Reconcile the mutable definition of an existing list and re-sign its current bitset.
+     *
+     * Implementations must preserve the list id, all allocated entries, and every encoded status
+     * bit. Structural fields (correlation id, spec, proof format, purposes, bit width, length, and
+     * public URI) are immutable once credentials can reference the list. The default keeps custom
+     * drivers source-compatible; durable/reference drivers override it to apply mutable changes.
+     */
+    suspend fun refreshStatusListDefinition(args: CreateStatusListArgs): IdkResult<StatusListResult, IdkError> {
+        val existing = getStatusList(StatusListRef(correlationId = args.correlationId))
+        return existing.getOrElse { return com.sphereon.core.api.Err(it) }
+            ?.let { com.sphereon.core.api.Ok(it) }
+            ?: createStatusList(args)
+    }
+
     /** Returns null when no list matches [ref]. */
     suspend fun getStatusList(ref: StatusListRef): IdkResult<StatusListResult?, IdkError>
 

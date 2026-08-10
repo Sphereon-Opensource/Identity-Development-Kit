@@ -7,7 +7,7 @@
 package com.sphereon.wallet.interaction.impl
 
 import com.sphereon.di.session.SessionScope
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletProtocolExecutionDecision
 import com.sphereon.wallet.interaction.WalletProtocolExecutionRequest
 import com.sphereon.wallet.interaction.WalletProtocolExecutor
@@ -48,13 +48,13 @@ fun interface WscdExecutionProfileSource {
  */
 class WscdAwareExecutionPlanner(
     private val profileSource: WscdExecutionProfileSource,
-    private val delegate: WalletProtocolExecutor = WalletProtocolExecutor.split,
+    private val delegate: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
 ) : WalletProtocolExecutor {
-    override val executionMode: WalletInteractionExecutionMode
-        get() = delegate.executionMode
+    override val executionOwner: ProtocolExecutionOwner
+        get() = delegate.executionOwner
 
-    override fun withExecutionMode(mode: WalletInteractionExecutionMode): WalletProtocolExecutor =
-        WscdAwareExecutionPlanner(profileSource, delegate.withExecutionMode(mode))
+    override fun withExecutionOwner(owner: ProtocolExecutionOwner): WalletProtocolExecutor =
+        WscdAwareExecutionPlanner(profileSource, delegate.withExecutionOwner(owner))
 
     override suspend fun plan(request: WalletProtocolExecutionRequest): WalletProtocolExecutionDecision {
         val decision = delegate.plan(request)

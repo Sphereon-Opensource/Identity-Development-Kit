@@ -55,6 +55,7 @@ import com.sphereon.crypto.core.x509.certificateChainToX5c
 import com.sphereon.crypto.core.x509.certificateFromDer
 import com.sphereon.crypto.core.x509.downloadCertificateChain
 import java.time.Duration
+import java.io.ByteArrayInputStream
 
 /**
  * Converts KeyProperties to a Key ID format used by Azure Key Vault.
@@ -117,7 +118,9 @@ fun CredentialOpts.toTokenCredential(tenantId: String): TokenCredential {
  * @return Configured ClientSecretCredential
  */
 fun SecretCredentialOpts.toClientSecretCredential(tenantId: String): ClientSecretCredential {
-    return ClientSecretCredentialBuilder().clientId(clientId).clientSecret(clientSecret).tenantId(tenantId).build()
+    val material = clientSecretMaterial
+        ?: throw SignClientException("Client secret material was not resolved by the server-owned secret runtime")
+    return ClientSecretCredentialBuilder().clientId(clientId).clientSecret(material).tenantId(tenantId).build()
 }
 
 /**
@@ -127,7 +130,11 @@ fun SecretCredentialOpts.toClientSecretCredential(tenantId: String): ClientSecre
  * @return Configured ClientCertificateCredential
  */
 fun CertificateCredentialOpts.toClientCertificateCredential(tenantId: String): ClientCertificateCredential {
-    return ClientCertificateCredentialBuilder().clientId(clientId).pemCertificate(pemCertificatePath).tenantId(tenantId).build()
+    val material = certificateMaterial
+        ?: throw SignClientException("Client certificate material was not resolved by the server-owned secret runtime")
+    return ByteArrayInputStream(material).use { stream ->
+        ClientCertificateCredentialBuilder().clientId(clientId).pemCertificate(stream).tenantId(tenantId).build()
+    }
 }
 
 /**

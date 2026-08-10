@@ -15,12 +15,63 @@ import kotlin.test.assertTrue
 
 class WalletInteractionActionTest {
     @Test
+    fun clientMayRegisterOnlyClientSuppliedSensitiveInputs() {
+        val sessionId = WalletInteractionSessionId("session-1")
+        val allowed =
+            listOf(
+                WalletInteractionSensitiveInputPurpose.OID4VCI_TRANSACTION_CODE,
+                WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_CALLBACK,
+                WalletInteractionSensitiveInputPurpose.INTERACTION_SECURITY_GRANT,
+            )
+
+        allowed.forEach { purpose ->
+            RegisterWalletInteractionSensitiveInputArgs(
+                walletUnitId = "wallet-unit-1",
+                sessionId = sessionId,
+                purpose = purpose,
+                value = "secret",
+            )
+        }
+
+        listOf(
+            WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF,
+            WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
+        ).forEach { purpose ->
+            assertFailsWith<IllegalArgumentException> {
+                RegisterWalletInteractionSensitiveInputArgs(
+                    walletUnitId = "wallet-unit-1",
+                    sessionId = sessionId,
+                    purpose = purpose,
+                    value = "secret",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun sensitiveInputRegistrationDoesNotExposeItsValueInLogs() {
+        val args =
+            RegisterWalletInteractionSensitiveInputArgs(
+                walletUnitId = "wallet-unit-1",
+                sessionId = WalletInteractionSessionId("session-1"),
+                purpose = WalletInteractionSensitiveInputPurpose.INTERACTION_SECURITY_GRANT,
+                value = "grant-secret",
+            )
+
+        assertTrue(!args.toString().contains("grant-secret"))
+        assertTrue(args.toString().contains("[redacted]"))
+    }
+
+    @Test
     fun companionCoversCoreActionSet() {
         val selection = WalletCredentialSelection(mapOf("identity" to listOf("cred-1")))
         val sensitiveRef = WalletInteractionSensitiveInputRef("opaque-ref")
 
         val actions =
             listOf(
+                WalletInteractionAction.resolveCounterpartyContact(
+                    WalletCounterpartyAssociationDecision.KeepSeparate("OIDF counterparty"),
+                ),
                 WalletInteractionAction.continueFlow(),
                 WalletInteractionAction.decline(),
                 WalletInteractionAction.submitTxCode(sensitiveRef),
@@ -41,6 +92,7 @@ class WalletInteractionActionTest {
 
     @Test
     fun payloadBearingActionsRejectMissingPayloads() {
+        assertFailsWith<IllegalArgumentException> { WalletInteractionAction(WalletInteractionActionType.RESOLVE_COUNTERPARTY_CONTACT) }
         assertFailsWith<IllegalArgumentException> { WalletInteractionAction(WalletInteractionActionType.SUBMIT_TX_CODE) }
         assertFailsWith<IllegalArgumentException> { WalletInteractionAction(WalletInteractionActionType.AUTH_CALLBACK) }
         assertFailsWith<IllegalArgumentException> { WalletInteractionAction(WalletInteractionActionType.CHOOSE_IMPLEMENTATION) }

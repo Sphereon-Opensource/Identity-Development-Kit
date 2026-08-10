@@ -68,12 +68,12 @@ internal class SdJwtVcVerifierImpl(
         val verified = baseResult.value
         val fullPayload = verified.sdJwt.payload.fullPayload
 
-        // Step 1.5: Validate typ header (draft-13 §4.1)
+        // Validate the IETF SD-JWT VC type; W3C `vc+sd-jwt` uses VCDM semantics.
         val typ = verified.sdJwt.type
-        if (typ != SdJwtVcTypeHeaders.VC_SD_JWT && typ != SdJwtVcTypeHeaders.DC_SD_JWT) {
+        if (typ != SdJwtVcTypeHeaders.IETF_SD_JWT_VC) {
             return IdkResult.err(
                 SdJwtVcVerificationError.InvalidTypeHeader(
-                    "Invalid typ header: expected '${SdJwtVcTypeHeaders.VC_SD_JWT}' or '${SdJwtVcTypeHeaders.DC_SD_JWT}', got '$typ'",
+                    "Invalid IETF SD-JWT VC typ header: expected '${SdJwtVcTypeHeaders.IETF_SD_JWT_VC}', got '$typ'",
                 ),
             )
         }
@@ -186,12 +186,12 @@ internal class SdJwtVcVerifierImpl(
         val verified = baseResult.value
         val fullPayload = verified.sdJwt.payload.fullPayload
 
-        // Step 1.5: Validate typ header (draft-13 §4.1)
+        // Validate the IETF SD-JWT VC type; W3C `vc+sd-jwt` uses VCDM semantics.
         val typ = verified.sdJwt.type
-        if (typ != SdJwtVcTypeHeaders.VC_SD_JWT && typ != SdJwtVcTypeHeaders.DC_SD_JWT) {
+        if (typ != SdJwtVcTypeHeaders.IETF_SD_JWT_VC) {
             return IdkResult.err(
                 SdJwtVcVerificationError.InvalidTypeHeader(
-                    "Invalid typ header: expected '${SdJwtVcTypeHeaders.VC_SD_JWT}' or '${SdJwtVcTypeHeaders.DC_SD_JWT}', got '$typ'",
+                    "Invalid IETF SD-JWT VC typ header: expected '${SdJwtVcTypeHeaders.IETF_SD_JWT_VC}', got '$typ'",
                 ),
             )
         }

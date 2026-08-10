@@ -1,6 +1,9 @@
 # PowerShell test script for GraalVM Native Image example
 
 $BaseUrl = "http://localhost:8080"
+if ([string]::IsNullOrWhiteSpace($env:ACCESS_TOKEN)) {
+    throw "Set ACCESS_TOKEN to a valid bearer JWT"
+}
 
 Write-Host "===================================" -ForegroundColor Green
 Write-Host "Testing GraalVM Native Image Example" -ForegroundColor Green
@@ -26,8 +29,7 @@ Write-Host
 # Test user endpoint
 Write-Host "4. Testing /user endpoint..." -ForegroundColor Yellow
 $headers = @{
-    "X-Tenant-ID" = "acme-corp"
-    "X-User-ID" = "john@acme.com"
+    "Authorization" = "Bearer $env:ACCESS_TOKEN"
 }
 Invoke-RestMethod -Uri "$BaseUrl/user/john" -Headers $headers | ConvertTo-Json
 Write-Host

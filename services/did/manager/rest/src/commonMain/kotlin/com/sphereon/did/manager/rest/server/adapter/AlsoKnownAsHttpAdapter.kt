@@ -45,7 +45,7 @@ class AlsoKnownAsHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-ALSO-KNOWN-AS"
+        const val ID: String = "did.manager.also-known-as"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

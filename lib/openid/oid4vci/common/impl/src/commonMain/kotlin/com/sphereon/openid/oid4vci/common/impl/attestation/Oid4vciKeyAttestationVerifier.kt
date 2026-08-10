@@ -83,25 +83,34 @@ class Oid4vciKeyAttestationVerifier(
                 }
         val kid = headerJson["kid"]?.jsonPrimitive?.contentOrNull
 
-        val pinnedJwks = trustConfig?.trustedJwks?.takeIf { it.isNotEmpty() }
+        val mode =
+            trustConfig?.mode?.lowercase()
+                ?: return invalidProof("key attester trust mode is not configured (expected 'x5c' or 'jwks')")
+        val pinnedJwks = trustConfig.trustedJwks?.takeIf { it.isNotEmpty() }
         val trustedJwks: JsonObject =
-            when {
-                x5cHeader != null && x5cHeader.isNotEmpty() -> {
-                    resolveAttesterViaX5c(x5cHeader, kid).getOrElse { return Err(it) }
+            when (mode) {
+                "x5c" -> {
+                    if (x5cHeader == null || x5cHeader.isEmpty()) {
+                        return invalidProof("key attestation trust mode 'x5c' requires a non-empty x5c header")
+                    }
+                    resolveAttesterViaX5c(
+                        x5c = x5cHeader,
+                        kid = kid,
+                        additionalTrustAnchorPaths = trustConfig.x509TrustAnchorPaths.orEmpty(),
+                    ).getOrElse { return Err(it) }
                 }
 
-                pinnedJwks != null -> {
+                "jwks" -> {
+                    if (pinnedJwks == null) {
+                        return invalidProof("key attestation trust mode 'jwks' requires configured attester JWKS")
+                    }
                     pinAttesterJwks(pinnedJwks, kid)
                         ?: return invalidProof(
                             "key attestation kid '$kid' does not match any pinned attester JWK",
                         )
                 }
 
-                else -> {
-                    return invalidProof(
-                        "key attestation JWT has no resolvable trust source (no x5c, no pinned attester JWK)",
-                    )
-                }
+                else -> return invalidProof("unsupported key attester trust mode '$mode' (expected 'x5c' or 'jwks')")
             }
 
         val verifyResult =
@@ -184,13 +193,14 @@ class Oid4vciKeyAttestationVerifier(
     private suspend fun resolveAttesterViaX5c(
         x5c: JsonArray,
         kid: String?,
+        additionalTrustAnchorPaths: List<String>,
     ): IdkResult<JsonObject, IdkError> {
         val x5cStrings =
             x5c.map { entry ->
                 (entry as? JsonPrimitive)?.contentOrNull
                     ?: return invalidProof("key attestation x5c entries must be strings")
             }
-        val trustedAnchors = x509TrustAnchorLoader.loadTrustedCerts()
+        val trustedAnchors = x509TrustAnchorLoader.loadTrustedCerts(additionalTrustAnchorPaths)
         val opts =
             ExternalIdentifierX5cOpts(
                 identifier = x5cStrings,
@@ -275,6 +285,7 @@ class Oid4vciKeyAttestationVerifier(
 }
 
 data class Oid4vciKeyAttesterTrustConfig(
+    val mode: String? = null,
     val trustedJwks: List<Jwk>? = null,
     val trustedIssuers: List<String>? = null,
     val x509TrustAnchorPaths: List<String>? = null,

@@ -26,6 +26,7 @@ import com.sphereon.oauth2.client.command.CreateSignedJarArgs
 import com.sphereon.oauth2.client.command.CreateSignedJarCommand
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.verifier.impl.config.requireAbsoluteVerificationMethodIdForDid
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestUriHandler
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestUriResponse
@@ -167,15 +168,14 @@ class RequestUriHandlerImpl(
             )
         }
 
-        // When `iss` is emitted, use the bare identifier (bare DID / DNS name / cert hash).
-        // Wallet validators (e.g. credo-ts `decode-jwt.ts:154-159`) cross-check `iss` against
-        // the JOSE header's DID URL / x5c SAN / hash — they expect the un-prefixed form,
-        // not the §5.9.3 `<prefix>:<identifier>` wrapper that `client_id` carries.
+        // A DID-signed request object identifies the bare DID in `iss`; the client_id keeps its
+        // OID4VP Client Identifier Prefix. The JOSE kid is the full assertion-method DID URL and
+        // must be rooted in exactly that issuer DID.
         val jarArgs =
             CreateSignedJarArgs(
                 authorizationRequest = requestForJar,
                 signingKey = signingKey,
-                issuer = binding.bareIdentifier,
+                issuer = binding.requestObjectIssuer(),
                 audience = signingConfig.audience,
                 expirationSeconds = signingConfig.expirationSeconds,
                 kid = (binding as? VerifierSignerBinding.Did)?.verificationMethodId,
@@ -241,3 +241,13 @@ class RequestUriHandlerImpl(
             }
     }
 }
+
+internal fun VerifierSignerBinding.requestObjectIssuer(): String =
+    when (this) {
+        is VerifierSignerBinding.Did -> {
+            requireAbsoluteVerificationMethodIdForDid(did, verificationMethodId)
+            did
+        }
+
+        else -> clientId
+    }

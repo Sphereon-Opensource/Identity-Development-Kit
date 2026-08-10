@@ -24,6 +24,15 @@ import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.core.defaults.app.staticMinimalTestAppGraph
 import com.sphereon.crypto.resolution.IIdentifierMethod
+import com.sphereon.crypto.jose.jws.JwsJsonFlattened
+import com.sphereon.crypto.jose.jws.JwsJsonGeneral
+import com.sphereon.crypto.jose.jws.JwsValidationResult
+import com.sphereon.crypto.jose.jws.JwtCompactResult
+import com.sphereon.crypto.jose.jws.JwtService
+import com.sphereon.crypto.jose.jws.PreparedJwsObject
+import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
+import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
+import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
@@ -31,7 +40,11 @@ import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.ktor.http.client.FetchRequestUriCommandImpl
 import com.sphereon.ktor.http.client.ParseUriQueryCommandImpl
 import com.sphereon.oauth2.client.JarService
+import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import kotlin.test.assertEquals
@@ -49,6 +62,7 @@ class SimpleParseTest {
             val user = app.userContextManager.getAnonymous()
             val session = user.sessionContextManager.getAnonymous()
             val execution = session.asCoreApiServiceGraph().serviceExecution
+            val jwtService = unsupportedJwtService
 
             // Create real instances
             val httpClientFactory =
@@ -114,6 +128,7 @@ class SimpleParseTest {
                     jarService = mockJarService,
                     httpClientFactory = httpClientFactory,
                     externalIdentifierService = mockExternalIdentifierService,
+                    jwtService = jwtService,
                 )
 
             // Simple test - use longer nonce (min 8 chars)
@@ -131,5 +146,84 @@ class SimpleParseTest {
             assertTrue(result is Ok, "Result should be Ok")
             val request = (result as Ok).value
             assertEquals("test", request.clientId)
+
+            val browserRequest =
+                command.parseDigitalCredentialsAuthorizationRequest(
+                    request =
+                        DigitalCredentialsAuthorizationRequest(
+                            protocol = "openid4vp-v1-unsigned",
+                            origin = "https://wallet.example.com",
+                            data =
+                                buildJsonObject {
+                                    put("response_type", "vp_token")
+                                    put("response_mode", "dc_api")
+                                    put("nonce", "nonce-12345678")
+                                    put("dcql_query", "{\"credentials\":[]}")
+                                },
+                        ),
+                    walletConfig = null,
+                )
+            assertTrue(browserRequest is Ok, browserRequest.toString())
+            val parsedBrowserRequest = (browserRequest as Ok).value
+            assertEquals("origin:https://wallet.example.com", parsedBrowserRequest.clientId)
+            assertEquals(
+                "https://wallet.example.com",
+                parsedBrowserRequest.additionalParameters?.get(DIGITAL_CREDENTIAL_ORIGIN_PARAMETER)?.jsonPrimitive?.content,
+            )
+
+            val injectedBrowserIdentity =
+                command.parseDigitalCredentialsAuthorizationRequest(
+                    request =
+                        DigitalCredentialsAuthorizationRequest(
+                            protocol = "openid4vp-v1-unsigned",
+                            origin = "https://wallet.example.com",
+                            data =
+                                buildJsonObject {
+                                    put("client_id", "origin:https://attacker.example")
+                                    put("response_type", "vp_token")
+                                    put("response_mode", "dc_api")
+                                    put("nonce", "nonce-12345678")
+                                    put("dcql_query", "{\"credentials\":[]}")
+                                },
+                        ),
+                    walletConfig = null,
+                )
+            assertTrue(injectedBrowserIdentity is com.sphereon.core.api.Err)
         }
 }
+
+private val unsupportedJwtService: JwtService =
+    object : JwtService {
+        override val commands: JwtService.Commands
+            get() = error("JWS commands are not used by these unsigned parsing tests")
+
+        override fun assembleJwsGeneral(
+            prepared: PreparedJwsObject,
+            signatureBytes: ByteArray,
+        ): JwsJsonGeneral = error("JWS creation is not used by these unsigned parsing tests")
+
+        override fun assembleJwsFlattened(
+            prepared: PreparedJwsObject,
+            signatureBytes: ByteArray,
+        ): JwsJsonFlattened = error("JWS creation is not used by these unsigned parsing tests")
+
+        override fun assembleJwsCompact(
+            prepared: PreparedJwsObject,
+            signatureBytes: ByteArray,
+        ): JwtCompactResult = error("JWS creation is not used by these unsigned parsing tests")
+
+        override suspend fun prepareJws(args: CreateJwsJsonArgs): IdkResult<PreparedJwsObject, IdkError> =
+            error("JWS creation is not used by these unsigned parsing tests")
+
+        override suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError> =
+            error("JWS creation is not used by these unsigned parsing tests")
+
+        override suspend fun createJwsJsonFlattened(args: CreateJwsJsonArgs): IdkResult<JwsJsonFlattened, IdkError> =
+            error("JWS creation is not used by these unsigned parsing tests")
+
+        override suspend fun createJwsJsonGeneral(args: CreateJwsJsonArgs): IdkResult<JwsJsonGeneral, IdkError> =
+            error("JWS creation is not used by these unsigned parsing tests")
+
+        override suspend fun verifyJws(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> =
+            error("JWS verification is not used by these unsigned parsing tests")
+    }

@@ -19,6 +19,7 @@ package com.sphereon.data.store.blob.okd
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.OpaqueSecretResolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.data.store.blob.BlobDescriptor
@@ -41,6 +42,7 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -62,9 +64,8 @@ import kotlin.time.Instant
  *
  * The `info.path` is the OKD `dmsDocumentId` (UUID).
  *
- * Auth follows the RestKmsProvider pattern:
- * - PASSTHROUGH: forwards bearer token from config or session context headers
- * - CLIENT_CREDENTIALS: Ktor Auth plugin handles token acquisition (configured by factory)
+ * Authentication is derived from the authenticated session or resolved from an opaque secret
+ * handle immediately before use. Serialized configuration never contains credential plaintext.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdBlobStore", exact = true)
@@ -72,6 +73,7 @@ class OkdBlobStore(
     private val config: OkdBlobStoreConfig,
     private val http: HttpClient,
     private val execution: SessionExecution?,
+    private val opaqueSecretResolver: OpaqueSecretResolver,
 ) : BlobStore {
     override val schemeId: String = OkdBlobStoreConfig.BACKEND_ID
 
@@ -86,35 +88,51 @@ class OkdBlobStore(
      * Apply authentication headers to outbound OKD requests.
      *
      * Follows the RestKmsProvider pattern:
-     * - PASSTHROUGH: Bearer token from auth config (set per-request by the framework layer)
-     *   + tenant/principal context headers
+     * - BEARER: bearer token from the authenticated session
+     * - STATIC_TOKEN: opaque secret resolved immediately before the request
      * - CLIENT_CREDENTIALS: Ktor Auth plugin handles it (installed by factory)
      */
-    private fun io.ktor.client.request.HttpRequestBuilder.applyAuth() {
-        val authConfig = config.auth
-
-        // Apply bearer token if available (PASSTHROUGH mode uses this directly)
-        if (authConfig.mode == OkdAuthMode.PASSTHROUGH) {
-            val token = authConfig.token
-            if (token != null) {
-                header(authConfig.authHeader, "Bearer $token")
-            }
-        }
-        // CLIENT_CREDENTIALS: token is applied automatically by the Ktor Auth plugin
-
-        // Forward tenant ID from session context if configured
-        if (authConfig.useTenantFromContext && execution != null) {
-            val tenantHeader = authConfig.tenantHeader
-            if (tenantHeader != null) {
-                try {
-                    val tenantId = execution.sessionContext.context.tenant.tenantId
-                    if (tenantId != "<anonymous>") {
-                        header(tenantHeader, tenantId)
+    private suspend fun resolveAuthorizationToken(): IdkResult<String?, IdkError> =
+        when (config.auth.mode) {
+            OkdAuthMode.BEARER -> {
+                val jwt =
+                    try {
+                        execution
+                            ?.sessionContext
+                            ?.context
+                            ?.secureDetails
+                            ?.jwt
+                    } catch (_: Exception) {
+                        null
                     }
-                } catch (_: Exception) {
-                    // no context available
+                if (jwt.isNullOrBlank()) {
+                    Err(IdkError.FORBIDDEN_ERROR(message = "Authenticated session token is unavailable"))
+                } else {
+                    Ok(jwt)
                 }
             }
+
+            OkdAuthMode.STATIC_TOKEN -> {
+                val secretId = config.auth.tokenSecretId
+                if (secretId == null) {
+                    Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "OKD tokenSecretId is required"))
+                } else {
+                    secretId.requireOkdOpaqueSecretId("tokenSecretId")
+                    val result = opaqueSecretResolver.resolve(secretId)
+                    if (result.isErr || result.value.isBlank()) {
+                        Err(IdkError.SERVICE_UNAVAILABLE_ERROR(message = "OKD credential is unavailable"))
+                    } else {
+                        Ok(result.value)
+                    }
+                }
+            }
+
+            OkdAuthMode.CLIENT_CREDENTIALS -> Ok(null)
+        }
+
+    private fun io.ktor.client.request.HttpRequestBuilder.applyAuth(authorizationToken: String?) {
+        if (authorizationToken != null) {
+            header(HttpHeaders.Authorization, "Bearer $authorizationToken")
         }
     }
 
@@ -129,12 +147,14 @@ class OkdBlobStore(
             target.path ?: kotlin.uuid.Uuid
                 .random()
                 .toString()
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.patch(documentUrl(path)) {
                     contentType(ContentType.Application.OctetStream)
                     setBody(data)
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response.status, path))
@@ -148,10 +168,12 @@ class OkdBlobStore(
 
     override suspend fun get(info: BlobInfo): IdkResult<ResolvedBlobInfo, IdkError> {
         val path = info.path!!
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.get(documentUrl(path)) {
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (!response.status.isSuccess()) {
                 return Err(mapHttpError(response.status, path))
@@ -174,10 +196,12 @@ class OkdBlobStore(
 
     override suspend fun delete(info: BlobInfo): IdkResult<Boolean, IdkError> {
         val path = info.path!!
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.delete(documentUrl(path)) {
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (response.status == HttpStatusCode.NotFound) {
                 return Ok(false)
@@ -204,10 +228,12 @@ class OkdBlobStore(
 
     override suspend fun stat(info: BlobInfo): IdkResult<BlobDescriptor, IdkError> {
         val path = info.path!!
+        val authorization = resolveAuthorizationToken()
+        if (authorization.isErr) return Err(authorization.error)
         return try {
             val response =
                 http.get("${documentUrl(path)}/metadata") {
-                    applyAuth()
+                    applyAuth(authorization.value)
                 }
             if (response.status == HttpStatusCode.NotFound) {
                 return Err(BlobStoreError.NotFound(path).toIdkError())

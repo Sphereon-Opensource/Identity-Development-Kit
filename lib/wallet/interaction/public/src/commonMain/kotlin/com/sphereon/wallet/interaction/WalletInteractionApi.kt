@@ -10,6 +10,8 @@
 
 package com.sphereon.wallet.interaction
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.IdkError
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
@@ -27,6 +29,23 @@ interface WalletInteractionClient {
     suspend fun cancel(sessionId: WalletInteractionSessionId)
 
     fun observe(sessionId: WalletInteractionSessionId): StateFlow<WalletInteractionState>
+}
+
+/**
+ * Protocol-agnostic ingress for a backend-owned interaction. Implementations verify the digest and
+ * policy revision before the backend performs the first semantic interpretation. There is no
+ * app-owned fallback on failure.
+ */
+interface CapturedInteractionClient : WalletInteractionClient {
+    suspend fun startCaptured(input: CapturedInteractionInput): WalletInteractionSession
+}
+
+/**
+ * Resolves and locks the protocol execution owner from authoritative runtime policy while the
+ * capture remains opaque. Implementations must not inspect [CapturedInteractionInput.rawPayload].
+ */
+fun interface CapturedInteractionRuntimePlanResolver {
+    suspend fun resolve(input: CapturedInteractionInput): IdkResult<LockedCapturedInteractionRuntimePlan, IdkError>
 }
 
 interface WalletInteractionEngine : WalletInteractionClient
@@ -117,8 +136,8 @@ enum class WalletProtocolMatchStrength {
 data class WalletInteractionContext(
     val sessionId: WalletInteractionSessionId,
     val walletUnitId: String,
-    val executionMode: WalletInteractionExecutionMode,
-    val protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
+    val executionOwner: ProtocolExecutionOwner,
+    val protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
     val trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
     val trustPolicy: WalletTrustPolicy = WalletTrustPolicy.warn,
     val securityGate: WalletSecurityGate = WalletSecurityGate.deny,
@@ -173,7 +192,7 @@ data class WalletInteractionContext(
                     assurance = decision.requiredAssurance,
                     evidence =
                         mapOf(
-                            "executionMode" to decision.executionMode.name,
+                            "executionOwner" to decision.executionOwner.name,
                             "placement" to decision.placement.name,
                         ),
                 ),
@@ -199,23 +218,22 @@ data class WalletInteractionContext(
 }
 
 interface WalletProtocolExecutor {
-    val executionMode: WalletInteractionExecutionMode
+    val executionOwner: ProtocolExecutionOwner
 
-    suspend fun plan(request: WalletProtocolExecutionRequest): WalletProtocolExecutionDecision = WalletProtocolExecutionDecision.forMode(executionMode, request)
+    suspend fun plan(request: WalletProtocolExecutionRequest): WalletProtocolExecutionDecision = WalletProtocolExecutionDecision.forOwner(executionOwner, request)
 
-    fun withExecutionMode(mode: WalletInteractionExecutionMode): WalletProtocolExecutor =
-        if (mode == executionMode) {
+    fun withExecutionOwner(owner: ProtocolExecutionOwner): WalletProtocolExecutor =
+        if (owner == executionOwner) {
             this
         } else {
-            ExecutionModeOverrideWalletProtocolExecutor(this, mode)
+            ExecutionOwnerOverrideWalletProtocolExecutor(this, owner)
         }
 
     companion object {
-        val local: WalletProtocolExecutor = forMode(WalletInteractionExecutionMode.LOCAL)
-        val backend: WalletProtocolExecutor = forMode(WalletInteractionExecutionMode.BACKEND)
-        val split: WalletProtocolExecutor = forMode(WalletInteractionExecutionMode.SPLIT)
+        val walletApp: WalletProtocolExecutor = forOwner(ProtocolExecutionOwner.WALLET_APP)
+        val walletBackend: WalletProtocolExecutor = forOwner(ProtocolExecutionOwner.WALLET_BACKEND)
 
-        fun forMode(mode: WalletInteractionExecutionMode): WalletProtocolExecutor = DefaultWalletProtocolExecutor(mode)
+        fun forOwner(owner: ProtocolExecutionOwner): WalletProtocolExecutor = DefaultWalletProtocolExecutor(owner)
     }
 }
 
@@ -244,7 +262,7 @@ data class WalletProtocolExecutionRequest(
 
 @Serializable
 data class WalletProtocolExecutionDecision(
-    val executionMode: WalletInteractionExecutionMode,
+    val executionOwner: ProtocolExecutionOwner,
     val placement: WalletProtocolExecutionPlacement,
     val securityGateRequired: Boolean = true,
     val securityOperation: WalletSecurityOperation? = null,
@@ -259,32 +277,20 @@ data class WalletProtocolExecutionDecision(
     val nonce: String? = null,
 ) {
     companion object {
-        fun forMode(
-            mode: WalletInteractionExecutionMode,
+        fun forOwner(
+            owner: ProtocolExecutionOwner,
             request: WalletProtocolExecutionRequest,
         ): WalletProtocolExecutionDecision =
             WalletProtocolExecutionDecision(
-                executionMode = mode,
+                executionOwner = owner,
                 placement =
-                    when (mode) {
-                        WalletInteractionExecutionMode.LOCAL -> {
-                            WalletProtocolExecutionPlacement.LOCAL
+                    when (owner) {
+                        ProtocolExecutionOwner.WALLET_APP -> {
+                            WalletProtocolExecutionPlacement.WALLET_APP
                         }
 
-                        WalletInteractionExecutionMode.BACKEND -> {
-                            WalletProtocolExecutionPlacement.BACKEND
-                        }
-
-                        WalletInteractionExecutionMode.SPLIT -> {
-                            when (request.operation) {
-                                WalletSecurityOperation.HOLDER_PROOF,
-                                WalletSecurityOperation.CREDENTIAL_STORAGE,
-                                WalletSecurityOperation.PRESENTATION_SHARING,
-                                WalletSecurityOperation.LOCAL_HSM_UNLOCK,
-                                -> WalletProtocolExecutionPlacement.SPLIT_LOCAL_SECURITY
-
-                                WalletSecurityOperation.REMOTE_KEY_AUTHORIZATION -> WalletProtocolExecutionPlacement.SPLIT_BACKEND_PROTOCOL
-                            }
+                        ProtocolExecutionOwner.WALLET_BACKEND -> {
+                            WalletProtocolExecutionPlacement.WALLET_BACKEND
                         }
                     },
                 securityOperation = request.operation,
@@ -303,28 +309,26 @@ data class WalletProtocolExecutionDecision(
 
 @Serializable
 enum class WalletProtocolExecutionPlacement {
-    LOCAL,
-    BACKEND,
-    SPLIT_LOCAL_SECURITY,
-    SPLIT_BACKEND_PROTOCOL,
+    WALLET_APP,
+    WALLET_BACKEND,
 }
 
 private class DefaultWalletProtocolExecutor(
-    override val executionMode: WalletInteractionExecutionMode,
+    override val executionOwner: ProtocolExecutionOwner,
 ) : WalletProtocolExecutor
 
-private class ExecutionModeOverrideWalletProtocolExecutor(
+private class ExecutionOwnerOverrideWalletProtocolExecutor(
     private val delegate: WalletProtocolExecutor,
-    override val executionMode: WalletInteractionExecutionMode,
+    override val executionOwner: ProtocolExecutionOwner,
 ) : WalletProtocolExecutor {
     override suspend fun plan(request: WalletProtocolExecutionRequest): WalletProtocolExecutionDecision {
         val delegated = delegate.plan(request)
-        if (delegated.executionMode == executionMode) return delegated
+        if (delegated.executionOwner == executionOwner) return delegated
 
-        val modeDefault = WalletProtocolExecutionDecision.forMode(executionMode, request)
+        val ownerDefault = WalletProtocolExecutionDecision.forOwner(executionOwner, request)
         return delegated.copy(
-            executionMode = executionMode,
-            placement = modeDefault.placement,
+            executionOwner = executionOwner,
+            placement = ownerDefault.placement,
         )
     }
 }

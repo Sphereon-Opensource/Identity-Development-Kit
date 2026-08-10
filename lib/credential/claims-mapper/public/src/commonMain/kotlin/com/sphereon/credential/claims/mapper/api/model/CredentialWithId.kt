@@ -62,7 +62,7 @@ data class CredentialWithId(
         ): CredentialWithId =
             CredentialWithId(
                 credentialId = credentialId,
-                format = CredentialFormat.SD_JWT_DC,
+                format = CredentialFormat.SD_JWT_VC,
                 payload = payload,
                 disclosedClaims = disclosedClaims,
             )

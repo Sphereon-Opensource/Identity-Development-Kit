@@ -19,7 +19,6 @@ package com.sphereon.identity.reconciliation.impl.config
 import com.sphereon.attribute.mapping.AttributeMapping
 import com.sphereon.core.api.conf.PropertyResolver
 import com.sphereon.identity.idv.model.ConfigReference
-import com.sphereon.identity.idv.model.SecretReference
 import com.sphereon.identity.reconciliation.model.MappingMode
 import com.sphereon.identity.reconciliation.model.OidcClientConfig
 import com.sphereon.identity.reconciliation.model.ReconciliationProvider
@@ -32,8 +31,7 @@ import com.sphereon.identity.reconciliation.model.ReconciliationProvider
  * identity.reconciliation.oidc-clients.names=surf-oidc
  * identity.reconciliation.oidc-clients.surf-oidc.discovery-url=https://connect.surfconext.nl/.well-known/openid-configuration
  * identity.reconciliation.oidc-clients.surf-oidc.client-id-ref.key=SURF_CLIENT_ID
- * identity.reconciliation.oidc-clients.surf-oidc.client-secret-ref.path=SURF_CLIENT_SECRET
- * identity.reconciliation.oidc-clients.surf-oidc.client-secret-ref.provider-id=env
+ * identity.reconciliation.oidc-clients.surf-oidc.client-secret-id=01J...
  * identity.reconciliation.oidc-clients.surf-oidc.scopes=openid,profile,email
  * ```
  *
@@ -76,21 +74,15 @@ class ReconciliationProviderConfigBinder(
                     ?: configService.getPropertyAsString("$prefix.client-id-ref", null)
                     ?: return@mapNotNull null
 
-            val secretPath =
-                configService.getPropertyAsString("$prefix.client-secret-ref.path", null)
-                    ?: configService.getPropertyAsString("$prefix.client-secret-ref", null)
+            val clientSecretId =
+                configService.getPropertyAsString("$prefix.client-secret-id", null)
                     ?: return@mapNotNull null
 
             OidcClientConfig(
                 id = name,
                 discoveryUrl = discoveryUrl,
                 clientIdRef = ConfigReference(key = clientIdKey),
-                clientSecretRef =
-                    SecretReference(
-                        path = secretPath,
-                        providerId = configService.getPropertyAsString("$prefix.client-secret-ref.provider-id", null),
-                        key = configService.getPropertyAsString("$prefix.client-secret-ref.key", null),
-                    ),
+                clientSecretId = clientSecretId,
                 scopes =
                     configService
                         .getPropertyAsString("$prefix.scopes", null)

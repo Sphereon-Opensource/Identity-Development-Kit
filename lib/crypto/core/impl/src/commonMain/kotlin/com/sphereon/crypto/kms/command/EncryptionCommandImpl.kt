@@ -26,10 +26,6 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.crypto.core.CoseJoseKeyMappingService
-import com.sphereon.crypto.core.generic.Curve
-import com.sphereon.crypto.core.jose.JwaKeyType
-import com.sphereon.crypto.core.kms.EcdhUtils
 import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import com.sphereon.crypto.core.kms.command.DecryptArgs
@@ -273,6 +269,7 @@ class UnwrapKeyCommandImpl(
 @SingleIn(SessionScope::class)
 class PerformKeyAgreementCommandImpl(
     execution: SessionExecution,
+    private val providerRegistry: KmsProviderRegistry,
 ) : TypedServiceCommandAdapter<PerformKeyAgreementArgs, PerformKeyAgreementResult, IdkError>(
         commandId = PerformKeyAgreementCommand.COMMAND_ID,
         execution = execution,
@@ -297,41 +294,13 @@ class PerformKeyAgreementCommandImpl(
         log.debug("Performing key agreement with algorithm: ${appliedArgs.algorithm}")
 
         return try {
-            // Call EcdhUtils directly to avoid circular command delegation
-            // Convert key info to JWK format
-            val privateKeyJwk =
-                CoseJoseKeyMappingService.toJwkKeyInfo(privateKeyInfo).key
-                    ?: throw IllegalArgumentException("Private key info must contain a key")
-            val publicKeyJwk =
-                CoseJoseKeyMappingService.toJwkKeyInfo(publicKeyInfo).key
-                    ?: throw IllegalArgumentException("Public key info must contain a key")
-
-            // Validate that both are EC keys (ECDH only works with EC keys)
-            require(privateKeyJwk.kty == JwaKeyType.EC) {
-                "Private key must be an EC key for ECDH key agreement, got: ${privateKeyJwk.kty}"
-            }
-            require(publicKeyJwk.kty == JwaKeyType.EC) {
-                "Public key must be an EC key for ECDH key agreement, got: ${publicKeyJwk.kty}"
-            }
-            require(privateKeyJwk.d != null) {
-                "Private key must have 'd' parameter for key agreement"
-            }
-            require(publicKeyJwk.x != null && publicKeyJwk.y != null) {
-                "Public key must have 'x' and 'y' coordinates for key agreement"
-            }
-
-            // Determine the curve from the private key
-            val curve =
-                privateKeyJwk.crv?.let { Curve.fromJose(it) }
-                    ?: publicKeyJwk.crv?.let { Curve.fromJose(it) }
-                    ?: Curve.P_256 // Default to P-256 if not specified
-
-            // Perform the key agreement using EcdhUtils
+            val provider = providerRegistry.getProvider(privateKeyInfo.providerId, privateKeyInfo.signatureAlgorithm)
             val sharedSecret =
-                EcdhUtils.performKeyAgreementForDecryption(
-                    ourPrivateKeyJwk = privateKeyJwk,
-                    senderEphemeralPublicKeyJwk = publicKeyJwk,
-                    curve = curve,
+                provider.performKeyAgreement(
+                    privateKeyInfo = privateKeyInfo,
+                    publicKeyInfo = publicKeyInfo,
+                    algorithm = appliedArgs.algorithm,
+                    keyDataLen = appliedArgs.keyDataLen,
                 )
             log.debug("Key agreement successful, shared secret length: ${sharedSecret.size} bytes")
             PerformKeyAgreementResult(sharedSecret).asOkResult()

@@ -2,29 +2,30 @@
 package com.sphereon.wallet.interaction.impl
 
 import com.sphereon.wallet.interaction.*
-import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine as CoreDefaultWalletInteractionEngine
+import com.sphereon.wallet.interaction.testfixture.WalletInteractionEngineTestFactory
 
 /** Explicit test composition with a private, atomic one-use sensitive-input authority. */
 @Suppress("FunctionName")
-internal fun DefaultWalletInteractionEngine(
+internal fun testWalletInteractionEngine(
     adapters: List<WalletInteractionProtocolAdapter> = emptyList(),
     sessionIdGenerator: WalletInteractionSessionIdGenerator = RandomWalletInteractionSessionIdGenerator(),
-    protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
+    protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
     trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
     trustPolicy: WalletTrustPolicy = WalletTrustPolicy.warn,
     securityGate: WalletSecurityGate = WalletSecurityGate.allow,
     privateSessionStore: WalletInteractionPrivateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
     sessionStore: WalletInteractionSessionStore = InMemoryWalletInteractionSessionStore(),
-): CoreDefaultWalletInteractionEngine {
-    val sensitiveStore = InMemoryWalletInteractionPrivateSessionStore()
-    return CoreDefaultWalletInteractionEngine(
+    sensitiveInputAuthority: WalletInteractionSensitiveInputAuthority =
+        StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore()),
+): DefaultWalletInteractionEngine {
+    return WalletInteractionEngineTestFactory.create(
         adapters = adapters,
         sessionIdGenerator = sessionIdGenerator,
         protocolExecutor = protocolExecutor,
         trustResolver = trustResolver,
         trustPolicy = trustPolicy,
         securityGate = securityGate,
-        sensitiveInputAuthority = StoreBackedWalletInteractionSensitiveInputAuthority(sensitiveStore),
+        sensitiveInputAuthority = sensitiveInputAuthority,
         privateSessionStore = privateSessionStore,
         sessionStore = sessionStore,
     )

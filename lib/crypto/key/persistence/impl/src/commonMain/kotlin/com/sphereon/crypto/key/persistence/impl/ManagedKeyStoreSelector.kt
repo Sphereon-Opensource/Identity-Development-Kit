@@ -143,7 +143,12 @@ class ManagedKeyStoreSelector(
         certChain: Array<Certificate>?,
     ): ManagedKeyInfoType<*> {
         val result = iteratingStore.storeKey(keyInfo, providerId, alias, certChain)
-        registrar.indexManagedKey(result)
+        // A provider that wrote the authoritative index row itself is not indexed again here. The
+        // repeat lands under the provider id the returned key reports, which for a provider with
+        // more than one address is a second row for one key.
+        if (!iteratingStore.maintainsKeyReferenceIndex(providerId)) {
+            registrar.indexManagedKey(result)
+        }
         return result
     }
 

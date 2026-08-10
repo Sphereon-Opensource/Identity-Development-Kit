@@ -96,9 +96,9 @@ class TestKmsMock : KeyManagerService {
 
     override fun getProviderIds(): Array<String> = providers.keys.toTypedArray()
 
-    override fun getProviderById(id: String): KmsProvider = providers[id] ?: throw IllegalArgumentException("Provider not found: $id")
+    override suspend fun getProviderById(id: String): KmsProvider = providers[id] ?: throw IllegalArgumentException("Provider not found: $id")
 
-    override fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider =
+    override suspend fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider =
         providers.values.firstOrNull {
             it.supportedSignatureAlgorithms().contains(signatureAlgorithm)
         } ?: throw IllegalArgumentException("No provider for algorithm: $signatureAlgorithm")
@@ -154,7 +154,7 @@ class TestKmsMock : KeyManagerService {
 
     override fun getResolverIds(): Array<String> = resolvers.keys.toTypedArray()
 
-    override fun getProvider(
+    override suspend fun getProvider(
         providerId: String?,
         alg: SignatureAlgorithm?,
     ): KmsProvider {

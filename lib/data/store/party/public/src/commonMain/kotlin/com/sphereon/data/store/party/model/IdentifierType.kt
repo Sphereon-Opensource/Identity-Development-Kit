@@ -95,7 +95,11 @@ value class IdentifierType(
         val ISSUER = IdentifierType("issuer")
         val OIDC_ISSUER = IdentifierType("oidc_issuer")
         val OID4VCI_ISSUER = IdentifierType("oid4vci_issuer")
+        val OIDC_FEDERATION_ENTITY = IdentifierType("oidc_federation_entity")
+        val ETSI_TRUST_LIST = IdentifierType("etsi_trust_list")
         val VERIFIER = IdentifierType("verifier")
+        /** Credential issuer signing key identifier (`kid`). */
+        val JWK = IdentifierType("jwk")
         val JWKS_URL = IdentifierType("jwks_url")
     }
 

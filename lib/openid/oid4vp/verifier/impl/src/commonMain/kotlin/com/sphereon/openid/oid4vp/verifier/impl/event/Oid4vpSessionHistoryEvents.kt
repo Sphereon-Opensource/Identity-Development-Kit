@@ -36,6 +36,7 @@ internal suspend fun SessionEventService.emitOid4vpSessionHistoryEvent(
                     put("instanceId", session.instanceId)
                     put("protocolSessionId", session.sessionId)
                     put("correlationId", session.correlationId)
+                    session.templateId?.let { put("templateId", it) }
                     oldState?.let { put("oldState", it) }
                     newState?.let { put("newState", it) }
                     stage?.let { put("stage", it) }

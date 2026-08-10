@@ -17,6 +17,7 @@
 package com.sphereon.core.api.http.describe
 
 import com.sphereon.core.api.http.command.TenantPathPolicy
+import com.sphereon.core.api.session.isValidCommandId
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlin.jvm.JvmStatic
@@ -144,15 +145,6 @@ enum class TenantPathMode {
 }
 
 /**
- * Defines how to resolve the tenant when both header/JWT and path-based tenant resolution are available.
- */
-@JsExportCompat
-enum class TenantResolutionPriority {
-    HEADER_THEN_PATH,
-    PATH_THEN_HEADER,
-}
-
-/**
  * Describes how an adapter is mounted on a host server.
  *
  * Notes:
@@ -166,7 +158,6 @@ data class HttpAdapterMount(
     val tenantPathMode: TenantPathMode = TenantPathMode.OFF,
     val tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None,
     val tenantSegmentPattern: String = DEFAULT_TENANT_SEGMENT_PATTERN,
-    val tenantResolutionPriority: TenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH,
 ) {
     companion object {
         const val DEFAULT_TENANT_SEGMENT_PATTERN: String = "/t/{tenantId}"
@@ -212,6 +203,9 @@ data class HttpEndpointDescriptor(
     init {
         require(pathPatterns.isNotEmpty()) {
             "HttpEndpointDescriptor requires at least one path pattern"
+        }
+        require(commandId == null || isValidCommandId(commandId)) {
+            "Invalid command ID format: $commandId. Format: module.service.command"
         }
     }
 

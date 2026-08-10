@@ -139,7 +139,10 @@ function New-Keystore {
         # via `Add-EcdhAliasToKeystore` for ECDH-ES decryption keys.
         [string]$KeyUsage = "digitalSignature"
     )
-    $dir = Join-Path $KeystoresDir $Name
+    # Software KMS resolves every file-backed keystore below a tenant directory.
+    # These example services use FixedTenantResolver("default"), so seed the exact
+    # file the runtime opens from its configured <service>/keystore.p12 base path.
+    $dir = Join-Path (Join-Path $KeystoresDir $Name) "default"
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
     $keystore = Join-Path $dir "keystore.p12"
     Initialize-DemoCA
@@ -182,7 +185,7 @@ $caKey = Join-Path (Join-Path $KeystoresDir "ca") "ca.key"
 # purge every leaf keystore so the next pass re-issues them under the new CA.
 if (-not ((Test-Path $caCrt) -and (Test-Path $caKey))) {
     foreach ($name in @("oauth2-as", "oid4vci-issuer", "oid4vp-verifier")) {
-        $stale = Join-Path (Join-Path $KeystoresDir $name) "keystore.p12"
+        $stale = Join-Path (Join-Path (Join-Path $KeystoresDir $name) "default") "keystore.p12"
         if (Test-Path $stale) {
             Write-Host "CA missing — discarding stale leaf keystore $stale"
             Remove-Item -Path $stale -Force

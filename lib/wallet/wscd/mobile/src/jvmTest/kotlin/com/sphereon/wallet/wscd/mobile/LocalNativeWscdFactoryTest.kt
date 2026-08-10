@@ -115,7 +115,7 @@ class LocalNativeWscdFactoryTest {
                 version = "0.1.0",
             )
         val user = app.userContextManager.getAnonymous()
-        val session = user.sessionContextManager.createOrGetFromId(sessionId)
+        val session = user.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
         return LocalNativeWscdFactory(
             mobileKmsProviderImplFactory = MobileKmsProviderImplFactory { config, execution -> MobileKmsProviderImpl(config, execution) },
             execution = session.asCoreApiServiceGraph().serviceExecution,

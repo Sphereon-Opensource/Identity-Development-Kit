@@ -67,6 +67,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 
@@ -284,6 +285,9 @@ class VerifyAttestationClientAuthCommandImplTest {
             assertEquals("client-att", result.value.clientId)
             assertEquals(ClientAuthenticationMethod.ATTEST_JWT_CLIENT_AUTH, result.value.method)
             assertEquals("instance-key-1", result.value.clientInstanceKey?.kid)
+            val clientAuthorization = assertNotNull(result.value.clientAuthorization)
+            assertEquals("client-att", clientAuthorization.clientId)
+            assertEquals(listOf(GrantType.CLIENT_CREDENTIALS), clientAuthorization.grantTypes)
         }
 
     @Test

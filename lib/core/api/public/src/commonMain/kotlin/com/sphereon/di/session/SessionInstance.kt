@@ -68,7 +68,7 @@ interface SessionInstance {
      *
      * Usage pattern:
      * ```kotlin
-     * val session = sessionManager.createOrGetFromId("my-session")
+     * val session = sessionManager.createOrGetFromId("my-session", principalType = PrincipalType.USER)
      * session.warmupCacheAsync()  // Must call before first KMS access
      * val kmsRegistry = session.graph.kmsProviderRegistry  // Now works with warm cache
      * ```

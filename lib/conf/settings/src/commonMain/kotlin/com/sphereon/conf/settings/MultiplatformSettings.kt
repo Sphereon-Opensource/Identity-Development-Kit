@@ -32,6 +32,12 @@ expect class MultiplatformSettings(
      */
     val isPlatformSupported: Boolean
 
+    /** Monotonic mutation revision for cache invalidation, including stored type changes. */
+    val mutationRevision: Long
+
+    /** Exact persisted runtime type descriptor for a user key, shared across namespace instances. */
+    internal fun getStoredTypeTag(key: String): String?
+
     /**
      * Retrieves the value of a property corresponding to the specified name with type safety.
      *
@@ -127,6 +133,63 @@ internal fun generateNameSpace(
                 }",
             )
         }
+    }
+
+/**
+ * Stored in the same backing namespace as the user settings so independent
+ * MultiplatformSettings instances observe type-only mutations as well as value changes.
+ * It is deliberately excluded from the public key set.
+ */
+internal const val SETTINGS_NAMESPACE_REVISION_KEY = "__sphereon_internal_namespace_revision"
+internal const val SETTINGS_TYPE_KEY_PREFIX = "__sphereon_internal_type."
+
+@PublishedApi
+internal fun requirePublicSettingsKey(key: String) {
+    require(!isInternalSettingsStorageKey(key)) {
+        "The requested settings key is reserved for internal cache-coherency metadata"
+    }
+}
+
+internal fun isInternalSettingsStorageKey(key: String): Boolean {
+    val normalized = propKeyNormalizer.normalize(key)
+    return key == SETTINGS_NAMESPACE_REVISION_KEY ||
+        key.startsWith(SETTINGS_TYPE_KEY_PREFIX) ||
+        normalized == propKeyNormalizer.normalize(SETTINGS_NAMESPACE_REVISION_KEY) ||
+        normalized.startsWith(propKeyNormalizer.normalize(SETTINGS_TYPE_KEY_PREFIX))
+}
+
+internal fun settingsTypeStorageKey(normalizedUserKey: String): String = "$SETTINGS_TYPE_KEY_PREFIX$normalizedUserKey"
+
+/**
+ * Projects a shared backing-store key set into one namespace's public keys.
+ * Exact internal storage keys are removed before namespace stripping or normalization.
+ */
+internal fun projectNamespacedSettingsUserKeys(
+    storageKeys: Set<String>,
+    namespaceStoragePrefix: String,
+    exactRevisionStorageKey: String,
+    exactTypeStoragePrefix: String,
+): Set<String> =
+    storageKeys
+        .asSequence()
+        .filterNot { storageKey ->
+            storageKey == exactRevisionStorageKey ||
+                storageKey.startsWith(exactTypeStoragePrefix)
+        }.filter { it.startsWith(namespaceStoragePrefix) }
+        .map { it.removePrefix(namespaceStoragePrefix) }
+        .filterNot(::isInternalSettingsStorageKey)
+        .map(propKeyNormalizer::normalize)
+        .toSet()
+
+internal fun storedSettingsTypeTag(value: Any): String =
+    when (value) {
+        is String -> "STRING"
+        is Boolean -> "BOOLEAN"
+        is Int -> "INT"
+        is Long -> "LONG"
+        is Float -> "FLOAT"
+        is Double -> "DOUBLE"
+        else -> throw UnsupportedOperationException("Unsupported settings type: ${value::class}")
     }
 
 val propKeyNormalizer = PropertyKeyNormalizerImpl.Default

@@ -60,7 +60,7 @@ class ManagedIdentifierResolutionTest {
 
     val app = createCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("managed-resolution-test")
+    val session = context.sessionContextManager.createOrGetFromId("managed-resolution-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

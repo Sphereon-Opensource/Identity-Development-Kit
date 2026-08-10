@@ -121,9 +121,8 @@ class CommandScopedConfigBinder(
                 ConfigErrors.bindError(
                     prefix = configSuffix,
                     expectedType = serializer.descriptor.serialName,
-                    reason = expected.message ?: "unknown error",
+                    reason = "configuration value could not be bound",
                     path = configSuffix,
-                    receivedValue = merged.toString(),
                 ),
             )
         }
@@ -201,8 +200,10 @@ fun ConfigService.toCommandScopedBinder(
         },
     mergeStrategy: JsonMergeStrategy = JsonMergeStrategy.DEEP_MERGE_REPLACE_ARRAYS,
     interpolate: Boolean = true,
+    interpolationPolicyProvider: InterpolationPolicyProvider? = null,
 ): CommandScopedConfigBinder {
     val sources = getPropertySources(includeParents = true)
+    val effectivePolicyProvider = interpolationPolicyProvider ?: this.interpolationPolicyProvider
     val resolver =
         PropertyResolverFactory.create(
             propertySources = sources,
@@ -212,6 +213,8 @@ fun ConfigService.toCommandScopedBinder(
                 } else {
                     null
                 },
+            resolverLevel = level,
+            interpolationPolicyProvider = effectivePolicyProvider,
         )
     return CommandScopedConfigBinder(resolver, scope, json, mergeStrategy)
 }
@@ -232,4 +235,12 @@ fun ContextConfig.toCommandScopedBinder(
         },
     mergeStrategy: JsonMergeStrategy = JsonMergeStrategy.DEEP_MERGE_REPLACE_ARRAYS,
     interpolate: Boolean = true,
-): CommandScopedConfigBinder = principal.toCommandScopedBinder(scope, json, mergeStrategy, interpolate)
+    interpolationPolicyProvider: InterpolationPolicyProvider? = null,
+): CommandScopedConfigBinder =
+    principal.toCommandScopedBinder(
+        scope = scope,
+        json = json,
+        mergeStrategy = mergeStrategy,
+        interpolate = interpolate,
+        interpolationPolicyProvider = interpolationPolicyProvider,
+    )

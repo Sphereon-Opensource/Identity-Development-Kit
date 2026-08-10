@@ -94,7 +94,7 @@ class WebvhDidHttpAdapter(
         )
 
     companion object {
-        const val ID = "did.webvh.http.adapter"
+        const val ID = "did.webvh.http"
         const val BASE_PATH = "/api/v1/did/webvh"
     }
 }

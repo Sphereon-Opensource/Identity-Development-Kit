@@ -44,7 +44,22 @@ data class SignStatusListTokenArgs(
     val issuer: String,
     /** Public URI of this list; becomes the token `sub` / credential `id`. */
     val statusListUri: String,
-    val signingKeyAlias: String,
+    /**
+     * Server-resolved KMS key name to sign under, produced by the driver from
+     * [StatusListSigningKeyNameResolver] or, absent one, from the deployment's own configured key.
+     * It is never a value a caller supplied and never derived from the list's correlation id.
+     *
+     * Null means the server resolved no key. Drivers pass that through untouched rather than
+     * substituting one. A signer that signs with a KMS key must then refuse
+     * ([com.sphereon.statuslist.StatusListErrors.signingKeyUnresolvable]); a signer that derives its
+     * key from its own durable material ignores this field and signs as usual.
+     */
+    val signingKeyName: String?,
+    /**
+     * Stable product instance that owns [signingKeyName]. Remote-custody deployments use this to
+     * rejoin the configured resource and alias inside their KMS authority. Local signers ignore it.
+     */
+    val signingKeyInstanceId: String? = null,
     /**
      * Signing-key reference mode for the JOSE header — `did:<method>`, `x5c`, `jwk-thumbprint`, or
      * null. Set to match the credentials that reference this list so wallets trust the same key/anchor.
@@ -54,7 +69,7 @@ data class SignStatusListTokenArgs(
      * For DID signing modes, the verification-method URL used as the JOSE `kid`. did:web/did:webvh
      * are NOT derivable from the key, so this is how the kid is configured. A full DID URL
      * (`did:web:host#frag`) is used verbatim; if omitted, web/webvh default to the host (from
-     * [statusListUri]) plus the [signingKeyAlias] as the fragment. did:jwk/did:key derive it.
+     * [statusListUri]) plus the [signingKeyName] as the fragment. did:jwk/did:key derive it.
      */
     val signingVerificationMethodId: String? = null,
     /** Optional PEM cert-chain path for `x5c` mode when the KMS key has no embedded chain. */

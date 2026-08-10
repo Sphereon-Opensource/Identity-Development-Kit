@@ -46,11 +46,9 @@ import com.sphereon.ktor.server.inject.BaseTenantIdAttribute as SharedBaseTenant
  * Per-call attribute holding the Layer 1 resolved base tenant id.
  *
  * Set by a tenant-resolution Ktor intercept (typically driven by the validated
- * JWT, the Host header, or the configured fallback). Read by
- * [toGenericHttpRequest] which copies the value into the in-process request
- * headers under [CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER] so
- * Layer 2 dispatch and downstream commands (e.g. `requireTenantId()`) can read
- * the resolved tenant without consulting `X-Tenant-Id` from the wire.
+ * JWT authority or a configured public-route mapping). Read by
+ * [toGenericHttpRequest], which copies it into typed in-process request
+ * metadata. It is never represented as an HTTP header.
  *
  * Defined here rather than under a specific plugin so VDX-transport-server-ktor
  * can stamp it from a lightweight intercept and the IDK request conversion
@@ -114,11 +112,8 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
             GenericHttpBody.Empty
         }
 
-    // Layer 1 resolved tenant id, stamped on the call by the tenant-resolution
-    // intercept. Propagated into the in-process request headers under the
-    // internal header name so downstream code (CommandBackedHttpAdapter path
-    // peeling, `requireTenantId()`, etc.) reads the validated tenant rather
-    // than trusting `X-Tenant-Id` from the wire.
+    // Layer 1 tenant id, resolved by validated JWT authority or an explicitly
+    // configured public-route resolver and carried only as typed in-process state.
     val resolvedBaseTenantId: String? = call.attributes.getOrNull(BaseTenantIdAttribute)
 
     return GenericHttpRequest(
@@ -138,11 +133,9 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
                             values.joinToString(",")
                         }
                 }
-                if (resolvedBaseTenantId != null) {
-                    headerMap[CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER] = resolvedBaseTenantId
-                }
                 headerMap
             },
+        resolvedTenantId = resolvedBaseTenantId,
         // Preserve multi-value occurrence (RFC 9110 §5.3 / RFC 9449 §4.1). Ktor's CIO engine
         // emits `entries()` as one entry per *occurrence*, so feeding that into a Map collapses
         // duplicates. `names()` + `getAll()` is the only way to get the full list per name.

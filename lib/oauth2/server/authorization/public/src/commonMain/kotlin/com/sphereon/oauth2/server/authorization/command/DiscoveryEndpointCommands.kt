@@ -89,7 +89,7 @@ interface BuildSignedAuthorizationServerMetadataCommand :
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "oauth2.discovery.signed_metadata"
+        const val COMMAND_ID = "oauth2.discovery.signed-metadata"
         const val JWT_TYP: String = "oauth-as-metadata+jwt"
     }
 }

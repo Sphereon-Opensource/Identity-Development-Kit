@@ -86,7 +86,7 @@ class DcqlClaimsMappingAdapterTest {
 
         return CredentialWithId(
             credentialId = "pid",
-            format = CredentialFormat.SD_JWT_DC,
+            format = CredentialFormat.SD_JWT_VC,
             payload = "",
             disclosedClaims = disclosedClaims,
         )
@@ -203,13 +203,13 @@ class DcqlClaimsMappingAdapterTest {
                 listOf(
                     CredentialWithId(
                         credentialId = "pid",
-                        format = CredentialFormat.SD_JWT_DC,
+                        format = CredentialFormat.SD_JWT_VC,
                         payload = "",
                         disclosedClaims = pidClaims,
                     ),
                     CredentialWithId(
                         credentialId = "mdl",
-                        format = CredentialFormat.SD_JWT_DC,
+                        format = CredentialFormat.SD_JWT_VC,
                         payload = "",
                         disclosedClaims = mdlClaims,
                     ),
@@ -410,7 +410,7 @@ class DcqlClaimsMappingAdapterTest {
             val credential =
                 CredentialWithId(
                     credentialId = "eu.europa.ec.eudi.pid.1",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )

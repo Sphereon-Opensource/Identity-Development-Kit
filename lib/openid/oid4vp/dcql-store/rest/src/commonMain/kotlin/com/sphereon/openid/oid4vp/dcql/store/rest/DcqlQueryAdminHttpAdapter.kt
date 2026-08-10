@@ -93,6 +93,6 @@ class DcqlQueryAdminHttpAdapter(
     }
 
     companion object {
-        const val ID = "oid4vp.dcql.http.adapter"
+        const val ID = "oid4vp.dcql.adapter"
     }
 }

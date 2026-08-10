@@ -26,11 +26,13 @@ import com.sphereon.mdoc.data.device.DocType
 import com.sphereon.mdoc.data.device.IntentToRetain
 import com.sphereon.mdoc.data.device.NameSpace
 import com.sphereon.mdoc.oid4vp.Oid4VPFormatIdentifier
-import com.sphereon.openid.oid4vp.dcql.DcqlClaimSet
+import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.MdocMeta
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 internal object DcqlMdocRequestMapper {
     private val dcqlJson = Json { ignoreUnknownKeys = true }
@@ -52,8 +54,7 @@ internal object DcqlMdocRequestMapper {
         dcqlQuery: DcqlQuery,
         log: LogService?,
     ): List<DocRequest> {
-        val credentialQueries = dcqlQuery.credentials.orEmpty()
-        require(credentialQueries.isNotEmpty()) { "DCQL query has no credential queries to build mdoc requests" }
+        val credentialQueries = dcqlQuery.credentials
 
         val docRequestBuilders = mutableMapOf<String, DocRequestBuildState>()
         credentialQueries.forEach { credentialQuery ->
@@ -61,7 +62,7 @@ internal object DcqlMdocRequestMapper {
                 return@forEach
             }
 
-            val meta = credentialQuery.meta?.let { dcqlJson.decodeFromJsonElement(MdocMeta.serializer(), it) }
+            val meta = dcqlJson.decodeFromJsonElement(MdocMeta.serializer(), credentialQuery.meta)
             val docTypeValue =
                 meta?.doctype_value?.takeIf { it.isNotBlank() }
                     ?: throw IllegalArgumentException(
@@ -80,39 +81,14 @@ internal object DcqlMdocRequestMapper {
                 return@forEach
             }
 
-            val namespaceValues = meta?.namespace_values.orEmpty()
             claimPaths.forEach { claim ->
                 val path = claim.path
-                if (path.isEmpty()) {
-                    return@forEach
-                }
-
-                val intentToRetain = IntentToRetain(claim.intentToRetain ?: false)
-
-                if (path.size == 1) {
-                    require(namespaceValues.isNotEmpty()) {
-                        "DCQL claim path '${path[0]}' missing namespace for docType '$docTypeValue'"
-                    }
-                    namespaceValues.forEach { namespace ->
-                        state.itemsBuilder.add(
-                            NameSpace(namespace),
-                            DataElementIdentifier(path[0]),
-                            intentToRetain,
-                        )
-                    }
-                    return@forEach
-                }
-
-                if (path.size > 2) {
-                    log?.debug("DCQL claim path has more than two segments for mdoc, using first two: $path")
-                }
-
                 val namespace = path[0]
                 val identifier = path[1]
                 state.itemsBuilder.add(
                     NameSpace(namespace),
                     DataElementIdentifier(identifier),
-                    intentToRetain,
+                    IntentToRetain(false),
                 )
             }
         }
@@ -123,35 +99,40 @@ internal object DcqlMdocRequestMapper {
     }
 
     private fun isMdocCredentialQuery(credentialQuery: DcqlCredentialQuery): Boolean {
-        val format = credentialQuery.format?.lowercase()
-        return format == null || format == Oid4VPFormatIdentifier.MSO_MDOC.value || format.contains("mdoc")
+        return credentialQuery.format == Oid4VPFormatIdentifier.MSO_MDOC.value
     }
 
     private fun collectDcqlClaimPaths(credentialQuery: DcqlCredentialQuery): List<DcqlClaimPath> {
-        val claimPaths = mutableListOf<DcqlClaimPath>()
-        credentialQuery.claims.orEmpty().forEach { claim ->
-            claimPaths.add(DcqlClaimPath(path = claim.path, intentToRetain = claim.intent_to_retain))
+        val claims = credentialQuery.claims ?: return emptyList()
+        val selected = selectClaims(claims, credentialQuery.claim_sets)
+        return selected.map { claim ->
+            val path =
+                claim.path.components.mapIndexed { index, component ->
+                    (component as? JsonPrimitive)?.contentOrNull?.takeIf { component.isString }
+                        ?: throw IllegalArgumentException(
+                            "mso_mdoc Claims Path Pointer component at index $index must be a string",
+                        )
+                }
+            require(path.size == 2) {
+                "mso_mdoc Claims Path Pointer must contain exactly namespace and data element identifier"
+            }
+            DcqlClaimPath(path = path)
         }
-        credentialQuery.claim_sets.orEmpty().forEach { claimSet ->
-            claimPaths.addAll(claimSetToPaths(claimSet))
-        }
-        return claimPaths
     }
 
-    private fun claimSetToPaths(claimSet: DcqlClaimSet): List<DcqlClaimPath> =
-        claimSet.claims.map { claim ->
-            val path =
-                if (claim.contains(".")) {
-                    claim.split(".")
-                } else {
-                    listOf(claim)
-                }
-            DcqlClaimPath(path = path, intentToRetain = null)
-        }
+    private fun selectClaims(
+        claims: List<DcqlClaimQuery>,
+        claimSets: List<List<String>>?,
+    ): List<DcqlClaimQuery> {
+        if (claimSets == null) return claims
+        val claimsById = claims.mapNotNull { claim -> claim.id?.let { it to claim } }.toMap()
+        return claimSets.firstNotNullOfOrNull { option ->
+            option.map { claimsById[it] ?: return@firstNotNullOfOrNull null }
+        } ?: emptyList()
+    }
 
     private data class DcqlClaimPath(
         val path: List<String>,
-        val intentToRetain: Boolean? = null,
     )
 
     private data class DocRequestBuildState(

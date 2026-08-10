@@ -46,7 +46,7 @@ class OAuth2IntegrationTestContext(
 ) {
     val app: AppGraph = createOAuth2IntegrationTestAppGraph(application = testInstance)
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
     val execution = session.asCoreApiServiceGraph().serviceExecution
     val keyManagerService: KeyManagerService = session.graph.asKeyManagerServiceGraph().keyManagerService
     val signingKeyStore: SigningKeyStore = (app as OAuth2SigningKeyStoreGraph).signingKeyStore

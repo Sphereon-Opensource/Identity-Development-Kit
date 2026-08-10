@@ -84,7 +84,7 @@ class HttpClientProviderIntegrationTest {
 
     val app = createJvmHttpClientTestAppGraph(application = this)
     val user = app.userContextManager.getAnonymous()
-    val session = user.sessionContextManager.createOrGetFromId("http-client-test")
+    val session = user.sessionContextManager.createOrGetFromId("http-client-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeEach
     fun beforeEach() {

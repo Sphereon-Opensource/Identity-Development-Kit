@@ -53,7 +53,8 @@ class SqliteDidRepositoryFactory : DidRepositoryFactory {
         require(config.type == DidPersistenceConfig.TYPE_SQLITE) {
             "SqliteDidRepositoryFactory expected type=${DidPersistenceConfig.TYPE_SQLITE}, got '${config.type}'"
         }
-        return createRepositoryFromDriver(buildDriver(config))
+        val dataSource = buildDataSource(config)
+        return createRepositoryFromDriver(dataSource.asJdbcDriver(), dataSource::close)
     }
 
     /**
@@ -75,7 +76,10 @@ class SqliteDidRepositoryFactory : DidRepositoryFactory {
      * (e.g. shared-cache in-memory databases, custom Hikari pools). Production code uses
      * [createRepository], which wires its own driver from config.
      */
-    fun createRepositoryFromDriver(driver: SqlDriver): SqliteDidRepositoryImpl {
+    fun createRepositoryFromDriver(
+        driver: SqlDriver,
+        closeAction: (() -> Unit)? = null,
+    ): SqliteDidRepositoryImpl {
         DidDatabaseSqlite.Schema.create(driver)
         val database =
             DidDatabaseSqlite(
@@ -136,10 +140,10 @@ class SqliteDidRepositoryFactory : DidRepositoryFactory {
                         updated_atAdapter = InstantStringAdapter,
                     ),
             )
-        return SqliteDidRepositoryImpl(database)
+        return SqliteDidRepositoryImpl(database, closeAction)
     }
 
-    private fun buildDriver(config: DidPersistenceConfig): SqlDriver {
+    private fun buildDataSource(config: DidPersistenceConfig): HikariDataSource {
         val raw = config.connectionUrl?.takeIf { it.isNotBlank() }
         val jdbcUrl =
             when {
@@ -157,9 +161,7 @@ class SqliteDidRepositoryFactory : DidRepositoryFactory {
                 config.username?.let { this.username = it }
                 config.password?.let { this.password = it }
             }
-        val dataSource = HikariDataSource(hikari)
-        val driver = dataSource.asJdbcDriver()
-        return driver
+        return HikariDataSource(hikari)
     }
 }
 

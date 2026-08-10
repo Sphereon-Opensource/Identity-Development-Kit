@@ -1,0 +1,39 @@
+-- Baseline v0 -> v1: the key_reference schema exactly as it shipped before public verification
+-- material was stored alongside the reference.
+--
+-- Deployments created before migrations existed here already record schema version 1, so they skip
+-- this file and start at 1.sqm. It exists so the migration chain has the table to alter, and so a
+-- fresh database and an upgraded one converge on the same shape.
+-- Shipped migrations are immutable; schema changes go into the next .sqm file.
+
+CREATE TABLE IF NOT EXISTS key_reference (
+    id TEXT NOT NULL PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    alias TEXT NOT NULL,
+    kid TEXT,
+    provider_id TEXT NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'managed',
+    key_type TEXT,
+    signature_algorithm TEXT,
+    key_visibility TEXT,
+    key_encoding TEXT,
+    created_at TEXT NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by_id TEXT,
+    deleted_at TEXT,
+    deleted_by_id TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_key_ref_tenant_alias_provider
+    ON key_reference(tenant_id, alias, provider_id)
+    WHERE deleted_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_key_ref_tenant_kid_provider
+    ON key_reference(tenant_id, kid, provider_id)
+    WHERE deleted_at IS NULL AND kid IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_key_ref_tenant_id ON key_reference(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_key_ref_tenant_kid ON key_reference(tenant_id, kid);
+CREATE INDEX IF NOT EXISTS idx_key_ref_tenant_provider ON key_reference(tenant_id, provider_id);
+CREATE INDEX IF NOT EXISTS idx_key_ref_origin ON key_reference(origin);

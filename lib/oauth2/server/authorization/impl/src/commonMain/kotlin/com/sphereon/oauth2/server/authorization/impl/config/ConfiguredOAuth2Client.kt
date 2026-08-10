@@ -27,7 +27,7 @@ internal data class ConfiguredOAuth2Client(
     val configKey: String,
     val enabled: Boolean = true,
     val clientId: String,
-    val clientSecret: String? = null,
+    val clientSecretId: String? = null,
     val clientName: String? = null,
     val clientType: ClientType = ClientType.CONFIDENTIAL,
     val grantTypes: List<GrantType>,
@@ -37,6 +37,7 @@ internal data class ConfiguredOAuth2Client(
     val defaultAccessTokenAudience: String? = null,
     val allowedAccessTokenAudiences: Set<String> = emptySet(),
     val tokenEndpointAuthMethod: ClientAuthenticationMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+    val tokenEndpointAuthSigningAlg: List<String>? = null,
     val jwks: List<Jwk>? = null,
     val jwksUri: String? = null,
     val requirePkce: Boolean = clientType == ClientType.PUBLIC,
@@ -65,10 +66,10 @@ internal data class ConfiguredOAuth2Client(
     val tlsClientAuthSanUri: String? = null,
     val tlsClientCertificateBoundAccessTokens: Boolean = false,
 ) {
-    fun toClientRegistration(): ClientRegistration =
+    fun toClientRegistration(resolvedClientSecret: String?): ClientRegistration =
         ClientRegistration(
             clientId = clientId,
-            clientSecret = clientSecret,
+            clientSecret = resolvedClientSecret,
             clientName = clientName,
             clientType = clientType,
             grantTypes = grantTypes,
@@ -78,6 +79,7 @@ internal data class ConfiguredOAuth2Client(
             defaultAccessTokenAudience = defaultAccessTokenAudience,
             allowedAccessTokenAudiences = allowedAccessTokenAudiences,
             tokenEndpointAuthMethod = tokenEndpointAuthMethod,
+            tokenEndpointAuthSigningAlg = tokenEndpointAuthSigningAlg,
             jwks = jwks,
             jwksUri = jwksUri,
             requirePkce = requirePkce,

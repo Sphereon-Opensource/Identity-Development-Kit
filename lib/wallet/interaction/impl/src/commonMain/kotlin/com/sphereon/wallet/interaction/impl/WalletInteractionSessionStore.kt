@@ -7,14 +7,13 @@
 package com.sphereon.wallet.interaction.impl
 
 import com.sphereon.wallet.interaction.WalletInteractionInput
+import com.sphereon.wallet.interaction.WalletInteractionActivityProjection
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStateEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -41,6 +40,12 @@ interface WalletInteractionSessionStore {
     ): Flow<WalletInteractionStateEvent>
 
     suspend fun remove(sessionId: WalletInteractionSessionId)
+
+    suspend fun listActivity(
+        walletUnitId: String,
+        afterSequence: Long? = null,
+        limit: Int = 100,
+    ): List<WalletInteractionActivityProjection> = emptyList()
 }
 
 interface WalletInteractionLiveEventBus {
@@ -70,50 +75,27 @@ class ProcessLocalWalletInteractionLiveEventBus(
         }
 }
 
-class InMemoryWalletInteractionSessionStore(
-    private val liveEventBus: WalletInteractionLiveEventBus = ProcessLocalWalletInteractionLiveEventBus(),
-) : WalletInteractionSessionStore {
-    private val sessions = mutableMapOf<WalletInteractionSessionId, WalletInteractionStoredSession>()
-    private val eventHistory = mutableMapOf<WalletInteractionSessionId, MutableList<WalletInteractionStateEvent>>()
-
-    override suspend fun save(session: WalletInteractionStoredSession) {
-        sessions[session.sessionId] = session
-        val event = session.state.toEvent()
-        val events = eventHistory.getOrPut(session.sessionId) { mutableListOf() }
-        if (events.lastOrNull()?.revision != event.revision || events.lastOrNull()?.state != event.state) {
-            events.add(event)
-            liveEventBus.publish(event)
-        }
-    }
-
-    override suspend fun load(sessionId: WalletInteractionSessionId): WalletInteractionStoredSession? = sessions[sessionId]
-
-    override suspend fun events(
-        sessionId: WalletInteractionSessionId,
-        afterRevision: Long?,
-    ): List<WalletInteractionStateEvent> =
-        eventHistory[sessionId]
-            .orEmpty()
-            .filter { event -> afterRevision == null || event.revision > afterRevision }
-
-    override fun observeEvents(
-        sessionId: WalletInteractionSessionId,
-        afterRevision: Long?,
-    ): Flow<WalletInteractionStateEvent> =
-        flow {
-            events(sessionId, afterRevision).forEach { event -> emit(event) }
-            emitAll(liveEventBus.observeEvents(sessionId, afterRevision))
-        }
-
-    override suspend fun remove(sessionId: WalletInteractionSessionId) {
-        sessions.remove(sessionId)
-        eventHistory.remove(sessionId)
-    }
-
-    private fun WalletInteractionState.toEvent(): WalletInteractionStateEvent =
-        WalletInteractionStateEvent(
-            sessionId = sessionId,
-            revision = revision,
-            state = this,
-        )
+internal fun WalletInteractionState.activityProjection(
+    sequence: Long,
+    recordedAtEpochSeconds: Long? = null,
+): WalletInteractionActivityProjection {
+    val effectiveRecordedAt = recordedAtEpochSeconds
+        ?: activity?.metadata?.get("recordedAtEpochSeconds")?.toLongOrNull()
+        ?: kotlin.time.Clock.System.now().epochSeconds
+    return WalletInteractionActivityProjection(
+        sequence = sequence,
+        recordedAtEpochSeconds = effectiveRecordedAt,
+        sessionId = sessionId.value,
+        walletUnitId = walletUnitId,
+        flowKind = flowKind,
+        status = status,
+        counterparty = counterparty,
+        credentialRecordIds = when (flowKind) {
+            com.sphereon.wallet.interaction.WalletInteractionFlowKind.CredentialReceive -> receivedCredentialPreview.mapTo(linkedSetOf()) { it.id }
+            com.sphereon.wallet.interaction.WalletInteractionFlowKind.CredentialPresent,
+            com.sphereon.wallet.interaction.WalletInteractionFlowKind.AttendedPresent,
+            -> disclosure?.selectedCredentialIds.orEmpty().toSet()
+            null -> emptySet()
+        },
+    )
 }

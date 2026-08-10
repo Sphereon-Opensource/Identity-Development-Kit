@@ -54,6 +54,7 @@ import com.sphereon.wallet.interaction.impl.FixedWalletInteractionSessionIdGener
 import com.sphereon.wallet.interaction.impl.GetWalletInteractionEventsCommandImpl
 import com.sphereon.wallet.interaction.impl.GetWalletInteractionStateCommandImpl
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStore
 import com.sphereon.wallet.interaction.impl.StoreBackedWalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.impl.ResumeWalletInteractionCommandImpl
 import com.sphereon.wallet.interaction.impl.StartWalletInteractionCommandImpl
@@ -342,6 +343,8 @@ class WalletInteractionHttpAdapterTest {
                 ),
             adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
             sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
+            privateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
+            sessionStore = InMemoryWalletInteractionSessionStore(),
         )
 
     private fun testAdapter(engine: DefaultWalletInteractionEngine): WalletInteractionHttpAdapter {

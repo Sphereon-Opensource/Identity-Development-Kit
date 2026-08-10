@@ -78,6 +78,7 @@ class AttestationProofVerifier(
 
         val trustConfig = issuerConfigProvider.keyAttesterTrustFor(credentialConfigId, supportedProofType)
         val policy = proofTypeSupported?.keyAttestationsRequired
+        val requireWalletUnitEvidence = trustConfig?.requireWalletUnitEvidence == true
 
         val validated =
             keyAttestationVerifier
@@ -85,13 +86,12 @@ class AttestationProofVerifier(
                     keyAttestationJwt = attestationJwt,
                     trustConfig = trustConfig,
                     policy = policy,
-                    expectedAudience = expectedAudience.takeIf { policy != null },
                 ).getOrElse { return Err(it) }
 
         val attestationNonce =
             validated.claims["c_nonce"]?.jsonPrimitive?.contentOrNull()
                 ?: validated.claims["nonce"]?.jsonPrimitive?.contentOrNull()
-        if (policy != null && attestationNonce == null) {
+        if (requireWalletUnitEvidence && attestationNonce == null) {
             return Err(
                 IdkError.fromString(
                     code = Oid4vciErrors.INVALID_PROOF,

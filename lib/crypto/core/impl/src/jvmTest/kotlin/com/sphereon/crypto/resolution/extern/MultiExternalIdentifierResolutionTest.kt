@@ -49,7 +49,7 @@ class MultiExternalIdentifierResolutionTest {
 
     val app = createJvmCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("multi-external-test")
+    val session = context.sessionContextManager.createOrGetFromId("multi-external-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

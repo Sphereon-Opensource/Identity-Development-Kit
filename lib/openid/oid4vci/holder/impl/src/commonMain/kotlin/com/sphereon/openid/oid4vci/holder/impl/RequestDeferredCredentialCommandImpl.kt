@@ -44,7 +44,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -55,7 +55,7 @@ import io.ktor.http.contentType
 /**
  * Polls the deferred credential endpoint to retrieve a pending credential.
  *
- * Per OID4VCI 1.1 Section 10.1: HTTP POST to deferred endpoint with Bearer auth.
+ * Per OID4VCI 1.1 Section 10.1: HTTP POST to deferred endpoint with access-token auth.
  * Request body: DeferredCredentialRequest with transaction_id.
  *
  * Response handling:
@@ -124,7 +124,11 @@ class RequestDeferredCredentialCommandImpl(
             val response =
                 httpClient.post(applied.deferredCredentialEndpoint) {
                     contentType(requestContentType)
-                    bearerAuth(applied.accessToken)
+                    headers {
+                        val scheme = if (applied.dpopProofJwt != null) "DPoP" else "Bearer"
+                        append("Authorization", "$scheme ${applied.accessToken}")
+                        applied.dpopProofJwt?.let { append("DPoP", it) }
+                    }
                     setBody(requestBody)
                 }
 
@@ -171,6 +175,21 @@ class RequestDeferredCredentialCommandImpl(
                             log.debug("Failed to parse deferred credential error response JSON: ${expected.message}")
                             null
                         }
+                    val dpopNonce = response.headers["DPoP-Nonce"]
+                    val wwwAuthenticate = response.headers["WWW-Authenticate"].orEmpty()
+                    if (dpopNonce != null && (errorResponse?.error == "use_dpop_nonce" || wwwAuthenticate.contains("use_dpop_nonce"))) {
+                        return Err(
+                            IdkError(
+                                code = "use_dpop_nonce",
+                                message =
+                                    IdkError.Message(
+                                        i18nKey = "use_dpop_nonce",
+                                        defaultMessage = "Deferred credential endpoint requires nonce in DPoP proof",
+                                    ),
+                                meta = mapOf("dpop_nonce" to dpopNonce),
+                            ),
+                        )
+                    }
                     val errorMsg =
                         errorResponse?.let {
                             "${it.error}: ${it.errorDescription ?: ""}"

@@ -24,8 +24,8 @@ import com.sphereon.crypto.core.ManagedKeyReferenceFilter
 /**
  * Repository interface for tenant-aware key reference persistence.
  *
- * Stores metadata-only key references — never stores actual key material,
- * JWKs, public keys, or certificates. The database is an index/reference
+ * Stores key references: metadata, plus the public verification material a verifier would be
+ * handed anyway. Never private or symmetric key material. The database is an index/reference
  * layer; the KMS provider remains the system of record for key material.
  *
  * Implementations may use SQLite (IDK), PostgreSQL/MySQL (EDK), or in-memory storage.

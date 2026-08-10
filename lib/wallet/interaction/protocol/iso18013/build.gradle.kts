@@ -53,6 +53,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(projects.libWalletInteractionImpl)
+                implementation(projects.libWalletInteractionTestFixtures)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
             }
         }

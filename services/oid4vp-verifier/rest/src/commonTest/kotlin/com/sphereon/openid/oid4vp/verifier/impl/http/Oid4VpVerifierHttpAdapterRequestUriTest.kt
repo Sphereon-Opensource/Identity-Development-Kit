@@ -41,6 +41,8 @@ import com.sphereon.openid.oid4vp.verifier.impl.http.command.DirectPostResponseE
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.GetRequestObjectEndpointCommand
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.PostRequestObjectEndpointCommand
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.ReadyEndpointCommand
+import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceResolver
+import com.sphereon.openid.oid4vp.verifier.impl.config.DefaultOid4vpVerifierInstanceIdProvider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -83,6 +85,11 @@ class Oid4VpVerifierHttpAdapterRequestUriTest {
         runTest {
             val execution: SessionExecution = TestSessionExecution()
             val correlationId = "corr-123"
+            val instanceIdProvider = DefaultOid4vpVerifierInstanceIdProvider()
+            val instanceResolver =
+                object : Oid4vpVerifierInstanceResolver {
+                    override suspend fun resolve(request: GenericHttpRequest) = Ok("verifier-a")
+                }
 
             // Create mock GET command that returns the expected JWT response
             val getCommand =
@@ -91,8 +98,9 @@ class Oid4VpVerifierHttpAdapterRequestUriTest {
                     override val endpoint: HttpEndpointDescriptor = GetRequestObjectEndpointCommand.ENDPOINT
                     override val isEnabled: Boolean = true
 
-                    override suspend fun execute(args: GenericHttpRequest): IdkResult<GenericHttpResponse, IdkError> =
-                        Ok(
+                    override suspend fun execute(args: GenericHttpRequest): IdkResult<GenericHttpResponse, IdkError> {
+                        assertEquals("verifier-a", instanceIdProvider.currentInstanceId())
+                        return Ok(
                             GenericHttpResponse(
                                 statusCode = 200,
                                 headers =
@@ -103,6 +111,7 @@ class Oid4VpVerifierHttpAdapterRequestUriTest {
                                 body = "signed.jwt.payload",
                             ),
                         )
+                    }
                 }
 
             // Create mock POST command (not used in this test but required by adapter)
@@ -138,6 +147,8 @@ class Oid4VpVerifierHttpAdapterRequestUriTest {
             val adapter =
                 Oid4vpVerifierHttpAdapter(
                     execution = execution,
+                    verifierInstanceResolver = instanceResolver,
+                    verifierInstanceIdProvider = instanceIdProvider,
                     getRequestObjectCommand = getCommand,
                     postRequestObjectCommand = postCommand,
                     directPostResponseCommand = directPostCommand,
@@ -156,5 +167,6 @@ class Oid4VpVerifierHttpAdapterRequestUriTest {
             assertEquals("application/oauth-authz-req+jwt", response.headers["Content-Type"])
             assertTrue(response.headers["Cache-Control"]?.contains("no-store") == true)
             assertEquals("signed.jwt.payload", response.body)
+            assertEquals(null, instanceIdProvider.currentInstanceId())
         }
 }

@@ -44,6 +44,7 @@ kotlin {
                 api(projects.libWalletWscaPublic)
                 api(projects.libOpenidOid4vciHolderPublic)
                 api(projects.libOpenidOid4vciCommonPublic)
+                implementation(projects.libOauth2CommonPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
                 // SD-JWT VC verification command (sdjwt.vc.verify): the receiver verifies the
                 // issuer signature of an issued SD-JWT VC on receipt before storing it.

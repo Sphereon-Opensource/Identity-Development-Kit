@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.AccessTokenData
 import com.sphereon.oauth2.server.authorization.model.RefreshTokenData
+import kotlin.time.Instant
 
 /**
  * Storage abstraction for access and refresh tokens
@@ -148,6 +149,19 @@ interface TokenStorage {
         token: String,
         revoke: Boolean = true,
     ): IdkResult<RefreshTokenData?, AuthorizationServerError.StorageError>
+
+    /**
+     * Atomically records the successor of a rotated refresh token.
+     *
+     * Implementations must keep the first recorded successor when concurrent requests race.
+     * The returned row tells the caller which successor is authoritative. The default preserves
+     * the legacy consume behavior for custom stores until they provide durable rotation lineage.
+     */
+    suspend fun rotateRefreshToken(
+        token: String,
+        replacementRefreshToken: String,
+        rotatedAt: Instant,
+    ): IdkResult<RefreshTokenData?, AuthorizationServerError.StorageError> = consumeRefreshToken(token, revoke = true)
 
     /**
      * Revoke a refresh token

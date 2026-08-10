@@ -106,7 +106,7 @@ class X509VerifyServiceJSAdapterImpl : X509VerifyVerifyPlatformCallbackJSPromise
 
     @JsExport.Ignore
     override suspend fun verifyCertificateChain(req: X509VerificationRequestType): X509VerificationResultType {
-        val request = X509VerificationRequest.fromDto(req, enable = this.isEnabled())
+        val request = X509VerificationRequest.fromDto(req, enable = this.isEnabled() && req.enabled)
         val context = request.validateToContext()
         if (context.isErr) {
             return context.error

@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS key_reference (
     signature_algorithm TEXT,
     key_visibility TEXT,
     key_encoding TEXT,
+    -- Serialized public JWK. Nullable only for rows written before this column existed; those are
+    -- filled in on first read. Never holds private or symmetric material.
+    public_key_jwk TEXT,
     created_at TEXT NOT NULL,
     created_by_id TEXT,
     updated_at TEXT NOT NULL,
@@ -77,11 +80,11 @@ WHERE tenant_id = :tenantId AND alias = :alias AND provider_id = :providerId
 insertRecord:
 INSERT INTO key_reference(
     id, tenant_id, alias, kid, provider_id, origin,
-    key_type, signature_algorithm, key_visibility, key_encoding,
+    key_type, signature_algorithm, key_visibility, key_encoding, public_key_jwk,
     created_at, created_by_id, updated_at, updated_by_id
 ) VALUES (
     :id, :tenantId, :alias, :kid, :providerId, :origin,
-    :keyType, :signatureAlgorithm, :keyVisibility, :keyEncoding,
+    :keyType, :signatureAlgorithm, :keyVisibility, :keyEncoding, :publicKeyJwk,
     :createdAt, :createdById, :updatedAt, :updatedById
 );
 
@@ -93,6 +96,8 @@ UPDATE key_reference SET
     signature_algorithm = :signatureAlgorithm,
     key_visibility = :keyVisibility,
     key_encoding = :keyEncoding,
+    -- A known public key is never replaced by an unknown one.
+    public_key_jwk = COALESCE(:publicKeyJwk, public_key_jwk),
     updated_at = :updatedAt,
     updated_by_id = :updatedById
 WHERE id = :id AND deleted_at IS NULL;

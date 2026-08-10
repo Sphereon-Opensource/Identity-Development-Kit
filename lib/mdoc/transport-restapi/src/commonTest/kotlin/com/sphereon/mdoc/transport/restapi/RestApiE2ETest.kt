@@ -35,6 +35,8 @@ import com.sphereon.crypto.core.cose.CoseKeyCborCodecImpl
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.KeyTypeMapping
+import com.sphereon.di.context.PrincipalType
+import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.mdoc.MdocRole
@@ -717,6 +719,8 @@ class RestApiE2ETest {
                     sessionId: String,
                     correlationId: String,
                     makeActive: Boolean,
+                    secureDetails: SecuredTenantContextDetails?,
+                    principalType: PrincipalType,
                 ) = throw NotImplementedError()
 
                 override fun destroyById(sessionId: String) {}

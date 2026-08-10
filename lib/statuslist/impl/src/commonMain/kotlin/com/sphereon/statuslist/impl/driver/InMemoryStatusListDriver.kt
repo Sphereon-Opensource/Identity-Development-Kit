@@ -41,9 +41,11 @@ import com.sphereon.statuslist.impl.codec.StatusListCodec
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import com.sphereon.statuslist.spi.StatusListDriver
 import com.sphereon.statuslist.spi.StatusListSigner
+import com.sphereon.statuslist.spi.StatusListSigningKeyNameResolver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.coroutines.sync.Mutex
@@ -58,7 +60,7 @@ import kotlin.uuid.Uuid
 internal class ListState(
     val id: String,
     val tenantId: String,
-    val args: CreateStatusListArgs,
+    var args: CreateStatusListArgs,
     val bitset: StatusBitset,
     val createdAt: Instant,
     var updatedAt: Instant,
@@ -129,6 +131,18 @@ class InMemoryStatusListStore {
         tenantId: String,
         ref: StatusListRef
     ): ListState? = mutex.withLock { resolveList(tenantId, ref) }
+
+    internal suspend fun refreshDefinition(
+        tenantId: String,
+        args: CreateStatusListArgs,
+    ): IdkResult<ListState, IdkError> =
+        mutex.withLock {
+            val state = resolveList(tenantId, StatusListRef(correlationId = args.correlationId))
+                ?: return@withLock Err(StatusListErrors.listNotFound(args.correlationId))
+            state.args = args
+            state.updatedAt = Clock.System.now()
+            Ok(state)
+        }
 
     internal suspend fun getToken(
         tenantId: String,
@@ -395,14 +409,52 @@ class InMemoryStatusListDriver(
     private val store: InMemoryStatusListStore,
     private val signer: StatusListSigner,
     private val execution: SessionExecution,
+    /**
+     * Bound by deployments that manage signing material centrally. While bound it is the only source
+     * of the signing key name and a null answer refuses the signing outright.
+     */
+    private val signingKeyNameResolver: Provider<StatusListSigningKeyNameResolver>? = null,
 ) : StatusListDriver {
     private fun tenantId(): String = execution.tenantId.takeIf { it.isNotBlank() } ?: DEFAULT_TENANT
+
+    /**
+     * The key name to sign [correlationId] under. A bound [StatusListSigningKeyNameResolver] wins
+     * outright, so a `signingKeyAlias` that reached the definition is ignored while one is bound.
+     * Without one, the deployment's own configured key is used.
+     *
+     * A null answer is passed to the signer untouched. Nothing is substituted, defaulted, or derived
+     * from the correlation id here; a signer that needs a KMS key refuses, and a signer that derives
+     * its key from its own durable material signs as usual.
+     */
+    private suspend fun signingKeyName(
+        correlationId: String,
+        definitionKeyAlias: String?,
+    ): String? {
+        val resolver = signingKeyNameResolver?.invoke()
+        return if (resolver != null) {
+            resolver.resolveSigningKeyName(tenantId(), correlationId)?.takeIf { it.isNotBlank() }
+        } else {
+            definitionKeyAlias?.takeIf { it.isNotBlank() }
+        }
+    }
 
     override suspend fun createStatusList(args: CreateStatusListArgs): IdkResult<StatusListResult, IdkError> {
         val state = store.createStatusList(tenantId(), args).getOrElse { return Err(it) }
         val token = signToken(state).getOrElse { return Err(it) }
         store.updateToken(tenantId(), StatusListRef(id = state.id), token).getOrElse { return Err(it) }
         return buildResult(state)
+    }
+
+    override suspend fun refreshStatusListDefinition(args: CreateStatusListArgs): IdkResult<StatusListResult, IdkError> {
+        val existing = store.getState(tenantId(), StatusListRef(correlationId = args.correlationId))
+            ?: return createStatusList(args)
+        val result = buildResult(existing).getOrElse { return Err(it) }
+        StatusListErrors.validateDefinitionRefresh(result, args)?.let { return Err(it) }
+        if (existing.args == args) return Ok(result)
+        val refreshed = store.refreshDefinition(tenantId(), args).getOrElse { return Err(it) }
+        val token = signToken(refreshed).getOrElse { return Err(it) }
+        store.updateToken(tenantId(), StatusListRef(id = refreshed.id), token).getOrElse { return Err(it) }
+        return buildResult(refreshed)
     }
 
     override suspend fun getStatusList(ref: StatusListRef): IdkResult<StatusListResult?, IdkError> {
@@ -443,6 +495,7 @@ class InMemoryStatusListDriver(
     }
 
     private suspend fun signToken(state: ListState): IdkResult<StatusListToken, IdkError> {
+        val keyName = signingKeyName(state.args.correlationId, state.args.signingKeyAlias)
         val encoded = StatusListCodec.encode(state.bitset, state.args.spec)
         return signer.signStatusListToken(
             SignStatusListTokenArgs(
@@ -450,7 +503,8 @@ class InMemoryStatusListDriver(
                 proofFormat = state.args.proofFormat,
                 issuer = state.args.issuer,
                 statusListUri = state.args.statusListUri,
-                signingKeyAlias = state.args.signingKeyAlias ?: state.args.correlationId,
+                signingKeyName = keyName,
+                signingKeyInstanceId = state.args.correlationId,
                 signingKeyMode = state.args.signingKeyMode,
                 signingVerificationMethodId = state.args.signingVerificationMethodId,
                 signingCertChainPath = state.args.signingCertChainPath,

@@ -6,6 +6,8 @@
 
 package com.sphereon.wallet.interaction
 
+import kotlinx.serialization.json.JsonPrimitive
+
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -29,7 +31,7 @@ class WalletInteractionLocalizationKeyTest {
             ),
         )
         assertNotNull(WalletTxCodeSpec(descriptionKey = "wallet.interaction.tx_code.required"))
-        assertNotNull(WalletClaimDescriptor(path = listOf("given_name"), labelKey = "wallet.interaction.claim.given_name"))
+        assertNotNull(WalletClaimDescriptor(path = listOf(JsonPrimitive("given_name")), labelKey = "wallet.interaction.claim.given_name"))
         assertNotNull(
             WalletTrustSource(
                 type = WalletTrustSourceType.EUDI_TRUSTED_LIST,
@@ -71,7 +73,7 @@ class WalletInteractionLocalizationKeyTest {
             )
         }
         assertFailsWith<IllegalArgumentException> { WalletTxCodeSpec(descriptionKey = "invalid_description") }
-        assertFailsWith<IllegalArgumentException> { WalletClaimDescriptor(path = listOf("given_name"), labelKey = "invalid_claim_label") }
+        assertFailsWith<IllegalArgumentException> { WalletClaimDescriptor(path = listOf(JsonPrimitive("given_name")), labelKey = "invalid_claim_label") }
         assertFailsWith<IllegalArgumentException> {
             WalletTrustSource(
                 type = WalletTrustSourceType.EUDI_TRUSTED_LIST,

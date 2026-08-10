@@ -60,7 +60,7 @@ class CoseSigningIntegrationTest {
 
     val app = createCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("cose-test")
+    val session = context.sessionContextManager.createOrGetFromId("cose-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

@@ -23,7 +23,6 @@ import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertiesFilePrincipalPropertySource
 import com.sphereon.core.api.conf.PropertiesFileTenantPropertySource
 import com.sphereon.core.api.conf.PropertySourceBootstrap
-import com.sphereon.core.api.conf.SecretProviderBootstrap
 import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.core.api.context.ContextScopedResourceInvalidator
 import com.sphereon.core.api.log.AppLogManager
@@ -32,9 +31,11 @@ import com.sphereon.di.app.App
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.context.AnonymousUserGraphManager
 import com.sphereon.di.context.IdentityConstants
+import com.sphereon.di.context.IdentityResolutionResult
 import com.sphereon.di.context.PrincipalAware
 import com.sphereon.di.context.PrincipalInput
 import com.sphereon.di.context.PrincipalResolutionHandler
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.TenantAware
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.TenantInput
@@ -247,6 +248,24 @@ class UserContextManagerImpl(
         principalInput: PrincipalInput,
         makeActive: Boolean,
     ): UserContextInstance {
+        val tenantContext =
+            com.sphereon.core.api.coroutines
+                .runBlockingCompat { tenantResolutionHandler.resolveTenant(tenantInput) }
+        val principal = principalResolutionHandler.resolvePrincipal(principalInput, tenantContext)
+        return createOrGetContextInternal(
+            tenantContextData = tenantContext.tenant,
+            principal = principal,
+            principalType = PrincipalType.USER,
+            makeActive = makeActive,
+        ).instance
+    }
+
+    override fun createOrGetFromResolvedInputs(
+        tenantInput: TenantInput,
+        principalInput: PrincipalInput,
+        identityResolution: IdentityResolutionResult,
+        makeActive: Boolean,
+    ): UserContextInstance {
         // Bridge: TenantResolutionHandler.resolveTenant is now suspend (so Ktor
         // request-path callers don't have to runBlocking on their event loop).
         // This synchronous facade is still needed for Spring filters and other
@@ -257,14 +276,44 @@ class UserContextManagerImpl(
             com.sphereon.core.api.coroutines
                 .runBlockingCompat { tenantResolutionHandler.resolveTenant(tenantInput) }
         val principal = principalResolutionHandler.resolvePrincipal(principalInput, tenantContext)
-        return createOrGet(tenantContext, principal, makeActive)
+        require(identityResolution.tenantId == tenantContext.tenant.tenantId) {
+            "Authoritative tenant does not match the resolved context tenant"
+        }
+        require(identityResolution.principalId == principal.principal?.toString()) {
+            "Authoritative principal does not match the resolved context principal"
+        }
+        return createOrGetContextInternal(
+            tenantContextData = tenantContext.tenant,
+            principal = principal,
+            principalType = identityResolution.principalType,
+            makeActive = makeActive,
+        ).instance
     }
 
     override fun createOrGet(
         tenantAware: TenantAware,
         principalAware: PrincipalAware,
         makeActive: Boolean,
-    ): UserContextInstance = createOrGetContextInternal(tenantAware.tenant, principalAware, makeActive).instance
+    ): UserContextInstance =
+        createOrGet(
+            tenantAware = tenantAware,
+            principalAware = principalAware,
+            principalType = PrincipalType.USER,
+            makeActive = makeActive,
+        )
+
+    override fun createOrGet(
+        tenantAware: TenantAware,
+        principalAware: PrincipalAware,
+        principalType: PrincipalType,
+        makeActive: Boolean,
+    ): UserContextInstance =
+        createOrGetContextInternal(
+            tenantContextData = tenantAware.tenant,
+            principal = principalAware,
+            principalType = principalType,
+            makeActive = makeActive,
+        ).instance
 
     override fun createOrGetFromData(
         tenantData: TenantContextData,
@@ -275,7 +324,12 @@ class UserContextManagerImpl(
             object : PrincipalAware {
                 override val principal = principalValue
             }
-        return createOrGetContextInternal(tenantData, principalAware, makeActive).instance
+        return createOrGetContextInternal(
+            tenantContextData = tenantData,
+            principal = principalAware,
+            principalType = PrincipalType.USER,
+            makeActive = makeActive,
+        ).instance
     }
 
     override fun createOrGetWithId(
@@ -301,7 +355,13 @@ class UserContextManagerImpl(
             }
 
             else -> {
-                createOrGetContextInternal(tenantAware.tenant, principalAware, makeActive, contextId).instance
+                createOrGetContextInternal(
+                    tenantContextData = tenantAware.tenant,
+                    principal = principalAware,
+                    principalType = PrincipalType.USER,
+                    makeActive = makeActive,
+                    contextId = contextId,
+                ).instance
             }
         }
     }
@@ -465,11 +525,15 @@ class UserContextManagerImpl(
     private fun createOrGetContextInternal(
         tenantContextData: TenantContextData,
         principal: PrincipalAware,
+        principalType: PrincipalType,
         makeActive: Boolean,
         contextId: String = generateContextId(tenantContextData, principal.principal),
     ): UserContextGraph {
         // Fast path: lock-free read if already exists
         instances.value[contextId]?.let { instance ->
+            require(instance.context.principalType == principalType) {
+                "Principal classification mismatch for existing context '$contextId'"
+            }
             touchContext(contextId)
             if (makeActive) {
                 setActiveInstance(instance)
@@ -481,6 +545,9 @@ class UserContextManagerImpl(
         return synchronized(this) {
             // Double-check after acquiring lock
             instances.value[contextId]?.let { instance ->
+                require(instance.context.principalType == principalType) {
+                    "Principal classification mismatch for existing context '$contextId'"
+                }
                 touchContext(contextId)
                 if (makeActive) {
                     setActiveInstance(instance)
@@ -489,7 +556,12 @@ class UserContextManagerImpl(
             }
 
             // Create new context
-            val context = UserContextImpl(tenant = tenantContextData, principal = principal.principal)
+            val context =
+                UserContextImpl(
+                    tenant = tenantContextData,
+                    principal = principal.principal,
+                    principalType = principalType,
+                )
             val rootChildrenBefore = rootChildrenCount()
             val retainedContextsBefore = instances.value.size
             log.debug(
@@ -621,10 +693,13 @@ class UserContextManagerImpl(
                 }
         }
 
-        invalidateResourcesForDestroyedContexts(
-            destroyedInstances = instancesToDestroy,
-            remainingInstances = remainingInstancesAfterDestroy,
-            reason = "idle-cleanup",
+        // Automatic UserScope eviction must not infer AppScope tenant teardown.
+        // Those resources are shared with background and later user contexts.
+        // Invalidating them here can race background work and turns every request
+        // after the user-context timeout into a cold application start.
+        log.debug(
+            "VDX_USER_CONTEXT_IDLE_APP_RESOURCES_RETAINED destroyedContexts=${destroyedContextIds.size} " +
+                "remainingContexts=${remainingInstancesAfterDestroy.size} idleTimeoutMs=$timeoutMs",
         )
 
         destroyedContextIds.forEach { contextId ->
@@ -779,7 +854,6 @@ class UserContextManagerImpl(
 
         tenantConfigService?.let { propertySourceBootstrap.registerTenantSources(it, tenantId) }
         principalConfigService?.let { propertySourceBootstrap.registerPrincipalSources(it, tenantId, principalId) }
-        (contextGraph as? SecretProviderBootstrap.UserGraph)?.userSecretProviderBootstrap?.registerSecretProviders()
     }
 
     private companion object {

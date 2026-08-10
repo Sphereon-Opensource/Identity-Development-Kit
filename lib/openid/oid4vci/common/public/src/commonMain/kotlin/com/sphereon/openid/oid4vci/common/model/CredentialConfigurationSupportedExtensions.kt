@@ -26,7 +26,7 @@ import com.sphereon.openid.oid4vc.common.ProofType
 
 /**
  * Returns the [CredentialFormat] enum value for this configuration's [format] string,
- * using lenient matching to handle both "dc+sd-jwt" and "vc+sd-jwt" variants.
+ * Exact wire identifiers keep IETF `dc+sd-jwt` and W3C `vc+sd-jwt` distinct.
  * Returns null if the format string is not recognised.
  */
 val CredentialConfigurationSupported.credentialFormat: CredentialFormat?

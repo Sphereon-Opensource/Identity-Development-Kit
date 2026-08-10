@@ -4,12 +4,14 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyReference
+import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.json.cryptoJsonSerializer
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
+import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
 import kotlinx.serialization.encodeToString
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -66,6 +68,30 @@ class CoreKmsCommandSerializationTest {
         val key = assertNotNull(decoded.key)
         assertEquals("software", key.providerId)
         assertEquals("acme-authentication", key.alias)
+    }
+
+    @Test
+    fun getSymmetricKeyResultPreservesPublicWrappingMetadataForRemoteTransport() {
+        val encoded =
+            json.encodeToString(
+                GetKeyResult(
+                    key =
+                        ManagedKeyInfo.fromKeyInfo(
+                            KeyInfo(
+                                key = Jwk(kty = JwaKeyType.oct, kid = "tenant-secret-kek"),
+                                providerId = "acme",
+                                alias = "tenant-secret-kek",
+                                kid = "tenant-secret-kek",
+                                keyType = KeyTypeMapping.Symmetric,
+                            ),
+                        ),
+                ),
+            )
+
+        val key = assertNotNull(json.decodeFromString<GetKeyResult>(encoded).key)
+        assertEquals("tenant-secret-kek", key.kid)
+        assertEquals(KeyTypeMapping.Symmetric, key.keyType)
+        assertEquals(JwaKeyType.oct, (key.key as Jwk).kty)
     }
 
     @Test
@@ -162,5 +188,33 @@ class CoreKmsCommandSerializationTest {
         assertEquals("activation-scalar", assertNotNull(decoded.privateKeyInfo).alias)
         assertEquals("activation-point", assertNotNull(decoded.publicKeyInfo).alias)
         assertEquals(EcPointMultiplyOutput.RAW_X, decoded.output)
+    }
+
+    @Test
+    fun unwrapKeyArgsPreservesResolvedKeyIdentifierForRemoteTransport() {
+        val wrappedKey = "wrapped-data-encryption-key".encodeToByteArray()
+        val encoded =
+            json.encodeToString(
+                UnwrapKeyArgs(
+                    unwrappingKeyInfo =
+                        KeyInfo<KeyType>(
+                            providerId = "default",
+                            kid = "tenant-secret-kek",
+                            noCache = true,
+                        ),
+                    wrappedKey = wrappedKey,
+                    algorithm = KeyWrapAlgorithm.A256KW,
+                ),
+            )
+
+        val decoded = json.decodeFromString<UnwrapKeyArgs>(encoded)
+
+        val keyInfo = assertNotNull(decoded.unwrappingKeyInfo)
+        assertEquals("default", keyInfo.providerId)
+        assertEquals("tenant-secret-kek", keyInfo.kid)
+        assertEquals(null, keyInfo.alias)
+        assertEquals(true, keyInfo.noCache)
+        assertContentEquals(wrappedKey, decoded.wrappedKey)
+        assertEquals(KeyWrapAlgorithm.A256KW, decoded.algorithm)
     }
 }

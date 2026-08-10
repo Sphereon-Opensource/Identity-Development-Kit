@@ -20,6 +20,7 @@ package com.sphereon.di.session
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.di.context.SecuredTenantContextDetails
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.UserScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.ForScope
@@ -75,6 +76,9 @@ interface SessionGraph {
              */
             @Provides
             secureDetails: SecuredTenantContextDetails? = null,
+            /** Server-derived principal classification for this authenticated session. */
+            @Provides @Named("principalType")
+            principalType: PrincipalType? = null,
         ): SessionGraph
     }
 

@@ -25,8 +25,10 @@ import com.sphereon.openid.oid4vp.verifier.config.INSTANCES_NAMESPACE
 import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceIdProvider
 import com.sphereon.openid.oid4vp.verifier.impl.ConfigDrivenRequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
+import com.sphereon.openid.oid4vp.verifier.spi.VerifierSigningKeyNameResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
@@ -70,11 +72,14 @@ class RegistryBackedOid4vpVerifierConfigProvider(
     kms: KeyManagerService,
     didProviderRegistry: DidProviderRegistry,
     private val instanceIdProvider: Oid4vpVerifierInstanceIdProvider,
+    signingKeyNameResolver: Provider<VerifierSigningKeyNameResolver>? = null,
 ) : AbstractConfigOid4vpVerifierConfigProvider(
         execution = execution,
         managedIdentifierService = managedIdentifierService,
         kms = kms,
         didProviderRegistry = didProviderRegistry,
+        instanceIdProvider = { instanceIdProvider.currentInstanceId() },
+        signingKeyNameResolver = signingKeyNameResolver,
         namespaceProvider = {
             instanceIdProvider
                 .currentInstanceId()

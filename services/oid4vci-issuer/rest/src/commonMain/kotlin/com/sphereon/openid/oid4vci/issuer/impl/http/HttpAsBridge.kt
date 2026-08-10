@@ -22,7 +22,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.DigestAlg
@@ -51,14 +50,9 @@ import dev.zacsweers.metro.binding
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
-import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -81,7 +75,7 @@ import kotlin.time.Instant
  * Configuration (under `sphereon.oid4vci.issuer.as-bridge`):
  * - `internal-url`: Internal URL of the AS (e.g., http://oauth2-as:8080)
  * - `client-id`: Client ID for authenticating with the AS internal API
- * - `client-secret`: Client secret for authenticating with the AS internal API
+ * - `client-secret-id`: Opaque tenant-scoped secret ID for authenticating with the AS internal API
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -92,6 +86,7 @@ class HttpAsBridge(
     private val verifyDpopProofCommand: VerifyDpopProofCommand,
     private val dpopProofJtiCache: com.sphereon.oauth2.server.authorization.dpop.DpopProofJtiCache,
     private val asBaseUrlResolver: Oid4vciAsBridgeBaseUrlResolver,
+    private val asInternalClient: Oid4vciAsInternalClient,
 ) : Oid4vciAuthorizationServerBridge {
     private val httpClient: HttpClient by lazy {
         httpClientFactory.createClient(HttpClientOptions())
@@ -139,21 +134,6 @@ class HttpAsBridge(
         }
     }
 
-    private val clientId: String
-        get() =
-            configService.getPropertyAsString("$CONFIG_PREFIX.client-id")
-                ?: "issuer-service"
-
-    private val clientSecret: String
-        get() =
-            configService.getPropertyAsString("$CONFIG_PREFIX.client-secret")
-                ?: ""
-
-    private fun basicAuthHeader(): String {
-        val credentials = "$clientId:$clientSecret"
-        return "Basic ${credentials.encodeToByteArray().encodeToBase64()}"
-    }
-
     override suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError> {
         val code = CryptographyRandom.nextBytes(32).encodeToBase64Url()
         val txCode = if (args.txCodeRequired) generateTxCode() else null
@@ -171,26 +151,9 @@ class HttpAsBridge(
                 txCodeHash = txCodeHash,
                 issuerIdentifier = args.issuerIdentifier,
                 useCredentialIdentifiers = args.useCredentialIdentifiers,
-            )
+        )
 
-        try {
-            val target = asTarget("/internal/preauth/register")
-            val response =
-                httpClient.post(target.url) {
-                    contentType(ContentType.Application.Json)
-                    headers {
-                        append(HttpHeaders.Authorization, basicAuthHeader())
-                        target.hostHeader?.let { append(HttpHeaders.Host, it) }
-                    }
-                    setBody(json.encodeToString(request))
-                }
-            if (response.status.value !in 200..299) {
-                val body = response.bodyAsText()
-                return Err(IdkError.UNKNOWN_ERROR(message = "AS returned ${response.status.value}: $body"))
-            }
-        } catch (expected: Exception) {
-            return Err(IdkError.UNKNOWN_ERROR(message = "Failed to register pre-auth code with AS: ${expected.message}"))
-        }
+        asInternalClient.registerPreAuthorizedCode(request).getOrElse { return Err(it) }
 
         return Ok(RegisteredPreAuthCode(code = code, txCode = txCode))
     }
@@ -203,18 +166,8 @@ class HttpAsBridge(
 
     override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult<ValidatedTokenContext, IdkError> {
         try {
-            val target = asTarget("/introspect")
-            val response =
-                httpClient.post(target.url) {
-                    contentType(ContentType.Application.FormUrlEncoded)
-                    headers {
-                        append(HttpHeaders.Authorization, basicAuthHeader())
-                        target.hostHeader?.let { append(HttpHeaders.Host, it) }
-                    }
-                    setBody("token=${args.accessToken}&token_type_hint=access_token&client_id=$clientId")
-                }
-            val body = response.bodyAsText()
-            val introspection = json.decodeFromString<JsonObject>(body)
+            val introspection =
+                asInternalClient.introspectAccessToken(args.accessToken).getOrElse { return Err(it) }
 
             val active = introspection["active"]?.jsonPrimitive?.content?.toBoolean() ?: false
             if (!active) {
@@ -274,8 +227,17 @@ class HttpAsBridge(
                 dpopProofJtiCache.markAsUsed(jti, jtiExpiresAt)
             }
 
+            val extensionClaims =
+                introspection["additionalClaims"]?.let { claims ->
+                    try {
+                        claims.jsonObject
+                    } catch (_: Exception) {
+                        JsonObject(emptyMap())
+                    }
+                } ?: JsonObject(emptyMap())
+
             val authDetailsArray =
-                introspection["authorization_details"]?.let { ad ->
+                (introspection["authorization_details"] ?: extensionClaims["authorization_details"])?.let { ad ->
                     try {
                         ad.jsonArray
                     } catch (_: Exception) {
@@ -292,6 +254,13 @@ class HttpAsBridge(
                 authDetailsArray?.flatMap { detail ->
                     detail.jsonObject["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
                 } ?: emptyList()
+            val credentialIdentifierMappings =
+                authDetailsArray?.flatMap { detail ->
+                    val obj = detail.jsonObject
+                    val configId = obj["credential_configuration_id"]?.jsonPrimitive?.contentOrNull
+                    if (configId == null) emptyList()
+                    else obj["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content to configId }.orEmpty()
+                }?.toMap().orEmpty()
 
             val tokenId =
                 (introspection["jti"] as? JsonPrimitive)
@@ -308,6 +277,8 @@ class HttpAsBridge(
                     scope = scope,
                     credentialConfigurationIds = credentialConfigurationIds,
                     credentialIdentifiers = credentialIdentifiers.ifEmpty { null },
+                    credentialIdentifierMappings = credentialIdentifierMappings,
+                    issuerState = extensionClaims[INTERNAL_OID4VCI_ISSUER_STATE_CLAIM]?.jsonPrimitive?.contentOrNull,
                     cnfJkt = cnfJkt,
                     userinfoClaims = resolveLocalUserinfoClaims(args.accessToken),
                 ),
@@ -374,6 +345,7 @@ class HttpAsBridge(
         const val MAX_TOKEN_ID_LENGTH = 128
         const val CONFIG_PREFIX = "oid4vci.issuer.as-bridge"
         const val SURFACE_LOCAL_USERINFO_KEY = "oid4vci.issuer.surface-local-userinfo-to-issuance"
+        const val INTERNAL_OID4VCI_ISSUER_STATE_CLAIM = "oid4vci.internal.issuer_state"
 
         /**
          * RFC 9449 §11.1: jti-replay tracking window in seconds. Default covers the verifier's

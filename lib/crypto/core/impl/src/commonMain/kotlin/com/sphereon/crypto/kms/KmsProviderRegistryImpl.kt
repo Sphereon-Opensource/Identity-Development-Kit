@@ -88,14 +88,14 @@ class KmsProviderRegistryImpl(
         return kmsProvidersById.keys.toTypedArray()
     }
 
-    override fun getProviderById(id: String): KmsProvider {
+    override suspend fun getProviderById(id: String): KmsProvider {
         kmsProvidersById[id]?.let { return it }
         refreshProvidersFromConfig(force = true)
         return kmsProvidersById[id]
             ?: throw PKIException("Invalid KMS id $id provider. Valid ids are: ${kmsProvidersById.keys.joinToString(",")}")
     }
 
-    override fun getProvider(
+    override suspend fun getProvider(
         providerId: String?,
         alg: SignatureAlgorithm?,
     ): KmsProvider {
@@ -105,7 +105,7 @@ class KmsProviderRegistryImpl(
         return getProviderById(providerId ?: defaultProviderId())
     }
 
-    override fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider {
+    override suspend fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider {
         kmsProvidersById.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }?.let { return it }
         refreshProvidersFromConfig(force = true)
         return kmsProvidersById.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }
@@ -140,13 +140,16 @@ class KmsProviderRegistryImpl(
         val nextConfigManagedProviderIds = configProviders.mapTo(mutableSetOf()) { it.id }
 
         (configManagedProviderIds - nextConfigManagedProviderIds).forEach { removedProviderId ->
-            target.remove(removedProviderId)
+            target.remove(removedProviderId)?.close()
             if (defaultProviderIdOverride == removedProviderId) {
                 defaultProviderIdOverride = null
             }
         }
         configProviders.forEach { provider ->
-            target[provider.id] = provider
+            val previous = target.put(provider.id, provider)
+            if (previous !== provider) {
+                previous?.close()
+            }
         }
         configManagedProviderIds.clear()
         configManagedProviderIds.addAll(nextConfigManagedProviderIds)

@@ -20,7 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
-import com.sphereon.core.api.conf.PropertyResolver
+import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventTypes
@@ -37,6 +37,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
+import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContribution
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContributor
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
@@ -47,8 +48,10 @@ import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestCommand
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenArgs
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenCommand
+import com.sphereon.openid.oid4vci.issuer.config.MissingRequiredClaimsPolicy
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.config.currentInstanceIdOrDefault
 import com.sphereon.openid.oid4vci.issuer.Oid4vciIssuerSessionEventTypes
 import com.sphereon.openid.oid4vci.issuer.impl.event.emitOid4vciSessionHistoryEvent
 import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
@@ -60,6 +63,7 @@ import com.sphereon.openid.oid4vci.issuer.impl.hook.PostIssuanceHookDispatcher
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.impl.proof.ProofVerifier
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciCompletenessLifecycleArgs
+import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciCompletenessLifecycleResult
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuancePhase
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciPhaseLifecycleArgs
@@ -142,12 +146,6 @@ class HandleCredentialRequestCommandImpl(
     private val serviceCommandRegistry: ServiceCommandRegistry? = null,
     private val sessionScopedCommandRegistry: SessionScopedCommandRegistry? = null,
     /**
-     * Optional property resolver so operators can configure which hook
-     * command IDs fire at the `oid4vci.after-credential-issued` extension
-     * point. When null the default pattern `hook.post-issuance.**` applies.
-     */
-    private val propertyResolver: PropertyResolver? = null,
-    /**
      * Optional lifecycle hook. When present (EDK pipeline on the classpath) and the
      * resolved [IssuanceSession] carries a lifecycle correlation id, the §6.1
      * deferral decision tree runs
@@ -191,6 +189,9 @@ class HandleCredentialRequestCommandImpl(
     ),
     HandleCredentialRequestCommand {
     override val commandId: String get() = HandleCredentialRequestCommand.COMMAND_ID
+
+    /** Session-aware resolver with principal → tenant → app fallback. */
+    private val propertyResolver = execution.conf.conf(ConfigLevel.PRINCIPAL)
 
     override suspend fun supports(args: Any): Boolean = args is HandleCredentialRequestArgs
 
@@ -375,6 +376,18 @@ class HandleCredentialRequestCommandImpl(
         if (request.credentialConfigurationId != null && request.credentialIdentifier != null) {
             return Err(IdkError.fromString(code = INVALID_CREDENTIAL_REQUEST, message = "credential_configuration_id and credential_identifier are mutually exclusive"))
         }
+        // Validate an explicit configuration id before applying credential-identifier correlation
+        // rules. A request that names an unknown configuration has one precise §8.3.1 error even
+        // when the access token also carries identifiers for a different authorized credential.
+        val explicitConfigId = request.credentialConfigurationId
+        if (explicitConfigId != null && !credentialConfigurations.containsKey(explicitConfigId)) {
+            return Err(
+                IdkError.fromString(
+                    code = "unknown_credential_configuration",
+                    message = "Unknown credential_configuration_id: '$explicitConfigId'",
+                ),
+            )
+        }
         // 2b. Validate credential_identifier against token authorization_details (OID4VCI 1.0 §8.2):
         // a credential_identifier MUST appear in the token's authorization_details. When the token
         // carries no `credential_identifiers` (deployment doesn't use the §5.3 RAR shape) any
@@ -385,6 +398,7 @@ class HandleCredentialRequestCommandImpl(
             resolveCredentialRequestCorrelation(
                 requestedIdentifier = request.credentialIdentifier,
                 tokenIdentifiers = tokenContext.credentialIdentifiers,
+                tokenIssuerState = tokenContext.issuerState,
                 tokenId = tokenContext.tokenId,
                 sessionStore = sessionStore,
             ).getOrElse { return Err(it) }
@@ -392,10 +406,29 @@ class HandleCredentialRequestCommandImpl(
 
         // 3. Resolve credential configuration
         val configId =
-            request.credentialConfigurationId
-                ?: tokenContext.credentialConfigurationIds.firstOrNull()
+            resolveCredentialConfigurationId(
+                requestedConfigurationId = request.credentialConfigurationId,
+                requestedIdentifier = request.credentialIdentifier,
+                identifierMappings = tokenContext.credentialIdentifierMappings,
+                tokenConfigurationIds = tokenContext.credentialConfigurationIds,
+            )
                 ?: return Err(IdkError.fromString(code = "unknown_credential_configuration", message = "Cannot resolve credential configuration"))
         pendingHistoryCredentialConfigurationId = configId
+
+        val configuration = credentialConfigurations[configId]
+            ?: return Err(IdkError.fromString(code = "unknown_credential_configuration", message = "Unknown credential configuration"))
+        if (request.credentialConfigurationId != null) {
+            if (
+                !tokenAuthorizesCredentialConfiguration(
+                    requestedConfigurationId = configId,
+                    tokenConfigurationIds = tokenContext.credentialConfigurationIds,
+                    tokenScope = tokenContext.scope,
+                    credentialScope = configuration.scope,
+                )
+            ) {
+                return Err(IdkError.fromString(code = "invalid_token", message = "The access token does not authorize this credential configuration"))
+            }
+        }
 
         // 4. Offer-linked flows resolve the exact issuance session above. Wallet-initiated
         // configuration-id flows deliberately remain sessionless and use token jti correlation.
@@ -421,8 +454,7 @@ class HandleCredentialRequestCommandImpl(
                     try {
                         Oid4vciSessionIdentity.normalize(
                             "instanceId",
-                            instanceIdProvider.currentInstanceId()
-                                ?: return Err(IdkError.INVALID_STATE(message = "instanceId must be resolved before credential processing")),
+                            instanceIdProvider.currentInstanceIdOrDefault(),
                         )
                     } catch (e: IllegalArgumentException) {
                         return Err(IdkError.INVALID_STATE(message = e.message ?: "Invalid issuer instanceId"))
@@ -534,30 +566,6 @@ class HandleCredentialRequestCommandImpl(
             fields = tokenContext.toTokenPhaseFields(configId),
         ).getOrElse { return Err(it) }
 
-        // OID4VCI 1.0 §8.3.1: when the request carries `credential_configuration_id` and the AS
-        // doesn't recognise it, the response error MUST be `unknown_credential_configuration`.
-        // Falling through to a minimal-config heuristic would emit `invalid_credential_request`
-        // about a missing `vct`/`doctype` which masks the real cause.
-        val explicitConfigId = request.credentialConfigurationId
-        if (explicitConfigId != null && !credentialConfigurations.containsKey(explicitConfigId)) {
-            return Err(
-                IdkError.fromString(
-                    code = "unknown_credential_configuration",
-                    message = "Unknown credential_configuration_id: '$explicitConfigId'",
-                ),
-            )
-        }
-        val configuration =
-            credentialConfigurations[configId]
-                ?: return Err(
-                    IdkError.fromString(
-                        code = "unknown_credential_configuration",
-                        message =
-                            "Credential configuration '$configId' is not available from prepared issuer config; " +
-                                "refusing request-derived fallback",
-                    ),
-                )
-
         // 5. Verify proof of possession
         val expectedAudience = applied.issuerIdentifier ?: tokenContext.subject
 
@@ -624,6 +632,20 @@ class HandleCredentialRequestCommandImpl(
 
         // 6. Merge attributes (priority: preSeeded → accumulated → contributed)
         val mergedAttributes = mutableMapOf<String, JsonElement>()
+        if (session == null) {
+            // Wallet-initiated authorization-code flows have no issuer-created offer/session.
+            // Resolve attributes by authenticated subject through the explicit config-backed
+            // source, then let dynamically surfaced AS userinfo claims override that baseline.
+            mergedAttributes.putAll(
+                resolveConfiguredWalletInitiatedSubjectAttributes(
+                    propertyResolver = propertyResolver,
+                    subject = tokenContext.subject,
+                    credentialConfigurationId = configId,
+                    issuerInstanceId = instanceIdProvider.currentInstanceId(),
+                ).getOrElse { return Err(it) },
+            )
+            tokenContext.userinfoClaims?.let { mergedAttributes.putAll(it) }
+        }
         session?.preSeededAttributes?.let { mergedAttributes.putAll(it) }
         session?.accumulatedAttributes?.let { mergedAttributes.putAll(it) }
         mergedAttributes.putAll(effectiveContribution.attributes)
@@ -642,18 +664,21 @@ class HandleCredentialRequestCommandImpl(
                             tenantId,
                             DesignBindingKey.CREDENTIAL_CONFIGURATION_ID,
                             configId,
-                        ).getOrElse { emptyList() }
+                        ).getOrElse { return Err(it) }
 
                 designs.firstOrNull()?.let { designRecord ->
                     service
                         .resolveCredentialDesign(
                             tenantId,
                             ResolveCredentialDesignInput(designId = designRecord.id),
-                        ).getOrNull()
+                        ).getOrElse { return Err(it) }
                 }
             }
 
-        // Extract SD policies from resolved design (design SdPolicy → issuer SdPolicy)
+        // SD-JWT VC Type Metadata `sd` describes whether a claim is selectively disclosable:
+        // `always` MUST be SD, `allowed` MAY be SD, and `never` MUST remain in the clear.
+        // The issuer enum instead describes the concrete issuance action, so do not map these
+        // similarly named values by name.
         val sdPolicies: Map<String, SdPolicy> =
             resolvedDesign
                 ?.design
@@ -662,9 +687,9 @@ class HandleCredentialRequestCommandImpl(
                     val pathStr = Oid4vciDesignMapper.claimPathString(claim)
                     val issuerPolicy =
                         when (claim.sdPolicy) {
-                            DesignSdPolicy.ALWAYS -> SdPolicy.ALWAYS_DISCLOSED
+                            DesignSdPolicy.ALWAYS -> SdPolicy.SELECTIVELY_DISCLOSABLE
                             DesignSdPolicy.ALLOWED -> SdPolicy.SELECTIVELY_DISCLOSABLE
-                            DesignSdPolicy.NEVER -> SdPolicy.NEVER_DISCLOSED
+                            DesignSdPolicy.NEVER -> SdPolicy.ALWAYS_DISCLOSED
                         }
                     pathStr to issuerPolicy
                 } ?: emptyMap()
@@ -678,9 +703,19 @@ class HandleCredentialRequestCommandImpl(
                 ?.map { claim -> Oid4vciDesignMapper.claimPathString(claim) }
                 ?.toSet() ?: emptySet()
 
+        val missingMandatoryClaims = missingMandatoryClaimPaths(mandatoryClaims, mergedAttributes)
+        if (missingMandatoryClaims.isNotEmpty()) {
+            return Err(
+                IdkError.fromString(
+                    code = Oid4vciErrors.INVALID_CREDENTIAL_REQUEST,
+                    message = "missing mandatory claims: ${missingMandatoryClaims.joinToString()}",
+                ),
+            )
+        }
+
         // 7. Resolve signing configuration for this credential type
         val signingConfig =
-            issuerConfigProvider.credentialSigningConfigs[configId]
+            issuerConfigProvider.credentialSigningConfigs()[configId]
                 ?: return Err(
                     IdkError.fromString(
                         code = "invalid_credential_configuration",
@@ -747,6 +782,7 @@ class HandleCredentialRequestCommandImpl(
                                             mandatoryClaims = mandatoryClaims,
                                             signingKeyAlias = signingConfig.signingKeyAlias,
                                             signingKeyMode = signingConfig.signingKeyMode,
+                                            signingVerificationMethodId = signingConfig.signingVerificationMethodId,
                                             signingCertChainPath = signingConfig.signingCertChainPath,
                                             issuanceClockSkewInSeconds = issuerConfigProvider.issuanceClockSkewInSeconds,
                                             expirationInDays = expirationInDays,
@@ -801,6 +837,7 @@ class HandleCredentialRequestCommandImpl(
                         mandatoryClaims = mandatoryClaims,
                         signingKeyAlias = signingConfig.signingKeyAlias,
                         signingKeyMode = signingConfig.signingKeyMode,
+                        signingVerificationMethodId = signingConfig.signingVerificationMethodId,
                         signingCertChainPath = signingConfig.signingCertChainPath,
                         expirationInDays = expirationInDays,
                         statusListBinding = statusListBinding,
@@ -950,9 +987,11 @@ class HandleCredentialRequestCommandImpl(
      *   injected, or all attributes complete with no approval pending): the caller falls through
      *   to the format handler.
      * - [Ok] with a deferred [CredentialResponse] when every deferral candidate is either
-     *   incomplete-but-deferrable or awaiting approval. The session status is updated to
-     *   [IssuanceSessionStatus.DEFERRED].
-     * - [Err] when at least one incomplete binding is not deferrable (mandatory claim missing).
+     *   incomplete-but-deferrable or awaiting approval, OR when a required claim is missing but
+     *   the issuer instance's [MissingRequiredClaimsPolicy] is `DEFER`. The session status is
+     *   updated to [IssuanceSessionStatus.DEFERRED].
+     * - [Err] when at least one required claim is missing and the issuer instance's
+     *   [MissingRequiredClaimsPolicy] is `REJECT` (the default).
      */
     private suspend fun runCompletenessDeferral(
         session: IssuanceSession?,
@@ -978,9 +1017,8 @@ class HandleCredentialRequestCommandImpl(
 
     /**
      * Evaluates whether issuance should be deferred based on attribute completeness verdicts from
-     * the pipeline. Returns [Ok]`(true)` when deferral is warranted, [Ok]`(false)` when all
-     * attributes are complete with no approval pending, and [Err] when a mandatory claim is
-     * missing and cannot be deferred.
+     * the pipeline. Delegates the actual decision to [resolveCompletenessOutcome] once the
+     * lifecycle hook's verdict is in hand; see that function for the full outcome matrix.
      */
     private suspend fun evaluateCompleteness(
         session: IssuanceSession,
@@ -990,17 +1028,7 @@ class HandleCredentialRequestCommandImpl(
             hook
                 .evaluateCompleteness(Oid4vciCompletenessLifecycleArgs(session.lifecycleCorrelationId!!))
                 .getOrElse { return Err(it) }
-        if (!result.shouldDefer && !result.awaitingApproval) return Ok(false)
-        return if (result.missingRequiredClaims.isNotEmpty()) {
-            Err(
-                IdkError.fromString(
-                    code = INVALID_CREDENTIAL_REQUEST,
-                    message = "missing mandatory claims: ${result.missingRequiredClaims.joinToString()}",
-                ),
-            )
-        } else {
-            Ok(true)
-        }
+        return resolveCompletenessOutcome(result, issuerConfigProvider.missingRequiredClaims)
     }
 
     /**
@@ -1199,3 +1227,42 @@ class HandleCredentialRequestCommandImpl(
  * the issuer command. TODO(phase-3-followup): wire those bounds in once the issuer config
  * provider exposes them.
  */
+
+/**
+ * Pure decision function for the OID4VCI §6.1 completeness gate at the credential endpoint.
+ * Extracted from [HandleCredentialRequestCommandImpl] so the outcome matrix is unit-testable
+ * without constructing the full command.
+ *
+ * Given the lifecycle hook's completeness verdict and the issuer instance's
+ * [MissingRequiredClaimsPolicy]:
+ * - When [Oid4vciCompletenessLifecycleResult.missingRequiredClaims] is non-empty (at least one
+ *   incomplete binding has no deferral policy of its own recommending deferral), the missing-
+ *   required-claims policy decides the outcome: [MissingRequiredClaimsPolicy.DEFER] returns
+ *   [Ok]`(true)` (the same deferred/`transaction_id` response path used for a deferrable
+ *   binding); [MissingRequiredClaimsPolicy.REJECT] (the default) returns [Err] with
+ *   `invalid_credential_request` — a credential is never issued with a required claim absent.
+ *   This check runs before the shouldDefer/awaitingApproval check below so a missing required
+ *   claim is never silently swallowed by an unrelated awaiting-approval binding.
+ * - Otherwise, [Ok]`(false)` when no binding is incomplete or awaiting approval (issuance
+ *   proceeds normally), else [Ok]`(true)` (every incomplete binding is deferrable per its own
+ *   policy, or a binding is awaiting approval).
+ */
+internal fun resolveCompletenessOutcome(
+    result: Oid4vciCompletenessLifecycleResult,
+    missingRequiredClaimsPolicy: MissingRequiredClaimsPolicy,
+): IdkResult<Boolean, IdkError> {
+    if (result.missingRequiredClaims.isNotEmpty()) {
+        return when (missingRequiredClaimsPolicy) {
+            MissingRequiredClaimsPolicy.DEFER -> Ok(true)
+            MissingRequiredClaimsPolicy.REJECT ->
+                Err(
+                    IdkError.fromString(
+                        code = Oid4vciErrors.INVALID_CREDENTIAL_REQUEST,
+                        message = "missing mandatory claims: ${result.missingRequiredClaims.joinToString()}",
+                    ),
+                )
+        }
+    }
+    if (!result.shouldDefer && !result.awaitingApproval) return Ok(false)
+    return Ok(true)
+}

@@ -19,14 +19,13 @@ package com.sphereon.conf.theme.core.resolve
 import com.sphereon.conf.theme.core.feature.FeatureRegistry
 import com.sphereon.conf.theme.core.model.DesignElement
 import com.sphereon.conf.theme.core.model.ElementBinding
-import com.sphereon.conf.theme.core.model.ElementKind
 import com.sphereon.conf.theme.core.model.ElementOrigin
 import com.sphereon.conf.theme.core.model.ProductType
 import com.sphereon.conf.theme.core.model.ResolvedElement
 import com.sphereon.conf.theme.core.model.ResolvedFeature
 import com.sphereon.conf.theme.core.model.ThemeVariant
+import com.sphereon.conf.theme.core.model.carriesValueFor
 import com.sphereon.conf.theme.core.store.ThemeStore
-import com.sphereon.conf.theme.core.model.ThemeAssetReference
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -41,8 +40,8 @@ import dev.zacsweers.metro.binding
  * application binding (variant, then variant null), tenant binding (variant, then
  * variant null), the feature descriptor's default (PRODUCT_DEFAULT for built-in
  * features, ELEMENT_DEFAULT for custom ones), and finally the element's fallback
- * token key through token resolution (TOKEN_FALLBACK), where asset elements wrap
- * the token value as a [ThemeAssetReference].
+ * token key through token resolution (TOKEN_FALLBACK), coerced into the element's
+ * own [com.sphereon.conf.theme.core.model.ElementValue] via [DesignElement.valueFromToken].
  *
  * The theme resolver is Provider-deferred: token resolution is only needed when a
  * fallback token key is actually consulted, and assemblies may bind a [ThemeResolver]
@@ -130,10 +129,7 @@ class DefaultFeatureResolver(
         builtIn: Boolean,
     ): ResolvedElement? {
         val origin = if (builtIn) ElementOrigin.PRODUCT_DEFAULT else ElementOrigin.ELEMENT_DEFAULT
-        return when (element.kind) {
-            ElementKind.ASSET -> element.defaultAsset?.let { ResolvedElement(asset = it, origin = origin) }
-            ElementKind.TEXT -> element.defaultText?.let { ResolvedElement(text = it, origin = origin) }
-        }
+        return element.defaultValue()?.let { ResolvedElement(value = it, origin = origin) }
     }
 
     private suspend fun resolveFromTokenFallback(
@@ -142,17 +138,8 @@ class DefaultFeatureResolver(
     ): ResolvedElement? {
         val tokenKey = element.fallbackTokenKey ?: return null
         val value = tokens()[tokenKey]?.takeIf { it.isNotBlank() } ?: return null
-        return when (element.kind) {
-            ElementKind.ASSET -> ResolvedElement(asset = ThemeAssetReference(uri = value), origin = ElementOrigin.TOKEN_FALLBACK)
-            ElementKind.TEXT -> ResolvedElement(text = value, origin = ElementOrigin.TOKEN_FALLBACK)
-        }
+        return element.valueFromToken(value)?.let { ResolvedElement(value = it, origin = ElementOrigin.TOKEN_FALLBACK) }
     }
 
-    private fun ElementBinding.carriesValueFor(element: DesignElement): Boolean =
-        when (element.kind) {
-            ElementKind.ASSET -> asset != null
-            ElementKind.TEXT -> text != null
-        }
-
-    private fun ElementBinding.toResolvedElement(origin: ElementOrigin): ResolvedElement = ResolvedElement(asset = asset, text = text, origin = origin)
+    private fun ElementBinding.toResolvedElement(origin: ElementOrigin): ResolvedElement = ResolvedElement(value = value, origin = origin)
 }

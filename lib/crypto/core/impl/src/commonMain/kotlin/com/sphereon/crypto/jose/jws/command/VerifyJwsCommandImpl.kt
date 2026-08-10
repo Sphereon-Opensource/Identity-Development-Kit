@@ -371,7 +371,10 @@ class VerifyJwsCommandImpl(
             val opts =
                 ExternalIdentifierX5cOpts(
                     identifier = x5c,
-                    verify = true,
+                    // Resolve the leaf key here; issuer trust is a separate caller policy.
+                    // OID4VP applies that policy uniformly through Trust Domains for SD-JWT,
+                    // JWT/W3C, and mdoc credentials after cryptographic verification.
+                    verify = false,
                 )
             val result = identifierService.resolve(opts)
             return if (result.isErr) {

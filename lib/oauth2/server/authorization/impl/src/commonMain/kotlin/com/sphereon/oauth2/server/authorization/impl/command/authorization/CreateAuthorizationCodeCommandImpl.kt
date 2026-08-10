@@ -41,7 +41,9 @@ import com.sphereon.oauth2.server.authorization.storage.AuthorizationCodeStorage
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionIdProvider
 import com.sphereon.oauth2.server.authorization.storage.PushedAuthorizationRequestStorage
+import com.sphereon.oauth2.server.authorization.impl.time.OAUTH2_ARTIFACT_CLOCK
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -93,6 +95,7 @@ class CreateAuthorizationCodeCommandImpl(
     private val acrEnforcer: OAuth2AcrEnforcer,
     private val clientRegistry: ClientRegistry,
     private val requiredActionEvaluators: Set<RequiredActionEvaluator>,
+    @param:Named(OAUTH2_ARTIFACT_CLOCK) private val artifactClock: Clock = Clock.System,
 ) : TypedServiceCommandAdapter<CreateAuthorizationCodeArgs, StringResult, IdkError>(
         commandId = CreateAuthorizationCodeCommand.COMMAND_ID,
         execution = execution,
@@ -120,7 +123,7 @@ class CreateAuthorizationCodeCommandImpl(
         acr: String? = null,
         amr: List<String>? = null,
     ): IdkResult<String, AuthorizationServerError> {
-        val now = Clock.System.now()
+        val now = artifactClock.now()
         val effectiveLifetime = configProvider.serverConfig.authorizationCodeLifetimeSeconds
         val expiresAt = now + effectiveLifetime.seconds
 
@@ -214,6 +217,7 @@ class CreateAuthorizationCodeCommandImpl(
             }
             val client =
                 clientLookup.value
+                    ?: resolvePublicClientFallback(session.clientId, configProvider)
                     ?: return Err(AuthorizationServerError.ClientNotFound(clientId = session.clientId))
 
             // Evaluators are SessionScope and resolve tenant from their own session-scoped

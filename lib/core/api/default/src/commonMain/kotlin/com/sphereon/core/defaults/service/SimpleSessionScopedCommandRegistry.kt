@@ -19,6 +19,7 @@ package com.sphereon.core.defaults.service
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
+import com.sphereon.core.api.session.CommandId
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -42,8 +43,12 @@ import dev.zacsweers.metro.binding
 @ContributesBinding(SessionScope::class, binding = binding<SessionScopedCommandRegistry>())
 @ContributesBinding(SessionScope::class, binding = binding<SessionScopedCommandRegistry?>())
 class SimpleSessionScopedCommandRegistry(
-    private val commands: Map<String, Lazy<ServiceCommand<*, *, *>>>,
+    commands: Map<String, Lazy<ServiceCommand<*, *, *>>>,
 ) : SessionScopedCommandRegistry {
+    private val commands: Map<String, Lazy<ServiceCommand<*, *, *>>> =
+        commands.entries.associate { (commandId, factory) ->
+            CommandId(commandId).value to factory
+        }
     private val cache = mutableMapOf<String, ServiceCommand<*, *, *>>()
 
     override fun get(commandId: String): ServiceCommand<*, *, *>? = cache.getOrPut(commandId) { commands[commandId]?.value ?: return null }

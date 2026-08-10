@@ -96,10 +96,9 @@ private val json =
  *           manufacture these — the REST/manager layer produces them when handling the incoming
  *           request (IDK-19 `KeyMappingCreateRequest` carries the KMS triple).
  * @property vmKmsBindings KMS coordinates (`providerId`, `alias`, optional `kid`) per VM, keyed
- *           by the VM's absolute wire id (e.g. `did:example:123#key-1`). Required because wire
- *           documents carry `publicKeyJwk`/`publicKeyMultibase`/`blockchainAccountId` but not
- *           KMS identifiers; the caller resolves the binding via IDK-17 before decompose. A VM
- *           without a binding entry causes decompose to return `Err`.
+ *           by the VM's absolute wire id (e.g. `did:example:123#key-1`). Managed VMs that do not
+ *           already carry public material require a binding; direct public-material VMs are
+ *           persisted without KMS ownership metadata.
  * @property inlineInByVmId Purposes each VM should be rendered inline into, keyed by absolute
  *           VM id. When the wire document has a VM embedded inline inside a relationship, that
  *           purpose is added automatically; this field lets the caller declare additional
@@ -329,7 +328,12 @@ fun DidDocument.toDidDetail(ctx: DecomposeContext): IdkResult<DidDetail, IdkErro
     for ((absoluteId, pair) in topLevelWireByAbsoluteId) {
         val (idx, vm) = pair
         val binding = ctx.vmKmsBindings[absoluteId]
-        if (binding == null && ctx.role == DidRole.MANAGED) {
+        if (binding == null &&
+            ctx.role == DidRole.MANAGED &&
+            vm.publicKeyJwk == null &&
+            vm.publicKeyMultibase == null &&
+            vm.blockchainAccountId == null
+        ) {
             return Err(
                 IdkError.ILLEGAL_ARGUMENT_ERROR(
                     message = "Missing VmKmsBinding for managed verification method $absoluteId",
@@ -351,7 +355,12 @@ fun DidDocument.toDidDetail(ctx: DecomposeContext): IdkResult<DidDetail, IdkErro
     var nextInlineOrdinal = topLevelWireByAbsoluteId.size
     for ((absoluteId, vm) in inlineWireVms) {
         val binding = ctx.vmKmsBindings[absoluteId]
-        if (binding == null && ctx.role == DidRole.MANAGED) {
+        if (binding == null &&
+            ctx.role == DidRole.MANAGED &&
+            vm.publicKeyJwk == null &&
+            vm.publicKeyMultibase == null &&
+            vm.blockchainAccountId == null
+        ) {
             return Err(
                 IdkError.ILLEGAL_ARGUMENT_ERROR(
                     message = "Missing VmKmsBinding for managed inline verification method $absoluteId",

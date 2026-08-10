@@ -29,8 +29,10 @@ import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.spi.StatusListPublisher
 import com.sphereon.statuslist.spi.StatusListPublisherIds
+import com.sphereon.statuslist.spi.StatusListSigningKeyNameResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
@@ -52,7 +54,8 @@ import dev.zacsweers.metro.binding
  *       issuer: https://example.com       # optional per-list override
  *       length: 131072                    # optional
  *       bitsPerStatus: 1                  # optional
- *       signingKeyAlias: <kms-alias>      # optional
+ *       signingKeyAlias: <kms-alias>      # only read when no signing-key-name resolver is bound
+ *       signingKeyMode: jwk               # jwk, x5c, or did:<method>
  *       ttlSeconds: 3600                  # optional
  * ```
  *
@@ -70,6 +73,12 @@ class ConfigDrivenStatusListDefinitionsProvider(
      * `uri` explicitly, the publisher selected by `publisher: <id>` (default `rest`) derives it.
      */
     private val publishers: Set<StatusListPublisher> = emptySet(),
+    /**
+     * Bound by deployments that manage signing material centrally. While bound, the deployment owns
+     * the signing key of every list and `signingKeyAlias` is not read from configuration at all, so
+     * a value planted there can never reach a definition, the store, or a signer.
+     */
+    private val signingKeyNameResolver: Provider<StatusListSigningKeyNameResolver>? = null,
 ) : StatusListDefinitionsProvider {
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
@@ -113,9 +122,17 @@ class ConfigDrivenStatusListDefinitionsProvider(
                 ?: listOf(StatusPurpose.REVOCATION)
         val length = configService.getPropertyAsString("$prefix.length")?.toIntOrNull() ?: DEFAULT_STATUS_LIST_LENGTH
         val bitsPerStatus = configService.getPropertyAsString("$prefix.bitsPerStatus")?.toIntOrNull() ?: 1
-        val signingKeyAlias = configService.getPropertyAsString("$prefix.signingKeyAlias")?.takeIf { it.isNotBlank() }
-        // How the token references its signing key in the JOSE header (did:<method> / x5c / ...). Set
-        // this to match the credentials that reference the list so wallets trust the same key/anchor.
+        // Only read when this deployment does not manage signing material itself. A deployment that
+        // binds a StatusListSigningKeyNameResolver resolves the key from its own server-side binding,
+        // and the raw configuration value is ignored rather than used as a second way in.
+        val signingKeyAlias =
+            if (signingKeyNameResolver == null) {
+                configService.getPropertyAsString("$prefix.signingKeyAlias")?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
+        // How the token references its signing key in the JOSE header: `jwk` embeds the public key,
+        // `x5c` embeds the certificate chain, and `did:<method>` emits a DID verification-method kid.
         val signingKeyMode = configService.getPropertyAsString("$prefix.signingKeyMode")?.takeIf { it.isNotBlank() }
         // For DID modes, the configured verification-method URL used as the token `kid` (did:web/webvh
         // cannot derive it from the key).

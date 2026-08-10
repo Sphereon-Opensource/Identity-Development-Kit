@@ -48,6 +48,8 @@ kotlin {
                 api(projects.libOpenidOid4vcCommonPublic)
                 api(projects.libOpenidOid4vciCommonPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
+                api(libs.bundles.app.platform.di)
+                api(sphereonlib.software.amazon.app.platform.metro.public)
             }
         }
         val commonTest by getting {

@@ -384,7 +384,7 @@ class LocalNativeWscdTest {
                 version = "0.1.0",
             )
         val user = app.userContextManager.getAnonymous()
-        val session = user.sessionContextManager.createOrGetFromId(providerId)
+        val session = user.sessionContextManager.createOrGetFromId(providerId, principalType = com.sphereon.di.context.PrincipalType.USER)
         val defaultConfigValues =
             buildMap {
                 put("jks.path", "build/wscd-mobile-test/$providerId.p12")

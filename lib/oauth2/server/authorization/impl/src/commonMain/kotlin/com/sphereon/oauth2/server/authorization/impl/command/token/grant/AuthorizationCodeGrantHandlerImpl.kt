@@ -29,9 +29,11 @@ import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.impl.command.token.executeWithTrustedClientAuthorization
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.oidc.OidcScopeClaimsMapper
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_ID_TOKEN
@@ -45,6 +47,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.putJsonArray
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * RFC 6749 §4.1.3 / OIDC Core 1.0 §3.1.3.3 / OID4VCI 1.1 §7.2 authorization-code grant handler.
@@ -69,6 +73,18 @@ class AuthorizationCodeGrantHandlerImpl(
     override suspend fun handle(
         params: GrantParameters,
         context: GrantContext,
+    ): IdkResult<TokenResponse, IdkError> = handleInternal(params, context, null)
+
+    internal suspend fun handleTrusted(
+        params: GrantParameters,
+        context: GrantContext,
+        clientAuthorization: VerifiedClientAuthorization?,
+    ): IdkResult<TokenResponse, IdkError> = handleInternal(params, context, clientAuthorization)
+
+    private suspend fun handleInternal(
+        params: GrantParameters,
+        context: GrantContext,
+        clientAuthorization: VerifiedClientAuthorization?,
     ): IdkResult<TokenResponse, IdkError> {
         val authParams = params as GrantParameters.AuthorizationCode
         val tokenRequest = context.tokenRequest
@@ -79,7 +95,7 @@ class AuthorizationCodeGrantHandlerImpl(
 
         val verified =
             commands.verifyAuthorizationCodeGrant
-                .execute(
+                .executeWithTrustedClientAuthorization(
                     VerifyAuthorizationCodeGrantArgs(
                         code = authParams.code,
                         redirectUri = authParams.redirectUri,
@@ -87,6 +103,7 @@ class AuthorizationCodeGrantHandlerImpl(
                         codeVerifier = authParams.codeVerifier,
                         requestedResource = authParams.resource,
                     ),
+                    clientAuthorization,
                 ).getOrElse { error -> return Err(error) }
 
         // RFC 9449 §10.1 / FAPI2-SP §5.3.2.1 holder-of-key requirement: when the auth request
@@ -128,8 +145,10 @@ class AuthorizationCodeGrantHandlerImpl(
         val authCodeAuthorizationDetails =
             buildAuthorizationCodeCredentialAuthorizationDetails(
                 credentialConfigurationIds = credentialConfigurationIds,
-                issuerState = verified.additionalData["issuer_state"] as? String,
             )
+        val issuerState =
+            (verified.additionalData["issuer_state"] as? String)
+                ?.takeIf(String::isNotBlank)
 
         // Access token: no identity claims (RFC 9068). The OIDC `claims` request parameter
         // (§5.5) carries through `additionalData` so /userinfo can union the requested per-
@@ -139,12 +158,6 @@ class AuthorizationCodeGrantHandlerImpl(
         // keeps them on the stored token for the userinfo endpoint to read.
         val accessTokenAdditional =
             buildMap<String, Any> {
-                verified.codeData.authTime?.let { put(AUTH_TIME_CLAIM, it) }
-                verified.codeData.acr?.let { put(ACR_CLAIM, it) }
-                verified.codeData.amr
-                    ?.takeIf { it.isNotEmpty() }
-                    ?.let { put(AMR_CLAIM, it) }
-
                 (verified.codeData.additionalData[SESSION_KEY_OIDC_CLAIMS_USERINFO] as? List<*>)
                     ?.filterIsInstance<String>()
                     ?.takeIf { it.isNotEmpty() }
@@ -169,6 +182,10 @@ class AuthorizationCodeGrantHandlerImpl(
 
                 context.walletInstanceAttestation?.let { putAll(it.accessTokenClaims()) }
                 authCodeAuthorizationDetails?.let { put("authorization_details", it) }
+                // Internal AS -> credential-issuer correlation for scope-based OID4VCI
+                // authorization requests. Stored token metadata retains this value for
+                // introspection while the access-token JWT excludes the internal namespace.
+                issuerState?.let { put(INTERNAL_OID4VCI_ISSUER_STATE_CLAIM, it) }
             }
         val accessToken =
             commands.createAccessToken
@@ -180,6 +197,9 @@ class AuthorizationCodeGrantHandlerImpl(
                         audience = verified.resource.ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) },
                         dpopJkt = boundJkt,
                         certificateThumbprintS256 = certThumbprint,
+                        authTime = verified.codeData.authTime,
+                        acr = verified.codeData.acr,
+                        amr = verified.codeData.amr,
                         additionalClaims = accessTokenAdditional,
                         baseUrlOverride = applied.baseUrlOverride,
                     ),
@@ -197,7 +217,10 @@ class AuthorizationCodeGrantHandlerImpl(
                         scope = verified.scope,
                         resource = verified.resource,
                         defaultAccessTokenAudience = verified.defaultAccessTokenAudience,
+                        credentialConfigurationIds = credentialConfigurationIds.orEmpty(),
+                        oid4vciIssuerState = issuerState,
                         dpopJkt = boundJkt,
+                        clientInstanceKeyJkt = context.clientInstanceKeyJkt,
                         authTime = verified.codeData.authTime,
                         acr = verified.codeData.acr,
                         amr = verified.codeData.amr,
@@ -295,25 +318,25 @@ class AuthorizationCodeGrantHandlerImpl(
     private companion object {
         /** RFC 9068 §2.2.3.1 / RFC 7643 §4.1.2 authorization claim name. */
         private const val ROLES_CLAIM = "roles"
-        private const val AUTH_TIME_CLAIM = "auth_time"
-        private const val ACR_CLAIM = "acr"
-        private const val AMR_CLAIM = "amr"
+        private const val INTERNAL_OID4VCI_ISSUER_STATE_CLAIM = "oid4vci.internal.issuer_state"
     }
 }
 
+@OptIn(ExperimentalUuidApi::class)
 internal fun buildAuthorizationCodeCredentialAuthorizationDetails(
     credentialConfigurationIds: List<String>?,
-    issuerState: String?,
+    credentialIdentifierProvider: (String) -> String = { "urn:vdx:oid4vci:credential:${Uuid.random()}" },
 ): JsonArray? =
     credentialConfigurationIds?.takeIf { it.isNotEmpty() }?.let { configIds ->
-        val exactOfferSessionId = issuerState?.takeIf(String::isNotBlank)
         JsonArray(
             configIds.map { configId ->
                 buildJsonObject {
                     put("type", JsonPrimitive("openid_credential"))
                     put("credential_configuration_id", JsonPrimitive(configId))
-                    exactOfferSessionId?.let { sessionId ->
-                        putJsonArray("credential_identifiers") { add(JsonPrimitive(sessionId)) }
+                    // This is an authorization handle for one Credential Dataset, not the
+                    // credential_configuration_id and not an OAuth scope value.
+                    putJsonArray("credential_identifiers") {
+                        add(JsonPrimitive(credentialIdentifierProvider(configId)))
                     }
                 }
             },

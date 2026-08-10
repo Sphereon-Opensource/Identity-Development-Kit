@@ -28,6 +28,7 @@ fun AwsKmsProviderConfig.toAwsKmsClientConfig(): AwsKmsClientConfig =
     AwsKmsClientConfig(
         applicationId = applicationId,
         region = region,
+        endpointUrl = endpointUrl,
         credentialOpts = credentialOpts,
         exponentialBackoffRetryOpts = exponentialBackoffRetryOpts,
     )

@@ -413,6 +413,46 @@ class CompiledPathPatternTest {
     }
 
     @Test
+    fun suffixedParametersMatchAndExtractKmsLifecycleHandles() {
+        val handle = "software-provider:default"
+
+        listOf("validate", "rotate", "detach", "retire").forEach { action ->
+            val pattern = CompiledPathPattern.compile("/resources/{kmsResourceHandle}:$action")
+            val path = "/resources/$handle:$action"
+
+            assertTrue(pattern.matches(path), "Expected $path to match")
+            assertEquals(handle, pattern.extractParams(path)["kmsResourceHandle"])
+        }
+    }
+
+    @Test
+    fun suffixedParameterRejectsWrongOrMissingSuffixAndEmptyCapture() {
+        val pattern = CompiledPathPattern.compile("/resources/{kmsResourceHandle}:validate")
+
+        listOf(
+            "/resources/software-provider:default:rotate",
+            "/resources/software-provider:default",
+            "/resources/:validate",
+            "/resources/software-provider:default:validate/extra",
+        ).forEach { path ->
+            assertFalse(pattern.matches(path), "Expected $path not to match")
+            assertTrue(pattern.extractParams(path).isEmpty(), "Expected no parameters for $path")
+        }
+    }
+
+    @Test
+    fun staticSegmentRemainsMoreSpecificThanSuffixedAndPlainParameters() {
+        val static = CompiledPathPattern.compile("/resources/default:validate")
+        val suffixed = CompiledPathPattern.compile("/resources/{kmsResourceHandle}:validate")
+        val plain = CompiledPathPattern.compile("/resources/{kmsResourceHandle}")
+
+        assertTrue(static.matches("/resources/default:validate"))
+        assertFalse(static.matches("/resources/software-provider:default:validate"))
+        assertTrue(static.specificity > suffixed.specificity)
+        assertTrue(suffixed.specificity > plain.specificity)
+    }
+
+    @Test
     fun compileCachesPatterns() {
         val pattern1 = CompiledPathPattern.compile("/test")
         val pattern2 = CompiledPathPattern.compile("/test")
@@ -507,7 +547,7 @@ class CompiledPathPatternTest {
     fun tailWildcardSpecificityCountsLiteralsOnly() {
         val pattern = CompiledPathPattern.compile("/login/assets/{path...}")
         // /login + /assets are literal; {path...} is a wildcard.
-        assertEquals(2, pattern.specificity)
+        assertEquals(4, pattern.specificity)
     }
 
     @Test

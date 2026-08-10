@@ -37,7 +37,7 @@ class ExecutionContextTest {
             )
         assertTrue { appGraph.userContextManager.hasActive() }
 
-        val sessionContextGraph = contextInstance.sessionContextManager.createOrGetFromId(sessionId = "test-action")
+        val sessionContextGraph = contextInstance.sessionContextManager.createOrGetFromId(sessionId = "test-action", principalType = com.sphereon.di.context.PrincipalType.USER)
         assertNotNull(sessionContextGraph)
         val sessionContext = contextInstance.sessionContextManager.getActive()
         assertNotNull(sessionContext)
@@ -147,7 +147,7 @@ class ExecutionContextTest {
             )
 
         // Create session context
-        val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId(sessionId = "test-session")
+        val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId(sessionId = "test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         // After creation, should not be anonymous
         assertTrue(contextInstance.sessionContextManager.hasActive(), "Should have active session after creation")
@@ -171,7 +171,7 @@ class ExecutionContextTest {
             )
 
         // Create session context
-        val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId(sessionId = "test-session")
+        val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId(sessionId = "test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         assertFalse(sessionGraph.sessionContext.isAnonymous(), "Should not be anonymous after creation")
 
@@ -260,11 +260,11 @@ class ExecutionContextTest {
             )
 
         // Create first session
-        val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1")
+        val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
         assertFalse(session1.sessionContext.isAnonymous(), "Session 1 should not be anonymous")
 
         // Create second session (becomes active)
-        val session2 = contextInstance.sessionContextManager.createOrGetFromId("session-2")
+        val session2 = contextInstance.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
         assertFalse(session2.sessionContext.isAnonymous(), "Session 2 should not be anonymous")
         assertEquals("session-2", contextInstance.sessionContextManager.getActive().sessionId, "Session 2 should be active")
 

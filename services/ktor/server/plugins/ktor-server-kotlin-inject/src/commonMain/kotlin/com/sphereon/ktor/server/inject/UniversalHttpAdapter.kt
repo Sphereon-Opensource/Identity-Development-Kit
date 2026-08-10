@@ -48,11 +48,9 @@ import io.ktor.utils.io.readRemaining
 /**
  * Per-call attribute holding the Layer 1 resolved base tenant id.
  *
- * Tenant-resolution plugins stamp this key after validating JWT/host tenancy.
- * Ktor request converters copy it into
- * [CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER] on the in-process
- * [GenericHttpRequest] so downstream dispatch never trusts a client-supplied
- * tenant header.
+ * Tenant-resolution plugins stamp this key after validating JWT authority or
+ * resolving a public route. Ktor request converters copy it into typed
+ * [GenericHttpRequest] metadata; it is never represented as an HTTP header.
  */
 val BaseTenantIdAttribute: AttributeKey<String> = AttributeKey("sphereon.tenant.baseTenantId")
 
@@ -187,9 +185,16 @@ fun Application.installUniversalHttpAdapters(configure: UniversalHttpAdapterConf
 
         // Catch-all route (XHR API surface). The caller's CORS installer, when present, is applied
         // route-scoped HERE — not globally — so it never reaches the exempt navigation prefixes.
-        route(config.pathPrefix ?: "{...}") {
+        fun Route.installDispatchHandler() {
             installer?.invoke(this)
             handle { call.dispatchUniversal(config) }
+        }
+        val prefix = config.pathPrefix
+        if (prefix == null) {
+            route("{...}") { installDispatchHandler() }
+        } else {
+            route(prefix) { installDispatchHandler() }
+            route("$prefix/{...}") { installDispatchHandler() }
         }
     }
 }
@@ -255,17 +260,7 @@ suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
 
     // Extract headers (joined for the scalar map) plus the raw multi-value view so consumers
     // that need single-occurrence semantics (RFC 9449 §4.1) can detect duplicates.
-    val headers =
-        request.headers
-            .entries()
-            .associate { (name, values) -> name to values.joinToString(", ") }
-            .let { wireHeaders ->
-                if (resolvedBaseTenantId == null) {
-                    wireHeaders
-                } else {
-                    wireHeaders + (CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER to resolvedBaseTenantId)
-                }
-            }
+    val headers = request.headers.entries().associate { (name, values) -> name to values.joinToString(", ") }
     // RFC 9110 §5.3 / RFC 9449 §4.1: a header may appear multiple times. Some Ktor engines
     // (CIO included) emit `entries()` as one entry per occurrence, which silently collapses
     // duplicates when fed straight into `.associate { }`. Use `names()` + `getAll()` so the
@@ -317,6 +312,7 @@ suspend fun ApplicationCall.toGenericHttpRequest(): GenericHttpRequest {
         method = method,
         path = path,
         headers = headers,
+        resolvedTenantId = resolvedBaseTenantId,
         multiValueHeaders = multiValueHeaders,
         queryParameters = queryParameters,
         pathParameters = pathParameters,

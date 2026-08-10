@@ -116,6 +116,7 @@ class ModelSerializationTest {
         val output =
             CreateCredentialOfferOutput(
                 correlationId = "corr-123",
+                sessionId = "session-abc",
                 offerUri = "openid-credential-offer://?credential_offer=...",
                 statusUri = "https://issuer.example.com/api/oid4vci/v1/backend/credential/offers/corr-123",
                 qrUri = "data:image/png;base64,abc123",
@@ -124,6 +125,7 @@ class ModelSerializationTest {
 
         val serialized = json.encodeToString(CreateCredentialOfferOutput.serializer(), output)
         assertTrue(serialized.contains("\"correlation_id\":\"corr-123\""))
+        assertTrue(serialized.contains("\"session_id\":\"session-abc\""))
         assertTrue(serialized.contains("\"offer_uri\":"))
         assertTrue(serialized.contains("\"status_uri\":"))
         assertTrue(serialized.contains("\"qr_uri\":"))

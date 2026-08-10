@@ -125,7 +125,6 @@ class DefaultPolymorphicConfigBinder<T : Any>(
         val entry: String,
         val path: String,
         val expectedType: String,
-        val receivedValue: String,
         val reason: String,
     )
 
@@ -193,7 +192,6 @@ class DefaultPolymorphicConfigBinder<T : Any>(
                         reason = outcome.failure.reason,
                         entry = outcome.failure.entry,
                         path = outcome.failure.path,
-                        receivedValue = outcome.failure.receivedValue,
                     ),
                 )
             }
@@ -346,8 +344,7 @@ class DefaultPolymorphicConfigBinder<T : Any>(
                     entry = originalEntryId,
                     path = "$prefix.$originalEntryId",
                     expectedType = expectedTypeName,
-                    receivedValue = jsonString,
-                    reason = expected.message ?: "unknown deserialization error",
+                    reason = "configuration value could not be deserialized",
                 ),
             )
         }
@@ -363,7 +360,6 @@ class DefaultPolymorphicConfigBinder<T : Any>(
                     "entry" to failure.entry,
                     "path" to failure.path,
                     "expectedType" to failure.expectedType,
-                    "receivedValue" to failure.receivedValue,
                     "reason" to failure.reason,
                 )
             }

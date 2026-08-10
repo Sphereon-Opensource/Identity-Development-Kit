@@ -189,8 +189,10 @@ class CreateCredentialOfferCommandImpl(
     }
 
     /**
-     * Create session (issuerState = sessionId for auth-code grant linkage). `preAuthCode`
-     * is filled in after the AS bridge registers the code in [buildGrants].
+     * Create the session with stable server-side offer correlation. Authorization-code offers
+     * expose this as the OID4VCI 1.0 Final `issuer_state`; pre-authorized offers never expose it
+     * to the Wallet and use it only through the AS-internal access-token claim.
+     * `preAuthCode` is filled in after the AS bridge registers the code in [buildGrants].
      */
     private fun buildSession(
         args: CreateCredentialOfferArgs,
@@ -204,7 +206,7 @@ class CreateCredentialOfferCommandImpl(
             issuerId = args.issuerId,
             credentialConfigurationIds = args.credentialConfigurationIds,
             issuerState =
-                if (args.authorizationCodeGrant) {
+                if (args.authorizationCodeGrant || args.preAuthorizedCodeGrant) {
                     sessionId
                 } else {
                     null
@@ -283,15 +285,9 @@ class CreateCredentialOfferCommandImpl(
                         txCodeLength = args.txCodeLength,
                         txCodeInputMode = args.txCodeInputMode,
                         issuerIdentifier = args.issuerId,
-                        // OID4VCI 1.0 §5.1.2 / §8.2.1.1: when the AS includes
-                        // `credential_identifiers` in the token's authorization_details,
-                        // the wallet MUST send one in the credential request, so the
-                        // issuer can resolve the IssuanceSession by stable identifier
-                        // rather than falling back to a single configId→sessionId
-                        // index in the session store. The fallback breaks under multi-
-                        // recipient batch issuance (each new mint for the same
-                        // credential_configuration_id overwrites the previous mapping,
-                        // so only the last-minted holder gets the right credential).
+                        // Return the opaque credential_identifiers that authorization_details
+                        // clients must use in credential requests. The credential configuration
+                        // id remains a separate metadata and authorization concept.
                         useCredentialIdentifiers = true,
                     ),
                 ).getOrElse { return Err(it) }

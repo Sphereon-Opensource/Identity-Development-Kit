@@ -22,9 +22,6 @@ import com.sphereon.core.api.tracing.TraceContext
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.di.context.IdentityConstants
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.Json
 import kotlin.jvm.JvmStatic
 
 /**
@@ -33,7 +30,7 @@ import kotlin.jvm.JvmStatic
  * Defined in IDK so all layers (IDK, EDK, VDX) use consistent header names.
  * These headers are used for:
  * - Authentication (tokens, credentials)
- * - Tenant/Principal context
+ * - Authenticated bearer tokens
  * - Distributed tracing
  * - Policy hints
  */
@@ -58,28 +55,11 @@ object AuthHeaders {
      */
     const val X_API_KEY = "X-API-Key"
 
-    // ========================================
-    // Tenant/Principal Context Headers
-    // ========================================
-
-    /**
-     * Tenant identifier for multi-tenant isolation.
-     */
+    // Rejected inbound names. These constants exist only for centralized
+    // stripping and negative tests; none may establish authenticated identity.
     const val X_TENANT_ID = "X-Tenant-Id"
-
-    /**
-     * User identifier (authenticated user).
-     */
     const val X_USER_ID = "X-User-Id"
-
-    /**
-     * Principal identifier (may be user or service).
-     */
     const val X_PRINCIPAL_ID = "X-Principal-Id"
-
-    /**
-     * Service identifier for service-to-service calls.
-     */
     const val X_SERVICE_ID = "X-Service-Id"
 
     // ========================================
@@ -178,10 +158,12 @@ object AuthHeaders {
 }
 
 /**
- * Authentication context extracted from request headers.
+ * Authentication and tracing context.
  *
  * This data class holds all authentication and authorization
- * information extracted from incoming requests.
+ * Identity fields are populated only after JWT validation; [fromHeaders] never
+ * derives tenant, user, principal, service, scopes, or policy context from
+ * caller-controlled HTTP metadata.
  *
  * @property token The bearer token (without "Bearer " prefix)
  * @property apiKey API key if present
@@ -263,26 +245,10 @@ data class AuthContext(
         buildMap {
             token?.let { put(AuthHeaders.AUTHORIZATION, "Bearer $it") }
             apiKey?.let { put(AuthHeaders.X_API_KEY, it) }
-            tenantId?.let { put(AuthHeaders.X_TENANT_ID, it) }
-            userId?.let { put(AuthHeaders.X_USER_ID, it) }
-            principalId?.let { put(AuthHeaders.X_PRINCIPAL_ID, it) }
-            serviceId?.let { put(AuthHeaders.X_SERVICE_ID, it) }
             traceparent?.let { put(AuthHeaders.TRACEPARENT, it) }
             tracestate?.let { put(AuthHeaders.TRACESTATE, it) }
             requestId?.let { put(AuthHeaders.X_REQUEST_ID, it) }
             correlationId?.let { put(AuthHeaders.X_CORRELATION_ID, it) }
-            if (policyContext.isNotEmpty()) {
-                put(
-                    AuthHeaders.X_POLICY_CONTEXT,
-                    Json.encodeToString(
-                        MapSerializer(String.serializer(), String.serializer()),
-                        policyContext,
-                    ),
-                )
-            }
-            if (scopes.isNotEmpty()) {
-                put(AuthHeaders.X_SCOPE, scopes.joinToString(" "))
-            }
         }
 
     companion object {
@@ -298,42 +264,19 @@ data class AuthContext(
         fun fromHeaders(headers: Map<String, String>): AuthContext {
             fun get(name: String) = RequestUtils.extractHeaderValue(headers, name)
 
-            val policyContextJson = get(AuthHeaders.X_POLICY_CONTEXT)
-            val policyContext: Map<String, String> =
-                if (policyContextJson != null) {
-                    try {
-                        Json.decodeFromString(
-                            MapSerializer(String.serializer(), String.serializer()),
-                            policyContextJson,
-                        )
-                    } catch (_: Exception) {
-                        emptyMap()
-                    }
-                } else {
-                    emptyMap()
-                }
-
-            val scopeHeader = get(AuthHeaders.X_SCOPE)
-            val scopes =
-                scopeHeader
-                    ?.split(" ", ",")
-                    ?.map { it.trim() }
-                    ?.filter { it.isNotEmpty() }
-                    ?.toSet() ?: emptySet()
-
             return AuthContext(
                 token = get(AuthHeaders.AUTHORIZATION)?.removePrefix("Bearer ")?.trim(),
                 apiKey = get(AuthHeaders.X_API_KEY),
-                tenantId = get(AuthHeaders.X_TENANT_ID),
-                userId = get(AuthHeaders.X_USER_ID),
-                principalId = get(AuthHeaders.X_PRINCIPAL_ID),
-                serviceId = get(AuthHeaders.X_SERVICE_ID),
+                tenantId = null,
+                userId = null,
+                principalId = null,
+                serviceId = null,
                 traceparent = get(AuthHeaders.TRACEPARENT),
                 tracestate = get(AuthHeaders.TRACESTATE),
                 requestId = get(AuthHeaders.X_REQUEST_ID),
                 correlationId = get(AuthHeaders.X_CORRELATION_ID),
-                policyContext = policyContext,
-                scopes = scopes,
+                policyContext = emptyMap(),
+                scopes = emptySet(),
             )
         }
     }

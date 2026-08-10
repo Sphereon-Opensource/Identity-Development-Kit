@@ -50,6 +50,7 @@ import com.sphereon.did.manager.DidCreateOptions
 import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.statuslist.StatusListContentTypes
+import com.sphereon.statuslist.StatusListErrors
 import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import dev.zacsweers.metro.Inject
@@ -76,9 +77,14 @@ class CwtStatusListSigner(
     private val didProviderRegistry: DidProviderRegistry,
 ) {
     suspend fun sign(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> {
+        // This signer signs with a KMS key, so the server must have resolved one. A missing name is
+        // refused outright: it is never substituted, defaulted, or derived from the list identity.
+        val keyName =
+            args.signingKeyName?.takeIf { it.isNotBlank() }
+                ?: return Err(StatusListErrors.signingKeyUnresolvable(args.statusListUri))
         val managed =
-            kms.getKeyResult(KeyInfo<Nothing>(alias = args.signingKeyAlias)).getOrElse { return Err(it) }.key
-                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "No key for alias '${args.signingKeyAlias}'"))
+            kms.getKeyResult(KeyInfo<Nothing>(alias = keyName)).getOrElse { return Err(it) }.key
+                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "No key for alias '$keyName'"))
         val coseKeyInfo: ManagedKeyInfoType<CoseKeyType> =
             ManagedKeyInfo(
                 alias = managed.alias,

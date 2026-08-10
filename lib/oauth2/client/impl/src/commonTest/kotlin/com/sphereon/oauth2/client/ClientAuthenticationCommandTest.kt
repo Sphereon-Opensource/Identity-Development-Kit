@@ -37,7 +37,7 @@ import kotlin.test.assertTrue
 class ClientAuthenticationCommandTest {
     val app = createOAuth2ClientTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("client-auth-test")
+    val session = context.sessionContextManager.createOrGetFromId("client-auth-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     val execution = session.asCoreApiServiceGraph().serviceExecution
 
     @Test
@@ -70,6 +70,28 @@ class ClientAuthenticationCommandTest {
 
             // Verify no body parameters
             assertTrue(authResult.bodyParameters.isEmpty())
+        }
+
+    @Test
+    fun testBasicAuthenticationFormEncodesCredentialComponents() =
+        runTest {
+            val command = ApplyClientAuthenticationCommandImpl(execution)
+            val config =
+                ClientAuthenticationConfig.Basic(
+                    ClientCredentials(
+                        clientId = "tenant-as-service:tenant-123",
+                        clientSecret = "secret:value",
+                    ),
+                )
+
+            val result = command.execute(ApplyClientAuthenticationArgs(config, "https://as.example.com/token"))
+
+            assertTrue(result.isOk)
+            val encoded = result.value.headers.getValue("Authorization").removePrefix("Basic ")
+            assertEquals(
+                "tenant-as-service%3Atenant-123:secret%3Avalue",
+                encoded.decodeFromBase64().decodeToString(),
+            )
         }
 
     @Test
@@ -252,6 +274,6 @@ class ClientAuthenticationCommandTest {
             val authHeader = authResult.headers["Authorization"]!!
             val base64Part = authHeader.removePrefix("Basic ")
             val decoded = base64Part.decodeFromBase64().decodeToString()
-            assertEquals("client@example.com:p@ssw0rd:with:colons", decoded)
+            assertEquals("client%40example.com:p%40ssw0rd%3Awith%3Acolons", decoded)
         }
 }

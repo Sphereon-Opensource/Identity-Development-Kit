@@ -79,6 +79,7 @@ import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationResponse
 import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.holder.JarmOptions
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.holder.ResolveAuthorizationRequestCommand
@@ -95,6 +96,7 @@ import com.sphereon.openid.oid4vp.verifier.RetrieveAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
+import com.sphereon.openid.oid4vp.verifier.config.DEFAULT_OID4VP_VERIFIER_INSTANCE_ID
 import com.sphereon.openid.oid4vp.verifier.impl.http.Oid4vpVerifierHttpAdapter
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.store.ResponseCodeStore
@@ -145,28 +147,6 @@ import kotlin.time.Duration
  * This test focuses on protocol behavior; platform HTTP routing is covered by the universal HTTP adapter tests.
  */
 
-/**
- * Strip the outer `state` query parameter from an OID4VP request URI.
- *
- * The verifier's `BuildAuthorizationRequestUriCommandImpl` intentionally duplicates `state`
- * in both the outer URI (per RFC 9101) and the signed Request Object (JAR). However, the
- * holder's `MergeRequestObjectCommandImpl` currently rejects any parameter overlap except
- * `client_id` and `response_type` (see `ALLOWED_DUPLICATES`). Until that allow-list is
- * broadened, these E2E tests drop the outer `state` before handing the URI to the wallet.
- */
-private fun stripStateParam(uri: String): String {
-    val qIndex = uri.indexOf('?')
-    if (qIndex < 0) return uri
-    val base = uri.substring(0, qIndex)
-    val query = uri.substring(qIndex + 1)
-    val filtered =
-        query
-            .split('&')
-            .filter { it.isNotEmpty() && !it.startsWith("state=") }
-            .joinToString("&")
-    return if (filtered.isEmpty()) base else "$base?$filtered"
-}
-
 class Oid4vpUniversalFlowWithMocksTest {
     @Test
     fun `end-to-end flow - create session, serve request_uri, handle direct_post, retrieve by response_code`() =
@@ -174,7 +154,7 @@ class Oid4vpUniversalFlowWithMocksTest {
             val testScope = TestScope()
             val app = createUniversalOid4vpTestAppGraph(testScope, appId = "test-verifier-app", profile = "test", version = "1.0.0")
             val context = app.userContextManager.getAnonymous()
-            val session = context.sessionContextManager.createOrGetFromId("test")
+            val session = context.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
             val execution: SessionExecution = session.sessionExecution
 
             // Stores
@@ -259,7 +239,8 @@ class Oid4vpUniversalFlowWithMocksTest {
                 createAuthorizationRequest
                     .createAuthorizationRequest(
                         CreateAuthorizationRequestArgs(
-                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                            instanceId = DEFAULT_OID4VP_VERIFIER_INSTANCE_ID,
+                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                             clientId = "https://verifier.example.com",
                             responseUri = "https://verifier.example.com/response",
                             responseMode = ResponseMode.DIRECT_POST,
@@ -279,7 +260,7 @@ class Oid4vpUniversalFlowWithMocksTest {
             assertEquals("signed.jwt.payload", jarResponse.signedJar)
 
             // 3) direct_post response to backend -> response_code
-            val vpToken = """{"cred":"eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3MDAwMDAwMDB9.sig~eyJhbGciOiJub25lIn0~"}"""
+            val vpToken = """{"cred":["eyJhbGciOiJFUzI1NiJ9.eyJpYXQiOjE3MDAwMDAwMDB9.sig~eyJhbGciOiJub25lIn0~"]}"""
             val handled =
                 handleDirectPost
                     .handleDirectPostResponse(
@@ -290,7 +271,7 @@ class Oid4vpUniversalFlowWithMocksTest {
                                     "state" to "state-1234",
                                 ),
                             originalRequest = created.request,
-                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                             redirectUri = "https://verifier.example.com/callback",
                         ),
                     ).getOrThrow()
@@ -526,7 +507,7 @@ class UniversalOid4vpE2ETest {
 
             // Verifier (RP) session
             val verifierContext = app.userContextManager.getAnonymous()
-            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier")
+            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier", principalType = com.sphereon.di.context.PrincipalType.USER)
             val verifierGraph = verifierSession.graph
 
             val rpService = (verifierGraph as RpServiceGraph).oid4vpVerifierService
@@ -561,7 +542,8 @@ class UniversalOid4vpE2ETest {
                 rpService
                     .createAuthorizationRequest(
                         CreateAuthorizationRequestArgs(
-                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                            instanceId = DEFAULT_OID4VP_VERIFIER_INSTANCE_ID,
+                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                             clientId = "https://verifier.example.com",
                             responseUri = "https://verifier.example.com/response",
                             redirectUri = "https://frontend.example.com/callback",
@@ -587,7 +569,6 @@ class UniversalOid4vpE2ETest {
                         ),
                     ).getOrThrow()
                     .value
-                    .let { stripStateParam(it) }
             // In request_uri mode, the outer URI intentionally omits client_metadata — wallets
             // fetch it from the JAR per OID4VP §5.10. What MUST be present is client_id + request_uri.
             assertTrue("client_id" in Url(requestUriLink).parameters.names())
@@ -641,7 +622,7 @@ class UniversalOid4vpE2ETest {
                                                 HandleDirectPostResponseArgs(
                                                     responseParams = responseParams,
                                                     originalRequest = created.request,
-                                                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                                                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                                                     redirectUri = "https://frontend.example.com/callback",
                                                 ),
                                             ).getOrThrow()
@@ -668,7 +649,7 @@ class UniversalOid4vpE2ETest {
 
             // Holder (Wallet) session
             val holderContext = app.userContextManager.getAnonymous()
-            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder")
+            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder", principalType = com.sphereon.di.context.PrincipalType.USER)
             val holderExecution = holderSession.asCoreApiServiceGraph().serviceExecution
             val holderGraph = holderSession.graph
             val parseUriQueryCommand = (holderGraph as HolderDepsGraph).parseUriQueryCommand
@@ -690,6 +671,7 @@ class UniversalOid4vpE2ETest {
                     jarService = jarService,
                     httpClientFactory = httpClientFactory,
                     externalIdentifierService = externalIdentifierService,
+                    jwtService = (holderGraph as JwtServiceImpl.Graph).jwtService,
                 )
 
             // 2) Holder fetches request_uri, verifies JAR signature, and parses the Authorization Request.
@@ -786,7 +768,7 @@ class UniversalOid4vpE2ETest {
                     ).getOrThrow()
                     .presentation
 
-            val vpToken = """{"cred":"$vpPresentation"}"""
+            val vpToken = """{"cred":["$vpPresentation"]}"""
             val responseUri = parsedRequest.responseUri ?: error("Expected response_uri for direct_post")
 
             val walletClient = httpClientFactory.createClient(HttpClientOptions.createDefault().copy(enableLogging = false))
@@ -850,7 +832,7 @@ class UniversalOid4vpE2ETest {
 
             // Verifier (RP) session
             val verifierContext = app.userContextManager.getAnonymous()
-            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier-jarm")
+            val verifierSession = verifierContext.sessionContextManager.createOrGetFromId("verifier-jarm", principalType = com.sphereon.di.context.PrincipalType.USER)
             val verifierGraph = verifierSession.graph
 
             val rpService = (verifierGraph as RpServiceGraph).oid4vpVerifierService
@@ -902,7 +884,8 @@ class UniversalOid4vpE2ETest {
                 rpService
                     .createAuthorizationRequest(
                         CreateAuthorizationRequestArgs(
-                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                            instanceId = DEFAULT_OID4VP_VERIFIER_INSTANCE_ID,
+                            dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                             clientId = "https://verifier.example.com",
                             responseUri = "https://verifier.example.com/response",
                             redirectUri = "https://frontend.example.com/callback",
@@ -926,7 +909,6 @@ class UniversalOid4vpE2ETest {
                         ),
                     ).getOrThrow()
                     .value
-                    .let { stripStateParam(it) }
 
             // Get the HTTP adapter from DI - it's injected with all required commands
             val rpAdapter: HttpAdapter = (verifierGraph as Oid4vpVerifierHttpAdapter.Graph).oid4VpVerifierHttpAdapter
@@ -998,7 +980,7 @@ class UniversalOid4vpE2ETest {
                                                 HandleDirectPostResponseArgs(
                                                     responseParams = responseParams,
                                                     originalRequest = created.request,
-                                                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                                                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                                                     redirectUri = "https://frontend.example.com/callback",
                                                     jarmExpectedAudience = created.request.clientId,
                                                     jarmDecryptionKey = jarmDecryptionKey,
@@ -1028,7 +1010,7 @@ class UniversalOid4vpE2ETest {
 
             // Holder (Wallet) session
             val holderContext = app.userContextManager.getAnonymous()
-            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder-jarm")
+            val holderSession = holderContext.sessionContextManager.createOrGetFromId("holder-jarm", principalType = com.sphereon.di.context.PrincipalType.USER)
             val holderExecution = holderSession.asCoreApiServiceGraph().serviceExecution
             val holderGraph = holderSession.graph
 
@@ -1067,6 +1049,7 @@ class UniversalOid4vpE2ETest {
                     jarService = jarService,
                     httpClientFactory = httpClientFactory,
                     externalIdentifierService = externalIdentifierService,
+                    jwtService = (holderGraph as JwtServiceImpl.Graph).jwtService,
                 )
 
             val parsedRequest =

@@ -61,7 +61,7 @@ class TamperedJwsSignatureRejectionTest {
 
     val app = createCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("tampered-jws-test")
+    val session = context.sessionContextManager.createOrGetFromId("tampered-jws-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

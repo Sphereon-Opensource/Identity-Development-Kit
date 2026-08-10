@@ -20,6 +20,9 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.server.resource.model.TokenPayload
+import com.sphereon.crypto.resolution.IdentifierOptsOrResult
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -35,11 +38,20 @@ import kotlin.native.ObjCName
  *   care: every second of skew widens the replay window.
  */
 @JsExportCompat
+@Serializable
 data class VerifyJwtArgs(
     val jwt: String,
     val authorizationServer: String,
     val expectedAudience: String? = null,
     val jwksUri: String? = null,
+    /**
+     * Optional caller-established verification identifier. Use this when the caller has already
+     * bound the token to an authorized managed or external key (for example, a tenant AS signing
+     * key selected from its publishable signing-key registry). This and [jwksUri] are mutually
+     * exclusive so a call has one unambiguous trust anchor.
+     */
+    @Transient
+    val trustedIdentifier: IdentifierOptsOrResult? = null,
     val clockSkewSeconds: Long? = null,
 ) {
     public companion object {

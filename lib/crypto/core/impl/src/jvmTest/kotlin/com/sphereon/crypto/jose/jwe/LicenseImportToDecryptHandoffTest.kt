@@ -115,7 +115,7 @@ class LicenseImportToDecryptHandoffTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId(name)
+                .createOrGetFromId(name, principalType = com.sphereon.di.context.PrincipalType.USER)
         return app to session
     }
 

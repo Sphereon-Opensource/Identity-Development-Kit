@@ -19,9 +19,12 @@ package com.sphereon.core.api.context
 /**
  * App-scoped hook for resources that retain tenant or principal scoped state.
  *
- * Implementations are notified when a user context is destroyed, including idle
- * cleanup. They should release only derived/runtime resources; persisted data is
- * out of scope for this lifecycle hook.
+ * Implementations are notified when a user context is explicitly destroyed.
+ * Automatic idle eviction only destroys the UserScope graph. AppScope resources
+ * can be shared with background and later user contexts, so their tenant lifecycle
+ * must not be inferred from the absence of regular user contexts. Implementations
+ * should release only derived/runtime resources; persisted data is out of scope for
+ * this explicit-destruction hook.
  */
 interface ContextScopedResourceInvalidator {
     suspend fun invalidateTenantContext(

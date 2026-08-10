@@ -16,6 +16,7 @@
 
 package com.sphereon.conf.settings
 
+import com.sphereon.core.api.conf.RefreshablePropertySource
 import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.core.defaults.context.DefaultTenantInputString
 import com.sphereon.di.context.UserContextInstance
@@ -23,6 +24,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -86,6 +88,8 @@ class MultiplatformSettingsPropertySourceTest {
                 "remove.key",
                 "all.properties.key1",
                 "all.properties.key2",
+                "bulk.string",
+                "bulk.int",
             )
         keysToClean.forEach { key ->
             appSettings.remove(key)
@@ -189,6 +193,120 @@ class MultiplatformSettingsPropertySourceTest {
         assertFalse(appSettingsSource.hasProperty("remove.key"))
     }
 
+    @Test
+    fun mutableSettingsSetAndRemoveAdvanceContentRevision() {
+        val refreshable = appSettingsSource as RefreshablePropertySource
+        refreshable.refreshIfNeeded()
+        val initialRevision = refreshable.contentRevision
+
+        appSettingsSource.setProperty("revision.key", "first")
+        val afterSet = refreshable.contentRevision
+        appSettingsSource.removeProperty("revision.key")
+
+        assertTrue(afterSet > initialRevision)
+        assertTrue(refreshable.contentRevision > afterSet)
+    }
+
+    @Test
+    fun sameTextualValueWithDifferentStoredTypeAdvancesContentRevision() {
+        val refreshable = appSettingsSource as RefreshablePropertySource
+        appSettingsSource.setProperty("revision.key", "true")
+        val stringRevision = refreshable.contentRevision
+
+        appSettingsSource.setProperty("revision.key", true)
+
+        assertTrue(refreshable.contentRevision > stringRevision)
+        appSettingsSource.removeProperty("revision.key")
+    }
+
+    @Test
+    fun sameNamespaceWriterWithDifferentStoredTypeAdvancesContentRevision() {
+        val refreshable = appSettingsSource as RefreshablePropertySource
+        appSettingsSource.setProperty("revision.key", "true")
+        val stringRevision = refreshable.contentRevision
+        assertEquals("STRING", appSettings.getStoredTypeTag("revision.key"))
+        val independentWriter =
+            MultiplatformSettings(
+                app = appGraph,
+                configLevel = com.sphereon.core.api.conf.ConfigLevel.APP,
+                userContext = null,
+            )
+
+        independentWriter.set("revision.key", true)
+        refreshable.refreshIfNeeded()
+
+        assertTrue(refreshable.contentRevision > stringRevision)
+        assertEquals(true, appSettingsSource.getProperty("revision.key", Boolean::class))
+        assertEquals("BOOLEAN", appSettings.getStoredTypeTag("revision.key"))
+        assertFalse(appSettings.getKeys().contains(SETTINGS_NAMESPACE_REVISION_KEY))
+        assertTrue(appSettings.getKeys().none(::isInternalSettingsStorageKey))
+        assertFailsWith<IllegalArgumentException> {
+            independentWriter.set(SETTINGS_NAMESPACE_REVISION_KEY, 1L)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            independentWriter.set(propKeyNormalizer.normalize(SETTINGS_NAMESPACE_REVISION_KEY), 1L)
+        }
+        appSettingsSource.removeProperty("revision.key")
+    }
+
+    @Test
+    fun namespacedProjectionFiltersExactInternalKeysBeforeProjection() {
+        val namespacePrefix = "application.test."
+        val revisionKey = "application.test.sphereon.internal.namespace.revision"
+        val typePrefix = "application.test.sphereon.internal.type."
+
+        val projected =
+            projectNamespacedSettingsUserKeys(
+                storageKeys =
+                    setOf(
+                        revisionKey,
+                        "${typePrefix}feature.enabled",
+                        "application.test.feature.enabled",
+                        "different.test.feature.enabled",
+                    ),
+                namespaceStoragePrefix = namespacePrefix,
+                exactRevisionStorageKey = revisionKey,
+                exactTypeStoragePrefix = typePrefix,
+            )
+
+        assertEquals(setOf("feature.enabled"), projected)
+    }
+
+    @Test
+    fun sameTypeValueChangeInvalidatesEvenWhenRevisionIncrementIsLost() {
+        val refreshable = appSettingsSource as RefreshablePropertySource
+        appSettingsSource.setProperty("revision.key", "first-value")
+        val beforeContentRevision = refreshable.contentRevision
+        val beforeNamespaceRevision = appSettings.mutationRevision
+        val independentWriter =
+            MultiplatformSettings(
+                app = appGraph,
+                configLevel = com.sphereon.core.api.conf.ConfigLevel.APP,
+                userContext = null,
+            )
+
+        independentWriter.set("revision.key", "second-value")
+        // Adversarial lost-update interleaving: another process overwrote the increment
+        // with the revision it observed before this writer committed.
+        independentWriter.settings.putLong(
+            SETTINGS_NAMESPACE_REVISION_KEY,
+            beforeNamespaceRevision,
+        )
+        refreshable.refreshIfNeeded()
+
+        assertTrue(refreshable.contentRevision > beforeContentRevision)
+        assertEquals("second-value", appSettingsSource.getProperty("revision.key", String::class))
+        appSettingsSource.removeProperty("revision.key")
+    }
+
+    @Test
+    fun sensitiveContentFingerprintStringRenderingIsAlwaysRedacted() {
+        val fingerprint = SensitiveSettingsContentFingerprint("low-entropy-verifier-material")
+
+        assertFalse(fingerprint.toString().contains("low-entropy-verifier-material"))
+        assertEquals("<sensitive-content-fingerprint:redacted>", fingerprint.toString())
+    }
+
     // ========== getPropertyAsString Tests ==========
 
     @Test
@@ -208,6 +326,15 @@ class MultiplatformSettingsPropertySourceTest {
     }
 
     @Test
+    fun testGetPropertyAsStringForLong() {
+        appSettingsSource.setProperty("long.key", Long.MAX_VALUE)
+
+        val result = appSettingsSource.getPropertyAsString("long.key")
+
+        assertEquals(Long.MAX_VALUE.toString(), result)
+    }
+
+    @Test
     fun testGetPropertyAsStringForNull() {
         val result = appSettingsSource.getPropertyAsString("nonexistent.key")
         assertNull(result)
@@ -223,6 +350,21 @@ class MultiplatformSettingsPropertySourceTest {
         val names = appSettingsSource.getAllPropertyNames()
         assertTrue(names.contains("all.properties.key1"))
         assertTrue(names.contains("all.properties.key2"))
+    }
+
+    @Test
+    fun nonEmptySettingsBulkPreservesTypedValuesThroughAnyLookup() {
+        appSettingsSource.setProperty("bulk.string", "visible")
+        appSettingsSource.setProperty("bulk.int", 42)
+
+        val bulk =
+            appGraph.appConfigService.getSubProperties(
+                prefixes = setOf("bulk"),
+                stripPrefix = true,
+            )
+
+        assertEquals("visible", bulk["string"])
+        assertEquals(42, bulk["int"])
     }
 
     // ========== Source and Name Tests ==========

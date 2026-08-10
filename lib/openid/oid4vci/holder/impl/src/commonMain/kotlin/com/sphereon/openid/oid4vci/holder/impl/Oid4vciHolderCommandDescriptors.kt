@@ -23,6 +23,7 @@ import com.sphereon.openid.oid4vci.holder.BuildAuthorizationRequestCommand
 import com.sphereon.openid.oid4vci.holder.CreateCredentialRequestProofCommand
 import com.sphereon.openid.oid4vci.holder.ExchangeAuthorizationCodeCommand
 import com.sphereon.openid.oid4vci.holder.ExchangePreAuthorizedCodeCommand
+import com.sphereon.openid.oid4vci.holder.ExchangeRefreshTokenCommand
 import com.sphereon.openid.oid4vci.holder.FollowUpIaeCommand
 import com.sphereon.openid.oid4vci.holder.InitiateIaeCommand
 import com.sphereon.openid.oid4vci.holder.ParseCredentialOfferCommand
@@ -31,6 +32,7 @@ import com.sphereon.openid.oid4vci.holder.RequestCredentialCommand
 import com.sphereon.openid.oid4vci.holder.RequestCredentialWithFlowCommand
 import com.sphereon.openid.oid4vci.holder.RequestDeferredCredentialCommand
 import com.sphereon.openid.oid4vci.holder.RequestNonceCommand
+import com.sphereon.openid.oid4vci.holder.RequestAttestationChallengeCommand
 import com.sphereon.openid.oid4vci.holder.ResolveCredentialOfferCommand
 import com.sphereon.openid.oid4vci.holder.ResolveIssuerMetadataCommand
 import com.sphereon.openid.oid4vci.holder.SelectAuthorizationServerCommand
@@ -67,8 +69,16 @@ interface Oid4vciHolderCommandDescriptors {
     fun requestNonce(impl: RequestNonceCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
+    @StringKey(RequestAttestationChallengeCommand.COMMAND_ID)
+    fun requestAttestationChallenge(impl: RequestAttestationChallengeCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
     @StringKey(ExchangePreAuthorizedCodeCommand.COMMAND_ID)
     fun exchangePreAuthorizedCode(impl: ExchangePreAuthorizedCodeCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(ExchangeRefreshTokenCommand.COMMAND_ID)
+    fun exchangeRefreshToken(impl: ExchangeRefreshTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(CreateCredentialRequestProofCommand.COMMAND_ID)

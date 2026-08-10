@@ -17,8 +17,13 @@
 package com.sphereon.openid.oid4vp.common
 
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.mdocMeta
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -38,10 +43,11 @@ class ScopeToDcqlTest {
                     DcqlCredentialQuery(
                         id = "identity_credential",
                         format = "dc+sd-jwt",
+                        meta = sdJwtVcMeta("urn:test:identity"),
                         claims =
                             listOf(
-                                DcqlClaimQuery(path = listOf("given_name")),
-                                DcqlClaimQuery(path = listOf("family_name")),
+                                DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("given_name")))),
+                                DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("family_name")))),
                             ),
                     ),
                 ),
@@ -54,10 +60,11 @@ class ScopeToDcqlTest {
                     DcqlCredentialQuery(
                         id = "diploma_credential",
                         format = "dc+sd-jwt",
+                        meta = sdJwtVcMeta("urn:test:diploma"),
                         claims =
                             listOf(
-                                DcqlClaimQuery(path = listOf("degree")),
-                                DcqlClaimQuery(path = listOf("university")),
+                                DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("degree")))),
+                                DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("university")))),
                             ),
                     ),
                 ),
@@ -79,7 +86,7 @@ class ScopeToDcqlTest {
         assertEquals("com.example.identity", definition.scopeValue)
         assertEquals("Identity credential presentation", definition.description)
         assertNotNull(definition.dcqlQuery)
-        assertEquals(1, definition.dcqlQuery.credentials?.size)
+        assertEquals(1, definition.dcqlQuery.credentials.size)
     }
 
     @Test
@@ -267,11 +274,11 @@ class ScopeToDcqlTest {
         // Create two scope definitions with the same credential ID
         val query1 =
             DcqlQuery(
-                credentials = listOf(DcqlCredentialQuery(id = "same_id", format = "dc+sd-jwt")),
+                credentials = listOf(DcqlCredentialQuery(id = "same_id", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:same"))),
             )
         val query2 =
             DcqlQuery(
-                credentials = listOf(DcqlCredentialQuery(id = "same_id", format = "mso_mdoc")),
+                credentials = listOf(DcqlCredentialQuery(id = "same_id", format = "mso_mdoc", meta = mdocMeta("org.example.same"))),
             )
 
         val registry =
@@ -313,7 +320,7 @@ class ScopeToDcqlTest {
     fun mergeDcqlQueriesShouldCombineCredentialsFromMultipleQueries() {
         val merged = ScopeResolver.mergeDcqlQueries(listOf(identityQuery, diplomaQuery))
 
-        assertEquals(2, merged.credentials?.size)
+        assertEquals(2, merged.credentials.size)
         assertNull(merged.credential_sets) // Neither source had credential_sets
     }
 

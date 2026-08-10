@@ -135,6 +135,19 @@ class PropertySourceBootstrapImpl(
                     .thenBy { it.providerId },
             )
 
+    private fun authoritativeScopedSource(
+        source: PropertySource<*>,
+        contributionLevel: ConfigLevel,
+    ): PropertySource<*> {
+        if (source is ScopedPropertySource<*>) {
+            require(source.configLevel == contributionLevel) {
+                "Property source scope does not match its contribution scope"
+            }
+            return source
+        }
+        return ScopedPropertySourceWrapper(source, contributionLevel)
+    }
+
     override fun registerAppSources() {
         val appContributions = orderedContributions(ConfigLevel.APP)
 
@@ -146,13 +159,10 @@ class PropertySourceBootstrapImpl(
             }
             if (contribution.isEnabled(appConfigService)) {
                 val source =
-                    contribution.getPropertySource().let {
-                        if (it is ScopedPropertySource<*>) {
-                            it
-                        } else {
-                            ScopedPropertySourceWrapper(it, contribution.configLevel)
-                        }
-                    }
+                    authoritativeScopedSource(
+                        contribution.getPropertySource(),
+                        contribution.configLevel,
+                    )
                 appConfigService.addPropertySource(source)
                 registeredSources.add(contribution.providerId)
                 _registeredAppSourceCount = registeredSources.size
@@ -207,12 +217,7 @@ class PropertySourceBootstrapImpl(
         for (contribution in tenantContributions) {
             if (contribution.isEnabled(appConfigService)) {
                 val source = contribution.createScopedSource(tenantId) ?: continue
-                val scoped =
-                    if (source is ScopedPropertySource<*>) {
-                        source
-                    } else {
-                        ScopedPropertySourceWrapper(source, contribution.configLevel)
-                    }
+                val scoped = authoritativeScopedSource(source, contribution.configLevel)
                 if (tenantConfigService.getPropertySources(includeParents = false).contains(scoped.getName())) {
                     continue
                 }
@@ -234,12 +239,7 @@ class PropertySourceBootstrapImpl(
         for (contribution in principalContributions) {
             if (contribution.isEnabled(appConfigService)) {
                 val source = contribution.createScopedSource(tenantId, principalId) ?: continue
-                val scoped =
-                    if (source is ScopedPropertySource<*>) {
-                        source
-                    } else {
-                        ScopedPropertySourceWrapper(source, contribution.configLevel)
-                    }
+                val scoped = authoritativeScopedSource(source, contribution.configLevel)
                 if (principalConfigService.getPropertySources(includeParents = false).contains(scoped.getName())) {
                     continue
                 }

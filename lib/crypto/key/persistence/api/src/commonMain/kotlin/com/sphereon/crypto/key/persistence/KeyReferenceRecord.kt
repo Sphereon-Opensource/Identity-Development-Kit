@@ -29,7 +29,8 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 
 /**
- * Persistence record for a key reference. Contains metadata only — no key material.
+ * Persistence record for a key reference. Contains metadata and public material only — never
+ * private key material.
  *
  * @property id UUID primary key
  * @property tenantId Tenant this reference belongs to (tenant isolation)
@@ -37,6 +38,15 @@ import kotlin.time.Instant
  * @property kid Key identifier (provider-specific, e.g. AWS key UUID, Azure name/version)
  * @property providerId ID of the KMS provider that owns this key
  * @property origin Whether this key was managed natively or discovered from an external source
+ * @property publicKeyJwk Serialized public JWK, so reading public verification material never has
+ *   to open the provider's key store. A public key is not a secret: it is published to every
+ *   verifier, so holding it next to the reference discloses nothing that resolving it would not.
+ *
+ *   Nullable only because deployments created before this field existed have rows without it.
+ *   Those are filled in on first read, and nothing writes null once a value is known. Newer API
+ *   versions require it on the wire; the column stays optional until no unfilled row can remain.
+ *
+ *   [fromManagedKey] deliberately leaves it unset. See the note there before changing that.
  */
 @Serializable
 data class KeyReferenceRecord(
@@ -50,6 +60,7 @@ data class KeyReferenceRecord(
     val signatureAlgorithm: SignatureAlgorithm? = null,
     val keyVisibility: KeyVisibility? = null,
     val keyEncoding: KeyEncoding? = null,
+    val publicKeyJwk: String? = null,
     val createdAt: Instant,
     val createdById: String? = null,
     val updatedAt: Instant,
@@ -58,7 +69,18 @@ data class KeyReferenceRecord(
     val deletedById: String? = null,
 ) {
     companion object {
-        /** Create a [KeyReferenceRecord] from a [ManagedKeyInfoType] after key generation or storage. */
+        /**
+         * Create a [KeyReferenceRecord] from a [ManagedKeyInfoType] after key generation or storage.
+         *
+         * This does not set `publicKeyJwk`, and must not be changed to. A freshly generated key pair
+         * carries no certificate, because the software key store mints the self-signed wrapper
+         * certificate when the entry is stored, not when the pair is generated. Deriving the public
+         * JWK from the in-memory pair therefore records one with no `x5c`, and `x5c` is a member of
+         * the same JWK. That value then wins over the key-store-resolved one for the life of the
+         * row, and every reader that needs the chain is served a key that appears to have none.
+         *
+         * The first read fills the column instead, from the key store, after the wrapper exists.
+         */
         fun fromManagedKey(
             key: ManagedKeyInfoType<*>,
             tenantId: String,
@@ -86,6 +108,7 @@ data class KeyReferenceRecord(
                 updatedById = principalId,
             )
         }
+
     }
 }
 

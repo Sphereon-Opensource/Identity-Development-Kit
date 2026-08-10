@@ -125,6 +125,9 @@ class DeferredPipelineReExecutor(
         issuerConfigProvider.prepare()
         val inputs = prepareDispatchInputs(entry, tokenContext, session) ?: return null
         val issuanceContext = buildIssuanceContext(inputs, tokenContext) ?: return null
+        if (missingMandatoryClaimPaths(issuanceContext.mandatoryClaims, issuanceContext.attributes).isNotEmpty()) {
+            return null
+        }
         val preIssueRan =
             contributeOid4vciPhase(
                 correlationId = correlationId,
@@ -239,7 +242,7 @@ class DeferredPipelineReExecutor(
         inputs: DispatchInputs,
         tokenContext: ValidatedTokenContext,
     ): IssuanceContext? {
-        val signingConfig = issuerConfigProvider.credentialSigningConfigs[inputs.configId] ?: return null
+        val signingConfig = issuerConfigProvider.credentialSigningConfigs()[inputs.configId] ?: return null
         val expirationInDays = signingConfig.expirationInDays ?: return null
         val designContext = resolveDesignContext(inputs.configId)
         return IssuanceContext(
@@ -257,6 +260,7 @@ class DeferredPipelineReExecutor(
             mandatoryClaims = designContext.mandatoryClaims,
             signingKeyAlias = signingConfig.signingKeyAlias,
             signingKeyMode = signingConfig.signingKeyMode,
+            signingVerificationMethodId = signingConfig.signingVerificationMethodId,
             signingCertChainPath = signingConfig.signingCertChainPath,
             issuanceClockSkewInSeconds = issuerConfigProvider.issuanceClockSkewInSeconds,
             expirationInDays = expirationInDays,

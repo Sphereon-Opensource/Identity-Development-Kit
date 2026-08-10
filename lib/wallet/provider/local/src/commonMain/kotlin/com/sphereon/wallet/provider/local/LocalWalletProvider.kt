@@ -410,6 +410,7 @@ class LocalWalletProvider(
         WalletProviderAttestationSignerRef(
             signerId = keyAlias,
             issuer = config.providerId,
+            keyId = keyAlias,
             signingAlgorithm = algorithm.jwtAlg,
             signerProfile = walletAttestationSignerProfile(wsca.wscdProfile).name,
             certificateChain = emptyList(),

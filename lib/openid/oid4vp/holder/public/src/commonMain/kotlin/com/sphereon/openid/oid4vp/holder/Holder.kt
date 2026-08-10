@@ -41,6 +41,11 @@ interface Oid4vpHolderService {
         walletConfig: WalletConfig? = null,
     ): IdkResult<AuthorizationRequest, IdkError>
 
+    suspend fun parseDigitalCredentialsAuthorizationRequest(
+        request: DigitalCredentialsAuthorizationRequest,
+        walletConfig: WalletConfig? = null,
+    ): IdkResult<AuthorizationRequest, IdkError>
+
     suspend fun resolveAuthorizationRequest(request: AuthorizationRequest): IdkResult<ResolvedOid4vpRequest, IdkError>
 
     suspend fun createAuthorizationResponse(
@@ -115,6 +120,15 @@ interface Oid4vpHolder : Oid4vpHolderAdapter {
      */
     override suspend fun parseAuthorizationRequest(
         requestUri: String,
+        walletConfig: WalletConfig?,
+    ): IdkResult<AuthorizationRequest, IdkError>
+
+    /**
+     * Parses a request delivered by the W3C Digital Credentials API. The caller supplies the
+     * browser [DigitalCredentialsAuthorizationRequest.origin] as trusted transport context.
+     */
+    override suspend fun parseDigitalCredentialsAuthorizationRequest(
+        request: DigitalCredentialsAuthorizationRequest,
         walletConfig: WalletConfig?,
     ): IdkResult<AuthorizationRequest, IdkError>
 

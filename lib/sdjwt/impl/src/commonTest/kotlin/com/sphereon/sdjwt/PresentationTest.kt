@@ -31,6 +31,7 @@ import com.sphereon.sdjwt.testutil.createSdJwtTestAppGraph
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,7 +49,7 @@ class PresentationTest {
 
     val app = createSdJwtTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("sdjwt-presentation-test")
+    val session = context.sessionContextManager.createOrGetFromId("sdjwt-presentation-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {
@@ -297,7 +298,14 @@ class PresentationTest {
                 com.sphereon.sdjwt.SdJwtCodec
                     .parse(presentation.presentation)
             assertTrue(parsedSdJwt.isOk)
-            assertNotNull(parsedSdJwt.value.keyBindingJwt, "Key Binding JWT should be present")
+            val keyBindingJwt = assertNotNull(parsedSdJwt.value.keyBindingJwt, "Key Binding JWT should be present")
+            val protectedHeader =
+                com.sphereon.crypto.jose.jws.JwsUtils.decodeBase64UrlToJson(
+                    keyBindingJwt.jwt.substringBefore('.'),
+                )
+            assertEquals(setOf("alg", "typ"), protectedHeader.keys)
+            assertEquals("kb+jwt", protectedHeader.getValue("typ").jsonPrimitive.content)
+            assertFalse("jwk" in protectedHeader)
 
             println("PASS: Presentation with Key Binding JWT verified")
         }

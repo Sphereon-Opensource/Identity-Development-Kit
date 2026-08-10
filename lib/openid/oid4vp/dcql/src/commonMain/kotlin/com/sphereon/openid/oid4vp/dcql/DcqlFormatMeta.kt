@@ -18,6 +18,11 @@ package com.sphereon.openid.oid4vp.dcql
 
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.putJsonArray
 
 /**
  * Format-specific metadata for credential queries
@@ -42,11 +47,9 @@ sealed interface DcqlFormatMeta
  *
  * Format-specific metadata for SD-JWT Verifiable Credentials (format: "dc+sd-jwt")
  *
- * OpenID4VP 1.0 Appendix A.1 (SD-JWT VC):
- * "The meta object for SD-JWT VC format supports the following properties:
- * - vct_values: Array of acceptable Verifiable Credential Types
- * - sd_jwt_alg_values: Array of acceptable signing algorithms for the SD-JWT
- * - kb_jwt_alg_values: Array of acceptable signing algorithms for the Key Binding JWT"
+ * OpenID4VP 1.0 Final Appendix B.3.5 defines only `vct_values` in the
+ * Credential Query `meta` object. Algorithm capabilities belong to
+ * `vp_formats_supported`, not DCQL.
  *
  * Example:
  * ```json
@@ -56,24 +59,17 @@ sealed interface DcqlFormatMeta
  *     "vct_values": [
  *       "https://credentials.example.com/identity_credential",
  *       "https://credentials.example.com/resident_card"
- *     ],
- *     "sd_jwt_alg_values": ["ES256", "ES384"],
- *     "kb_jwt_alg_values": ["ES256"]
+ *     ]
  *   }
  * }
  * ```
  *
  * @property vct_values Array of acceptable Verifiable Credential Type URIs
- * @property sd_jwt_alg_values Array of acceptable JWS algorithms for SD-JWT (e.g., "ES256", "RS256")
- * @property kb_jwt_alg_values Array of acceptable JWS algorithms for Key Binding JWT
- *
  * @see DcqlCredentialQuery.meta
  */
 @Serializable
 data class SdJwtVcMeta(
-    val vct_values: List<String>? = null,
-    val sd_jwt_alg_values: List<String>? = null,
-    val kb_jwt_alg_values: List<String>? = null,
+    val vct_values: List<String>,
 ) : DcqlFormatMeta
 
 /**
@@ -81,96 +77,75 @@ data class SdJwtVcMeta(
  *
  * Format-specific metadata for ISO/IEC 18013-5 mobile documents (format: "mso_mdoc")
  *
- * OpenID4VP 1.0 Appendix A.2 (ISO mDoc):
- * "The meta object for mso_mdoc format supports the following properties:
- * - doctype_value: The document type identifier (e.g., 'org.iso.18013.5.1.mDL')
- * - namespace_values: Array of acceptable namespace identifiers"
+ * OpenID4VP 1.0 Final Appendix B.2.3 defines only `doctype_value` in the
+ * Credential Query `meta` object. Namespaces are expressed by the two string
+ * components of each mdoc Claims Path Pointer.
  *
  * Example:
  * ```json
  * {
  *   "format": "mso_mdoc",
- *   "meta": {
- *     "doctype_value": "org.iso.18013.5.1.mDL",
- *     "namespace_values": [
- *       "org.iso.18013.5.1",
- *       "org.iso.18013.5.1.aamva"
- *     ]
- *   }
+ *   "meta": {"doctype_value": "org.iso.18013.5.1.mDL"}
  * }
  * ```
  *
  * @property doctype_value The document type identifier for this mDoc
- * @property namespace_values Array of acceptable namespace identifiers for claims
- *
  * @see DcqlCredentialQuery.meta
  */
 @Serializable
 data class MdocMeta(
-    val doctype_value: String? = null,
-    val namespace_values: List<String>? = null,
+    val doctype_value: String,
 ) : DcqlFormatMeta
 
 /**
- * JWT VC JSON Format Metadata
+ * W3C Verifiable Credential Format Metadata
  *
- * Format-specific metadata for W3C Verifiable Credentials in JWT format (format: "jwt_vc_json")
- *
- * OpenID4VP 1.0 Appendix A.3 (JWT VC JSON):
- * "The meta object for jwt_vc_json format supports the following properties:
- * - type_values: Array of acceptable credential type identifiers from the 'type' array
- * - alg_values: Array of acceptable JWS signing algorithms"
- *
- * Example:
- * ```json
- * {
- *   "format": "jwt_vc_json",
- *   "meta": {
- *     "type_values": ["VerifiableCredential", "UniversityDegreeCredential"],
- *     "alg_values": ["ES256", "ES384"]
- *   }
- * }
- * ```
- *
- * @property type_values Array of acceptable credential types from the VC 'type' array
- * @property alg_values Array of acceptable JWS signing algorithms
- *
- * @see DcqlCredentialQuery.meta
- */
-@Serializable
-data class JwtVcJsonMeta(
-    val type_values: List<String>? = null,
-    val alg_values: List<String>? = null,
-) : DcqlFormatMeta
-
-/**
- * LDP VC Format Metadata
- *
- * Format-specific metadata for W3C Verifiable Credentials with Linked Data Proofs (format: "ldp_vc")
- *
- * OpenID4VP 1.0 Appendix A.4 (LDP VC):
- * "The meta object for ldp_vc format supports the following properties:
- * - type_values: Array of acceptable credential type identifiers from the 'type' array
- * - proof_type_values: Array of acceptable proof types (e.g., 'Ed25519Signature2020')"
+ * OpenID4VP 1.0 Final Appendix B.1.1 defines only `type_values` in the
+ * Credential Query `meta` object for W3C VC formats. Each inner array is one
+ * alternative set of fully-expanded credential types that must all be present.
  *
  * Example:
  * ```json
  * {
  *   "format": "ldp_vc",
  *   "meta": {
- *     "type_values": ["VerifiableCredential", "UniversityDegreeCredential"],
- *     "proof_type_values": ["Ed25519Signature2020", "JsonWebSignature2020"]
+ *     "type_values": [["VerifiableCredential", "UniversityDegreeCredential"]]
  *   }
  * }
  * ```
  *
- * @property type_values Array of acceptable credential types from the VC 'type' array
- * @property proof_type_values Array of acceptable Linked Data Proof types
+ * @property type_values Alternative non-empty sets of acceptable credential types
  *
  * @see DcqlCredentialQuery.meta
  */
 @Serializable
-data class LdpVcMeta(
-    val type_values: List<String>? = null,
-    val proof_type_values: List<String>? = null,
+data class W3cVcMeta(
+    val type_values: List<List<String>>,
 ) : DcqlFormatMeta
+
+/** Creates the required OID4VP 1.0 Final Appendix B.3.5 SD-JWT VC metadata. */
+fun sdJwtVcMeta(vararg vctValues: String): JsonObject =
+    buildJsonObject {
+        require(vctValues.isNotEmpty() && vctValues.all { it.isNotEmpty() }) { "vct_values must not be empty" }
+        putJsonArray("vct_values") { vctValues.forEach { add(JsonPrimitive(it)) } }
+    }
+
+/** Creates the required OID4VP 1.0 Final Appendix B.2.3 mdoc metadata. */
+fun mdocMeta(doctype: String): JsonObject =
+    buildJsonObject {
+        require(doctype.isNotEmpty()) { "doctype_value must not be empty" }
+        put("doctype_value", JsonPrimitive(doctype))
+    }
+
+/** Creates the required OID4VP 1.0 Final Appendix B.1.1 W3C VC metadata. */
+fun w3cVcMeta(vararg typeAlternatives: List<String>): JsonObject =
+    buildJsonObject {
+        require(typeAlternatives.isNotEmpty() && typeAlternatives.all { it.isNotEmpty() && it.all(String::isNotEmpty) }) {
+            "type_values alternatives must not be empty"
+        }
+        putJsonArray("type_values") {
+            typeAlternatives.forEach { alternative ->
+                add(buildJsonArray { alternative.forEach { add(JsonPrimitive(it)) } })
+            }
+        }
+    }

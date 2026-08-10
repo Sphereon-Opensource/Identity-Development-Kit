@@ -62,6 +62,8 @@ import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.impl.http.Oid4vpVerifierHttpAdapter
 import dev.zacsweers.metro.ContributesTo
@@ -78,6 +80,7 @@ import io.ktor.http.content.OutgoingContent
 import io.ktor.http.contentType
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -507,6 +510,7 @@ class WalletClientE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vc-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
@@ -608,6 +612,8 @@ class WalletClientE2ETest {
 
             val proofResult =
                 holder.createCredentialRequestProof(
+                    walletUnitId = "wallet-client-e2e",
+                    operationBinding = "credential-proof-client-e2e",
                     issuerUrl = issuerUrl,
                     cNonce = nonce.cNonce,
                     signingKeyIds = listOf(signingKeyId),
@@ -699,6 +705,7 @@ class WalletClientE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vc-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
@@ -759,10 +766,11 @@ class WalletClientE2ETest {
                             DcqlCredentialQuery(
                                 id = "pid_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:pid"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("given_name")),
-                                        DcqlClaimQuery(path = listOf("family_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("given_name")),
+                                        DcqlClaimQuery(path = claimsPathPointer("family_name")),
                                     ),
                             ),
                         ),
@@ -772,6 +780,7 @@ class WalletClientE2ETest {
             val createResult =
                 verifier.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "oid4vc-integration-verifier",
                         dcqlQuery = dcqlQuery,
                         clientId = "https://verifier.example.com",
                         responseUri = "https://verifier.example.com/oid4vp/response",
@@ -832,6 +841,7 @@ class WalletClientE2ETest {
                             DcqlCredentialQuery(
                                 id = "pid_credential",
                                 format = "dc+sd-jwt",
+                                meta = sdJwtVcMeta("urn:test:pid"),
                             ),
                         ),
                 )
@@ -840,6 +850,7 @@ class WalletClientE2ETest {
             val createResult =
                 verifier.createAuthorizationRequest(
                     CreateAuthorizationRequestArgs(
+                        instanceId = "oid4vc-integration-verifier",
                         dcqlQuery = dcqlQuery,
                         clientId = "https://verifier.example.com",
                         responseUri = "https://verifier.example.com/oid4vp/auth/response",

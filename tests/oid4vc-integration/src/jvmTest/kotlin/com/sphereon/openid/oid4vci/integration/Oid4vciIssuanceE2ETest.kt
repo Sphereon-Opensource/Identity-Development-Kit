@@ -104,6 +104,7 @@ class Oid4vciIssuanceE2ETest {
             val result =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vci-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
@@ -149,6 +150,7 @@ class Oid4vciIssuanceE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vci-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
@@ -224,9 +226,11 @@ class Oid4vciIssuanceE2ETest {
             assertNotNull(keyPair, "Generated key pair should not be null")
             val signingKeyId = keyPair.kid ?: keyPair.alias
 
-            // Step 6: Holder creates a credential request proof using the real KMS
+            // Step 6: Holder creates a credential request proof through WSCA and its selected WSCD.
             val proofResult =
                 holder.createCredentialRequestProof(
+                    walletUnitId = "oid4vci-issuance-e2e",
+                    operationBinding = "credential-proof-preauth",
                     issuerUrl = issuerUrl,
                     cNonce = nonce.cNonce,
                     signingKeyIds = listOf(signingKeyId),
@@ -320,6 +324,7 @@ class Oid4vciIssuanceE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vci-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
@@ -386,6 +391,8 @@ class Oid4vciIssuanceE2ETest {
             // Step 6: Holder creates proof JWT
             val proofResult =
                 holder.createCredentialRequestProof(
+                    walletUnitId = "oid4vci-issuance-e2e",
+                    operationBinding = "credential-proof-authorization-code",
                     issuerUrl = issuerUrl,
                     cNonce = nonce.cNonce,
                     signingKeyIds = listOf(signingKeyId),
@@ -447,6 +454,7 @@ class Oid4vciIssuanceE2ETest {
             val result =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vci-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
@@ -478,6 +486,7 @@ class Oid4vciIssuanceE2ETest {
             val result =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vci-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = emptyList(),
                         preAuthorizedCodeGrant = true,
@@ -515,6 +524,8 @@ class Oid4vciIssuanceE2ETest {
             // Create proof
             val proofResult =
                 holder.createCredentialRequestProof(
+                    walletUnitId = "oid4vci-issuance-e2e",
+                    operationBinding = "credential-proof-unit-flow",
                     issuerUrl = "https://issuer.example.com",
                     cNonce = "test-nonce-123",
                     signingKeyIds = listOf(signingKeyId),
@@ -553,6 +564,7 @@ class Oid4vciIssuanceE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vci-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,

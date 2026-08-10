@@ -39,7 +39,7 @@ class CredentialRequestSerializationTest {
         val request =
             CredentialRequest(
                 credentialConfigurationId = "UniversityDegreeCredential",
-                format = "vc+sd-jwt",
+                format = "dc+sd-jwt",
                 vct = "https://credentials.example.com/identity_credential",
             )
 
@@ -48,7 +48,7 @@ class CredentialRequestSerializationTest {
 
         assertEquals(request, decoded)
         assertEquals("UniversityDegreeCredential", decoded.credentialConfigurationId)
-        assertEquals("vc+sd-jwt", decoded.format)
+        assertEquals("dc+sd-jwt", decoded.format)
         assertEquals("https://credentials.example.com/identity_credential", decoded.vct)
         assertNull(decoded.credentialIdentifier)
         assertNull(decoded.proofs)
@@ -168,7 +168,7 @@ class CredentialRequestSerializationTest {
             """
             {
                 "credential_configuration_id": "UniversityDegreeCredential",
-                "format": "vc+sd-jwt",
+                "format": "dc+sd-jwt",
                 "vct": "https://credentials.example.com/identity_credential",
                 "vendor_extension": "some_value"
             }
@@ -177,7 +177,7 @@ class CredentialRequestSerializationTest {
         val decoded = json.decodeFromString<CredentialRequest>(jsonString)
 
         assertEquals("UniversityDegreeCredential", decoded.credentialConfigurationId)
-        assertEquals("vc+sd-jwt", decoded.format)
+        assertEquals("dc+sd-jwt", decoded.format)
         assertEquals(1, decoded.additionalParameters.size)
         assertEquals("some_value", decoded.additionalParameters["vendor_extension"]?.jsonPrimitive?.content)
 

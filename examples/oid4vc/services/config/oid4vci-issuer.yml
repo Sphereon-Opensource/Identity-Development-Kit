@@ -15,7 +15,7 @@ kms:
         type: pkcs12
         id: software
         password: "${env:KEYSTORE_PASSWORD}"
-        path: /app/keystore/keystore.p12
+        path: "${env:KEYSTORE_PATH:/app/keystore/keystore.p12}"
 
 # Credential status lists — standalone, protocol-neutral (NOT nested under oid4vci). Each list is
 # provisioned at startup and hosted at its own public root path (GET /public/statuslists/{id}); the
@@ -44,12 +44,11 @@ statuslists:
     # (binary COSE_Sign1, `application/statuslist+cwt`).
     proof-format: jwt
     purposes: revocation
-    # The status list MUST be signed with the same issuer key + mechanism as the credentials that
-    # reference it, or wallets reject it (trust anchor / signing method mismatch). The demo uses one
-    # issuer identity (the CA-signed `PID` key) for its SD-JWT credentials and this list, so the list
-    # carries the same DID `kid` (did:jwk mode) or the same `x5c` chain (haip/x509 mode) as the VC.
+    # Token Status List verification is profile-driven independently from credential signing:
+    # non-HAIP uses a self-contained public `jwk`; HAIP uses the CA-bound `x5c` chain.
+    # Both modes use the same PID signing key and therefore the same issuer identity.
     signing-key-alias: PID
-    signing-key-mode: "${env:OID4VCI_SIGNING_MODE}"
+    signing-key-mode: "${env:OID4VCI_STATUSLIST_SIGNING_MODE:jwk}"
     # Short cache lifetime for the demo: drives both the token `ttl` claim and the hosted
     # `Cache-Control: max-age`, so a wallet/verifier sees a revocation within seconds instead of the
     # default 5 minutes. Production deployments keep this at minutes for the caching benefit.
@@ -79,12 +78,29 @@ oid4vci:
     # Key alias in the issuer KMS used to sign issuer metadata (OID4VCI §13.2.4).
     # Reuses the TestCredential signing key for the demo; production should use a dedicated key.
     signing-key-alias: TestCredential
+    signed-metadata:
+      enabled: "${env:OID4VCI_SIGNED_METADATA_ENABLED:false}"
     credential-configuration-ids: TestCredential,EuPid,AgeOver18,Mdl
+    # OID4VCI 1.0 §12.2.4. Omit/leave blank to disable batch issuance. When set,
+    # metadata advertises `batch_credential_issuance.batch_size` and the credential
+    # endpoint accepts at most this many proof/credential pairs in one request.
+    batch:
+      max-size: "${env:OID4VCI_BATCH_MAX_SIZE:}"
+    # Subject-bound attributes for wallet-initiated authorization-code issuance, where
+    # there is no issuer-created offer/session carrying pre-seeded attributes. The value
+    # is a JSON registry shaped as {"<subject>":{"<credential-config-id>":{...claims...}}}.
+    # Production deployments normally populate the same issuance seam from a principal/
+    # connector source; this config-backed registry is useful for static and test tenants.
+    wallet-initiated:
+      # Keep the default empty: nested `{}` inside an interpolation placeholder is not valid
+      # placeholder syntax. An empty value means this optional source contributes no attributes.
+      subject-attributes-json: "${env:OID4VCI_ISSUER_WALLET_INITIATED_SUBJECT_ATTRIBUTES_JSON:}"
     # OID4VCI 1.0 §11.2.4: declare the JWE algs and enc methods the issuer accepts on
     # `credential_response_encryption`. Without these the metadata block is omitted and the
     # OIDF `VCICheckCredentialResponseEncryptionSupported` condition trips. The encryptor
     # validates the wallet's request against these lists and returns `invalid_encryption_parameters`
-    # on a mismatch; `encryption-required` is the per-deployment policy switch.
+    # on a mismatch; `mode` is the per-deployment policy switch (`disabled`, `supported`, or
+    # `required`).
     #
     # `zip_values_supported` advertises DEFLATE (RFC 7516 §4.1.3, JWE `zip="DEF"`). The OIDF
     # encrypted-variant conformance flow's `performCompressedEncryptionRequest` always asks
@@ -93,10 +109,10 @@ oid4vci:
     # it is forward-compatible (1.0 wallets simply ignore the unknown field).
     encryption:
       response:
+        mode: "${env:OID4VCI_RESPONSE_ENCRYPTION_MODE:supported}"
         alg-values-supported: "${env:OID4VCI_RESPONSE_ENC_ALG_VALUES:ECDH-ES,ECDH-ES+A128KW,ECDH-ES+A256KW}"
         enc-values-supported: "${env:OID4VCI_RESPONSE_ENC_ENC_VALUES:A256GCM,A128GCM}"
         zip-values-supported: "${env:OID4VCI_RESPONSE_ENC_ZIP_VALUES:DEF}"
-        encryption-required: "${env:OID4VCI_RESPONSE_ENCRYPTION_REQUIRED:false}"
       # OID4VCI 1.0 §11.2.4 credential_request_encryption: the issuer's public key the wallet
       # encrypts credential requests TO. The `decryption-key-alias` points at a KMS-managed
       # ECDH-ES P-256 keypair (minted by lib/generate-keystores.{sh,ps1}) — the metadata builder
@@ -104,13 +120,13 @@ oid4vci:
       # store private key material in YAML / git.
       #
       # `enc-values-supported` is REQUIRED by spec when this object is published. The
-      # encryption_required flag is INDEPENDENT from the response side so an operator can
-      # advertise request decryption without forcing it (or vice versa).
+      # Request `mode` is INDEPENDENT from the response side so an operator can advertise
+      # request decryption without requiring it (or vice versa).
       request:
+        mode: "${env:OID4VCI_REQUEST_ENCRYPTION_MODE:supported}"
         decryption-key-alias: "${env:OID4VCI_REQUEST_DECRYPTION_KEY_ALIAS:oid4vci-request-decryption}"
         enc-values-supported: "${env:OID4VCI_REQUEST_ENC_ENC_VALUES:A256GCM,A128GCM}"
         zip-values-supported: "${env:OID4VCI_REQUEST_ENC_ZIP_VALUES:}"
-        encryption-required: "${env:OID4VCI_REQUEST_ENCRYPTION_REQUIRED:false}"
     as-bridge:
       internal-url: "${env:OAUTH2_AS_INTERNAL_URL}"
       client-id: issuer-service
@@ -328,6 +344,9 @@ oid4vci:
               user-authentication: "${env:OID4VCI_EUPID_KEY_ATTESTATIONS_USER_AUTH:iso_18045_moderate}"
               key-attester-trust:
                 jwks: "${env:OID4VCI_EUPID_KEY_ATTESTER_JWKS:}"
+                # VDX Wallet Unit/TS03 persistence and certification evidence is a stricter,
+                # operator-selected profile beyond generic OID4VCI key attestation.
+                require-wallet-unit-evidence: "${env:OID4VCI_EUPID_REQUIRE_WALLET_UNIT_EVIDENCE:false}"
         claims:
           "[family_name]":
             mandatory: true
@@ -836,6 +855,7 @@ oid4vci:
               user-authentication: "${env:OID4VCI_MDL_KEY_ATTESTATIONS_USER_AUTH:iso_18045_moderate}"
               key-attester-trust:
                 jwks: "${env:OID4VCI_MDL_KEY_ATTESTER_JWKS:}"
+                require-wallet-unit-evidence: "${env:OID4VCI_MDL_REQUIRE_WALLET_UNIT_EVIDENCE:false}"
         # Bracket notation per the convention noted at the top of `credentials:` —
         # ensures dotted claim keys are treated as a single map key (namespace +
         # element id) rather than a nested path by the YAML/property loader.

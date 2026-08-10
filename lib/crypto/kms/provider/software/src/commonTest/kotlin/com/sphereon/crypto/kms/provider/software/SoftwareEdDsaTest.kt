@@ -16,6 +16,7 @@ import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.interop.okpRawToJwk
+import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.kms.provider.software.testutil.SoftwareKmsTestContext
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
@@ -83,6 +84,27 @@ class SoftwareEdDsaTest {
                 provider.isValidRawSignature(keyInfo = keyInfo, input = "tampered".encodeToByteArray(), signature = sig),
                 "Ed25519 signature must NOT verify against a different message",
             )
+        }
+
+    @Test
+    fun generatedEd25519KeySkipsAutomaticX509Certificate() =
+        runTest {
+            val certificateEnabledProvider = ctx.softwareKmsProviderFactory.create(
+                SoftwareKmsProviderConfig(
+                    id = "test-eddsa-auto-cert",
+                    cryptographyProvider = CryptographyProvider.Default.name,
+                    autoCreateCertificate = true,
+                ),
+                ctx.session.sessionExecution,
+            )
+
+            val keyPair = certificateEnabledProvider.generateKeyAsync(
+                alias = "ed25519-without-x509",
+                alg = SignatureAlgorithm.ED25519,
+            )
+
+            assertEquals(JwaKeyType.OKP, keyPair.jose.publicJwk.kty)
+            assertTrue(keyPair.jose.publicJwk.x5c.isNullOrEmpty())
         }
 
     @Test

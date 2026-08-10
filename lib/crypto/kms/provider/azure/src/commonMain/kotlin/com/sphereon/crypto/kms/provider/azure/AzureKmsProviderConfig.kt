@@ -150,14 +150,18 @@ data class ExponentialBackoffRetryOpts(
 @ObjCName("SecretCredentialOpts", exact = true)
 data class SecretCredentialOpts(
     val clientId: String,
-    val clientSecret: String,
-)
+    val clientSecretId: String,
+    @Transient
+    val clientSecretMaterial: String? = null,
+) {
+    override fun toString(): String = "SecretCredentialOpts(clientId=[REDACTED],clientSecretId=[REDACTED])"
+}
 
 /**
  *  Authenticate with a client certificate.
  *
  * @param clientId Azure application client ID
- * @param pemCertificatePath Path to PEM certificate file
+ * @param certificateSecretId Opaque identifier for PEM certificate and private-key material
  */
 @Serializable
 @JsExportCompat
@@ -165,8 +169,13 @@ data class SecretCredentialOpts(
 @ObjCName("CertificateCredentialOpts", exact = true)
 data class CertificateCredentialOpts(
     val clientId: String,
-    val pemCertificatePath: String,
-)
+    val certificateSecretId: String,
+    @Transient
+    val certificateMaterial: ByteArray? = null,
+) {
+    override fun toString(): String =
+        "CertificateCredentialOpts(clientId=[REDACTED],certificateSecretId=[REDACTED])"
+}
 
 /**
  * Authenticate interactively in the browser.

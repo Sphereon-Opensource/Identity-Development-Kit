@@ -224,7 +224,7 @@ interface StartAdhocIdvExecutionCommand : ServiceCommand<StartAdhocIdvExecutionA
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "idv.execution.start_adhoc"
+        const val COMMAND_ID = "idv.execution.start-adhoc"
     }
 }
 

@@ -67,6 +67,9 @@ kotlin {
                 // software KMS provider factory binding on its compile classpath.
                 api(projects.libWalletImpl)
                 api(projects.libCryptoKmsProviderSoftware)
+                // The fixture graph uses a real durable SQLite DID repository. Production memory
+                // factories were deliberately removed from the graph.
+                api(projects.libDidPersistenceSqlite)
             }
         }
     }

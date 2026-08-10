@@ -150,6 +150,7 @@ interface VerifyAuthorizationCodeGrantCommand : ServiceCommand<VerifyAuthorizati
 data class VerifyRefreshTokenGrantArgs(
     val refreshToken: String,
     val clientId: String,
+    val clientInstanceKeyJkt: String? = null,
     val requestedScope: String? = null,
     val requestedResource: List<String> = emptyList(),
 )
@@ -225,6 +226,12 @@ data class CreateAccessTokenArgs(
     val expiresInSeconds: Int = 3600,
     val dpopJkt: String? = null,
     val clientInstanceKeyJkt: String? = null,
+    /** Authentication time from the end-user authentication event, in epoch seconds. */
+    val authTime: Long? = null,
+    /** Authentication Context Class Reference achieved for this end-user token. */
+    val acr: String? = null,
+    /** Authentication Methods References achieved for this end-user token. */
+    val amr: List<String>? = null,
     val additionalClaims: Map<String, Any> = emptyMap(),
     val baseUrlOverride: String? = null,
     /**
@@ -269,6 +276,10 @@ data class CreateRefreshTokenArgs(
     val scope: String? = null,
     val resource: List<String> = emptyList(),
     val defaultAccessTokenAudience: String? = null,
+    /** OID4VCI configurations authorized for this refresh-token chain. */
+    val credentialConfigurationIds: List<String> = emptyList(),
+    /** Server-internal issuer-state correlation preserved across refresh-token rotation. */
+    val oid4vciIssuerState: String? = null,
     val expiresInSeconds: Int? = null,
     val dpopJkt: String? = null,
     val clientInstanceKeyJkt: String? = null,
@@ -517,10 +528,18 @@ data class VerifiedRefreshTokenGrant(
     val scope: String? = null,
     val resource: List<String> = emptyList(),
     val defaultAccessTokenAudience: String? = null,
+    /** OID4VCI configurations authorized for this refresh-token chain. */
+    val credentialConfigurationIds: List<String> = emptyList(),
+    /** Server-internal issuer-state correlation preserved across refresh-token rotation. */
+    val oid4vciIssuerState: String? = null,
     /**
      * DPoP JWK thumbprint (if DPoP-bound)
      */
     val dpopJkt: String? = null,
+    /** Attested client-instance key binding preserved for the refresh-token chain. */
+    val clientInstanceKeyJkt: String? = null,
+    /** Existing successor when this request is a lost-response retry inside the grace period. */
+    val replacementRefreshToken: String? = null,
     /**
      * Original refresh token ID (for rotation)
      */
@@ -571,6 +590,8 @@ data class VerifiedClientCredentialsGrant(
     val scope: String? = null,
     /** Exact access-token audience authorized by this client's registration. */
     val audience: List<String> = emptyList(),
+    /** Claims copied only from the authenticated client's server-side registration. */
+    val additionalClaims: Map<String, Any> = emptyMap(),
 )
 
 /**
@@ -591,6 +612,9 @@ data class VerifiedTokenExchangeGrant(
     val isDelegation: Boolean,
     val actorSubject: String? = null,
     val actorClaim: ActorClaim? = null,
+    val authTime: Long? = null,
+    val acr: String? = null,
+    val amr: List<String>? = null,
     val additionalClaims: Map<String, Any> = emptyMap(),
     val subjectCnfJkt: String? = null,
 )

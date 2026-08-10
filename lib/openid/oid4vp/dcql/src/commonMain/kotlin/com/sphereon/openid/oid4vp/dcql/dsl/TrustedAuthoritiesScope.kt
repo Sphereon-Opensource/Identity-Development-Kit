@@ -26,8 +26,8 @@ import kotlin.native.ObjCName
  * Trusted authorities specify constraints on who may have issued the requested credential.
  * Three types are supported per OpenID4VP 1.0 Section 6.1.1:
  * - `openid_federation`: OpenID Federation entity identifiers (HTTPS URLs)
- * - `etsi_trusted_list`: ETSI Trusted List URLs (HTTPS URLs)
- * - `authority_key_identifier`: X.509 Authority Key Identifiers (base64url-encoded)
+ * - `etsi_tl`: ETSI Trusted List identifiers
+ * - `aki`: X.509 Authority Key Identifiers (base64url-encoded)
  *
  * Example:
  * ```kotlin
@@ -77,7 +77,7 @@ class TrustedAuthoritiesScope {
         if (urls.isNotEmpty()) {
             authorities.add(
                 DcqlTrustedAuthority(
-                    type = DcqlTrustedAuthority.TYPE_ETSI_TRUSTED_LIST,
+                    type = DcqlTrustedAuthority.TYPE_ETSI_TL,
                     values = urls.toList(),
                 ),
             )
@@ -96,7 +96,7 @@ class TrustedAuthoritiesScope {
         if (akis.isNotEmpty()) {
             authorities.add(
                 DcqlTrustedAuthority(
-                    type = DcqlTrustedAuthority.TYPE_AUTHORITY_KEY_IDENTIFIER,
+                    type = DcqlTrustedAuthority.TYPE_AKI,
                     values = akis.toList(),
                 ),
             )

@@ -40,10 +40,12 @@ import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncrypt
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.issuer.config.CredentialSigningConfig
 import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
+import com.sphereon.openid.oid4vci.issuer.config.MissingRequiredClaimsPolicy
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciSpecVersion
 import com.sphereon.openid.oid4vci.issuer.config.VctTypeMetadataProvider
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
+import com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver
 import com.sphereon.sdjwt.vc.ClaimSdMetadata
 import com.sphereon.sdjwt.vc.SdJwtVcTypeMetadata
 import com.sphereon.sdjwt.vc.VctClaimDisplayInput
@@ -90,6 +92,19 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     private val statusListDefinitionsProvider: Provider<StatusListDefinitionsProvider>? = null,
     private val namespaceProvider: () -> String,
     private val fallbackToSingularNamespace: Boolean = true,
+    /**
+     * Active issuer instance id, evaluated per read like [namespaceProvider]. It identifies the
+     * binding a bound [IssuerKeyNameResolver] resolves against; it never itself names a key.
+     */
+    private val instanceIdProvider: () -> String? = { null },
+    /**
+     * Bound by deployments that manage key material centrally. While bound it is the only source of
+     * the metadata-signing, credential-signing, and request-decryption key names: `signingKeyAlias`,
+     * `signingKmsProviderId`, `credentials.[<id>].signingKeyAlias`,
+     * `credentialDefaults.signingKeyAlias`, `encryption.request.decryptionKeyAlias`, and
+     * `encryption.request.decryptionKmsProviderId` are not read at all, and a null answer refuses.
+     */
+    private val keyNameResolver: Provider<IssuerKeyNameResolver>? = null,
 ) : Oid4vciIssuerConfigProvider,
     VctTypeMetadataProvider {
     private val configService: PrincipalConfigService
@@ -171,12 +186,29 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                 ?.splitComma()
                 ?.takeIf { it.isNotEmpty() }
 
-    /** Raw metadata signing alias read from `<namespace>.signingKeyAlias`. */
-    override val metadataSigningKeyAlias: String?
-        get() = namespaceProperty("signingKeyAlias")?.takeIf { it.isNotBlank() }
+    /**
+     * Metadata-signing key name. A bound [IssuerKeyNameResolver] answers from the deployment's own
+     * server-side binding for the active tenant and issuer instance; `<namespace>.signingKeyAlias`
+     * is then not read at all. Without one, the deployment's own configured alias is used.
+     */
+    override suspend fun metadataSigningKeyName(): String? {
+        val resolver = keyNameResolver?.invoke() ?: return namespaceProperty("signingKeyAlias")?.takeIf { it.isNotBlank() }
+        val tenantId = tenantId() ?: return null
+        val instanceId = instanceId() ?: return null
+        return resolver.resolveMetadataSigningKeyName(tenantId, instanceId)?.takeIf { it.isNotBlank() }
+    }
 
-    private val metadataSigningKmsProviderId: String?
-        get() = namespaceProperty("signingKmsProviderId")?.takeIf { it.isNotBlank() }
+    /**
+     * KMS provider for the metadata-signing key, read only while no [IssuerKeyNameResolver] is
+     * bound. A deployment that manages key material centrally derives the provider from its own
+     * binding, so no provider may be selected from configuration there.
+     */
+    private fun metadataSigningKmsProviderId(): String? =
+        if (keyNameResolver == null) namespaceProperty("signingKmsProviderId")?.takeIf { it.isNotBlank() } else null
+
+    private fun tenantId(): String? = execution.tenantId.takeIf { it.isNotBlank() }
+
+    private fun instanceId(): String? = instanceIdProvider()?.takeIf { it.isNotBlank() }
 
     /**
      * Issuer-wide clock-skew tolerance (seconds). YAML:
@@ -191,36 +223,50 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                 ?: 60L
 
     /**
+     * Credential-endpoint completeness-gate policy for missing required claims. YAML:
+     * `<namespace>.missing-required-claims` (kebab-case), values `reject` (default) / `defer`.
+     * See [MissingRequiredClaimsPolicy].
+     */
+    override val missingRequiredClaims: MissingRequiredClaimsPolicy
+        get() =
+            when (namespaceProperty("missing-required-claims")?.trim()?.lowercase()) {
+                "defer" -> MissingRequiredClaimsPolicy.DEFER
+                else -> MissingRequiredClaimsPolicy.REJECT
+            }
+
+    /**
      * Signing key for issuer metadata, used to produce `signed_metadata` (OID4VCI §11.2.4).
      *
      * `signed_metadata` is OPTIONAL, and publishing it commits the issuer to a signature the
      * holder MUST be able to verify (it resolves the signer via the issuer's published JWKS).
      * Emitting it therefore requires an explicit opt-in (`<namespace>.signed-metadata.enabled`,
-     * default false) and a configured signing alias. This keeps it decoupled from the issuer
+     * default false) and a resolvable signing key. This keeps it decoupled from the issuer
      * signing key's primary role (credential signing): a tenant having a signing key does not
      * by itself force unverifiable signed metadata onto holders.
+     *
+     * A key that does not resolve yields null, so the metadata is served unsigned and a JWT request
+     * is refused. Nothing is generated and no configured alias stands in.
      */
-    override val signingKey: ManagedIdentifierOptsOrResult?
-        get() {
-            val enabled =
-                namespaceProperty("signed-metadata.enabled")?.toBoolean() ?: false
-            if (!enabled) return null
-            return metadataSigningKeyAlias?.let { alias ->
-                ManagedOptsKeyInfo(
-                    identifier =
-                        KeyInfo<KeyType>(
-                            alias = alias,
-                            providerId = metadataSigningKmsProviderId,
-                        ),
-                )
-            }
-        }
+    override suspend fun signingKey(): ManagedIdentifierOptsOrResult? {
+        val enabled = namespaceProperty("signed-metadata.enabled")?.toBoolean() ?: false
+        if (!enabled) return null
+        val keyName = metadataSigningKeyName() ?: return null
+        return ManagedOptsKeyInfo(
+            identifier =
+                KeyInfo<KeyType>(
+                    alias = keyName,
+                    providerId = metadataSigningKmsProviderId(),
+                ),
+        )
+    }
 
     /**
-     * ECDH-ES decryption key alias for OID4VCI 1.0 §11.2.4 `credential_request_encryption`.
-     * Read from `<namespace>.encryption.request.decryptionKeyAlias` with an optional
-     * `<namespace>.encryption.request.decryptionKmsProviderId`. The metadata builder resolves
-     * the public JWK at runtime via the KMS so we never store private key material in YAML / git.
+     * ECDH-ES decryption key for OID4VCI 1.0 §11.2.4 `credential_request_encryption`. A bound
+     * [IssuerKeyNameResolver] answers from the deployment's own server-side binding and neither
+     * `<namespace>.encryption.request.decryptionKeyAlias` nor
+     * `<namespace>.encryption.request.decryptionKmsProviderId` is read. Without one, the
+     * deployment's own configured alias and provider are used. The metadata builder resolves the
+     * public JWK at runtime via the KMS so private key material never lives in YAML or git.
      *
      * Uses `ManagedOptsKeyInfo` with `keyVisibility = PRIVATE` rather than the simpler
      * `ManagedOptsAlias` because the latter defaults to PUBLIC visibility — the keystore then
@@ -228,22 +274,30 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      * "Decryptor key must be a private key (must have 'd' parameter)". Same gotcha the
      * OID4VP verifier's `DirectPostResponseEndpointCommand` calls out for JARM decryption.
      */
-    override val credentialRequestDecryptionKey: ManagedIdentifierOptsOrResult?
-        get() =
-            namespaceProperty("encryption.request.decryptionKeyAlias")
-                ?.takeIf { it.isNotBlank() }
-                ?.let { alias ->
-                    ManagedOptsKeyInfo(
-                        identifier =
-                            KeyInfo<KeyType>(
-                                alias = alias,
-                                providerId =
-                                    namespaceProperty("encryption.request.decryptionKmsProviderId")
-                                        ?.takeIf { it.isNotBlank() },
-                                keyVisibility = KeyVisibility.PRIVATE,
-                            ),
-                    )
-                }
+    override suspend fun credentialRequestDecryptionKey(): ManagedIdentifierOptsOrResult? {
+        val resolver = keyNameResolver?.invoke()
+        val keyName =
+            if (resolver == null) {
+                namespaceProperty("encryption.request.decryptionKeyAlias")?.takeIf { it.isNotBlank() }
+            } else {
+                val tenantId = tenantId() ?: return null
+                val instanceId = instanceId() ?: return null
+                resolver.resolveRequestDecryptionKeyName(tenantId, instanceId)?.takeIf { it.isNotBlank() }
+            } ?: return null
+        return ManagedOptsKeyInfo(
+            identifier =
+                KeyInfo<KeyType>(
+                    alias = keyName,
+                    providerId =
+                        if (resolver == null) {
+                            namespaceProperty("encryption.request.decryptionKmsProviderId")?.takeIf { it.isNotBlank() }
+                        } else {
+                            null
+                        },
+                    keyVisibility = KeyVisibility.PRIVATE,
+                ),
+        )
+    }
 
     override val display: List<DisplayProperties>?
         get() {
@@ -308,8 +362,12 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             if (mode == EncryptionMode.DISABLED) return null
 
             val staticJwksJson = namespaceProperty("encryption.request.jwks")
-            val decryptionAlias = namespaceProperty("encryption.request.decryptionKeyAlias")?.takeIf { it.isNotBlank() }
-            if (staticJwksJson == null && decryptionAlias == null) return null
+            // While an IssuerKeyNameResolver is bound the decryption key is server-derived and the
+            // configured alias is not read, so the opt-in rests on the mode alone. The metadata
+            // builder still omits the field when [credentialRequestDecryptionKey] refuses.
+            val hasKmsDecryptionKey =
+                keyNameResolver != null || namespaceProperty("encryption.request.decryptionKeyAlias")?.isNotBlank() == true
+            if (staticJwksJson == null && !hasKmsDecryptionKey) return null
 
             val encValues =
                 namespaceProperty("encryption.request.encValuesSupported")
@@ -347,12 +405,11 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     override val preferredKeyStorageStatusPeriodSeconds: Int?
         get() = namespaceProperty("preferredKeyStorageStatusPeriodSeconds")?.toIntOrNull()?.takeIf { it > 0 }
 
-    override val credentialSigningConfigs: Map<String, CredentialSigningConfig>
-        get() {
-            val ids = credentialConfigIds() ?: return emptyMap()
-
-            return ids.associateWith { id -> buildCredentialSigningConfig(id) }
-        }
+    override suspend fun credentialSigningConfigs(): Map<String, CredentialSigningConfig> {
+        val ids = credentialConfigIds() ?: return emptyMap()
+        val issuerKeyName = metadataSigningKeyName()
+        return ids.associateWith { id -> buildCredentialSigningConfig(id, issuerKeyName) }
+    }
 
     override val keyAttesterTrustConfigs: Map<String, Map<String, KeyAttesterTrustConfig>>
         get() {
@@ -371,7 +428,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         val formatValue = credentialProperty(configId, "format")
         val format =
             formatValue?.let { CredentialFormat.fromValue(it) }
-                ?: CredentialFormat.SD_JWT_DC
+                ?: CredentialFormat.SD_JWT_VC
 
         val scope = credentialProperty(configId, "scope")
         val vct = credentialProperty(configId, "vct")?.takeIf { it.isNotEmpty() }
@@ -659,26 +716,36 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             }.distinct()
     }
 
-    private fun buildCredentialSigningConfig(configId: String): CredentialSigningConfig {
-        // Per-credential alias wins; otherwise fall back to the issuer-level signing key
-        // (`<namespace>.signingKeyAlias`, written per-tenant by the issuer bootstrap).
-        // Credentials sign with the issuer's key by default, so deployments that provision a
-        // single tenant signing key need not repeat it on every credential configuration.
-        val signingKeyAlias =
-            credentialOrDefaultProperty(configId, "signingKeyAlias")
-                ?: metadataSigningKeyAlias
+    private fun buildCredentialSigningConfig(
+        configId: String,
+        issuerKeyName: String?,
+    ): CredentialSigningConfig {
+        // While an [IssuerKeyNameResolver] is bound it is the only source of the signing key name, so
+        // neither `credentials.[<id>].signingKeyAlias` nor `credentialDefaults.signingKeyAlias` is
+        // read: a per-credential configuration value must never name key material, and a null
+        // issuer key means refuse rather than fall back. Without a bound seam the deployment's own
+        // configured alias applies, falling back to the issuer-level signing key so a deployment
+        // provisioning a single tenant key need not repeat it on every credential configuration.
+        val signingKeyName =
+            if (keyNameResolver == null) {
+                credentialOrDefaultProperty(configId, "signingKeyAlias") ?: issuerKeyName
+            } else {
+                issuerKeyName
+            }
         val signingKeyMode =
             SigningKeyMode.fromConfig(
                 credentialOrDefaultProperty(configId, "signingKeyMode"),
             )
+        val signingVerificationMethodId = credentialOrDefaultProperty(configId, "signingVerificationMethodId")
         val signingCertChainPath = credentialOrDefaultProperty(configId, "signingCertChainPath")
         val expirationInDays =
             credentialOrDefaultProperty(configId, "validityPeriod")?.toValidityDays()
                 ?: credentialOrDefaultProperty(configId, "expirationInDays")?.toPositiveIntOrNull()
 
         return CredentialSigningConfig(
-            signingKeyAlias = signingKeyAlias,
+            signingKeyAlias = signingKeyName,
             signingKeyMode = signingKeyMode,
+            signingVerificationMethodId = signingVerificationMethodId,
             signingCertChainPath = signingCertChainPath,
             expirationInDays = expirationInDays,
         )
@@ -794,18 +861,25 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         return proofTypeKeys
             .mapNotNull { proofType ->
                 val trustPrefix = "proofTypes.$proofType.keyAttestations.keyAttesterTrust"
+                val trustMode = credentialProperty(configId, "$trustPrefix.mode")?.trim()?.takeIf { it.isNotEmpty() }
                 val jwks = parseTrustedJwks(credentialProperty(configId, "$trustPrefix.jwks"))
                 val issuers = credentialProperty(configId, "$trustPrefix.issuers")?.splitComma()?.takeIf { it.isNotEmpty() }
                 val x509Paths =
                     credentialProperty(configId, "$trustPrefix.x509AnchorPaths")
                         ?.splitComma()
                         ?.takeIf { it.isNotEmpty() }
-                if (jwks == null && issuers == null && x509Paths == null) return@mapNotNull null
+                val requireWalletUnitEvidence =
+                    credentialProperty(configId, "$trustPrefix.requireWalletUnitEvidence")
+                        ?.toBooleanStrictOrNull()
+                        ?: false
+                if (trustMode == null && jwks == null && issuers == null && x509Paths == null && !requireWalletUnitEvidence) return@mapNotNull null
                 proofType to
                     KeyAttesterTrustConfig(
+                        mode = trustMode,
                         trustedJwks = jwks,
                         trustedIssuers = issuers,
                         x509TrustAnchorPaths = x509Paths,
+                        requireWalletUnitEvidence = requireWalletUnitEvidence,
                     )
             }.toMap()
     }

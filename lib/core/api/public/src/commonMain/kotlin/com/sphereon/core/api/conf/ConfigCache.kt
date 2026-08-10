@@ -188,6 +188,19 @@ private fun selectEvictionKey(
  * Note: value is stored as String for serialization; callers should convert as needed.
  */
 @Serializable
+enum class CachedConfigValueType {
+    STRING,
+    BOOLEAN,
+    INT,
+    LONG,
+    DOUBLE,
+    FLOAT,
+    SHORT,
+    BYTE,
+    UNSUPPORTED,
+}
+
+@Serializable
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CachedConfigValue", exact = true)
 @CoverageExcludedDataClass
@@ -197,12 +210,13 @@ data class CachedConfigValue(
     val cachedAt: Instant,
     val expiresAt: Instant?,
     val isNegativeCache: Boolean = false,
+    val valueType: CachedConfigValueType = CachedConfigValueType.STRING,
 ) {
     /**
      * Get the value, supporting runtime type casting for non-serialized use cases.
      */
     @Transient
-    var value: Any? = stringValue
+    var value: Any? = restoreCachedValue(stringValue, valueType)
         private set
 
     /**
@@ -221,6 +235,7 @@ data class CachedConfigValue(
         cachedAt = cachedAt,
         expiresAt = expiresAt,
         isNegativeCache = isNegativeCache,
+        valueType = cachedConfigValueType(value),
     ) {
         this.value = value
     }
@@ -229,6 +244,36 @@ data class CachedConfigValue(
      * Check if this cache entry has expired.
      */
     fun isExpired(): Boolean = expiresAt != null && Clock.System.now() > expiresAt
+
+    /**
+     * Whether this entry may be persisted in any configuration cache.
+     *
+     * Negative entries contain no materialized value. Positive entries fail closed unless their
+     * provenance is known, non-environmental, and non-sensitive.
+     */
+    fun isSafeToPersist(): Boolean =
+        isNegativeCache ||
+            (
+                value != null &&
+                    valueType != CachedConfigValueType.UNSUPPORTED &&
+                    metadata.provenance.isCacheSafe(isSecret = metadata.isSecret)
+            )
+
+    internal fun isStructurallyConsistentWith(mapKey: String): Boolean {
+        if (mapKey != metadata.normalizedKey) {
+            return false
+        }
+        if (isNegativeCache) {
+            return value == null && stringValue == null
+        }
+        val materialized = value ?: return false
+        val provenance = metadata.provenance
+        return provenance.sourceScope == metadata.scope &&
+            metadata.isSecret == provenance.hasTaint(ResolutionTaint.SENSITIVE) &&
+            metadata.isInterpolated == provenance.hasTaint(ResolutionTaint.INTERPOLATED) &&
+            cachedConfigValueType(materialized) == valueType &&
+            materialized.toString() == stringValue
+    }
 
     /**
      * Convert to ResolvedValue if not expired and not negative cache.
@@ -285,6 +330,35 @@ data class CachedConfigValue(
         }
     }
 }
+
+private fun cachedConfigValueType(value: Any?): CachedConfigValueType =
+    when (value) {
+        null, is String -> CachedConfigValueType.STRING
+        is Boolean -> CachedConfigValueType.BOOLEAN
+        is Int -> CachedConfigValueType.INT
+        is Long -> CachedConfigValueType.LONG
+        is Double -> CachedConfigValueType.DOUBLE
+        is Float -> CachedConfigValueType.FLOAT
+        is Short -> CachedConfigValueType.SHORT
+        is Byte -> CachedConfigValueType.BYTE
+        else -> CachedConfigValueType.UNSUPPORTED
+    }
+
+private fun restoreCachedValue(
+    stringValue: String?,
+    valueType: CachedConfigValueType,
+): Any? =
+    when (valueType) {
+        CachedConfigValueType.STRING -> stringValue
+        CachedConfigValueType.BOOLEAN -> stringValue?.toBooleanStrictOrNull()
+        CachedConfigValueType.INT -> stringValue?.toIntOrNull()
+        CachedConfigValueType.LONG -> stringValue?.toLongOrNull()
+        CachedConfigValueType.DOUBLE -> stringValue?.toDoubleOrNull()
+        CachedConfigValueType.FLOAT -> stringValue?.toFloatOrNull()
+        CachedConfigValueType.SHORT -> stringValue?.toShortOrNull()
+        CachedConfigValueType.BYTE -> stringValue?.toByteOrNull()
+        CachedConfigValueType.UNSUPPORTED -> null
+    }
 
 /**
  * Scope-aware configuration cache interface.
@@ -448,9 +522,19 @@ data class SnapshotKey(
     val tenantId: String?,
     val principalId: String?,
     val prefix: String,
+    val sourceRevision: Long = 0L,
+    val contentRevision: Long = 0L,
+    val interpolationPolicyIdentity: String = DEFAULT_INTERPOLATION_POLICY_CACHE_IDENTITY,
 ) {
     fun toStringKey(): String {
-        val parts = mutableListOf(scope.name, prefix)
+        val parts =
+            mutableListOf(
+                scope.name,
+                "sr:$sourceRevision",
+                "cr:$contentRevision",
+                "ip:$interpolationPolicyIdentity",
+                prefix,
+            )
         tenantId?.let { parts.add(1, "t:$it") }
         principalId?.let { parts.add(2, "p:$it") }
         return parts.joinToString("::")
@@ -471,6 +555,43 @@ data class ConfigSnapshot(
     val expiresAt: Instant?,
 ) {
     fun isExpired(): Boolean = expiresAt != null && Clock.System.now() > expiresAt
+
+    fun isSafeToPersist(): Boolean =
+        isStructurallyConsistent() &&
+            values.values.all(CachedConfigValue::isSafeToPersist)
+
+    internal fun isStructurallyConsistent(): Boolean =
+        values.all { (mapKey, cachedValue) ->
+            cachedValue.isStructurallyConsistentWith(mapKey)
+        }
+
+    /**
+     * Validates an atomic prefix snapshot against the exact normalized prefixes requested by
+     * the resolver. SnapshotKey.prefix is a display/cache encoding and can be lossy when a
+     * literal key contains its separator, so callers with the original set must use this check.
+     */
+    internal fun isSafeForNormalizedPrefixes(normalizedPrefixes: Set<String>): Boolean {
+        val normalizer = PropertyKeyNormalizerImpl.Default
+        if (normalizedPrefixes.any { prefix -> normalizer.normalize(prefix) != prefix }) {
+            return false
+        }
+        return isSafeToPersist() &&
+            values.keys.all { key ->
+                key == normalizer.normalize(key) &&
+                    (
+                        normalizedPrefixes.isEmpty() ||
+                            normalizedPrefixes.any { prefix ->
+                                key == prefix || key.startsWith("$prefix.")
+                            }
+                    )
+            }
+    }
+
+    /**
+     * Prefix snapshots are atomic. Omitting one unsafe positive entry would change the apparent
+     * configuration, so the entire snapshot is rejected instead of caching a safe-looking subset.
+     */
+    fun safeCopyOrNull(): ConfigSnapshot? = if (isSafeToPersist()) this else null
 }
 
 /**
@@ -601,6 +722,11 @@ class InMemoryConfigCache(
             misses++
             return null
         }
+        if (!cached.isSafeToPersist()) {
+            removeEntry(stringKey)
+            misses++
+            return null
+        }
 
         recordAccess(stringKey, isNewEntry = false)
         hits++
@@ -613,6 +739,10 @@ class InMemoryConfigCache(
         ttl: Duration,
     ) {
         val stringKey = key.toStringKey()
+        if (!value.isSafeToPersist()) {
+            removeEntry(stringKey)
+            return
+        }
         val isNewEntry = !cache.containsKey(stringKey)
 
         // Evict if at capacity
@@ -766,6 +896,11 @@ class InMemorySnapshotCache(
             misses++
             return null
         }
+        if (!cached.isSafeToPersist()) {
+            removeEntry(stringKey)
+            misses++
+            return null
+        }
 
         recordAccess(stringKey, isNewEntry = false)
         hits++
@@ -777,6 +912,11 @@ class InMemorySnapshotCache(
         snapshot: ConfigSnapshot,
     ) {
         val stringKey = key.toStringKey()
+        val safeSnapshot = snapshot.safeCopyOrNull()
+        if (safeSnapshot == null) {
+            removeEntry(stringKey)
+            return
+        }
         val isNewEntry = !cache.containsKey(stringKey)
 
         // Evict if at capacity
@@ -785,10 +925,10 @@ class InMemorySnapshotCache(
         }
 
         cache[stringKey] =
-            if (snapshot.expiresAt == null) {
-                snapshot.copy(expiresAt = Clock.System.now() + defaultTtl)
+            if (safeSnapshot.expiresAt == null) {
+                safeSnapshot.copy(expiresAt = Clock.System.now() + defaultTtl)
             } else {
-                snapshot
+                safeSnapshot
             }
         recordAccess(stringKey, isNewEntry)
     }
@@ -1007,6 +1147,11 @@ class InMemorySyncSnapshotCache(
             missesRef.incrementAndGet()
             return null
         }
+        if (!cached.isSafeToPersist()) {
+            removeEntryIfSame(stringKey, cached)
+            missesRef.incrementAndGet()
+            return null
+        }
 
         recordAccess(stringKey, isNewEntry = false)
         hitsRef.incrementAndGet()
@@ -1018,11 +1163,16 @@ class InMemorySyncSnapshotCache(
         snapshot: ConfigSnapshot,
     ) {
         val stringKey = key.toStringKey()
+        val safeSnapshot = snapshot.safeCopyOrNull()
+        if (safeSnapshot == null) {
+            removeEntries { it == stringKey }
+            return
+        }
         val snapshotWithTtl =
-            if (snapshot.expiresAt == null) {
-                snapshot.copy(expiresAt = Clock.System.now() + defaultTtl)
+            if (safeSnapshot.expiresAt == null) {
+                safeSnapshot.copy(expiresAt = Clock.System.now() + defaultTtl)
             } else {
-                snapshot
+                safeSnapshot
             }
         while (true) {
             val currentCache = cacheRef.value
@@ -1416,12 +1566,18 @@ interface ConfigCacheWarmup {
      * @param level The config level to warm up for
      * @param tenantId Optional tenant ID for tenant/principal level warmup
      * @param principalId Optional principal ID for principal level warmup
+     * @param sourceRevision Structural property-source revision used by the consumer
+     * @param contentRevision Refreshable content revision used by the consumer
+     * @param interpolationPolicyIdentity Stable identity of the interpolation policy catalog
      */
     suspend fun warmupAsync(
         prefixes: Set<String>,
         level: ConfigLevel,
         tenantId: String?,
         principalId: String?,
+        sourceRevision: Long = 0L,
+        contentRevision: Long = 0L,
+        interpolationPolicyIdentity: String = DEFAULT_INTERPOLATION_POLICY_CACHE_IDENTITY,
     )
 
     /**
@@ -1482,10 +1638,22 @@ class AsyncToSyncCacheAdapter(
         level: ConfigLevel,
         tenantId: String?,
         principalId: String?,
+        sourceRevision: Long,
+        contentRevision: Long,
+        interpolationPolicyIdentity: String,
     ) {
         for (prefix in prefixes) {
-            val key = SnapshotKey(level, tenantId, principalId, prefix)
-            asyncCache.getSnapshot(key)?.let { snapshot ->
+            val key =
+                SnapshotKey(
+                    scope = level,
+                    tenantId = tenantId,
+                    principalId = principalId,
+                    prefix = prefix,
+                    sourceRevision = sourceRevision,
+                    contentRevision = contentRevision,
+                    interpolationPolicyIdentity = interpolationPolicyIdentity,
+                )
+            asyncCache.getSnapshot(key)?.safeCopyOrNull()?.let { snapshot ->
                 syncCache.putSnapshot(key, snapshot)
                 // Atomically add to warmed keys
                 val currentKeys = warmedKeysRef.value
@@ -1549,6 +1717,9 @@ class DefaultConfigCacheWarmup(
         level: ConfigLevel,
         tenantId: String?,
         principalId: String?,
+        sourceRevision: Long,
+        contentRevision: Long,
+        interpolationPolicyIdentity: String,
     ) {
         // No-op: no external async source in default implementation
         // The sync cache is already directly populated by property resolution

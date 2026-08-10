@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFromBase64
+import io.ktor.http.decodeURLQueryComponent
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
@@ -85,7 +86,14 @@ class RegisterPreAuthorizedCodeHttpEndpointCommandImpl(
         if (parts.size != 2) {
             return Ok(oauth2ErrorResponse(401, "invalid_client", "Invalid Basic auth format", json))
         }
-        val (basicAuthClientId, basicAuthClientSecret) = parts
+        val basicAuthClientId: String
+        val basicAuthClientSecret: String
+        try {
+            basicAuthClientId = parts[0].decodeURLQueryComponent(plusIsSpace = true)
+            basicAuthClientSecret = parts[1].decodeURLQueryComponent(plusIsSpace = true)
+        } catch (_: Exception) {
+            return Ok(oauth2ErrorResponse(401, "invalid_client", "Invalid Basic auth form encoding", json))
+        }
 
         val body =
             request.body

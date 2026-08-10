@@ -16,7 +16,9 @@
 
 package com.sphereon.openid.oid4vci.holder.impl
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.resolution.managed.ManagedOptsKid
@@ -38,6 +40,8 @@ import com.sphereon.openid.oid4vci.holder.ExchangeAuthorizationCodeArgs
 import com.sphereon.openid.oid4vci.holder.ExchangeAuthorizationCodeCommand
 import com.sphereon.openid.oid4vci.holder.ExchangePreAuthorizedCodeArgs
 import com.sphereon.openid.oid4vci.holder.ExchangePreAuthorizedCodeCommand
+import com.sphereon.openid.oid4vci.holder.ExchangeRefreshTokenArgs
+import com.sphereon.openid.oid4vci.holder.ExchangeRefreshTokenCommand
 import com.sphereon.openid.oid4vci.holder.FollowUpIaeArgs
 import com.sphereon.openid.oid4vci.holder.FollowUpIaeCommand
 import com.sphereon.openid.oid4vci.holder.IaeHolderResult
@@ -54,6 +58,9 @@ import com.sphereon.openid.oid4vci.holder.RequestDeferredCredentialArgs
 import com.sphereon.openid.oid4vci.holder.RequestDeferredCredentialCommand
 import com.sphereon.openid.oid4vci.holder.RequestNonceArgs
 import com.sphereon.openid.oid4vci.holder.RequestNonceCommand
+import com.sphereon.openid.oid4vci.holder.AttestationChallengeResponse
+import com.sphereon.openid.oid4vci.holder.RequestAttestationChallengeArgs
+import com.sphereon.openid.oid4vci.holder.RequestAttestationChallengeCommand
 import com.sphereon.openid.oid4vci.holder.ResolveCredentialOfferArgs
 import com.sphereon.openid.oid4vci.holder.ResolveCredentialOfferCommand
 import com.sphereon.openid.oid4vci.holder.ResolveIssuerMetadataArgs
@@ -66,6 +73,11 @@ import com.sphereon.openid.oid4vci.holder.SendNotificationArgs
 import com.sphereon.openid.oid4vci.holder.SendNotificationCommand
 import com.sphereon.openid.oid4vci.holder.TokenResponseWithContext
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import com.sphereon.oauth2.common.model.AuthorizationResponse
+import com.sphereon.oauth2.client.command.ParseAuthorizationResponseArgs
+import com.sphereon.oauth2.client.command.ParseAuthorizationResponseCommand
+import com.sphereon.oauth2.client.command.ParsedAuthorizationResponse
+import com.sphereon.oauth2.common.error.Oauth2Error
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -83,7 +95,9 @@ class Oid4vciHolderServiceImpl(
     private val resolveIssuerMetadataCommand: ResolveIssuerMetadataCommand,
     private val selectAuthorizationServerCommand: SelectAuthorizationServerCommand,
     private val requestNonceCommand: RequestNonceCommand,
+    private val requestAttestationChallengeCommand: RequestAttestationChallengeCommand,
     private val exchangePreAuthorizedCodeCommand: ExchangePreAuthorizedCodeCommand,
+    private val exchangeRefreshTokenCommand: ExchangeRefreshTokenCommand,
     private val createCredentialRequestProofCommand: CreateCredentialRequestProofCommand,
     private val requestCredentialCommand: RequestCredentialCommand,
     private val requestDeferredCredentialCommand: RequestDeferredCredentialCommand,
@@ -91,6 +105,7 @@ class Oid4vciHolderServiceImpl(
     private val followUpIaeCommand: FollowUpIaeCommand,
     private val initiateIaeCommand: InitiateIaeCommand,
     private val buildAuthorizationRequestCommand: BuildAuthorizationRequestCommand,
+    private val parseAuthorizationResponseCommand: ParseAuthorizationResponseCommand,
     private val exchangeAuthorizationCodeCommand: ExchangeAuthorizationCodeCommand,
 ) : Oid4vciHolder {
     inner class CommandsImpl : Oid4vciHolder.Commands {
@@ -99,7 +114,9 @@ class Oid4vciHolderServiceImpl(
         override val resolveIssuerMetadata = this@Oid4vciHolderServiceImpl.resolveIssuerMetadataCommand
         override val selectAuthorizationServer = this@Oid4vciHolderServiceImpl.selectAuthorizationServerCommand
         override val requestNonce = this@Oid4vciHolderServiceImpl.requestNonceCommand
+        override val requestAttestationChallenge = this@Oid4vciHolderServiceImpl.requestAttestationChallengeCommand
         override val exchangePreAuthorizedCode = this@Oid4vciHolderServiceImpl.exchangePreAuthorizedCodeCommand
+        override val exchangeRefreshToken = this@Oid4vciHolderServiceImpl.exchangeRefreshTokenCommand
         override val createCredentialRequestProof = this@Oid4vciHolderServiceImpl.createCredentialRequestProofCommand
         override val requestCredential = this@Oid4vciHolderServiceImpl.requestCredentialCommand
         override val requestDeferredCredential = this@Oid4vciHolderServiceImpl.requestDeferredCredentialCommand
@@ -132,6 +149,9 @@ class Oid4vciHolderServiceImpl(
 
     override suspend fun requestNonce(nonceEndpoint: String): IdkResult<NonceResponse, IdkError> = requestNonceCommand.execute(RequestNonceArgs(nonceEndpoint = nonceEndpoint))
 
+    override suspend fun requestAttestationChallenge(challengeEndpoint: String): IdkResult<AttestationChallengeResponse, IdkError> =
+        requestAttestationChallengeCommand.execute(RequestAttestationChallengeArgs(challengeEndpoint = challengeEndpoint))
+
     override suspend fun exchangePreAuthorizedCode(
         tokenEndpoint: String,
         preAuthorizedCode: String,
@@ -157,7 +177,30 @@ class Oid4vciHolderServiceImpl(
             ),
         )
 
+    override suspend fun exchangeRefreshToken(
+        tokenEndpoint: String,
+        refreshToken: String,
+        clientId: String?,
+        dpopProofJwt: String?,
+        clientAttestationJwt: String?,
+        clientAttestationPopJwt: String?,
+        clientAuthentication: ClientAuthenticationConfig?,
+    ): IdkResult<TokenResponseWithContext, IdkError> =
+        exchangeRefreshTokenCommand.execute(
+            ExchangeRefreshTokenArgs(
+                tokenEndpoint = tokenEndpoint,
+                refreshToken = refreshToken,
+                clientId = clientId,
+                dpopProofJwt = dpopProofJwt,
+                clientAttestationJwt = clientAttestationJwt,
+                clientAttestationPopJwt = clientAttestationPopJwt,
+                clientAuthentication = clientAuthentication,
+            ),
+        )
+
     override suspend fun createCredentialRequestProof(
+        walletUnitId: String?,
+        operationBinding: String?,
         issuerUrl: String,
         cNonce: String?,
         signingKeyIds: List<String>,
@@ -169,6 +212,8 @@ class Oid4vciHolderServiceImpl(
     ): IdkResult<CreatedProof, IdkError> =
         createCredentialRequestProofCommand.execute(
             CreateCredentialRequestProofArgs(
+                walletUnitId = walletUnitId,
+                operationBinding = operationBinding,
                 issuerUrl = issuerUrl,
                 cNonce = cNonce,
                 signingKeyIds = signingKeyIds,
@@ -212,6 +257,7 @@ class Oid4vciHolderServiceImpl(
     override suspend fun requestDeferredCredential(
         deferredCredentialEndpoint: String,
         accessToken: String,
+        dpopProofJwt: String?,
         transactionId: String,
         credentialResponseEncryption: RequestedCredentialResponseEncryption?,
         requestEncryptionJwk: JsonObject?,
@@ -223,6 +269,7 @@ class Oid4vciHolderServiceImpl(
             RequestDeferredCredentialArgs(
                 deferredCredentialEndpoint = deferredCredentialEndpoint,
                 accessToken = accessToken,
+                dpopProofJwt = dpopProofJwt,
                 transactionId = transactionId,
                 credentialResponseEncryption = credentialResponseEncryption,
                 requestEncryptionJwk = requestEncryptionJwk,
@@ -235,6 +282,7 @@ class Oid4vciHolderServiceImpl(
     override suspend fun sendNotification(
         notificationEndpoint: String,
         accessToken: String,
+        dpopProofJwt: String?,
         notificationId: String,
         event: CredentialNotificationEvent,
         eventDescription: String?,
@@ -243,6 +291,7 @@ class Oid4vciHolderServiceImpl(
             SendNotificationArgs(
                 notificationEndpoint = notificationEndpoint,
                 accessToken = accessToken,
+                dpopProofJwt = dpopProofJwt,
                 notificationId = notificationId,
                 event = event,
                 eventDescription = eventDescription,
@@ -264,6 +313,10 @@ class Oid4vciHolderServiceImpl(
         parEndpoint: String?,
         credentialIdentifiers: Map<String, List<String>>?,
         locations: List<String>?,
+        clientAuthentication: ClientAuthenticationConfig?,
+        dpopProofJwt: String?,
+        clientAttestationJwt: String?,
+        clientAttestationPopJwt: String?,
     ): IdkResult<AuthorizationRequestResult, IdkError> =
         buildAuthorizationRequestCommand.execute(
             BuildAuthorizationRequestArgs(
@@ -277,6 +330,10 @@ class Oid4vciHolderServiceImpl(
                 parEndpoint = parEndpoint,
                 credentialIdentifiers = credentialIdentifiers,
                 locations = locations,
+                clientAuthentication = clientAuthentication,
+                dpopProofJwt = dpopProofJwt,
+                clientAttestationJwt = clientAttestationJwt,
+                clientAttestationPopJwt = clientAttestationPopJwt,
             ),
         )
 
@@ -304,4 +361,35 @@ class Oid4vciHolderServiceImpl(
                 clientAuthentication = clientAuthentication,
             ),
         )
+
+    override suspend fun parseAndValidateAuthorizationResponse(
+        callbackUrl: String,
+        expectedState: String?,
+        expectedIssuer: String?,
+        requireIssuer: Boolean,
+    ): IdkResult<AuthorizationResponse, IdkError> {
+        val parsed =
+            parseAuthorizationResponseCommand.execute(
+                ParseAuthorizationResponseArgs(
+                    redirectUrl = callbackUrl,
+                    expectedState = expectedState,
+                    expectedIssuer = expectedIssuer,
+                    requireIssuer = requireIssuer,
+                ),
+            )
+        if (parsed.isErr) return Err(parsed.error)
+        return when (val response = parsed.value) {
+            is ParsedAuthorizationResponse.Success -> Ok(response.response)
+            is ParsedAuthorizationResponse.Error ->
+                Err(
+                    IdkError.fromDTO(
+                        Oauth2Error.ErrorResponse(
+                            error = response.response.error,
+                            errorDescription = response.response.errorDescription,
+                            errorUri = response.response.errorUri,
+                        ),
+                    ),
+                )
+        }
+    }
 }

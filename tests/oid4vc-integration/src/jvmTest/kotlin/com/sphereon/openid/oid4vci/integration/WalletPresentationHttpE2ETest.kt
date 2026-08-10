@@ -23,6 +23,8 @@ import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
@@ -31,6 +33,7 @@ import com.sphereon.openid.oid4vp.verifier.impl.http.Oid4vpVerifierHttpAdapter
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
@@ -89,11 +92,12 @@ class WalletPresentationHttpE2ETest {
                     DcqlCredentialQuery(
                         id = "pid_credential",
                         format = "dc+sd-jwt",
+                        meta = sdJwtVcMeta("urn:test:pid"),
                         claims =
                             listOf(
-                                DcqlClaimQuery(path = listOf("given_name")),
-                                DcqlClaimQuery(path = listOf("family_name")),
-                                DcqlClaimQuery(path = listOf("birthdate")),
+                                DcqlClaimQuery(path = claimsPathPointer("given_name")),
+                                DcqlClaimQuery(path = claimsPathPointer("family_name")),
+                                DcqlClaimQuery(path = claimsPathPointer("birthdate")),
                             ),
                     ),
                 ),

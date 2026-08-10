@@ -16,11 +16,15 @@ import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
-import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetOption
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.mdocMeta
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
 import com.sphereon.openid.oid4vp.holder.JarmOptions
+import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
@@ -61,7 +65,7 @@ import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActivityType
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
@@ -94,6 +98,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -102,14 +107,58 @@ import kotlin.test.assertTrue
 import kotlin.time.Clock
 
 class Oid4vpWalletInteractionProtocolAdapterTest {
+    private val preparedOnlyHolderBindingProvider =
+        Oid4vpSdJwtHolderBindingProvider { request -> Ok(request.selectedCredentials) }
+
     @Test
     fun oid4vpAuthorizationRequestsAreStrongMatches() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
 
             val match = adapter.canHandle(WalletEntryPoint.rawQr("openid4vp://?client_id=verifier&response_type=vp_token"))
 
             assertEquals(WalletProtocolMatchStrength.STRONG, match.strength)
+        }
+
+    @Test
+    fun unsignedDigitalCredentialRequestIsClaimedAndParsedThroughHolder() =
+        runTest {
+            val holder = RecordingOid4vpHolderService()
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = holder,
+                )
+            val entryPoint =
+                WalletEntryPoint.parsed(
+                    type = Oid4vpWalletInteractionProtocolAdapter.DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED,
+                    value =
+                        buildJsonObject {
+                            put("response_type", JsonPrimitive("vp_token"))
+                            put("response_mode", JsonPrimitive("dc_api"))
+                            put("dcql_query", buildJsonObject { put("credentials", JsonArray(emptyList())) })
+                        },
+                )
+
+            val match = adapter.canHandle(entryPoint)
+            adapter.start(
+                walletContext(
+                    attributes =
+                        mapOf(
+                            Oid4vpWalletInteractionProtocolAdapter.DIGITAL_CREDENTIAL_ORIGIN_METADATA_KEY to
+                                "https://verifier.example",
+                        ),
+                ),
+                entryPoint,
+            )
+
+            assertEquals(WalletProtocolMatchStrength.STRONG, match.strength)
+            assertEquals("https://verifier.example", requireNotNull(holder.lastDigitalCredentialsRequest).origin)
+            assertEquals(
+                Oid4vpWalletInteractionProtocolAdapter.DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED,
+                requireNotNull(holder.lastDigitalCredentialsRequest).protocol,
+            )
+            assertEquals("dc_api", requireNotNull(holder.lastDigitalCredentialsRequest).data["response_mode"]?.jsonPrimitive?.content)
         }
 
     @Test
@@ -146,14 +195,18 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     }
                 }
             val holder = RecordingOid4vpHolderService()
-            val adapter = Oid4vpWalletInteractionProtocolAdapter(holder = holder)
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = holder,
+                )
 
             val first =
                 adapter.start(
                     WalletInteractionContext(
                         sessionId = WalletInteractionSessionId("first"),
                         walletUnitId = "wallet",
-                        executionMode = WalletInteractionExecutionMode.LOCAL,
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
                         counterpartyEncounterRegistry = encounterRegistry,
                         trustResolver = trustResolver,
                         trustPolicy = WalletTrustPolicy.allow,
@@ -165,7 +218,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     WalletInteractionContext(
                         sessionId = WalletInteractionSessionId("returning"),
                         walletUnitId = "wallet",
-                        executionMode = WalletInteractionExecutionMode.LOCAL,
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
                         counterpartyEncounterRegistry = encounterRegistry,
                         trustResolver = trustResolver,
                         trustPolicy = WalletTrustPolicy.allow,
@@ -224,11 +277,15 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("verifier-association"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     counterpartyEncounterRegistry = encounterRegistry,
                     trustPolicy = WalletTrustPolicy.allow,
                 )
-            val adapter = Oid4vpWalletInteractionProtocolAdapter(holder = RecordingOid4vpHolderService())
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = RecordingOid4vpHolderService(),
+                )
 
             val started =
                 adapter.start(
@@ -286,7 +343,17 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                             responseType = "vp_token",
                             state = "state",
                         ),
-                    dcqlQuery = DcqlQuery(credentials = emptyList()),
+                    dcqlQuery =
+                        DcqlQuery(
+                            credentials =
+                                listOf(
+                                    DcqlCredentialQuery(
+                                        id = "identity",
+                                        format = "dc+sd-jwt",
+                                        meta = sdJwtVcMeta("urn:test:identity"),
+                                    ),
+                                ),
+                        ),
                     verifierInfo =
                         VerifierInfo(
                             clientId = didWithKey,
@@ -297,12 +364,13 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("did-auto-associated"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     counterpartyEncounterRegistry = encounterRegistry,
                     trustPolicy = WalletTrustPolicy.allow,
                 )
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
                     holder = RecordingOid4vpHolderService(resolvedRequest = resolvedRequest),
                 )
 
@@ -316,7 +384,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     @Test
     fun haipVpFinalAuthorizationRequestsAreStrongMatches() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
 
             val match =
                 adapter.canHandle(
@@ -332,7 +400,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     @Test
     fun mdocOpenid4vpAuthorizationRequestsAreStrongOid4vpMatches() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
 
             val match =
                 adapter.canHandle(
@@ -350,6 +418,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         runTest {
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
                     holder = RecordingOid4vpHolderService(parseError = IdkError.fromString("gone", code = "HTTP_410")),
                 )
 
@@ -372,6 +441,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         runTest {
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
                     holder = RecordingOid4vpHolderService(
                         parseError = IdkError.fromString("offline", code = "HTTP_REQUEST_FAILED"),
                     ),
@@ -394,6 +464,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         runTest {
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
                     holder = RecordingOid4vpHolderService(resolvedRequest = resolvedRequest()),
                 )
             val context = walletContext(attributes = mapOf("interaction_purpose" to "login"))
@@ -427,6 +498,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         runTest {
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
                     holder = RecordingOid4vpHolderService(resolvedRequest = resolvedRequest()),
                 )
 
@@ -446,6 +518,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         runTest {
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
                     holder =
                         RecordingOid4vpHolderService(
                             resolveError = IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid verifier metadata"),
@@ -473,11 +546,12 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                         DcqlCredentialQuery(
                             id = "identity",
                             format = "dc+sd-jwt",
+                            meta = sdJwtVcMeta("urn:test:identity"),
                             multiple = true,
                             claims =
                                 listOf(
-                                    DcqlClaimQuery(path = listOf("given_name")),
-                                    DcqlClaimQuery(path = listOf("address", "locality")),
+                                    DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("given_name")))),
+                                    DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("address"), JsonPrimitive("locality")))),
                                 ),
                         ),
                     ),
@@ -485,7 +559,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
 
         assertEquals(true, request.satisfiable)
         assertEquals(true, request.requirements.single().multipleAllowed)
-        assertEquals(listOf("address", "locality"), request.requirements.single().requiredClaimPaths[1])
+        assertEquals(listOf(JsonPrimitive("address"), JsonPrimitive("locality")), request.requirements.single().requiredClaimPaths[1])
     }
 
     @Test
@@ -494,8 +568,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             DcqlQuery(
                 credentials =
                     listOf(
-                        DcqlCredentialQuery(id = "pid", format = "dc+sd-jwt"),
-                        DcqlCredentialQuery(id = "mdl", format = "mso_mdoc"),
+                        DcqlCredentialQuery(id = "pid", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:pid")),
+                        DcqlCredentialQuery(id = "mdl", format = "mso_mdoc", meta = mdocMeta("org.iso.18013.5.1.mDL")),
                     ),
                 credential_sets =
                     listOf(
@@ -503,8 +577,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                             required = true,
                             options =
                                 listOf(
-                                    DcqlCredentialSetOption(credential_ids = listOf("pid")),
-                                    DcqlCredentialSetOption(credential_ids = listOf("mdl")),
+                                    listOf("pid"),
+                                    listOf("mdl"),
                                 ),
                         ),
                     ),
@@ -536,7 +610,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     fun dcqlRequirementsWithoutCandidateCredentialsAreUnsatisfiable() {
         val request =
             DcqlQuery(
-                credentials = listOf(DcqlCredentialQuery(id = "identity", format = "dc+sd-jwt")),
+                credentials = listOf(DcqlCredentialQuery(id = "identity", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
             ).toCredentialSelectionRequest(candidateCredentialIds = emptyMap())
 
         assertEquals(false, request.satisfiable)
@@ -550,8 +624,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 RecordingWalletCredentialStore(
                     walletCredentialRecord(
                         id = "pid-record",
-                        format = CredentialFormat.SD_JWT_DC,
-                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                     ),
                     walletCredentialRecord(
                         id = "employee-record",
@@ -630,10 +704,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     DcqlCredentialQuery(
                         id = "employee",
                         format = "jwt_vc_json",
-                        meta =
-                            buildJsonObject {
-                                put("type_values", JsonArray(listOf(JsonPrimitive("EmployeeCredential"))))
-                            },
+                        meta = w3cVcMeta(listOf("EmployeeCredential")),
                     ),
                 )
 
@@ -650,14 +721,14 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 RecordingWalletCredentialStore(
                     walletCredentialRecord(
                         id = "pid-record",
-                        format = CredentialFormat.SD_JWT_DC,
-                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                         raw = "raw-pid",
                     ),
                     walletCredentialRecord(
                         id = "other-record",
-                        format = CredentialFormat.SD_JWT_DC,
-                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                         raw = "raw-other",
                     ),
                 )
@@ -667,7 +738,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 resolver.resolveSelectedCredentials(
                     context = walletContext(),
                     state = credentialSelectionState(WalletCredentialSelectionRequest(emptyList(), satisfiable = true)),
-                    resolvedRequest = resolvedRequest(DcqlCredentialQuery(id = "identity", format = "dc+sd-jwt")),
+                    resolvedRequest = resolvedRequest(DcqlCredentialQuery(id = "identity", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity"))),
                     selectedCredentialIdsByRequirement = mapOf("identity" to listOf("pid-record")),
                 )
 
@@ -675,7 +746,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             assertEquals("identity", selected.single().credentialQueryId)
             assertEquals("pid-record-instance", selected.single().credentialId)
             assertEquals("raw-pid", selected.single().presentation)
-            assertEquals("holder-pid-record", selected.single().holderKeyAlias)
+            assertEquals("holder-pid-record", selected.single().holderKeyRef)
         }
 
     @Test
@@ -687,15 +758,15 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             val inactiveRecord =
                 walletCredentialRecord(
                     id = "doc-inactive",
-                    format = CredentialFormat.SD_JWT_DC,
-                    typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                    format = CredentialFormat.SD_JWT_VC,
+                    typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                     lifecycleState = CredentialLifecycleState.SUSPENDED,
                 )
             val activeRecord =
                 walletCredentialRecord(
                     id = "doc-active",
-                    format = CredentialFormat.SD_JWT_DC,
-                    typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                    format = CredentialFormat.SD_JWT_VC,
+                    typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                 )
             val store = RecordingWalletCredentialStore(inactiveRecord, activeRecord)
             val resolver = WalletStoreOid4vpCredentialResolver(store)
@@ -733,12 +804,13 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 RecordingWalletCredentialStore(
                     walletCredentialRecord(
                         id = "pid-record",
-                        format = CredentialFormat.SD_JWT_DC,
-                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                     ),
                 )
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter.walletStoreBacked(
+                    sdJwtHolderBindingProvider = preparedOnlyHolderBindingProvider,
                     holder =
                         RecordingOid4vpHolderService(
                             resolvedRequest =
@@ -780,12 +852,13 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 RecordingWalletCredentialStore(
                     walletCredentialRecord(
                         id = "pid-record",
-                        format = CredentialFormat.SD_JWT_DC,
-                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                     ),
                 )
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter.walletStoreBacked(
+                    sdJwtHolderBindingProvider = preparedOnlyHolderBindingProvider,
                     holder =
                         RecordingOid4vpHolderService(
                             resolvedRequest =
@@ -803,7 +876,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     credentialStore = store,
                 )
             val privateStore = RecordingPrivateSessionStore()
-            val protocolExecutor = RecordingProtocolExecutor(WalletInteractionExecutionMode.SPLIT)
+            val protocolExecutor = RecordingProtocolExecutor(ProtocolExecutionOwner.WALLET_APP)
             val securityGate = RecordingSecurityGate()
             val context =
                 walletContext(
@@ -855,8 +928,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 RecordingWalletCredentialStore(
                     walletCredentialRecord(
                         id = "pid-record",
-                        format = CredentialFormat.SD_JWT_DC,
-                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                     ),
                 )
             val privateStore = RecordingPrivateSessionStore()
@@ -876,6 +949,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 Oid4vpHolderPresentationExecutor(
                     holder = RecordingOid4vpHolderService(SubmissionResult.Error("invalid_request")),
                     selectedCredentialResolver = WalletStoreOid4vpCredentialResolver(store),
+                    sdJwtHolderBindingProvider = preparedOnlyHolderBindingProvider,
                 )
 
             val result =
@@ -902,8 +976,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 RecordingWalletCredentialStore(
                     walletCredentialRecord(
                         id = "pid-record",
-                        format = CredentialFormat.SD_JWT_DC,
-                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                     ),
                 )
             val privateStore = RecordingPrivateSessionStore()
@@ -926,6 +1000,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                             submitError = IdkError.ILLEGAL_ARGUMENT_ERROR(message = "jarmOptions is required for direct_post.jwt response mode"),
                         ),
                     selectedCredentialResolver = WalletStoreOid4vpCredentialResolver(store),
+                    sdJwtHolderBindingProvider = preparedOnlyHolderBindingProvider,
                 )
 
             val result =
@@ -960,8 +1035,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 RecordingWalletCredentialStore(
                     walletCredentialRecord(
                         id = "pid-record",
-                        format = CredentialFormat.SD_JWT_DC,
-                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_DC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
+                        format = CredentialFormat.SD_JWT_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.SD_JWT_VC, CredentialTypeRefKind.SD_JWT_VCT, "https://example.com/pid")),
                     ),
                 )
             val privateStore = RecordingPrivateSessionStore()
@@ -981,6 +1056,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 Oid4vpHolderPresentationExecutor(
                     holder = RecordingOid4vpHolderService(),
                     selectedCredentialResolver = WalletStoreOid4vpCredentialResolver(store),
+                    sdJwtHolderBindingProvider = preparedOnlyHolderBindingProvider,
                 )
 
             val result =
@@ -1004,13 +1080,13 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     @Test
     fun blockedVerifierTrustFailsWithoutExposingProtocolRequest() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
             val session =
                 adapter.start(
                     WalletInteractionContext(
                         sessionId = WalletInteractionSessionId("s1"),
                         walletUnitId = "wallet",
-                        executionMode = WalletInteractionExecutionMode.LOCAL,
+                        executionOwner = ProtocolExecutionOwner.WALLET_APP,
                         trustResolver =
                             object : WalletCounterpartyTrustResolver {
                                 override suspend fun resolve(input: WalletCounterpartyTrustRequest): WalletCounterpartyTrustSummary =
@@ -1033,12 +1109,12 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     @Test
     fun presentationSharingUsesConfiguredSecurityGate() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     securityGate =
                         object : WalletSecurityGate {
                             override suspend fun authorize(request: WalletSecurityGateRequest): WalletSecurityGateResult =
@@ -1062,7 +1138,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     @Test
     fun unsatisfiedDcqlSelectionStaysInCredentialSelectionWithoutSecurityGate() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
             val securityGate = RecordingSecurityGate()
             val context = context(securityGate)
             val state =
@@ -1098,7 +1174,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     @Test
     fun invalidDcqlMultipleSelectionStaysInCredentialSelectionWithoutSecurityGate() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
             val securityGate = RecordingSecurityGate()
             val context = context(securityGate)
             val state =
@@ -1135,7 +1211,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     @Test
     fun revealClaimValuesOnlyFlipsActiveUiRevealFlagWithoutPersistingValues() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
             val state =
                 WalletInteractionState(
                     sessionId = WalletInteractionSessionId("s1"),
@@ -1148,8 +1224,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                         WalletDisclosureSummary(
                             requestedClaims =
                                 listOf(
-                                    WalletClaimDescriptor(path = listOf("given_name"), valueAvailable = true),
-                                    WalletClaimDescriptor(path = listOf("family_name"), valueAvailable = true),
+                                    WalletClaimDescriptor(path = listOf(JsonPrimitive("given_name")), valueAvailable = true),
+                                    WalletClaimDescriptor(path = listOf(JsonPrimitive("family_name")), valueAvailable = true),
                                 ),
                             claimValuesRevealed = false,
                         ),
@@ -1160,7 +1236,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
 
             assertEquals(true, next.disclosure?.claimValuesRevealed)
             assertEquals(
-                listOf("given_name"),
+                listOf(JsonPrimitive("given_name")),
                 next.disclosure
                     ?.requestedClaims
                     ?.first()
@@ -1172,7 +1248,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     @Test
     fun continueWithoutPresentationExecutorDoesNotPretendPresentationWasShared() =
         runTest {
-            val adapter = Oid4vpWalletInteractionProtocolAdapter()
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
             val securityGate = RecordingSecurityGate()
             val context = context(securityGate)
             val session = adapter.start(context, WalletEntryPoint.rawQr("openid4vp://?client_id=verifier&response_type=vp_token"))
@@ -1213,12 +1289,12 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.SPLIT,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     protocolExecutor =
                         StaticDecisionProtocolExecutor(
                             WalletProtocolExecutionDecision(
-                                executionMode = WalletInteractionExecutionMode.SPLIT,
-                                placement = WalletProtocolExecutionPlacement.SPLIT_LOCAL_SECURITY,
+                                executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                                placement = WalletProtocolExecutionPlacement.WALLET_APP,
                                 securityOperation = WalletSecurityOperation.LOCAL_HSM_UNLOCK,
                                 requiredAssurance = WalletSecurityAssurance.HARDWARE_BACKED,
                                 walletUnitId = "unit-1",
@@ -1248,7 +1324,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -1302,14 +1378,14 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter(
                     holder = holder,
-                    presentationExecutor = Oid4vpHolderPresentationExecutor(holder, resolver),
+                    presentationExecutor = Oid4vpHolderPresentationExecutor(holder, resolver, preparedOnlyHolderBindingProvider),
                     candidateResolver = StaticCandidateResolver(mapOf("identity" to listOf("cred-1"))),
                 )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     securityGate = RecordingSecurityGate(),
                     privateSessionStore = privateStore,
                 )
@@ -1342,14 +1418,20 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             val adapter =
                 Oid4vpWalletInteractionProtocolAdapter(
                     holder = holder,
-                    presentationExecutor = Oid4vpHolderPresentationExecutor(holder, resolver, responseMode = ResponseMode.FRAGMENT),
+                    presentationExecutor =
+                        Oid4vpHolderPresentationExecutor(
+                            holder,
+                            resolver,
+                            preparedOnlyHolderBindingProvider,
+                            responseMode = ResponseMode.FRAGMENT,
+                        ),
                     candidateResolver = StaticCandidateResolver(mapOf("identity" to listOf("cred-1"))),
                 )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     securityGate = RecordingSecurityGate(),
                     privateSessionStore = privateStore,
                 )
@@ -1370,11 +1452,75 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 "https://verifier.example/cb#vp_token=ok",
                 context.sensitiveInputAuthority.consume(
                     next.sessionId,
-                    WalletInteractionSensitiveInputPurpose.PROTOCOL_REDIRECT_HANDOFF,
+                    WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
                     requireNotNull(next.completionHandoffRef),
                 ),
             )
             assertEquals(ResponseMode.FRAGMENT, holder.submittedResponseMode)
+        }
+
+    @Test
+    fun digitalCredentialResponseBecomesOneUseProtocolCompletionHandoff() =
+        runTest {
+            val privateStore = RecordingPrivateSessionStore()
+            privateStore.put(
+                WalletInteractionSessionId("s1"),
+                WalletInteractionPrivateSessionData(
+                    namespace = Oid4vpWalletInteractionProtocolAdapter.ADAPTER_ID,
+                    values =
+                        mapOf(
+                            Oid4vpWalletInteractionProtocolAdapter.DIGITAL_CREDENTIAL_PROTOCOL_PRIVATE_KEY to
+                                Oid4vpWalletInteractionProtocolAdapter.DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED,
+                        ),
+                ),
+            )
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor =
+                        RecordingPresentationExecutor(
+                            Oid4vpPresentationExecutionResult.DigitalCredentialResponse(
+                                buildJsonObject { put("vp_token", JsonPrimitive("vp-secret")) },
+                            ),
+                        ),
+                )
+            val context = walletContext(privateSessionStore = privateStore)
+            val state =
+                credentialSelectionState(
+                    WalletCredentialSelectionRequest(
+                        requirements = listOf(WalletCredentialRequirement(id = "identity", candidateCredentialIds = listOf("cred-1"))),
+                        satisfiable = true,
+                    ),
+                )
+
+            val next =
+                adapter.handle(
+                    context,
+                    state,
+                    WalletInteractionAction.selectCredentials(
+                        WalletCredentialSelection(mapOf("identity" to listOf("cred-1"))),
+                    ),
+                )
+            val ref = requireNotNull(next.completionHandoffRef)
+            val handoff =
+                context.sensitiveInputAuthority.consume(
+                    next.sessionId,
+                    WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
+                    ref,
+                )
+
+            assertEquals(WalletInteractionStatus.Completed, next.status)
+            assertTrue(next.terminal)
+            assertEquals(
+                "{\"protocol\":\"openid4vp-v1-unsigned\",\"data\":{\"vp_token\":\"vp-secret\"}}",
+                handoff,
+            )
+            assertNull(
+                context.sensitiveInputAuthority.consume(
+                    next.sessionId,
+                    WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
+                    ref,
+                ),
+            )
         }
 
     @Test
@@ -1391,6 +1537,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                         Oid4vpHolderPresentationExecutor(
                             holder = holder,
                             selectedCredentialResolver = resolver,
+                            sdJwtHolderBindingProvider = preparedOnlyHolderBindingProvider,
                             jarmOptionsProvider =
                                 object : Oid4vpJarmOptionsProvider {
                                     override suspend fun jarmOptions(
@@ -1407,7 +1554,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     securityGate = RecordingSecurityGate(),
                     privateSessionStore = privateStore,
                 )
@@ -1433,12 +1580,12 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             val privateStore = RecordingPrivateSessionStore()
             val holder = RecordingOid4vpHolderService()
             val resolver = RecordingSelectedCredentialResolver()
-            val executor = Oid4vpNestedPresentationExecutor(holder, resolver)
+            val executor = Oid4vpNestedPresentationExecutor(holder, resolver, preparedOnlyHolderBindingProvider)
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
                     walletUnitId = "wallet",
-                    executionMode = WalletInteractionExecutionMode.LOCAL,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                     privateSessionStore = privateStore,
                 )
             val state =
@@ -1499,7 +1646,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         WalletInteractionContext(
             sessionId = WalletInteractionSessionId("s1"),
             walletUnitId = "wallet",
-            executionMode = WalletInteractionExecutionMode.LOCAL,
+            executionOwner = ProtocolExecutionOwner.WALLET_APP,
             securityGate = securityGate,
         )
 
@@ -1516,14 +1663,14 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
 
     private fun walletContext(
         privateSessionStore: WalletInteractionPrivateSessionStore = WalletInteractionPrivateSessionStore.none,
-        protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
+        protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
         securityGate: WalletSecurityGate = WalletSecurityGate.allow,
         attributes: Map<String, String> = emptyMap(),
     ): WalletInteractionContext =
         WalletInteractionContext(
             sessionId = WalletInteractionSessionId("s1"),
             walletUnitId = "wallet",
-            executionMode = protocolExecutor.executionMode,
+            executionOwner = protocolExecutor.executionOwner,
             protocolExecutor = protocolExecutor,
             securityGate = securityGate,
             privateSessionStore = privateSessionStore,
@@ -1538,7 +1685,19 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     responseType = "vp_token",
                     state = "state",
                 ),
-            dcqlQuery = DcqlQuery(credentials = credentials.toList()),
+            dcqlQuery =
+                DcqlQuery(
+                    credentials =
+                        credentials.toList().ifEmpty {
+                            listOf(
+                                DcqlCredentialQuery(
+                                    id = "pid",
+                                    format = "dc+sd-jwt",
+                                    meta = sdJwtVcMeta("https://example.com/pid"),
+                                ),
+                            )
+                        },
+                ),
             verifierInfo =
                 VerifierInfo(
                     clientId = "verifier",
@@ -1675,19 +1834,19 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
     private class StaticDecisionProtocolExecutor(
         private val decision: WalletProtocolExecutionDecision,
     ) : WalletProtocolExecutor {
-        override val executionMode: WalletInteractionExecutionMode = decision.executionMode
+        override val executionOwner: ProtocolExecutionOwner = decision.executionOwner
 
         override suspend fun plan(request: WalletProtocolExecutionRequest): WalletProtocolExecutionDecision = decision
     }
 
     private class RecordingProtocolExecutor(
-        override val executionMode: WalletInteractionExecutionMode,
+        override val executionOwner: ProtocolExecutionOwner,
     ) : WalletProtocolExecutor {
         var lastRequest: WalletProtocolExecutionRequest? = null
 
         override suspend fun plan(request: WalletProtocolExecutionRequest): WalletProtocolExecutionDecision {
             lastRequest = request
-            return WalletProtocolExecutionDecision.forMode(executionMode, request)
+            return WalletProtocolExecutionDecision.forOwner(executionOwner, request)
         }
     }
 
@@ -1702,14 +1861,26 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         var submittedResponseMode: ResponseMode? = null
         var submittedJarmOptions: JarmOptions? = null
         var createdSelectedCredentials: List<SelectedCredential> = emptyList()
+        var lastParsedRequestUri: String? = null
+        var lastDigitalCredentialsRequest: DigitalCredentialsAuthorizationRequest? = null
 
         private val authorizationRequest = resolvedRequest.request
 
         override suspend fun parseAuthorizationRequest(
             requestUri: String,
             walletConfig: WalletConfig?,
-        ): IdkResult<AuthorizationRequest, IdkError> =
-            parseError?.let { Err(it).asResult() } ?: Ok(authorizationRequest).asResult()
+        ): IdkResult<AuthorizationRequest, IdkError> {
+            lastParsedRequestUri = requestUri
+            return parseError?.let { Err(it).asResult() } ?: Ok(authorizationRequest).asResult()
+        }
+
+        override suspend fun parseDigitalCredentialsAuthorizationRequest(
+            request: DigitalCredentialsAuthorizationRequest,
+            walletConfig: WalletConfig?,
+        ): IdkResult<AuthorizationRequest, IdkError> {
+            lastDigitalCredentialsRequest = request
+            return parseError?.let { Err(it).asResult() } ?: Ok(authorizationRequest).asResult()
+        }
 
         override suspend fun resolveAuthorizationRequest(request: AuthorizationRequest): IdkResult<ResolvedOid4vpRequest, IdkError> =
             resolveError?.let { Err(it).asResult() } ?: Ok(resolvedRequest).asResult()
@@ -1758,6 +1929,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                                     DcqlCredentialQuery(
                                         id = "identity",
                                         format = "dc+sd-jwt",
+                                        meta = sdJwtVcMeta("urn:test:identity"),
                                     ),
                                 ),
                         ),

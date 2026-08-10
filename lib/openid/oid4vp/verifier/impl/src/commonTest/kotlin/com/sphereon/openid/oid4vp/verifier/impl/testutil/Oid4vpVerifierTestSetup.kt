@@ -29,7 +29,7 @@ class Oid4vpVerifierTestContext(
 ) {
     val app: AppGraph = createOid4vpVerifierTestAppGraph(testInstance)
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
 
     val execution: SessionExecution = session.sessionExecution
     val sessionContext: SessionContext = execution.sessionContext

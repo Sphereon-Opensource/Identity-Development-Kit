@@ -106,6 +106,22 @@ interface RefreshablePropertySource {
     fun refreshIfNeeded()
 }
 
+/**
+ * Revision of everything a [ConfigEnvironment] can resolve: the structural revision of its own
+ * source set, the content revision of every [RefreshablePropertySource] in it, and the same for
+ * each parent environment.
+ *
+ * Callers that derive an expensive value from configuration can memoize it against this number
+ * and recompute only when it changes. It is the same signal
+ * [CachingPropertySourcesPropertyResolver] keys its own property cache on, so a consumer keyed on
+ * it is never staler than the property reads it would otherwise perform.
+ */
+fun ConfigEnvironment?.configContentRevision(refresh: Boolean = true): Long {
+    if (this == null) return 0L
+    val sources = getPropertySources(includeParents = true)
+    return (sources.revision * 31L) + sources.refreshableContentRevision(refresh)
+}
+
 fun PropertySources.refreshableContentRevision(refresh: Boolean = true): Long {
     var revision = 0L
     for (source in this) {
@@ -583,12 +599,14 @@ open class DefaultPropertySources(
         get() = kotlinx.atomicfu.locks.synchronized(this) { _revision }
 
     init {
+        sources.forEach(::validatePropertySourceEnvironmentReferencesForWrite)
         sort()
         _revision = 1L
     }
 
     override fun add(source: PropertySource<*>) =
         apply {
+            validatePropertySourceEnvironmentReferencesForWrite(source)
             kotlinx.atomicfu.locks.synchronized(this@DefaultPropertySources) {
                 sources.add(source)
                 dirty = true
@@ -613,7 +631,11 @@ open class DefaultPropertySources(
             DefaultPropertySources(
                 sources = mutableListOf(*this.sources.toTypedArray(), *additionalSources?.toList()?.toTypedArray() ?: arrayOf()),
                 sorting = sorting,
-            )
+            ).also { copiedSources ->
+                copiedSources._revision =
+                    additionalSources?.let { (this._revision * 31L) + it.revision }
+                        ?: this._revision
+            }
         }
 
     fun removeByName(name: String): Boolean =

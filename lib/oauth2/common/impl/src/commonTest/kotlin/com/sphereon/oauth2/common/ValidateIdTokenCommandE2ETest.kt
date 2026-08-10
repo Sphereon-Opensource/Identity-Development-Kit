@@ -63,7 +63,7 @@ class ValidateIdTokenCommandE2ETest {
 
     val app = createOauth2CommonTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("id-token-e2e-test")
+    val session = context.sessionContextManager.createOrGetFromId("id-token-e2e-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

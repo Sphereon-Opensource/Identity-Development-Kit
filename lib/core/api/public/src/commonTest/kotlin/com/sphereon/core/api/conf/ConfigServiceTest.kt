@@ -33,6 +33,7 @@ import kotlin.test.assertTrue
 class TestConfigEnvironment(
     override val level: ConfigLevel = ConfigLevel.APP,
     override val parent: ConfigEnvironment? = null,
+    override val interpolationPolicyProvider: InterpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
     private val propertySources: PropertySources = DefaultPropertySources(),
     private val activeProfile: String = "test",
     private val appName: String = "test-app",

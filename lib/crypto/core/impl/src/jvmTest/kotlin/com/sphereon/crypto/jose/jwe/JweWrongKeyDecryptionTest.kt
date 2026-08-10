@@ -67,7 +67,7 @@ class JweWrongKeyDecryptionTest {
 
     private val app = createCryptoTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("jwe-wrong-key-test")
+    private val session = context.sessionContextManager.createOrGetFromId("jwe-wrong-key-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

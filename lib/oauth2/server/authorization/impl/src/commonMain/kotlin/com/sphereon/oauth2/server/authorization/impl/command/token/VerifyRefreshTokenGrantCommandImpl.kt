@@ -24,6 +24,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
@@ -34,6 +35,7 @@ import dev.zacsweers.metro.SingleIn
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 @Inject
 @SingleIn(SessionScope::class)
@@ -42,6 +44,7 @@ import kotlin.time.Clock
 class VerifyRefreshTokenGrantCommandImpl(
     execution: SessionExecution,
     private val tokenStorage: TokenStorage,
+    private val configProvider: OAuth2ServersConfigProvider,
 ) : TypedServiceCommandAdapter<VerifyRefreshTokenGrantArgs, VerifiedRefreshTokenGrant, IdkError>(
         commandId = VerifyRefreshTokenGrantCommand.COMMAND_ID,
         execution = execution,
@@ -61,6 +64,7 @@ class VerifyRefreshTokenGrantCommandImpl(
         return executeInternal(
             applied.refreshToken,
             applied.clientId,
+            applied.clientInstanceKeyJkt,
             applied.requestedScope,
             applied.requestedResource,
         ).mapError { IdkError.fromDTO(it) }
@@ -69,6 +73,7 @@ class VerifyRefreshTokenGrantCommandImpl(
     private suspend fun executeInternal(
         refreshToken: String,
         clientId: String,
+        clientInstanceKeyJkt: String?,
         requestedScope: String?,
         requestedResource: List<String>,
     ): IdkResult<VerifiedRefreshTokenGrant, AuthorizationServerError> {
@@ -108,11 +113,32 @@ class VerifyRefreshTokenGrantCommandImpl(
         // (a previously-rotated chain replayed) from other invalid_grant flavors so it can emit
         // an OAuth2AuditEventType.REFRESH_TOKEN_REUSE_DETECTED event without parsing the
         // human-readable details string.
-        if (tokenData.revoked) {
+        val replacementRefreshToken =
+            if (tokenData.revoked) {
+                val rotatedAt = tokenData.rotatedAt
+                val replacement = tokenData.replacementRefreshToken
+                val gracePeriod = configProvider.serverConfig.refreshTokenRetryGracePeriodSeconds.seconds
+                if (rotatedAt != null && replacement != null && now <= rotatedAt + gracePeriod) {
+                    replacement
+                } else {
+                    return Err(
+                        AuthorizationServerError.InvalidGrant(
+                            details = "Refresh token has been revoked",
+                            meta = mapOf(REUSE_DETECTED_META_KEY to true),
+                        ),
+                    )
+                }
+            } else {
+                null
+            }
+
+        // OAuth2-ATCA section 10.3 binds a refresh-token chain to the client instance key,
+        // not merely to the client_id. A newly minted attestation for the same client using a
+        // different cnf.jwk must therefore fail the grant.
+        if (tokenData.clientInstanceKeyJkt != clientInstanceKeyJkt) {
             return Err(
                 AuthorizationServerError.InvalidGrant(
-                    details = "Refresh token has been revoked",
-                    meta = mapOf(REUSE_DETECTED_META_KEY to true),
+                    details = "Refresh token is bound to a different client instance key",
                 ),
             )
         }
@@ -177,7 +203,11 @@ class VerifyRefreshTokenGrantCommandImpl(
                 scope = finalScope,
                 resource = tokenData.resource,
                 defaultAccessTokenAudience = tokenData.defaultAccessTokenAudience,
+                credentialConfigurationIds = tokenData.credentialConfigurationIds,
+                oid4vciIssuerState = tokenData.oid4vciIssuerState,
                 dpopJkt = tokenData.dpopJkt,
+                clientInstanceKeyJkt = tokenData.clientInstanceKeyJkt,
+                replacementRefreshToken = replacementRefreshToken,
                 refreshTokenId = tokenData.refreshToken,
                 authTime = tokenData.authTime,
                 acr = tokenData.acr,

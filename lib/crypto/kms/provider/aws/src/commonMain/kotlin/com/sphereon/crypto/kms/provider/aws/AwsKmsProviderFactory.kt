@@ -54,6 +54,10 @@ class AwsKmsProviderFactoryImpl : AwsKmsProviderFactory {
         require(config is AwsKmsProviderConfig) {
             "Config must be of type AwsKmsProviderConfig, got ${config::class.simpleName}"
         }
+        execution.log.debug(
+            "[AwsKmsProviderFactory] creating provider id=${config.id} region=${config.region} " +
+                "endpointConfigured=${!config.endpointUrl.isNullOrBlank()} credentialMode=${config.credentialOpts.credentialMode}",
+        )
         // Bridge the polymorphic config to the legacy KeyProviderSettings the AWS crypto provider expects.
         val settings = KeyProviderSettings(
             id = config.id,

@@ -76,15 +76,56 @@ interface UserContextManager {
         principalInput: () -> PrincipalInput,
     ): UserContextInstance
 
+    /**
+     * Creates an ordinary application-user context from unresolved inputs.
+     *
+     * Authentication ingress that already classified the identity must use
+     * [createOrGetFromResolvedInputs] instead.
+     */
     fun createOrGetFromInputs(
         tenantInput: TenantInput,
         principalInput: PrincipalInput,
         makeActive: Boolean = true,
     ): UserContextInstance
 
+    /**
+     * Creates a context from identity inputs and an authoritative resolution result.
+     *
+     * Use this path when authentication already resolved and classified the identity.
+     * The manager independently resolves its normal inputs, verifies that tenant and
+     * principal match the authoritative result, and only then creates the typed context.
+     */
+    fun createOrGetFromResolvedInputs(
+        tenantInput: TenantInput,
+        principalInput: PrincipalInput,
+        identityResolution: IdentityResolutionResult,
+        makeActive: Boolean = true,
+    ): UserContextInstance
+
+    /**
+     * Creates an ordinary application-user context from resolved data.
+     *
+     * Callers with an authoritative classification must use the required-type
+     * overload below.
+     */
     fun createOrGet(
         tenantAware: TenantAware,
         principalAware: PrincipalAware,
+        makeActive: Boolean = true,
+    ): UserContextInstance
+
+    /**
+     * Creates a context from already-resolved tenant and principal data with an
+     * authoritative principal type.
+     *
+     * Use this overload when the caller already owns a trusted identity result,
+     * such as a validated session context. The type is required and is never
+     * inferred from identity strings.
+     */
+    fun createOrGet(
+        tenantAware: TenantAware,
+        principalAware: PrincipalAware,
+        principalType: PrincipalType,
         makeActive: Boolean = true,
     ): UserContextInstance
 

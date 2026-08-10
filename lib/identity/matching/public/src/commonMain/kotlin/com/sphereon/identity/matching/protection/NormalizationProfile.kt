@@ -42,6 +42,22 @@ enum class NormalizationProfile {
 
     /** Decentralized identifiers are case-sensitive; used verbatim. */
     DID,
+
+    /**
+     * Trim surrounding whitespace and lowercase the whole value; identical transform to [EMAIL] but
+     * named for its own purpose: canonicalizing a trust-anchor identifier value before it is blind
+     * indexed into an enforcement match token (see `TrustAnchorMatchTokenComputer` in
+     * `lib-trust-domain-service`). The token need not remain a resolvable identifier, only be
+     * consistent across the anchor side and the enforcer side, so a blanket lowercase is safe here
+     * even for identifier types (e.g. `did:key`, `did:jwk`) whose method-specific id is otherwise
+     * case-significant.
+     *
+     * CRITICAL: any enforcer (verifier / wallet) that computes its own match token to compare against
+     * one produced with this profile MUST normalize with this exact profile and the same
+     * `IdentifierType` - a mismatched profile silently produces a different token and the match
+     * always fails.
+     */
+    TRUST_MATCH_TOKEN,
 }
 
 /**
@@ -64,7 +80,7 @@ fun normalizeIdentifier(
             value
         }
 
-        NormalizationProfile.EMAIL -> {
+        NormalizationProfile.EMAIL, NormalizationProfile.TRUST_MATCH_TOKEN -> {
             value.trim().lowercase()
         }
 

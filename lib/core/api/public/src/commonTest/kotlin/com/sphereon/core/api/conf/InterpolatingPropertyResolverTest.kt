@@ -19,21 +19,42 @@ package com.sphereon.core.api.conf
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class InterpolatingPropertySourcesPropertyResolverTest {
     private fun createResolver(vararg properties: Pair<String, Any>): PropertyResolver {
-        val source = MutableMapPropertySource("test-source")
+        val source = ProtectedMutableMapPropertySource("test-source", ConfigLevel.APP)
         properties.forEach { (key, value) -> source.addProperty(key, value) }
 
         val propertySources = DefaultPropertySources()
         propertySources.add(source)
 
         return InterpolatingPropertySourcesPropertyResolver(
-            propertySources,
-            DefaultPropertyInterpolator(),
+            propertySources = propertySources,
+            interpolator = DefaultPropertyInterpolator(),
+            resolverLevel = ConfigLevel.APP,
         )
+    }
+
+    @Test
+    fun unscopedWinnerCannotInterpolateAtAppResolverAuthority() {
+        val source =
+            MutableMapPropertySource("unscoped").apply {
+                addProperty("base.url", "https://api.example.com")
+                addProperty("endpoint", "\${base.url}/v1")
+            }
+        val resolver =
+            PropertyResolverFactory.withInterpolation(
+                propertySources = DefaultPropertySources(mutableListOf(source)),
+                resolverLevel = ConfigLevel.APP,
+            )
+
+        assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("endpoint")
+        }
     }
 
     @Test
@@ -123,21 +144,62 @@ class InterpolatingPropertySourcesPropertyResolverTest {
         assertTrue(sub.containsKey("db.host"))
         assertTrue(sub.containsKey("db.port"))
     }
+
+    @Test
+    fun shorthandSecretInScopedSourceRegistrationFailsClosed() {
+        val source =
+            MutableMapPropertySource("tenant-source").apply {
+                addProperty("oauth2.clients.service.client-secret", "\${secret:oauth2/service/client-secret}")
+            }
+
+        val error =
+            assertFailsWith<IllegalArgumentException> {
+                DefaultPropertySources().add(ScopedPropertySourceWrapper(source, ConfigLevel.TENANT))
+            }
+        assertEquals("Configuration value is not permitted", error.message)
+    }
+
+    @Test
+    fun providerUriInDirectReadFailsClosed() {
+        val resolver =
+            InterpolatingPropertySourcesPropertyResolver(
+                propertySources =
+                    DefaultPropertySources(
+                        mutableListOf(
+                            MapPropertySource(
+                                "invalid-import",
+                                mapOf("credential" to "secret://tenant/private/value"),
+                            ),
+                        ),
+                    ),
+                interpolator = DefaultPropertyInterpolator(),
+                resolverLevel = ConfigLevel.APP,
+            )
+
+        val error =
+            assertFailsWith<IllegalStateException> {
+                resolver.getPropertyAsString("credential")
+            }
+
+        assertFalse(error.message.orEmpty().contains("tenant/private"))
+    }
 }
 
 class PropertyResolverFactoryTest {
     @Test
-    fun createWithoutInterpolatorReturnsPlainResolver() {
-        val source = MutableMapPropertySource("test")
+    fun createWithoutInterpolatorReturnsProtectionAwareResolver() {
+        val source = ProtectedMutableMapPropertySource("test", ConfigLevel.APP)
         source.addProperty("key", "value")
+        source.addProperty("protected.internal.credential", "server-owned")
 
         val propertySources = DefaultPropertySources()
         propertySources.add(source)
 
-        val resolver = PropertyResolverFactory.create(propertySources)
+        val resolver = PropertyResolverFactory.create(propertySources, resolverLevel = ConfigLevel.TENANT)
 
         assertEquals("value", resolver.getPropertyAsString("key"))
-        assertTrue(resolver is PropertySourcesPropertyResolver)
+        assertNull(resolver.getPropertyAsString("internal.credential"))
+        assertTrue(resolver is ProtectedPropertySourcesResolver)
     }
 
     @Test
@@ -148,7 +210,12 @@ class PropertyResolverFactoryTest {
         val propertySources = DefaultPropertySources()
         propertySources.add(source)
 
-        val resolver = PropertyResolverFactory.create(propertySources, DefaultPropertyInterpolator())
+        val resolver =
+            PropertyResolverFactory.create(
+                propertySources,
+                DefaultPropertyInterpolator(),
+                resolverLevel = ConfigLevel.APP,
+            )
 
         assertEquals("value", resolver.getPropertyAsString("key"))
         assertTrue(resolver is InterpolatingPropertySourcesPropertyResolver)
@@ -156,67 +223,153 @@ class PropertyResolverFactoryTest {
 
     @Test
     fun withInterpolationCreatesInterpolatingResolver() {
-        val source = MutableMapPropertySource("test")
+        val source = ProtectedMutableMapPropertySource("test", ConfigLevel.APP)
         source.addProperty("base", "https://api.example.com")
         source.addProperty("url", "\${base}/v1")
 
         val propertySources = DefaultPropertySources()
         propertySources.add(source)
 
-        val resolver = PropertyResolverFactory.withInterpolation(propertySources)
+        val resolver =
+            PropertyResolverFactory.withInterpolation(
+                propertySources,
+                resolverLevel = ConfigLevel.APP,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf("url" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                    ),
+            )
 
         assertEquals("https://api.example.com/v1", resolver.getPropertyAsString("url"))
     }
 
     @Test
     fun withInterpolationUsesDefaultValue() {
-        val source = MutableMapPropertySource("test")
+        val source = ProtectedMutableMapPropertySource("test", ConfigLevel.APP)
         source.addProperty("port", "\${PORT:8080}")
 
         val propertySources = DefaultPropertySources()
         propertySources.add(source)
 
-        val resolver = PropertyResolverFactory.withInterpolation(propertySources)
+        val resolver = PropertyResolverFactory.withInterpolation(propertySources, resolverLevel = ConfigLevel.APP)
 
         assertEquals("8080", resolver.getPropertyAsString("port"))
     }
 
     @Test
-    fun withInterpolationWithSecretResolver() {
+    fun withInterpolationRejectsProviderBackedSecretReferences() {
         val source = MutableMapPropertySource("test")
         source.addProperty("password", "\${secret:@map:creds:pass}")
 
         val propertySources = DefaultPropertySources()
         propertySources.add(source)
 
-        val secretMaps = mapOf("creds" to mapOf("pass" to "secret123"))
-        val secretResolver = BasicSecretResolver(secretMaps)
-
         val resolver =
             PropertyResolverFactory.withInterpolation(
                 propertySources,
-                secretResolver = secretResolver,
+                resolverLevel = ConfigLevel.APP,
             )
 
-        assertEquals("secret123", resolver.getPropertyAsString("password"))
+        assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("password")
+        }
+    }
+
+    @Test
+    fun productionFactoryAllowsDeclaredAppEnvironmentReference() {
+        val app =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProperty("deployment.path", "\${env:PATH}")
+            }
+        val propertySources = DefaultPropertySources(mutableListOf(app))
+        val resolver =
+            PropertyResolverFactory.withInterpolation(
+                propertySources,
+                resolverLevel = ConfigLevel.APP,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf("deployment.path" to InterpolationPolicy.APP_ENVIRONMENT),
+                    ),
+            )
+
+        val value = resolver.getPropertyAsString("deployment.path")
+
+        assertTrue(value.orEmpty().isNotEmpty())
+        assertFalse(value.orEmpty().contains("\${"))
+    }
+
+    @Test
+    fun productionFactoryRejectsRecursivelyProducedTenantEnvironmentReferenceInDirectAndBulkReads() {
+        val tenant =
+            ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT).apply {
+                addProperty("service.placeholder", "env:PATH")
+                addProperty("service.endpoint", "\${\${service.placeholder}}")
+            }
+        val propertySources = DefaultPropertySources(mutableListOf(tenant))
+        val resolver =
+            PropertyResolverFactory.withInterpolation(
+                propertySources = propertySources,
+                resolverLevel = ConfigLevel.TENANT,
+            )
+
+        assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("service.endpoint")
+        }
+        assertFailsWith<IllegalStateException> {
+            resolver.getSubProperties(setOf("service"), stripPrefix = true)
+        }
+    }
+
+    @Test
+    fun productionFactoryReturnsSameDefaultForProtectedAndAbsentAppProperty() {
+        val app =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProperty("protected.internal.credential", "server-owned")
+            }
+        val tenant =
+            ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT).apply {
+                addProperty("service.credential", "\${app:internal.credential:fallback}")
+            }
+        val resolver =
+            PropertyResolverFactory.withInterpolation(
+                propertySources = DefaultPropertySources(mutableListOf(app, tenant)),
+                resolverLevel = ConfigLevel.TENANT,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf(
+                            "service.credential" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY,
+                            "service.absent" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY,
+                        ),
+                    ),
+            )
+
+        tenant.addProperty("service.absent", "\${app:absent.credential:fallback}")
+
+        assertEquals("fallback", resolver.getPropertyAsString("service.credential"))
+        assertEquals(
+            resolver.getPropertyAsString("service.credential"),
+            resolver.getPropertyAsString("service.absent"),
+        )
     }
 }
 
 class InterpolatingPropertyResolverWithInterpolationTest {
-    private fun createResolver(
-        vararg properties: Pair<String, Any>,
-        secretMaps: Map<String, Map<String, String>> = emptyMap(),
-    ): PropertyResolver {
-        val source = MutableMapPropertySource("test-source")
+    private fun createResolver(vararg properties: Pair<String, Any>): PropertyResolver {
+        val source = ProtectedMutableMapPropertySource("test-source", ConfigLevel.APP)
         properties.forEach { (key, value) -> source.addProperty(key, value) }
 
         val propertySources = DefaultPropertySources()
         propertySources.add(source)
 
-        val secretResolver = BasicSecretResolver(secretMaps)
-        val interpolator = DefaultPropertyInterpolator(secretResolver = secretResolver)
+        val interpolator = DefaultPropertyInterpolator()
 
-        return InterpolatingPropertySourcesPropertyResolver(propertySources, interpolator)
+        return InterpolatingPropertySourcesPropertyResolver(
+            propertySources = propertySources,
+            interpolator = interpolator,
+            resolverLevel = ConfigLevel.APP,
+            interpolationPolicyProvider =
+                FixedInterpolationPolicyProvider(InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+        )
     }
 
     @Test
@@ -253,14 +406,27 @@ class InterpolatingPropertyResolverWithInterpolationTest {
     }
 
     @Test
-    fun interpolatesSecretReferences() {
+    fun rejectsSecretReferences() {
         val resolver =
-            createResolver(
-                "api.key" to "\${secret:@map:api:key}",
-                secretMaps = mapOf("api" to mapOf("key" to "api-secret-123")),
+            InterpolatingPropertySourcesPropertyResolver(
+                propertySources =
+                    DefaultPropertySources(
+                        mutableListOf(
+                            MapPropertySource(
+                                "invalid-import",
+                                mapOf("api.key" to "\${secret:@map:api:key}"),
+                            ),
+                        ),
+                    ),
+                interpolator = DefaultPropertyInterpolator(),
+                resolverLevel = ConfigLevel.APP,
+                interpolationPolicyProvider =
+                    FixedInterpolationPolicyProvider(InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
             )
 
-        assertEquals("api-secret-123", resolver.getPropertyAsString("api.key"))
+        assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("api.key")
+        }
     }
 
     @Test
@@ -348,7 +514,7 @@ class InterpolatingPropertyResolverErrorHandlingTest {
     @Test
     fun getAllPropertiesReturnsEmptyMapForEmptySources() {
         val propertySources = DefaultPropertySources()
-        val resolver = PropertyResolverFactory.create(propertySources)
+        val resolver = PropertyResolverFactory.create(propertySources, resolverLevel = ConfigLevel.APP)
 
         val all = resolver.getAllProperties()
         assertTrue(all.isEmpty())
@@ -359,7 +525,12 @@ class InterpolatingPropertyResolverErrorHandlingTest {
         val source = MutableMapPropertySource("test")
         source.addProperty("other.key", "value")
         val propertySources = DefaultPropertySources().apply { add(source) }
-        val resolver = PropertyResolverFactory.create(propertySources, DefaultPropertyInterpolator())
+        val resolver =
+            PropertyResolverFactory.create(
+                propertySources,
+                DefaultPropertyInterpolator(),
+                resolverLevel = ConfigLevel.APP,
+            )
 
         val sub = resolver.getSubProperties(setOf("nonexistent"), stripPrefix = true)
         assertTrue(sub.isEmpty())
@@ -373,10 +544,63 @@ class InterpolatingPropertyResolverErrorHandlingTest {
         source.addProperty("cache.host", "redis-host")
         source.addProperty("cache.port", 6379)
         val propertySources = DefaultPropertySources().apply { add(source) }
-        val resolver = PropertyResolverFactory.create(propertySources, DefaultPropertyInterpolator())
+        val resolver =
+            PropertyResolverFactory.create(
+                propertySources,
+                DefaultPropertyInterpolator(),
+                resolverLevel = ConfigLevel.APP,
+            )
 
         val sub = resolver.getSubProperties(setOf("db", "cache"), stripPrefix = true)
 
         assertTrue(sub.containsKey("host") || sub.containsKey("port"))
+    }
+}
+
+class InterpolatingPropertyResolverContainmentTest {
+    @Test
+    fun tenantResolverAllowsExplicitAppEnvironmentDeclarationButDeniesSimpleEnvironmentSourceReference() {
+        val app =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProperty("deployment.explicit", "\${env:PATH}")
+                addProperty("deployment.simple", "\${PATH}")
+                addProtectedProperty("deployment.token", "server-owned", PropertyProtection.PROTECTED)
+            }
+        val sources =
+            DefaultPropertySources(
+                mutableListOf(
+                    StaticProtectedEnvPropertySourceObject,
+                    app,
+                ),
+            )
+        val resolver =
+            InterpolatingPropertySourcesPropertyResolver(
+                propertySources = sources,
+                interpolator = DefaultPropertyInterpolator(),
+                resolverLevel = ConfigLevel.TENANT,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf("deployment.explicit" to InterpolationPolicy.APP_ENVIRONMENT),
+                    ),
+            )
+
+        val explicit = resolver.getPropertyAsString("deployment.explicit")
+        assertTrue(!explicit.isNullOrEmpty())
+        assertFalse(explicit.contains("\${"))
+
+        assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("deployment.simple")
+        }
+
+        assertFalse(resolver.containsProperty("deployment.token"))
+        assertEquals(null, resolver.getPropertyAsString("deployment.token"))
+        assertFailsWith<IllegalStateException> {
+            resolver.getAllProperties()
+        }
+        assertFalse(
+            resolver
+                .getSubProperties(setOf("deployment.token"), stripPrefix = false)
+                .containsKey("deployment.token"),
+        )
     }
 }

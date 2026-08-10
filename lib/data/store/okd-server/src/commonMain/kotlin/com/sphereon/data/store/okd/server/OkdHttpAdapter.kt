@@ -94,6 +94,6 @@ class OkdHttpAdapter(
     }
 
     companion object {
-        const val ID = "okd-dms"
+        const val ID = "okd.dms.http"
     }
 }

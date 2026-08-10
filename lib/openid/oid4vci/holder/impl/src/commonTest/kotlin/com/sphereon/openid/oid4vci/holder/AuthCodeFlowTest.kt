@@ -42,6 +42,8 @@ import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.oauth2.client.command.CreatePkceArgs
 import com.sphereon.oauth2.client.command.CreatePkceCommand
+import com.sphereon.oauth2.client.command.ExchangeTokenArgs
+import com.sphereon.oauth2.client.command.ExchangeTokenCommand
 import com.sphereon.oauth2.client.impl.authorization.CreateAuthorizationRequestUrlCommandImpl
 import com.sphereon.oauth2.client.model.PkceData
 import com.sphereon.oauth2.client.util.decodeQueryParameters
@@ -50,13 +52,17 @@ import com.sphereon.oauth2.common.command.ApplyClientAuthenticationCommand
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.openid.oid4vci.holder.impl.BuildAuthorizationRequestCommandImpl
 import com.sphereon.openid.oid4vci.holder.impl.ExchangeAuthorizationCodeCommandImpl
+import com.sphereon.openid.oid4vci.holder.impl.ExchangeRefreshTokenCommandImpl
 import com.sphereon.oauth2.common.model.ClientAssertion
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.ClientAuthenticationResult
+import com.sphereon.oauth2.common.model.TokenResponse
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.random.Random
@@ -369,6 +375,94 @@ class AuthCodeFlowTest {
     }
 
     @Test
+    fun refreshGrantIsOwnedByOid4vciHolderAndDelegatesGenericTokenExchange() =
+        runTest {
+            val authentication =
+                ClientAuthenticationConfig.PrivateKeyJwt(
+                    ClientAssertion(
+                        clientId = "wallet-client",
+                        assertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                        assertion = "signed-client-assertion",
+                    ),
+                )
+            val applyClientAuthentication =
+                RecordingApplyClientAuthenticationCommand(
+                    result =
+                        ClientAuthenticationResult(
+                            headers = mapOf("X-Authenticated-Client" to "wallet-client"),
+                            bodyParameters =
+                                mapOf(
+                                    "client_id" to "authenticated-wallet-client",
+                                    "client_assertion_type" to "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                                    "client_assertion" to "signed-client-assertion",
+                                    "wallet_provider" to "provider-a",
+                                ),
+                        ),
+                )
+            val exchangeToken =
+                RecordingExchangeTokenCommand(
+                    response =
+                        TokenResponse(
+                            accessToken = "new-access-token",
+                            tokenType = "DPoP",
+                            expiresIn = 300,
+                            refreshToken = "rotated-refresh-token",
+                            cNonce = "new-c-nonce",
+                            cNonceExpiresIn = 60,
+                            authorizationDetails = JsonArray(listOf(JsonPrimitive("credential-detail"))),
+                            additionalParameters = mapOf("issuer_state" to JsonPrimitive("state-2")),
+                        ),
+                )
+            val command =
+                ExchangeRefreshTokenCommandImpl(
+                    execution = makeExecution(),
+                    applyClientAuthentication = applyClientAuthentication,
+                    exchangeToken = exchangeToken,
+                )
+
+            val result =
+                command.execute(
+                    ExchangeRefreshTokenArgs(
+                        tokenEndpoint = "https://issuer.example/token",
+                        refreshToken = "current-refresh-token",
+                        clientId = "untrusted-fallback-client",
+                        dpopProofJwt = "dpop-proof",
+                        clientAttestationJwt = "client-attestation",
+                        clientAttestationPopJwt = "client-attestation-pop",
+                        clientAuthentication = authentication,
+                    ),
+                )
+
+            assertTrue(result.isOk, "Expected Ok but got: ${result.errorOrNull()}")
+            assertEquals(authentication, applyClientAuthentication.receivedArgs?.config)
+            assertEquals("https://issuer.example/token", applyClientAuthentication.receivedArgs?.tokenEndpoint)
+
+            val exchangeArgs = assertNotNull(exchangeToken.receivedArgs)
+            assertEquals("https://issuer.example/token", exchangeArgs.tokenEndpoint)
+            with(exchangeArgs.request) {
+                assertEquals("refresh_token", grantType)
+                assertEquals("current-refresh-token", refreshToken)
+                assertEquals("authenticated-wallet-client", clientId)
+                assertEquals("signed-client-assertion", clientAssertion)
+                assertEquals("dpop-proof", dpop)
+                assertEquals(ClientAuthenticationMethod.PRIVATE_KEY_JWT, tokenEndpointAuthMethod)
+                assertEquals(JsonPrimitive("provider-a"), additionalParameters["wallet_provider"])
+                assertEquals("client-attestation", additionalHeaders["OAuth-Client-Attestation"])
+                assertEquals("client-attestation-pop", additionalHeaders["OAuth-Client-Attestation-PoP"])
+                assertEquals("wallet-client", additionalHeaders["X-Authenticated-Client"])
+            }
+
+            with(result.value) {
+                assertEquals("new-access-token", accessToken)
+                assertEquals("DPoP", tokenType)
+                assertEquals("rotated-refresh-token", refreshToken)
+                assertEquals("new-c-nonce", cNonce)
+                assertEquals(listOf(JsonPrimitive("credential-detail")), authorizationDetails)
+                assertEquals(JsonPrimitive("state-2"), additionalParameters["issuer_state"])
+            }
+        }
+
+    @Test
     fun exchangeTokenResponseDeserializesCorrectly() {
         val raw =
             """
@@ -514,4 +608,48 @@ private class TestApplyClientAuthenticationCommand : ApplyClientAuthenticationCo
         Ok(ClientAuthenticationResult(headers = emptyMap(), bodyParameters = emptyMap()))
 
     override suspend fun supports(args: Any): Boolean = args is ApplyClientAuthenticationArgs
+}
+
+private class RecordingApplyClientAuthenticationCommand(
+    private val result: ClientAuthenticationResult,
+) : ApplyClientAuthenticationCommand {
+    var receivedArgs: ApplyClientAuthenticationArgs? = null
+        private set
+
+    override val commandId: String get() = ApplyClientAuthenticationCommand.COMMAND_ID
+    override val id: String get() = commandId
+    override val isEnabled: Boolean = true
+    override val inputTypeToken: com.sphereon.core.api.binary.TypeToken<ApplyClientAuthenticationArgs> =
+        com.sphereon.core.api.binary.typeToken()
+    override val outputTypeToken: com.sphereon.core.api.binary.TypeToken<ClientAuthenticationResult> =
+        com.sphereon.core.api.binary.typeToken()
+
+    override suspend fun execute(args: ApplyClientAuthenticationArgs): IdkResult<ClientAuthenticationResult, com.sphereon.core.api.error.IdkError> {
+        receivedArgs = args
+        return Ok(result)
+    }
+
+    override suspend fun supports(args: Any): Boolean = args is ApplyClientAuthenticationArgs
+}
+
+private class RecordingExchangeTokenCommand(
+    private val response: TokenResponse,
+) : ExchangeTokenCommand {
+    var receivedArgs: ExchangeTokenArgs? = null
+        private set
+
+    override val commandId: String get() = ExchangeTokenCommand.COMMAND_ID
+    override val id: String get() = commandId
+    override val isEnabled: Boolean = true
+    override val inputTypeToken: com.sphereon.core.api.binary.TypeToken<ExchangeTokenArgs> =
+        com.sphereon.core.api.binary.typeToken()
+    override val outputTypeToken: com.sphereon.core.api.binary.TypeToken<TokenResponse> =
+        com.sphereon.core.api.binary.typeToken()
+
+    override suspend fun execute(args: ExchangeTokenArgs): IdkResult<TokenResponse, com.sphereon.core.api.error.IdkError> {
+        receivedArgs = args
+        return Ok(response)
+    }
+
+    override suspend fun supports(args: Any): Boolean = args is ExchangeTokenArgs
 }

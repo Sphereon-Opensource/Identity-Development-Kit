@@ -545,10 +545,16 @@ class StandardAuthorizeRequestCommandImpl(
         // mapped onto top-level UserInfo fields. The non-SSO path
         // (`HandleAuthorizeCallbackCommandImpl`) does this same lookup —
         // mirror it here so both paths produce identical id_tokens.
-        val userClaims =
+        val currentUserClaims =
             userAuthProvider.getUserInfo(oidcSession.sub).let { result ->
                 if (result.isOk) result.value.toClaimsMap() else emptyMap()
             }
+        // In split deployments, credential verification runs in the
+        // identity-owning runtime. Authorization claims returned by that
+        // trusted verification are frozen into the login session. Merge them
+        // here so an unavailable local userinfo store cannot silently strip
+        // roles; current provider claims win when available.
+        val userClaims = oidcSession.claims + currentUserClaims
         val codeResult =
             commands.createAuthorizationCode.execute(
                 CreateAuthorizationCodeArgs(

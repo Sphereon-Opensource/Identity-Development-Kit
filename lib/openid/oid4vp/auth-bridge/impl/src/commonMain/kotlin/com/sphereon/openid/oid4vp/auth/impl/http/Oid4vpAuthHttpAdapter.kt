@@ -93,6 +93,6 @@ class Oid4vpAuthHttpAdapter(
     }
 
     companion object {
-        const val ID = "oid4vp.auth.http.adapter"
+        const val ID = "oid4vp.auth.adapter"
     }
 }

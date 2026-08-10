@@ -38,6 +38,8 @@ class SoftwareKeyStoreContextResourceInvalidator(
     ) {
         val loader = KeyStoreLoaderFactory.invalidateTenant(tenantId)
         val keyManagers = KeyManagerFactoryCache.invalidateTenant(tenantId)
+        val resolvedKeys = SoftwareKeyStoreStateCache.invalidateTenant(tenantId)
+
         val message =
             "tenant=${tenantId.sanitizeLogToken()} reason=${reason.sanitizeLogToken()} " +
                 "keystore.before=${loader.keyStoresBefore} keystore.after=${loader.keyStoresAfter} " +
@@ -45,9 +47,11 @@ class SoftwareKeyStoreContextResourceInvalidator(
                 "inFlight.before=${loader.inFlightBefore} inFlight.after=${loader.inFlightAfter} " +
                 "inFlight.evicted=${loader.inFlightEvicted} " +
                 "keyManager.before=${keyManagers.before} keyManager.after=${keyManagers.after} " +
-                "keyManager.evicted=${keyManagers.evicted}"
+                "keyManager.evicted=${keyManagers.evicted} " +
+                "resolvedKeys.before=${resolvedKeys.before} resolvedKeys.after=${resolvedKeys.after} " +
+                "resolvedKeys.evicted=${resolvedKeys.evicted}"
 
-        if (loader.keyStoresEvicted > 0 || loader.inFlightEvicted > 0 || keyManagers.evicted > 0) {
+        if (loader.keyStoresEvicted > 0 || loader.inFlightEvicted > 0 || keyManagers.evicted > 0 || resolvedKeys.evicted > 0) {
             log.info("VDX_SOFTWARE_KEYSTORE_CACHE_INVALIDATED $message")
         } else {
             log.debug("VDX_SOFTWARE_KEYSTORE_CACHE_RETAINED $message")

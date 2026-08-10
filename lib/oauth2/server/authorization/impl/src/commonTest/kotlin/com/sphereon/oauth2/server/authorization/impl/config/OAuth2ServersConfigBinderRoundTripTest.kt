@@ -21,7 +21,10 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.ConfigService
+import com.sphereon.core.api.conf.DefaultPropertySources
 import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.MutableMapPropertySource
+import com.sphereon.core.api.conf.RefreshablePropertySource
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.api.conf.PropertySource
 import com.sphereon.core.api.conf.PropertySources
@@ -202,6 +205,16 @@ class OAuth2ServersConfigBinderRoundTripTest {
         // Browser-login session lifetimes
         assertEquals(7_001, server.session.idleTtlSeconds, "session.idleTtlSeconds")
         assertEquals(7_002, server.session.absoluteTtlSeconds, "session.absoluteTtlSeconds")
+        // Local WebAuthn login
+        assertEquals(true, server.webAuthn.enabled, "webAuthn.enabled")
+        assertEquals("login.example", server.webAuthn.rpId, "webAuthn.rpId")
+        assertEquals(setOf("https://login.example"), server.webAuthn.allowedOrigins, "webAuthn.allowedOrigins")
+        assertEquals("direct", server.webAuthn.attestationPolicy, "webAuthn.attestationPolicy")
+        assertEquals("preferred", server.webAuthn.userVerification, "webAuthn.userVerification")
+        assertEquals(setOf("internal", "hybrid"), server.webAuthn.allowedTransports, "webAuthn.allowedTransports")
+        assertEquals("require-backed-up", server.webAuthn.backupStatePolicy, "webAuthn.backupStatePolicy")
+        assertEquals(7_003L, server.webAuthn.challengeTtlSeconds, "webAuthn.challengeTtlSeconds")
+        assertEquals(true, server.webAuthn.level3PrfEnabled, "webAuthn.level3PrfEnabled")
     }
 
     private fun buildSentinelProperties(): Map<String, Any> =
@@ -300,6 +313,16 @@ class OAuth2ServersConfigBinderRoundTripTest {
             // Session lifetimes
             "$prefix.session.idle-ttl-seconds" to 7_001,
             "$prefix.session.absolute-ttl-seconds" to 7_002,
+            // Local WebAuthn login
+            "$prefix.webauthn.enabled" to true,
+            "$prefix.webauthn.rp-id" to "login.example",
+            "$prefix.webauthn.allowed-origins" to "https://login.example",
+            "$prefix.webauthn.attestation-policy" to "direct",
+            "$prefix.webauthn.user-verification" to "preferred",
+            "$prefix.webauthn.allowed-transports" to "internal,hybrid",
+            "$prefix.webauthn.backup-state-policy" to "require-backed-up",
+            "$prefix.webauthn.challenge-ttl-seconds" to 7_003L,
+            "$prefix.webauthn.level3-prf-enabled" to true,
         )
 
     @Test
@@ -380,18 +403,68 @@ class OAuth2ServersConfigBinderRoundTripTest {
  * resolve correctly when the underlying value is a string (the common shape for `.properties`
  * sources).
  */
+/**
+ * Property source that carries only the revision signal. Real sources bump `contentRevision` on
+ * every write; the fake's reads are served from its own map, so this source exists to make the
+ * revision the fake publishes agree with the content it serves.
+ */
+internal class RevisionTrackingPropertySource(
+    name: String,
+) : MutableMapPropertySource(name),
+    RefreshablePropertySource {
+    private var revision = 0L
+
+    override val contentRevision: Long
+        get() = revision
+
+    override fun refreshIfNeeded() = Unit
+
+    fun recordWrite() {
+        revision += 1
+    }
+}
+
 internal class TypeAwarePrincipalConfigService(
     properties: Map<String, Any>,
     private val subPropertiesOverride: ((Set<String>, Boolean, Map<String, Any>) -> Map<String, Any>)? = null,
     private val normalizeKeys: Boolean = false,
 ) : PrincipalConfigService {
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
-    private val properties: Map<String, Any> =
+    private val properties: MutableMap<String, Any> =
         if (normalizeKeys) {
-            properties.mapKeys { (key, _) -> keyNormalizer.normalize(key) }
+            properties.mapKeys { (key, _) -> keyNormalizer.normalize(key) }.toMutableMap()
         } else {
-            properties
+            properties.toMutableMap()
         }
+
+    /**
+     * Carries the same revision signal a real property source carries. Reads are served from
+     * [properties]; this source exists so consumers that memoize against
+     * `configContentRevision()` observe the same mutations the read path observes.
+     */
+    private val revisionSource = RevisionTrackingPropertySource("type-aware-principal-test")
+
+    private val propertySources = DefaultPropertySources(mutableListOf(revisionSource))
+
+    internal fun putProperty(
+        key: String,
+        value: Any,
+    ) {
+        properties[normalizeKey(key)] = value
+        revisionSource.recordWrite()
+    }
+
+    /**
+     * Models a remote tenant-config publication that reaches a fresh request before the local
+     * source's revision notification. Production client visibility must still be correct in that
+     * window; request-scoped registry metadata therefore cannot be reused across requests.
+     */
+    internal fun putPropertyWithoutRevision(
+        key: String,
+        value: Any,
+    ) {
+        properties[normalizeKey(key)] = value
+    }
 
     override val parent: TenantConfigService
         get() = error("parent not used in this test")
@@ -408,7 +481,7 @@ internal class TypeAwarePrincipalConfigService(
 
     override fun getConfigLocation(): Path = error("not used")
 
-    override fun getPropertySources(includeParents: Boolean): PropertySources = error("not used")
+    override fun getPropertySources(includeParents: Boolean): PropertySources = propertySources
 
     @Suppress("DEPRECATION")
     override fun getNamespace(): String = ""

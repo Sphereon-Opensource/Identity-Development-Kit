@@ -107,6 +107,9 @@ internal suspend fun mintFrontChannelTokens(
                         clientId = session.clientId,
                         scope = session.scope,
                         expiresInSeconds = accessTokenExpiresIn,
+                        authTime = authTime,
+                        acr = acr,
+                        amr = amr,
                         baseUrlOverride = baseUrlOverride,
                     ),
                 ).getOrElse { return Err(it) }

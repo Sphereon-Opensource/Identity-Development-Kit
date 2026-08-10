@@ -3,6 +3,8 @@
 # Test script for GraalVM Native Image example
 
 BASE_URL="http://localhost:8080"
+: "${ACCESS_TOKEN:?Set ACCESS_TOKEN to a valid bearer JWT}"
+AUTH_HEADER="Authorization: Bearer $ACCESS_TOKEN"
 
 echo "==================================="
 echo "Testing GraalVM Native Image Example"
@@ -27,13 +29,13 @@ echo
 
 # Test user endpoint
 echo "4. Testing /user endpoint..."
-curl -s -H "X-Tenant-ID: acme-corp" -H "X-User-ID: john@acme.com" \
+curl -s -H "$AUTH_HEADER" \
   $BASE_URL/user/john | jq '.'
 echo
 
 # Test session endpoint
 echo "5. Testing /session endpoint..."
-curl -s -H "X-Tenant-ID: acme-corp" -H "X-User-ID: john@acme.com" \
+curl -s -H "$AUTH_HEADER" \
   $BASE_URL/session | jq '.'
 echo
 

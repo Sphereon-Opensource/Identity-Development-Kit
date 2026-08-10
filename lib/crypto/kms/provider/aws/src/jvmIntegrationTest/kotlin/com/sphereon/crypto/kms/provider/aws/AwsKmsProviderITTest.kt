@@ -61,6 +61,7 @@ class AwsKmsProviderITTest {
             credentialOpts = CredentialOpts(
                 credentialMode = CredentialMode.ACCESS_KEY,
                 accessKeyCredentialOpts = AccessKeyCredentialOpts(
+                    credentialsSecretId = "sec_aws_integration_credential",
                     accessKeyId = BuildKonfig.AWS_ACCESS_KEY_ID ?: throw IllegalArgumentException("Missing AWS access key id env var AWS_ACCESS_KEY_ID"),
                     secretAccessKey = BuildKonfig.AWS_SECRET_ACCESS_KEY ?: throw IllegalArgumentException("Missing AWS secret access key env var AWS_SECRET_ACCESS_KEY")
                 )

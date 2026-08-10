@@ -94,7 +94,7 @@ object OidfOpBootstrap {
                 principalInput = DefaultPrincipalInputString(DEFAULT_PRINCIPAL_ID),
                 makeActive = false,
             )
-        val session: SessionInstance = context.sessionContextManager.createOrGetFromId("oidf-op-bootstrap")
+        val session: SessionInstance = context.sessionContextManager.createOrGetFromId("oidf-op-bootstrap", principalType = com.sphereon.di.context.PrincipalType.USER)
         // Reach the session's CoreApi graph to anchor the execution scope; the KMS pulls its
         // active provider config from the same scope.
         session.asCoreApiServiceGraph().serviceExecution

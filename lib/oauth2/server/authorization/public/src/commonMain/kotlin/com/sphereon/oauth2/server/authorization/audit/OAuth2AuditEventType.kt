@@ -16,6 +16,8 @@
 
 package com.sphereon.oauth2.server.authorization.audit
 
+import com.sphereon.core.api.session.isValidCommandId
+
 /**
  * Domain audit event types emitted by the OAuth2 Authorization Server. Sit on top of the generic
  * per-command lifecycle events the transport-layer audit interceptor already records — these
@@ -185,6 +187,18 @@ enum class OAuth2AuditEventType(
         OAuth2AuditSeverity.WARN,
         saveByDefault = true,
     ),
+    ;
+
+    /**
+     * Canonical command ID used by the shared command-audit pipeline. [eventName] remains the
+     * append-only OAuth/SIEM wire vocabulary and is intentionally not changed.
+     */
+    val commandId: String =
+        "oauth2.audit.${eventName.removePrefix("oauth2.").replace('_', '-')}".also {
+            require(isValidCommandId(it)) {
+                "OAuth2 audit command ID derived from '$eventName' is invalid: '$it'"
+            }
+        }
 }
 
 /**

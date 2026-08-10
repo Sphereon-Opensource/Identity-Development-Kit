@@ -37,6 +37,7 @@ import com.sphereon.sdjwt.SdJwt
 import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.sdjwt.SdJwtCompact
 import com.sphereon.sdjwt.SdMap
+import com.sphereon.sdjwt.SdJwtPresentation
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.JsonObject
@@ -100,15 +101,14 @@ class PresentSdJwtCommandImpl(
             log.debug("Parsed SD-JWT with ${sdJwt.disclosures.size} disclosures")
 
             // Step 2: Select disclosures based on selection criteria
-            val selectedDisclosures = selectDisclosures(sdJwt, appliedArgs.disclosureSelection)
-            log.debug("Selected ${selectedDisclosures.size} of ${sdJwt.disclosures.size} disclosures for presentation")
-
-            // Step 3: Build the presentation string (without KB-JWT first)
-            val presentationWithoutKb =
-                buildPresentationString(
-                    jwt = sdJwt.jwt.value, // Assuming JwsCompact has a .value property
-                    disclosures = selectedDisclosures,
+            val selection =
+                SdJwtPresentation.select(
+                    compact = appliedArgs.sdJwt,
+                    disclosurePaths = appliedArgs.disclosurePaths,
+                    disclosureSelection = appliedArgs.disclosureSelection,
                 )
+            val presentationWithoutKb = selection.presentationWithoutKeyBinding
+            log.debug("Selected ${selection.disclosedClaims.size} named disclosures for presentation")
 
             // Step 4: Create Key Binding JWT if holder key is provided
             val kbJwt =
@@ -119,7 +119,7 @@ class PresentSdJwtCommandImpl(
                         audience = appliedArgs.audience!!,
                         nonce = appliedArgs.nonce!!,
                         holderKey = appliedArgs.holderKey!!,
-                        digestAlg = getDigestAlgorithm(sdJwt.payload.undisclosedPayload),
+                        digestAlg = selection.digestAlgorithm,
                         opts = appliedArgs.kbJwtOpts,
                     )
                 } else {
@@ -136,10 +136,10 @@ class PresentSdJwtCommandImpl(
                 }
 
             // Extract disclosed claim names (array-element disclosures carry no claim name)
-            val disclosedClaimNames = selectedDisclosures.mapNotNull { it.key }.filter { it.isNotEmpty() }
+            val disclosedClaimNames = selection.disclosedClaims
 
             log.info(
-                "Created SD-JWT presentation with ${selectedDisclosures.size} disclosed claims${if (kbJwt != null) {
+                "Created SD-JWT presentation with ${disclosedClaimNames.size} disclosed claims${if (kbJwt != null) {
                     " and Key Binding"
                 } else {
                     ""
@@ -167,39 +167,6 @@ class PresentSdJwtCommandImpl(
      * If disclosureSelection is null, include all disclosures.
      * Otherwise, filter based on the SdMap.
      */
-    private fun selectDisclosures(
-        sdJwt: SdJwtCompact,
-        selection: SdMap?,
-    ): List<Disclosure> {
-        if (selection == null) {
-            // Include all disclosures
-            return sdJwt.disclosures
-        }
-
-        // Filter disclosures based on SdMap. Array-element disclosures have no claim name to
-        // match an SdMap entry on, so a keyed selection cannot include them.
-        return sdJwt.disclosures.filter { disclosure ->
-            val field = disclosure.key?.let { selection[it] }
-            field?.sd == true
-        }
-    }
-
-    /**
-     * Build the presentation string (JWT~disclosure1~disclosure2~...~)
-     */
-    private fun buildPresentationString(
-        jwt: String,
-        disclosures: List<Disclosure>,
-    ): String =
-        buildString {
-            append(jwt)
-            for (disclosure in disclosures) {
-                append(SdJwt.Companion.SEPARATOR)
-                append(disclosure.encoded)
-            }
-            append(SdJwt.Companion.SEPARATOR) // Trailing separator
-        }
-
     /**
      * Create a Key Binding JWT (KB-JWT) for holder authentication.
      *
@@ -235,11 +202,18 @@ class PresentSdJwtCommandImpl(
         // Sign the KB-JWT
         // Per RFC 9901, KB-JWT should ONLY contain: aud, nonce, iat, sd_hash in payload
         // Set noIssPayloadUpdate=true to prevent adding iss, client_id, client_id_scheme
-        // Use JWK mode to embed the public key in the header for verification
+        // RFC 9901 Section 4.3 requires typ and alg in the KB-JWT header. The verifier obtains the
+        // holder verification key from the issuer-signed SD-JWT cnf claim, so do not duplicate a
+        // jwk, kid, x5c, or other key identifier in the KB-JWT header.
         val kbOpts =
             CreateJwsOpts(
                 noIssPayloadUpdate = true, // Don't add iss/client_id to KB-JWT payload
-                noIdentifierInHeader = false, // DO embed JWK in header
+                noIdentifierInHeader = true,
+                protectedHeader =
+                    buildJsonObject {
+                        opts.protectedHeader?.forEach { (name, value) -> put(name, value) }
+                        put("typ", "kb+jwt")
+                    },
             )
         val kbJwsArgs =
             CreateJwsArgs(

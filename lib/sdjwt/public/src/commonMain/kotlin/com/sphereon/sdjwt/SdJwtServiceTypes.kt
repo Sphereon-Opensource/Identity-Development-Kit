@@ -25,6 +25,7 @@ import com.sphereon.sdjwt.command.IssueSdJwtCommand
 import com.sphereon.sdjwt.command.PresentSdJwtCommand
 import com.sphereon.sdjwt.command.VerifySdJwtCommand
 import com.sphereon.sdjwt.dsl.SdJwtPayload
+import kotlinx.serialization.json.JsonElement
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -163,6 +164,8 @@ interface VerifySdJwtCommandService {
 data class PresentSdJwtArgs(
     val sdJwt: String,
     val disclosureSelection: SdMap? = null,
+    /** Final DCQL claim-path pointers. When set, these take precedence over [disclosureSelection]. */
+    val disclosurePaths: List<List<JsonElement>>? = null,
     val audience: String? = null,
     val nonce: String? = null,
     val holderKey: ManagedIdentifierOptsOrResult? = null,

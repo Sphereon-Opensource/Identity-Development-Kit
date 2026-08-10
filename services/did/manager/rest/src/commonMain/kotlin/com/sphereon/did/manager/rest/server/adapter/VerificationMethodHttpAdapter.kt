@@ -49,7 +49,7 @@ class VerificationMethodHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-VERIFICATION-METHOD"
+        const val ID: String = "did.manager.verification-method"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

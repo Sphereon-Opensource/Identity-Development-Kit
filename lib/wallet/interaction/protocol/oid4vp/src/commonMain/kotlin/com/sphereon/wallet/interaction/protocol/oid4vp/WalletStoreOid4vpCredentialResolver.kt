@@ -68,7 +68,7 @@ class WalletStoreOid4vpCredentialResolver(
                         credentialId = instance.id,
                         presentation = instance.requireRaw(),
                         format = instance.format.value,
-                        holderKeyAlias = instance.holderKeyRef?.alias,
+                        holderKeyRef = instance.holderKeyRef?.alias,
                     )
             }
         }
@@ -162,7 +162,7 @@ class WalletStoreOid4vpCredentialResolver(
                 }
                 collected.values.toList()
             } else {
-                val format = query.format?.let { CredentialFormat.fromValueLenient(it) }
+                val format = CredentialFormat.fromValueLenient(query.format)
                 val result =
                     credentialStore.listMetadata(
                         walletUnitId = walletUnitId,
@@ -214,11 +214,10 @@ class WalletStoreOid4vpCredentialResolver(
 private fun WalletInteractionContext.securityAttribute(key: String): String? = attributes[key]?.takeIf { it.isNotBlank() }
 
 internal fun DcqlCredentialQuery.credentialTypeRefs(): Set<CredentialTypeRef> {
-    val meta = meta ?: return emptySet()
-    val format = format?.let { CredentialFormat.fromValueLenient(it) }
+    val format = CredentialFormat.fromValueLenient(format)
 
     return buildSet {
-        val sdJwtFormat = format?.takeIf { it.isSdJwt } ?: CredentialFormat.SD_JWT_DC
+        val sdJwtFormat = format?.takeIf { it.isSdJwt } ?: CredentialFormat.SD_JWT_VC
         val vctValues = meta["vct_values"]
         if (vctValues is JsonArray) {
             for (entry in vctValues) {

@@ -44,6 +44,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -56,7 +57,7 @@ class IsolatedKbJwtSignatureTest {
 
     val app = createJvmCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("isolated-kb-jwt-test")
+    val session = context.sessionContextManager.createOrGetFromId("isolated-kb-jwt-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {
@@ -128,7 +129,7 @@ class IsolatedKbJwtSignatureTest {
             val kbOpts =
                 CreateJwsOpts(
                     noIssPayloadUpdate = true, // Don't add iss/client_id
-                    noIdentifierInHeader = false, // DO embed JWK in header
+                    noIdentifierInHeader = true,
                 )
 
             val kbJwsArgs =
@@ -162,15 +163,8 @@ class IsolatedKbJwtSignatureTest {
             println("\nPayload: $payload")
             println("\nSignature (base64url): $signature")
 
-            // Extract header JWK
-            val headerJwkElement = header["jwk"]
-            require(headerJwkElement is kotlinx.serialization.json.JsonObject) { "Header should contain JWK" }
-            val headerJwk =
-                com.sphereon.crypto.core.jose.Jwk
-                    .fromJsonObject(headerJwkElement)
-
-            println("\n=== Header JWK ===")
-            println(headerJwk.toJsonString())
+            assertEquals(setOf("alg", "typ"), header.keys)
+            assertTrue("jwk" !in header, "RFC 9901 KB-JWT obtains the holder key from the SD-JWT cnf claim")
 
             println("\n=== COPY THESE VALUES FOR STEP 2 ===")
             println("KB_JWT=\"$kbJwt\"")
@@ -282,7 +276,7 @@ class IsolatedKbJwtSignatureTest {
             val kbOpts =
                 CreateJwsOpts(
                     noIssPayloadUpdate = true,
-                    noIdentifierInHeader = false,
+                    noIdentifierInHeader = true,
                 )
 
             val kbJwsArgs =

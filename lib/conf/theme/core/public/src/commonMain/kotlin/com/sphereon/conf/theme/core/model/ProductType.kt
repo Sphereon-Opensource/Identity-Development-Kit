@@ -22,6 +22,7 @@ import kotlinx.serialization.Serializable
 /**
  * The product a deployed application is an instance of.
  * PRODUCT-scoped theme definitions and brandable features are keyed by product type.
+ * EMAIL scopes features of the transactional email pipeline, which is not an end-user application but is brandable in the same way.
  */
 @JsExportCompat
 @Serializable
@@ -31,5 +32,6 @@ enum class ProductType {
     MOBILE_WALLET,
     PORTAL,
     ADMIN_CONSOLE,
+    EMAIL,
     CUSTOM,
 }

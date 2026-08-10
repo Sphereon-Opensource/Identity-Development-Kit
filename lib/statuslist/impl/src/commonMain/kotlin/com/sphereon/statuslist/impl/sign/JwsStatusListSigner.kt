@@ -20,17 +20,16 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.jose.Jwk
-import com.sphereon.crypto.core.kms.KeyManagerService
-import com.sphereon.crypto.jose.jws.JwtService
-import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
+import com.sphereon.crypto.core.x509.x5cWithoutTerminalSelfSignedRoot
+import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
-import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.manager.DidCreateOptions
 import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.did.models.VerificationPurpose
+import com.sphereon.did.resolver.DidResolutionResult
+import com.sphereon.did.resolver.DidResolverRegistry
 import com.sphereon.statuslist.StatusListContentTypes
 import com.sphereon.statuslist.StatusListErrors
 import com.sphereon.statuslist.StatusListSpec
@@ -44,10 +43,12 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 /**
@@ -60,49 +61,57 @@ import kotlinx.serialization.json.put
  * anchor differs from the credential's:
  * - `did:<method>` → emit the DID verification-method id as `kid` and root the token `iss` in the
  *   same DID (so `iss`/`kid` are consistent, as the credential issuance does).
- * - `x5c` → embed the signing key's certificate chain.
+ * - `x5c` → embed the signing key's certificate chain and its public JWK. The certificate chain
+ *   remains the configured trust mechanism; the redundant public JWK lets non-HAIP Token Status
+ *   List verifiers validate the same signature without changing signing keys or profile behavior.
  * - otherwise → let the KMS attach the key identifier (a cert-bearing key yields `x5c` automatically).
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<StatusListSigner>())
 class JwsStatusListSigner(
-    private val jwtService: JwtService,
-    private val kms: KeyManagerService,
+    private val jwsSigningService: StatusListJwsSigningService,
     private val didProviderRegistry: DidProviderRegistry,
+    private val didResolverRegistry: DidResolverRegistry,
     private val cwtSigner: CwtStatusListSigner,
 ) : StatusListSigner {
-    override suspend fun signStatusListToken(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> =
-        when (args.spec to args.proofFormat) {
+    override suspend fun signStatusListToken(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> {
+        // This signer signs with a KMS key, so the server must have resolved one. A missing name is
+        // refused outright: it is never substituted, defaulted, or derived from the list identity.
+        // The CWT branch guards itself, since it is also reachable directly.
+        if (args.spec == StatusListSpec.TOKEN_STATUS_LIST && args.proofFormat == StatusProofFormat.CWT) {
+            return cwtSigner.sign(args)
+        }
+        val keyName =
+            args.signingKeyName?.takeIf { it.isNotBlank() }
+                ?: return Err(StatusListErrors.signingKeyUnresolvable(args.statusListUri))
+        return when (args.spec to args.proofFormat) {
             StatusListSpec.TOKEN_STATUS_LIST to StatusProofFormat.JWT -> {
-                sign(args, typ = "statuslist+jwt", contentType = StatusListContentTypes.STATUSLIST_JWT) {
+                sign(args, keyName, typ = "statuslist+jwt", contentType = StatusListContentTypes.STATUSLIST_JWT) {
                     TokenStatusListEnvelope.buildPayload(it)
                 }
             }
 
             StatusListSpec.BITSTRING_STATUS_LIST to StatusProofFormat.VC_JWT -> {
-                sign(args, typ = "vc+jwt", contentType = StatusListContentTypes.VC_JWT) {
+                sign(args, keyName, typ = "vc+jwt", contentType = StatusListContentTypes.VC_JWT) {
                     BitstringStatusListEnvelope.buildCredential(it)
                 }
-            }
-
-            // IETF Token Status List in CWT form → COSE_Sign1 over a CWT claim set (delegated).
-            StatusListSpec.TOKEN_STATUS_LIST to StatusProofFormat.CWT -> {
-                cwtSigner.sign(args)
             }
 
             else -> {
                 Err(StatusListErrors.unsupportedProofFormat(args.spec, args.proofFormat))
             }
         }
+    }
 
     private suspend fun sign(
         args: SignStatusListTokenArgs,
+        keyName: String,
         typ: String,
         contentType: String,
         buildPayload: (SignStatusListTokenArgs) -> JsonObject,
     ): IdkResult<StatusListToken, IdkError> {
-        val (effectiveArgs, identifierHeader) = resolveKeyReference(args).getOrElse { return Err(it) }
+        val (effectiveArgs, identifierHeader) = resolveKeyReference(args, keyName).getOrElse { return Err(it) }
         val payload = buildPayload(effectiveArgs)
         val header =
             buildJsonObject {
@@ -110,11 +119,13 @@ class JwsStatusListSigner(
                 identifierHeader?.forEach { (k, v) -> put(k, v) }
             }
         val result =
-            jwtService
-                .createJwsCompact(
-                    CreateJwsArgs(
-                        issuer = ManagedOptsAlias(identifier = effectiveArgs.signingKeyAlias),
+            jwsSigningService
+                .createCompactJws(
+                    StatusListJwsSigningRequest(
+                        statusListArgs = effectiveArgs,
+                        keyName = keyName,
                         payload = payload,
+                        mode = identifierMode(effectiveArgs.signingKeyMode),
                         // When we built the identifier ourselves, tell the KMS not to add its own
                         // (otherwise a cert-bearing key would also inject x5c, contradicting a DID kid).
                         opts = CreateJwsOpts(protectedHeader = header, noIdentifierInHeader = identifierHeader != null),
@@ -129,12 +140,15 @@ class JwsStatusListSigner(
      * KMS attach the identifier). Resolution failures fall back to the KMS default rather than failing
      * the whole list, mirroring the credential issuance handlers.
      */
-    private suspend fun resolveKeyReference(args: SignStatusListTokenArgs): IdkResult<Pair<SignStatusListTokenArgs, JsonObject?>, IdkError> {
+    private suspend fun resolveKeyReference(
+        args: SignStatusListTokenArgs,
+        keyName: String,
+    ): IdkResult<Pair<SignStatusListTokenArgs, JsonObject?>, IdkError> {
         val mode = args.signingKeyMode ?: return Ok(args to null)
         return when {
             mode.startsWith("did:") -> {
                 val vmId =
-                    resolveDidKid(args, mode.removePrefix("did:"))
+                    resolveDidKid(args, keyName, mode.removePrefix("did:"))
                         // SECURITY: never silently fall back to another trust mechanism (x5c / KMS
                         // default) when a DID kid can't be resolved — that would issue the list under
                         // an x509 cert instead of the DID. Fail loudly. did:web/did:webvh kids are not
@@ -143,7 +157,7 @@ class JwsStatusListSigner(
                             IdkError.fromString(
                                 code = "statuslist_did_kid_unresolved",
                                 message =
-                                    "Cannot resolve a '$mode' kid for status-list signing key '${args.signingKeyAlias}'. " +
+                                    "Cannot resolve a '$mode' kid for status-list signing key '$keyName'. " +
                                         "Set the list's 'verification-method-id' (did:web/did:webvh kids are not derivable " +
                                         "from the key). Refusing to fall back to x5c or any other trust mechanism.",
                             ),
@@ -153,7 +167,17 @@ class JwsStatusListSigner(
             }
 
             mode.equals("x5c", ignoreCase = true) -> {
-                Ok(args to resolveX5cHeader(args.signingKeyAlias))
+                val header =
+                    resolveX5cHeader(args, keyName)
+                        ?: return Err(
+                            IdkError.fromString(
+                                code = "statuslist_x5c_unresolved",
+                                message =
+                                    "Cannot resolve an x5c certificate chain for status-list signing key '$keyName'. " +
+                                        "Refusing to fall back to a kid or another trust mechanism.",
+                            ),
+                        )
+                Ok(args to header)
             }
 
             // jwk-thumbprint / unknown modes: let the KMS attach the identifier.
@@ -166,17 +190,25 @@ class JwsStatusListSigner(
     /**
      * DID verification-method id ("`<did>#<fragment>`") used as the token `kid`, or `null` if it
      * cannot be resolved. Priority: an explicit configured [SignStatusListTokenArgs.signingVerificationMethodId]
-     * (required form for did:web/webvh), else for web/webvh `did:web:<host>#<signingKeyAlias>` (host from
+     * (required form for did:web/webvh), else for web/webvh `did:web:<host>#<keyName>` (host from
      * the list's hosting URI), else the key-derived id for did:jwk/did:key.
      */
     private suspend fun resolveDidKid(
         args: SignStatusListTokenArgs,
+        keyName: String,
         method: String,
     ): String? {
         // A configured kid MUST be a full absolute DID URL (`did:<method>:...#<fragment>`) — never a
         // hostname or a bare fragment. Anything else is ignored in favour of the derived absolute kid.
-        args.signingVerificationMethodId?.takeIf { it.startsWith("did:") && it.contains('#') }?.let { return it }
-        val jwk = publicJwk(args.signingKeyAlias) ?: return null
+        val jwk = publicJwk(args, keyName) ?: return null
+        args.signingVerificationMethodId?.let { configuredId ->
+            val did = configuredId.substringBefore('#')
+            if (!configuredId.startsWith("did:") || '#' !in configuredId || did.substringAfter("did:").substringBefore(':') != method) {
+                return null
+            }
+            val resolution = didResolverRegistry.resolve(did).getOrNull() ?: return null
+            return findStatusListAssertionMethodId(resolution, jwk, requiredId = configuredId)
+        }
         val provider = didProviderRegistry.getProvider(method) ?: return null
         val webMethod = method in WEB_RESOLVED_METHODS
         val created =
@@ -185,44 +217,98 @@ class JwsStatusListSigner(
                     DidCreateOptions(
                         method = method,
                         publicKeyJwk = jwk.toPublicKey(),
-                        domain = if (webMethod) hostOf(args.statusListUri) else null,
+                        domain = if (webMethod) statusListWebAuthorityOf(args.statusListUri) else null,
                         purposes = if (webMethod) listOf(VerificationPurpose.ASSERTION_METHOD) else null,
-                        verificationMethodId = if (webMethod) args.signingKeyAlias else null,
+                        verificationMethodId = if (webMethod) keyName else null,
                     ),
                 ).getOrNull() ?: return null
-        return created.verificationMethodsByPurpose[VerificationPurpose.ASSERTION_METHOD]
-            ?.firstOrNull()
-            ?.id
-            ?: if (webMethod) "${created.did}#${args.signingKeyAlias}" else "${created.did}#0"
+        val resolution = didResolverRegistry.resolve(created.did).getOrNull() ?: return null
+        return findStatusListAssertionMethodId(resolution, jwk)
     }
 
     private companion object {
         val WEB_RESOLVED_METHODS = setOf("web", "webvh")
 
-        /** Host (authority without scheme/port/path) of an absolute http(s) URL, or null. */
-        fun hostOf(url: String?): String? {
-            if (url.isNullOrBlank()) return null
-            val authority =
-                url
-                    .substringAfter("://", "")
-                    .substringBefore('/')
-                    .substringBefore('?')
-                    .substringBefore('#')
-            val host = authority.substringBefore('@').substringBefore(':')
-            return host.takeIf { it.isNotBlank() }
+        /**
+         * An explicit `jwk` mode embeds the public signing key in the protected header. This is the
+         * self-contained verification mechanism used by non-HAIP Token Status List deployments.
+         * DID and x5c modes build their own header fragment above; all other modes retain the KMS
+         * auto-detection behaviour.
+         */
+        fun identifierMode(signingKeyMode: String?): JwsIdentifierMode =
+            if (signingKeyMode.equals("jwk", ignoreCase = true)) JwsIdentifierMode.JWK else JwsIdentifierMode.AUTO
+
+    }
+
+    /**
+     * `{ x5c: [...], jwk: {...} }` from the same signing key, or null when the key carries no chain.
+     *
+     * The JWK is public-only. Keeping both identifiers on the one signature is intentional: HAIP
+     * validates the CA-backed `x5c` chain while the Final Token Status List path uses the embedded
+     * JWK. Credential format does not affect this publication behavior.
+     */
+    private suspend fun resolveX5cHeader(
+        args: SignStatusListTokenArgs,
+        keyAlias: String,
+    ): JsonObject? {
+        val signingJwk = publicJwk(args, keyAlias) ?: return null
+        val chain = signingJwk.x5c?.let(::x5cWithoutTerminalSelfSignedRoot) ?: return null
+        val publicJwk = Json.encodeToJsonElement(Jwk.serializer(), signingJwk.toPublicKey() as Jwk).jsonObject
+        return buildJsonObject {
+            put("x5c", JsonArray(chain.map { JsonPrimitive(it) }))
+            put("jwk", publicJwk)
         }
     }
 
-    /** `{ x5c: [...] }` from the signing key's certificate chain, or null when the key carries none. */
-    private suspend fun resolveX5cHeader(keyAlias: String): JsonObject? {
-        val chain = publicJwk(keyAlias)?.x5c ?: return null
-        return buildJsonObject { put("x5c", JsonArray(chain.map { JsonPrimitive(it) })) }
-    }
+    private suspend fun publicJwk(
+        args: SignStatusListTokenArgs,
+        keyAlias: String,
+    ): Jwk? = jwsSigningService.publicJwk(keyAlias, args.signingKeyInstanceId)
+}
 
-    private suspend fun publicJwk(keyAlias: String): Jwk? =
-        kms
-            .getKeyResult(KeyInfo<Nothing>(alias = keyAlias))
-            .getOrNull()
-            ?.key
-            ?.key as? Jwk
+/**
+ * Public authority of a hosted status-list URL. A non-default port is part of the corresponding
+ * did:web identifier and must reach the DID provider so it can be encoded as `%3A<port>`.
+ */
+internal fun statusListWebAuthorityOf(url: String?): String? {
+    if (url.isNullOrBlank()) return null
+    val authority =
+        url
+            .substringAfter("://", "")
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore('#')
+    if ('@' in authority) return null
+    return authority.takeIf { it.isNotBlank() }
+}
+
+internal fun findStatusListAssertionMethodId(
+    resolution: DidResolutionResult,
+    signingKey: Jwk,
+    requiredId: String? = null,
+): String? {
+    if (!resolution.isSuccess()) return null
+    val did = resolution.didDocument?.id?.takeIf { it.startsWith("did:") } ?: return null
+    val expected = signingKey.publicMaterial()
+    val matches =
+        resolution
+            .getAssertionMethods()
+            .filter { it.publicKeyJwk?.publicMaterial() == expected }
+            .mapNotNull { method ->
+                when {
+                    method.id.startsWith("$did#") && method.id.length > did.length + 1 -> method.id
+                    method.id.startsWith("#") && method.id.length > 1 -> "$did${method.id}"
+                    else -> null
+                }
+            }.distinct()
+    return matches.singleOrNull()?.takeIf { requiredId == null || it == requiredId }
+}
+
+private fun Jwk.publicMaterial(): JsonObject {
+    val full = Json.encodeToJsonElement(Jwk.serializer(), this).jsonObject
+    return buildJsonObject {
+        full.forEach { (key, value) ->
+            if (key in setOf("kty", "crv", "x", "y", "n", "e")) put(key, value)
+        }
+    }
 }

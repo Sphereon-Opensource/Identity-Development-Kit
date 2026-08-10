@@ -93,7 +93,7 @@ class SoftwareWscdFactoryTest {
                 version = "0.1.0",
             )
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId(sessionId)
+        val session = userContext.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
         val kms = session.graph.asKeyManagerServiceGraph().keyManagerService
         val softwareKmsProviderFactory = (app as SoftwareKmsProviderFactoryImpl.Graph).softwareKmsProvider
         val registrar =

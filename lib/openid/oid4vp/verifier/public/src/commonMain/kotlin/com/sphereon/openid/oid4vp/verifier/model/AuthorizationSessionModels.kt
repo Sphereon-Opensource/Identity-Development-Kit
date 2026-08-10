@@ -169,6 +169,13 @@ data class AuthorizationSession(
      * Optional business identifier of the verifier instance this session was created for.
      */
     val verifierId: String? = null,
+    /**
+     * Optional identifier of the verification template this session's authorization request was
+     * created from (see `createAuthorizationRequestFromVerificationTemplate`). Threaded into
+     * response-side credential trust validation so TEMPLATE-scoped trust-domain defaults apply
+     * for the lifetime of this session, without the wallet or caller needing to resend it.
+     */
+    val templateId: String? = null,
     val authorizationRequest: AuthorizationRequest,
     val status: AuthorizationSessionStatus,
     val error: AuthorizationSessionError? = null,
@@ -176,14 +183,11 @@ data class AuthorizationSession(
     val validationResult: ValidationResult? = null,
     val callback: AuthorizationSessionCallbackConfig? = null,
     /**
-     * KMS reference (alias + provider id) for the ephemeral encryption keypair the
-     * wallet uses to encrypt a `direct_post.jwt` JARM response. Set when the auth request
-     * was created with `responseMode == DIRECT_POST_JWT`. Resolved back to a `KeyInfo` at
-     * `/auth/response` time so the verifier can decrypt. NEVER stores key material here —
-     * the private key lives in the ephemeral KMS provider (memory keystore, APP-scoped).
+     * Optional URI returned to the wallet after a successful direct-post response.
+     * This is response-endpoint state, not the authorization request's `redirect_uri`.
+     * HAIP 1.0 requires it to be present in the verifier's direct-post response.
      */
-    val jarmEncryptionKeyAlias: String? = null,
-    val jarmEncryptionKeyProviderId: String? = null,
+    val directPostResponseRedirectUri: String? = null,
     /**
      * Optional one-time invitation token bound to this verifier session at create
      * time. Carried forward into [com.sphereon.openid.oid4vp.verifier.hook.PostPresentationHookArgs.boundInvitationToken]

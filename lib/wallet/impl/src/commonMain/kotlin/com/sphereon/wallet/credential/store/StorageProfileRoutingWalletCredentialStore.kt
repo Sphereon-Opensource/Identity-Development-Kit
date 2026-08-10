@@ -32,10 +32,6 @@ import com.sphereon.wallet.credential.StorageProfile
 import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.WalletStorageMode
 import com.sphereon.wallet.credential.WalletStorageProfileResolver
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 
 /**
  * Routes wallet credential operations through the store selected by [StorageProfile].
@@ -45,9 +41,6 @@ import dev.zacsweers.metro.binding
  * keeps routing rooted in the existing blob/vault abstractions instead of introducing another
  * credential persistence concept.
  */
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<WalletCredentialStore>())
 class StorageProfileRoutingWalletCredentialStore(
     private val storageProfileResolver: WalletStorageProfileResolver,
     private val localStore: LocalWalletCredentialStore,

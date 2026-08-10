@@ -111,7 +111,7 @@ data class OidcMethodDefinition(
     override val compliance: IdvComplianceProfile = IdvComplianceProfile(),
     val discoveryUrl: String,
     val clientIdRef: ConfigReference,
-    val clientSecretRef: SecretReference,
+    val clientSecretId: String,
     val scopes: Set<String> = setOf("openid"),
     val attributeMappings: List<AttributeMapping>,
     val subjectBinding: AttributeBinding,

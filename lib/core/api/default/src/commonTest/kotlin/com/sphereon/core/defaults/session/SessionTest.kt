@@ -46,7 +46,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("my-session")
+            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("my-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertEquals("my-session", sessionGraph.sessionContext.sessionId)
         } finally {
             appGraph.destroy()
@@ -62,7 +62,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("my-session")
+            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("my-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertNotNull(sessionGraph.sessionContext.context)
             assertEquals("test-user", sessionGraph.sessionContext.context.principal)
@@ -81,9 +81,9 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1")
-            val session2 = contextInstance.sessionContextManager.createOrGetFromId("session-2")
-            val session1Again = contextInstance.sessionContextManager.createOrGetFromId("session-1")
+            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session2 = contextInstance.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session1Again = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Same session ID should return same graph
             assertEquals(session1.sessionContext, session1Again.sessionContext)
@@ -104,7 +104,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("unique-session-id")
+            val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("unique-session-id", principalType = com.sphereon.di.context.PrincipalType.USER)
             val stringRep = sessionGraph.sessionContext.toString()
 
             assertTrue(stringRep.contains("unique-session-id"), "toString should contain session ID")
@@ -122,8 +122,8 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1")
-            val session1Again = contextInstance.sessionContextManager.createOrGetFromId("session-1")
+            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session1Again = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertEquals(session1.sessionContext.hashCode(), session1Again.sessionContext.hashCode())
         } finally {
@@ -143,7 +143,7 @@ class SessionTest {
                     DefaultPrincipalInputString("test-user"),
                 )
             val sessionManager = contextInstance.sessionContextManager
-            val sessionGraph = sessionManager.createOrGetFromId("new-session")
+            val sessionGraph = sessionManager.createOrGetFromId("new-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertNotNull(sessionGraph)
             assertEquals("new-session", sessionGraph.sessionId)
@@ -165,7 +165,7 @@ class SessionTest {
 
             assertFalse(sessionManager.hasActive(), "Should not have active session initially")
 
-            sessionManager.createOrGetFromId("session-1")
+            sessionManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertTrue(sessionManager.hasActive(), "Should have active session after creation")
             assertEquals("session-1", sessionManager.getActive().sessionId)
         } finally {
@@ -184,8 +184,8 @@ class SessionTest {
                 )
             val sessionManager = contextInstance.sessionContextManager
 
-            sessionManager.createOrGetFromId("session-1")
-            sessionManager.createOrGetFromId("session-2")
+            sessionManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            sessionManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertEquals("session-2", sessionManager.getActive().sessionId)
 
@@ -207,7 +207,7 @@ class SessionTest {
                 )
             val sessionManager = contextInstance.sessionContextManager
 
-            sessionManager.createOrGetFromId("session-1")
+            sessionManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertTrue(sessionManager.hasActive())
 
             sessionManager.destroyById("session-1")
@@ -228,9 +228,9 @@ class SessionTest {
                 )
             val sessionManager = contextInstance.sessionContextManager
 
-            sessionManager.createOrGetFromId("session-1")
-            sessionManager.createOrGetFromId("session-2")
-            sessionManager.createOrGetFromId("session-3")
+            sessionManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            sessionManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
+            sessionManager.createOrGetFromId("session-3", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertTrue(sessionManager.hasActive())
 
@@ -252,7 +252,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("instance-session")
+            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("instance-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertEquals("instance-session", sessionInstance.sessionId)
         } finally {
@@ -269,7 +269,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("instance-session")
+            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("instance-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertNotNull(sessionInstance.sessionContext)
             assertEquals("instance-session", sessionInstance.sessionContext.sessionId)
@@ -287,7 +287,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("instance-session")
+            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("instance-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertNotNull(sessionInstance.graph)
         } finally {
@@ -304,7 +304,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("active-session")
+            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("active-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertTrue(sessionInstance.isCurrentlyActive(), "New session should be active")
         } finally {
@@ -321,8 +321,8 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1")
-            val session2 = contextInstance.sessionContextManager.createOrGetFromId("session-2")
+            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session2 = contextInstance.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertFalse(session1.isCurrentlyActive(), "Session 1 should not be active after session 2 created")
             assertTrue(session2.isCurrentlyActive(), "Session 2 should be active")
@@ -344,7 +344,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("to-destroy")
+            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("to-destroy", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertTrue(contextInstance.sessionContextManager.hasActive())
 
@@ -365,9 +365,9 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1")
-            val session1Again = contextInstance.sessionContextManager.createOrGetFromId("session-1")
-            val session2 = contextInstance.sessionContextManager.createOrGetFromId("session-2")
+            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session1Again = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session2 = contextInstance.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertEquals(session1, session1Again, "Same session ID should return equal instances")
             assertNotEquals(session1, session2, "Different session IDs should not be equal")
@@ -385,8 +385,8 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1")
-            val session1Again = contextInstance.sessionContextManager.createOrGetFromId("session-1")
+            val session1 = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session1Again = contextInstance.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertEquals(session1.hashCode(), session1Again.hashCode())
         } finally {
@@ -418,7 +418,7 @@ class SessionTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("real-session")
+            val sessionInstance = contextInstance.sessionContextManager.createOrGetFromId("real-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertFalse(sessionInstance.sessionContext.isAnonymous(), "Non-anonymous session should not be anonymous")
         } finally {

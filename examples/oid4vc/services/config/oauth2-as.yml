@@ -11,17 +11,16 @@ kms:
     software:
       type: software
       enabled: true
-      # The AS self-seeds its signing key on first use (see the SigningKeyStore seeder). The
-      # software KMS persists keys into a PKCS12 keystore, whose entries are certificate-based, so
-      # storing a freshly generated bare signing key requires a certificate. With this enabled the
-      # provider mints a self-signed certificate (alias as CN) for every generated key, letting the
-      # AS create its ES256 signing key without an externally supplied chain.
+      # The AS bootstraps its required signing key before opening the HTTP listener. The software
+      # KMS persists keys into a PKCS12 keystore, whose entries are certificate-based, so storing a
+      # freshly generated bare signing key requires a certificate. With this enabled the provider
+      # mints a self-signed certificate (alias as CN) for every generated key.
       autoCreateCertificate: true
       keystore:
         type: pkcs12
         id: software
         password: "${env:KEYSTORE_PASSWORD}"
-        path: /app/keystore/keystore.p12
+        path: "${env:KEYSTORE_PATH:/app/keystore/keystore.p12}"
 
 oauth2:
   # Switch from the default `federated` provider (which routes to an upstream IdP) to the IDK
@@ -126,12 +125,12 @@ oauth2:
       par: "${env:OAUTH2_PAR_POLICY:SUPPORTED}"
       token-endpoint-auth-methods-supported: "${env:OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS:client_secret_basic,client_secret_post}"
       public-clients:
-        allow-any: true
+        allow-any: "${env:OAUTH2_PUBLIC_CLIENTS_ALLOW_ANY:true}"
         # Demo: accept any public client's redirect URI (wallets use loopback / custom-scheme
         # URIs the AS can't pre-register). Required for the allow-any fallback to engage — without
         # it the fallback is disabled and unregistered public clients are rejected at PAR/token.
         # OIDF conformance deployments leave this false.
-        permissive-redirect-uri: true
+        permissive-redirect-uri: "${env:OAUTH2_PUBLIC_CLIENTS_PERMISSIVE_REDIRECT_URI:true}"
       internal-clients:
         issuer:
           client-id: issuer-service
@@ -152,7 +151,7 @@ oauth2:
     sphereon-client1:
       client-id: sphereon-client1
       client-name: "Sphereon Wallet (conformance client 1)"
-      client-type: PUBLIC
+      client-type: "${env:OIDF_VCI_CLIENT_TYPE:PUBLIC}"
       # Comma-separated lists rather than YAML sequences: the property binder reads multi-valued
       # client config via `toStringList` which splits CSVs but does not collapse YAML `[N]`
       # indexed keys into the expected dot-indexed form for nested property maps.
@@ -163,17 +162,36 @@ oauth2:
       # is the production cert site. The suite uses whichever host it's actually running on
       # for the test/a/<ALIAS>/callback redirect, so registering both keeps the same client
       # config working regardless of which one is in use.
-      redirect-uris: "https://demo.certification.openid.net/test/a/${env:OIDF_CONFORMANCE_ALIAS:sphereon-haip}/callback,https://www.certification.openid.net/test/a/${env:OIDF_CONFORMANCE_ALIAS:sphereon-haip}/callback"
-      token-endpoint-auth-method: attest_jwt_client_auth
+      redirect-uris: "${env:OIDF_CONFORMANCE_REDIRECT_URIS:https://demo.certification.openid.net/test/a/sphereon-haip/callback,https://www.certification.openid.net/test/a/sphereon-haip/callback}"
+      token-endpoint-auth-method: "${env:OIDF_VCI_CLIENT_AUTH_METHOD:attest_jwt_client_auth}"
+      token-endpoint-auth-signing-alg: ES256
+      jwks:
+        "0":
+          kty: EC
+          crv: P-256
+          kid: vci-example-key-1
+          x: yHNp8QgNiVSxSxIH_n_nH23dpUDlNhbgvLKSrjK1hDs
+          y: 3_rlpW_FXqghp8dKPpkjfvbfACQQFLFZwJXxOr319Ac
+          use: sig
+          alg: ES256
       require-pkce: true
     sphereon-client2:
       client-id: sphereon-client2
       client-name: "Sphereon Wallet (conformance client 2)"
-      client-type: PUBLIC
+      client-type: "${env:OIDF_VCI_CLIENT_TYPE:PUBLIC}"
       grant-types: "authorization_code,refresh_token"
       response-types: "code"
-      redirect-uris: "https://demo.certification.openid.net/test/a/${env:OIDF_CONFORMANCE_ALIAS:sphereon-haip}/callback,https://www.certification.openid.net/test/a/${env:OIDF_CONFORMANCE_ALIAS:sphereon-haip}/callback"
-      token-endpoint-auth-method: attest_jwt_client_auth
+      redirect-uris: "${env:OIDF_CONFORMANCE_REDIRECT_URIS:https://demo.certification.openid.net/test/a/sphereon-haip/callback,https://www.certification.openid.net/test/a/sphereon-haip/callback}"
+      token-endpoint-auth-method: "${env:OIDF_VCI_CLIENT_AUTH_METHOD:attest_jwt_client_auth}"
+      token-endpoint-auth-signing-alg: ES256
+      jwks:
+        "0":
+          kty: EC
+          crv: P-256
+          x: 0porQzgecjoNBvOQ49YhoW9PtfD2MSv_rtYCLeWZsew
+          y: qM6CR3AZou_og6ar1TDrK3n23uBUqyOAsyouJ99kEzk
+          use: sig
+          alg: ES256
       require-pkce: true
 
     # OIDC Basic Profile Authorization Server certification clients. The OIDF Basic plan

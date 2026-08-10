@@ -45,7 +45,7 @@ class ControllerHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-CONTROLLER"
+        const val ID: String = "did.manager.controller"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

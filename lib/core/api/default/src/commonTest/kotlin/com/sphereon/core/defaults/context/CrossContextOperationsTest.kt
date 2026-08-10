@@ -109,8 +109,8 @@ class CrossContextOperationsTest {
                 )
 
             // Create some sessions
-            userContext.sessionContextManager.createOrGetFromId("session-1")
-            userContext.sessionContextManager.createOrGetFromId("session-2")
+            userContext.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            userContext.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val crossContextOps = appGraph.crossContextOperations
             val sessions = crossContextOps.getAvailableSessionsForContext(userContext.contextId)
@@ -188,7 +188,7 @@ class CrossContextOperationsTest {
                         DefaultTenantInputString("test-tenant"),
                         DefaultPrincipalInputString("test-user"),
                     )
-                userContext.sessionContextManager.createOrGetFromId("target-session")
+                userContext.sessionContextManager.createOrGetFromId("target-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
                 val crossContextOps = appGraph.crossContextOperations
                 val result =

@@ -19,6 +19,7 @@ package com.sphereon.core.defaults.session
 
 import com.sphereon.core.defaults.context.UserContextImpl
 import com.sphereon.di.context.SecuredTenantContextDetails
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.UserContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
@@ -53,16 +54,21 @@ class SessionContextImpl(
     @Named("sessionId") override val sessionId: String,
     @Named("correlationId") override val correlationId: String,
     secureDetails: SecuredTenantContextDetails? = null,
+    @Named("principalType") principalType: PrincipalType? = null,
 ) : SessionContext {
     override val context: UserContext =
-        if (secureDetails == null || context.secureDetails != null) {
+        if (
+            (secureDetails == null || context.secureDetails != null) &&
+            (principalType == null || principalType == context.principalType)
+        ) {
             context
         } else {
             UserContextImpl(
                 tenant = context.tenant,
                 principal = context.principal,
-                secureDetails = secureDetails,
+                secureDetails = secureDetails ?: context.secureDetails,
                 id = context.id,
+                principalType = principalType ?: context.principalType,
             )
         }
 

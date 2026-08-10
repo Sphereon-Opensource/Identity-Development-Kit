@@ -30,7 +30,7 @@ import dev.zacsweers.metro.binding
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<HttpAdapterDescriptorProvider>())
 class CredentialDefinitionHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
-    override val id: String = "credential-definition-freeform"
+    override val id: String = "credential-definition.freeform.http"
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(

@@ -36,6 +36,7 @@ import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.StatusValues
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import com.sphereon.statuslist.spi.StatusListSigner
+import com.sphereon.statuslist.spi.StatusListSigningKeyNameResolver
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -213,4 +214,135 @@ class InMemoryStatusListDriverTest {
             val d = driver()
             assertNull((d.getStatusList(StatusListRef(correlationId = "nope")) as Ok).value)
         }
+
+    @Test
+    fun signingKeyComesFromTheBoundResolverAndNeverFromTheCorrelationId() =
+        runTest {
+            val signer = RecordingStatusListSigner()
+            val resolver = FixedSigningKeyNameResolver("status-list-signing-instance-7")
+            val d = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution(), signingKeyNameResolver = { resolver })
+
+            assertTrue(d.createStatusList(createArgs()).isOk)
+
+            assertEquals("status-list-signing-instance-7", signer.lastKeyName)
+            assertEquals(listOf("test-tenant" to "sl-1"), resolver.requests)
+        }
+
+    @Test
+    fun aDefinitionKeyAliasIsIgnoredWhileAResolverIsBound() =
+        runTest {
+            val signer = RecordingStatusListSigner()
+            val resolver = FixedSigningKeyNameResolver("status-list-signing-instance-7")
+            val d = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution(), signingKeyNameResolver = { resolver })
+
+            assertTrue(d.createStatusList(createArgs().copy(signingKeyAlias = "attacker-chosen-alias")).isOk)
+
+            assertEquals("status-list-signing-instance-7", signer.lastKeyName)
+        }
+
+    @Test
+    fun everyUnusableBindingReachesTheSignerAsTheSameAbsentKeyName() =
+        runTest {
+            // Absent, detached, cross-tenant, inactive, and unmapped bindings are all a null answer
+            // from the resolver. The driver passes each through untouched, so they are
+            // indistinguishable and none of them yields a substituted name.
+            val handed =
+                listOf("absent", "detached", "cross-tenant", "inactive", "unmapped").map { _ ->
+                    val signer = RecordingStatusListSigner()
+                    val d =
+                        InMemoryStatusListDriver(
+                            InMemoryStatusListStore(),
+                            signer,
+                            TestSessionExecution(),
+                            signingKeyNameResolver = { FixedSigningKeyNameResolver(null) },
+                        )
+                    assertTrue(d.createStatusList(createArgs().copy(signingKeyAlias = "attacker-chosen-alias")).isOk)
+                    signer.lastKeyName
+                }
+
+            assertEquals(listOf(null, null, null, null, null), handed, "no unusable binding may yield a key name")
+        }
+
+    @Test
+    fun aBlankResolvedKeyNameIsPassedThroughAsAbsent() =
+        runTest {
+            val signer = RecordingStatusListSigner()
+            val d =
+                InMemoryStatusListDriver(
+                    InMemoryStatusListStore(),
+                    signer,
+                    TestSessionExecution(),
+                    signingKeyNameResolver = { FixedSigningKeyNameResolver("  ") },
+                )
+
+            assertTrue(d.createStatusList(createArgs()).isOk)
+
+            assertNull(signer.lastKeyName)
+        }
+
+    @Test
+    fun withoutAResolverAListCarryingNoKeyHandsTheSignerNoName() =
+        runTest {
+            val signer = RecordingStatusListSigner()
+            val d = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution())
+
+            assertTrue(d.createStatusList(createArgs().copy(signingKeyAlias = null)).isOk)
+
+            assertNull(signer.lastKeyName, "the correlation id must never stand in for a signing key")
+        }
+
+    @Test
+    fun aSignerWithItsOwnDurableKeyStillProducesATokenWhenNoBindingResolves() =
+        runTest {
+            // The license-portal shape: the signer mints from its own certificate chain and ignores
+            // the key name, so it must keep working on a deployment that binds no KMS handle.
+            val signer = RecordingStatusListSigner()
+            val d =
+                InMemoryStatusListDriver(
+                    InMemoryStatusListStore(),
+                    signer,
+                    TestSessionExecution(),
+                    signingKeyNameResolver = { FixedSigningKeyNameResolver(null) },
+                )
+
+            val created = d.createStatusList(createArgs().copy(signingKeyAlias = null))
+
+            assertTrue(created.isOk)
+            assertTrue((created as Ok).value.signedToken.isNotBlank())
+            assertNull(signer.lastKeyName)
+        }
+}
+
+/**
+ * Records the key name the driver resolved, so a test can assert where it came from. It signs from
+ * its own material and never consults a KMS, mirroring a deployment whose signer owns its key.
+ */
+private class RecordingStatusListSigner : StatusListSigner {
+    var lastKeyName: String? = null
+
+    override suspend fun signStatusListToken(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> {
+        lastKeyName = args.signingKeyName
+        return Ok(
+            StatusListToken(
+                token = "signed:${args.encodedList}",
+                contentType = args.proofFormat.contentType,
+                ttlSeconds = args.ttlSeconds,
+            ),
+        )
+    }
+}
+
+/** Stands in for a deployment that manages signing material centrally; null means "refuse". */
+private class FixedSigningKeyNameResolver(
+    private val keyName: String?,
+) : StatusListSigningKeyNameResolver {
+    val requests = mutableListOf<Pair<String, String>>()
+
+    override suspend fun resolveSigningKeyName(
+        tenantId: String,
+        statusListId: String,
+    ): String? {
+        requests += tenantId to statusListId
+        return keyName
+    }
 }

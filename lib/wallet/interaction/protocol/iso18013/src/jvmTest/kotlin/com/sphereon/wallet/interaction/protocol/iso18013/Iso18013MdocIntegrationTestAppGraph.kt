@@ -11,23 +11,53 @@ import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.interaction.WalletInteractionClient
+import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStore
+import com.sphereon.wallet.interaction.impl.LocalWalletInteractionClient
+import com.sphereon.wallet.interaction.impl.WalletInteractionSessionStore
 import com.sphereon.wallet.wscd.SoftwareWscdKeyStoreConfiguration
 import dev.zacsweers.metro.AppScope
-import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.DependencyGraph
-import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 import dev.zacsweers.metro.createGraphFactory
 
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<WalletInteractionClient>())
-class Iso18013MdocIntegrationWalletInteractionClient :
-    WalletInteractionClient by DefaultWalletInteractionEngine(sensitiveInputAuthority = Iso18013TestSensitiveInputAuthority)
+@ContributesTo(SessionScope::class)
+interface Iso18013MdocIntegrationWalletInteractionBindings {
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun privateSessionStore(): WalletInteractionPrivateSessionStore = InMemoryWalletInteractionPrivateSessionStore()
+
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun sessionStore(): WalletInteractionSessionStore = InMemoryWalletInteractionSessionStore()
+
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun sensitiveInputAuthority(): WalletInteractionSensitiveInputAuthority = Iso18013TestSensitiveInputAuthority
+
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun engine(
+        privateSessionStore: WalletInteractionPrivateSessionStore,
+        sessionStore: WalletInteractionSessionStore,
+        sensitiveInputAuthority: WalletInteractionSensitiveInputAuthority,
+    ): DefaultWalletInteractionEngine =
+        DefaultWalletInteractionEngine(
+            sensitiveInputAuthority = sensitiveInputAuthority,
+            privateSessionStore = privateSessionStore,
+            sessionStore = sessionStore,
+        )
+
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun client(engine: DefaultWalletInteractionEngine): WalletInteractionClient = LocalWalletInteractionClient(engine)
+}
 
 @DependencyGraph(AppScope::class)
 abstract class Iso18013MdocIntegrationTestAppGraph : AbstractAppGraph() {

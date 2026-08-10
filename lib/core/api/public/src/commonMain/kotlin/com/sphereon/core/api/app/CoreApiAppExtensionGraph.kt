@@ -24,6 +24,7 @@ import com.sphereon.core.api.log.AppLogManager
 import com.sphereon.core.api.log.UserContextLogManager
 import com.sphereon.core.api.session.AppCommandInvoker
 import com.sphereon.di.app.AppGraph
+import com.sphereon.di.context.IdentityResolutionPipeline
 import com.sphereon.di.context.UserContextManager
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
@@ -48,6 +49,14 @@ interface CoreApiAppExtensionGraph {
      * Declared here so contributed code can access it without casting to [AppGraph].
      */
     val userContextManager: UserContextManager
+
+    /**
+     * Resolves validated identity claims into tenant, principal, and principal type.
+     *
+     * Request adapters must use this shared pipeline rather than duplicating token
+     * classification heuristics when constructing a typed user context.
+     */
+    val identityResolutionPipeline: IdentityResolutionPipeline
 
     /**
      * Used to provide an anonymous context scope. Mainly useful for libraries and global logging.

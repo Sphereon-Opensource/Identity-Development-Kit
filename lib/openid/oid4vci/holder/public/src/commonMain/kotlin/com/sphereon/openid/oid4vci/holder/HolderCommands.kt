@@ -128,6 +128,23 @@ interface RequestNonceCommand : ServiceCommand<RequestNonceArgs, NonceResponse, 
     }
 }
 
+@Serializable
+data class AttestationChallengeResponse(
+    @SerialName("attestation_challenge") val attestationChallenge: String,
+)
+
+data class RequestAttestationChallengeArgs(
+    val challengeEndpoint: String,
+)
+
+interface RequestAttestationChallengeCommand : ServiceCommand<RequestAttestationChallengeArgs, AttestationChallengeResponse, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "oid4vci.holder.attestation-challenge"
+    }
+}
+
 // ============================================================================
 // ExchangePreAuthorizedCodeCommand
 // ============================================================================
@@ -175,11 +192,39 @@ interface ExchangePreAuthorizedCodeCommand : ServiceCommand<ExchangePreAuthorize
     }
 }
 
+data class ExchangeRefreshTokenArgs(
+    val tokenEndpoint: String,
+    val refreshToken: String,
+    val clientId: String? = null,
+    val dpopProofJwt: String? = null,
+    val clientAttestationJwt: String? = null,
+    val clientAttestationPopJwt: String? = null,
+    val clientAuthentication: ClientAuthenticationConfig? = null,
+) {
+    init {
+        require((clientAttestationJwt == null) == (clientAttestationPopJwt == null)) {
+            "clientAttestationJwt and clientAttestationPopJwt must be supplied together"
+        }
+    }
+}
+
+interface ExchangeRefreshTokenCommand : ServiceCommand<ExchangeRefreshTokenArgs, TokenResponseWithContext, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "oid4vci.holder.refresh-token"
+    }
+}
+
 // ============================================================================
 // CreateCredentialRequestProofCommand
 // ============================================================================
 
 data class CreateCredentialRequestProofArgs(
+    /** Wallet unit whose WSCA selects the WSCD that owns the holder key. */
+    val walletUnitId: String?,
+    /** Attended-operation binding consumed by WSCA before the holder key may be used. */
+    val operationBinding: String?,
     val issuerUrl: String,
     val cNonce: String? = null,
     val signingKeyIds: List<String>,
@@ -192,6 +237,10 @@ data class CreateCredentialRequestProofArgs(
     val proofType: String = "jwt",
 ) {
     init {
+        if (proofType == "jwt") {
+            require(!walletUnitId.isNullOrBlank()) { "JWT proof creation requires a non-blank walletUnitId" }
+            require(!operationBinding.isNullOrBlank()) { "JWT proof creation requires a non-blank attended operationBinding" }
+        }
         require(signingKeyIds.isNotEmpty()) { "CreateCredentialRequestProofArgs.signingKeyIds must not be empty" }
         require(signingKeyIds.all { it.isNotBlank() }) { "CreateCredentialRequestProofArgs.signingKeyIds must not contain blank entries" }
     }
@@ -268,6 +317,7 @@ interface RequestCredentialCommand : ServiceCommand<RequestCredentialArgs, Crede
 data class RequestDeferredCredentialArgs(
     val deferredCredentialEndpoint: String,
     val accessToken: String,
+    val dpopProofJwt: String? = null,
     val transactionId: String,
     val credentialResponseEncryption: RequestedCredentialResponseEncryption? = null,
     /**
@@ -310,6 +360,7 @@ interface RequestDeferredCredentialCommand : ServiceCommand<RequestDeferredCrede
 data class SendNotificationArgs(
     val notificationEndpoint: String,
     val accessToken: String,
+    val dpopProofJwt: String? = null,
     val notificationId: String,
     val event: CredentialNotificationEvent,
     val eventDescription: String? = null,

@@ -52,7 +52,7 @@ class DidManagerTestContext(
     }
 
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
     val dslProcessor: DidCreationDslProcessor = (session.graph as DidCreationDslProcessorImpl.Graph).didCreationDslProcessor
     val didManager: DidManager = (session.graph as DidManagerServiceImpl.Graph).didManager
 

@@ -76,6 +76,6 @@ class CredentialDefinitionHttpAdapter(
         )
 
     companion object {
-        const val ID = "credential-definition-freeform"
+        const val ID = "credential-definition.freeform.http"
     }
 }

@@ -302,7 +302,7 @@ class AuthorizationCodeGrantRolesClaimTest {
         }
 
     @Test
-    fun authenticationContextFromCodeLandsInAccessTokenAdditionalClaims() =
+    fun authenticationContextFromCodeUsesTypedAccessTokenFields() =
         runTest {
             val authTime = 1_782_936_100L
             val args =
@@ -316,9 +316,12 @@ class AuthorizationCodeGrantRolesClaimTest {
                         ),
                 )
 
-            assertEquals(authTime, args.additionalClaims["auth_time"], "auth_time must reach the access-token mint")
-            assertEquals("urn:nist:sp:800-63:aal1", args.additionalClaims["acr"], "acr must reach the access-token mint")
-            assertEquals(listOf("pwd"), args.additionalClaims["amr"], "amr must reach the access-token mint")
+            assertEquals(authTime, args.authTime, "auth_time must reach the typed access-token mint field")
+            assertEquals("urn:nist:sp:800-63:aal1", args.acr, "acr must reach the typed access-token mint field")
+            assertEquals(listOf("pwd"), args.amr, "amr must reach the typed access-token mint field")
+            assertFalse(args.additionalClaims.containsKey("auth_time"), "reserved auth_time must not be an additional claim")
+            assertFalse(args.additionalClaims.containsKey("acr"), "reserved acr must not be an additional claim")
+            assertFalse(args.additionalClaims.containsKey("amr"), "reserved amr must not be an additional claim")
             assertFalse(args.additionalClaims.containsKey("email"), "identity claims must NOT leak into the access token")
         }
 

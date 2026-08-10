@@ -6,7 +6,7 @@
 
 package com.sphereon.wallet.interaction.impl
 
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletProtocol
 import com.sphereon.wallet.interaction.WalletProtocolExecutionPlacement
@@ -30,8 +30,8 @@ class WscdAwareExecutionPlannerTest {
 
             val decision = executor.plan(request(keyRef = "holder-key"))
 
-            assertEquals(WalletInteractionExecutionMode.SPLIT, decision.executionMode)
-            assertEquals(WalletProtocolExecutionPlacement.SPLIT_LOCAL_SECURITY, decision.placement)
+            assertEquals(ProtocolExecutionOwner.WALLET_APP, decision.executionOwner)
+            assertEquals(WalletProtocolExecutionPlacement.WALLET_APP, decision.placement)
             assertEquals(WalletSecurityOperation.LOCAL_HSM_UNLOCK, decision.securityOperation)
             assertEquals(WalletSecurityAssurance.HARDWARE_BACKED, decision.requiredAssurance)
             assertEquals("holder-key", decision.keyRef)
@@ -73,7 +73,7 @@ class WscdAwareExecutionPlannerTest {
     @Test
     fun softwareProfileAppliesNoGateOverlayAndLeavesDelegateDecisionUnchanged() =
         runTest {
-            val delegate = WalletProtocolExecutor.split
+            val delegate = WalletProtocolExecutor.walletApp
             val executor =
                 WscdAwareExecutionPlanner(
                     profileSource = WscdExecutionProfileSource { WscdProfile.Software },
@@ -102,7 +102,7 @@ class WscdAwareExecutionPlannerTest {
 
             val decision = executor.plan(request(keyRef = null))
 
-            assertEquals(WalletProtocolExecutionPlacement.SPLIT_LOCAL_SECURITY, decision.placement)
+            assertEquals(WalletProtocolExecutionPlacement.WALLET_APP, decision.placement)
             assertEquals(WalletSecurityOperation.PRESENTATION_SHARING, decision.securityOperation)
             assertEquals(WalletSecurityAssurance.USER_PRESENT, decision.requiredAssurance)
             assertEquals(1, resolverCalls)

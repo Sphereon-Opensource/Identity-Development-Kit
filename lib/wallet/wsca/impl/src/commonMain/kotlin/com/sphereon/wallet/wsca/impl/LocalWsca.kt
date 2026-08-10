@@ -30,6 +30,7 @@ import com.sphereon.wallet.unit.WalletAttestedKeyRef
 import com.sphereon.wallet.unit.WalletKeystoreRef
 import com.sphereon.wallet.unit.WalletKeystoreSecurityLevel
 import com.sphereon.wallet.unit.WalletPrivateKeyProtectionEvidence
+import com.sphereon.wallet.unit.WalletProviderAttestationSignerRef
 import com.sphereon.wallet.unit.WalletSecureComponentType
 import com.sphereon.wallet.unit.WalletUserAuthenticationEvidence
 import com.sphereon.wallet.unit.attestation.KeyAttestationIssueRequest
@@ -40,12 +41,17 @@ import com.sphereon.wallet.unit.attestation.Ts03StatusClaim
 import com.sphereon.wallet.unit.attestation.Ts03UserAuthenticationClaim
 import com.sphereon.wallet.unit.attestation.WalletAttestationArtifact
 import com.sphereon.wallet.unit.attestation.WalletAttestationArtifactMetadata
+import com.sphereon.wallet.unit.attestation.WalletAttestationSignerProfile
+import com.sphereon.wallet.unit.attestation.WalletAttestationSigningRequest
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationEvidence
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationFormat
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationKind
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationMaterial
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationProfile
+import com.sphereon.wallet.unit.attestation.WalletProviderAttestationSignerResolver
 import com.sphereon.wallet.unit.attestation.compactJwtArtifactHash
+import com.sphereon.wallet.unit.attestation.parseSignerProfile
+import com.sphereon.wallet.unit.attestation.parseWalletAttestationSigningAlgorithm
 import com.sphereon.wallet.wsca.Wsca
 import com.sphereon.wallet.wsca.WscaClientAttestationAuthRequest
 import com.sphereon.wallet.wsca.WscaClientAttestationAuthResult
@@ -79,9 +85,10 @@ import kotlin.time.Instant
 
 /**
  * The local WSCA policy implementation of [Wsca]: assembles PoP/DPoP/client-attestation/key-
- * attestation JWTs and signs them EXCLUSIVELY through the injected [Wscd] - the only custody
- * access this class has. It never touches a key manager service or any KMS-provider type; that is
- * the WSCD's job.
+ * attestation JWTs. Holder keys and PoPs are signed through the injected [Wscd]. Wallet Provider
+ * attestations are signed through [WalletProviderAttestationSignerResolver], so a production
+ * Wallet Provider certificate chain is always paired with the key that actually owns it. This
+ * class never touches a key manager service or any KMS-provider type directly.
  *
  * This implementation is fully stateless: unlike the WSCD, it keeps NO map of provisioned keys.
  * [ensureKey] and [createCredentialKey] simply forward to the WSCD's own idempotent/fresh key
@@ -98,6 +105,7 @@ class LocalWsca
         private val wscd: Wscd,
         private val dpopProofAssembly: DpopProofAssembly,
         userAuthenticator: WalletUserAuthenticator,
+        private val walletProviderAttestationSignerResolver: WalletProviderAttestationSignerResolver,
     ) : Wsca {
         override val wscdProfile: WscdProfile get() = wscd.profile
         override val userAuthentication: WscaUserAuthentication = LocalWscaUserAuthentication(userAuthenticator)
@@ -208,16 +216,7 @@ class LocalWsca
             }
 
             val clientInstanceJwk = publicJwk(request.clientInstanceKey).getOrElse { return Err(it) }
-            val signerAlgorithmName = request.signer?.signingAlgorithm
-            val signerAlgorithm = signatureAlgorithm(signerAlgorithmName)
-            val signerKey =
-                ensureKey(
-                    walletUnitId = request.walletUnitId,
-                    usage = SecureComponentUsage.WALLET_ATTESTATION,
-                    algorithm = signerAlgorithm,
-                    keyAlias = request.signer?.signerId,
-                ).getOrElse { return Err(it) }
-            val signingAlias = signerKey.keyRef ?: signerKey.keyId
+            val signerAlgorithm = signatureAlgorithm(request.signer?.signingAlgorithm)
             val now = Clock.System.now()
             val expiresAt = request.expiresAt ?: Instant.fromEpochSeconds(now.epochSeconds + DEFAULT_ATTESTATION_TTL_SECONDS)
             val x5c = request.signer?.certificateChain.orEmpty()
@@ -231,7 +230,7 @@ class LocalWsca
                     if (x5c.isNotEmpty()) {
                         put("x5c", JsonArray(x5c.map { JsonPrimitive(it) }))
                     } else {
-                        put("kid", request.signer?.keyId ?: signingAlias)
+                        put("kid", request.signer?.keyId ?: request.signer?.signerId ?: request.walletUnitId)
                     }
                 }
             val attestationPayload =
@@ -256,8 +255,13 @@ class LocalWsca
                     }
                 }
             val attestationJwt =
-                signCompactJwt(request.walletUnitId, signerKey, attestationHeader, attestationPayload, request.operationBinding)
-                    .getOrElse { return Err(it) }
+                signWalletProviderCompactJwt(
+                    walletUnitId = request.walletUnitId,
+                    signerRef = request.signer,
+                    protectedHeader = attestationHeader,
+                    payload = attestationPayload,
+                    operationBinding = request.operationBinding,
+                ).getOrElse { return Err(it) }
 
             val popHeader =
                 buildJsonObject {
@@ -298,16 +302,7 @@ class LocalWsca
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Key attestation nonce must not be blank"))
             }
 
-            val signerAlgorithmName = request.signer?.signingAlgorithm
-            val signerAlgorithm = signatureAlgorithm(signerAlgorithmName)
-            val signerKey =
-                ensureKey(
-                    walletUnitId = request.walletUnitId,
-                    usage = SecureComponentUsage.WALLET_ATTESTATION,
-                    algorithm = signerAlgorithm,
-                    keyAlias = request.signer?.signerId,
-                ).getOrElse { return Err(it) }
-            val signingAlias = signerKey.keyRef ?: signerKey.keyId
+            val signerAlgorithm = signatureAlgorithm(request.signer?.signingAlgorithm)
             val now = Clock.System.now()
             val expiresAt = request.expiresAt ?: Instant.fromEpochSeconds(now.epochSeconds + DEFAULT_ATTESTATION_TTL_SECONDS)
             val statusSubject = request.statusSubject
@@ -365,17 +360,17 @@ class LocalWsca
                         if (x5c.isNotEmpty()) {
                             put("x5c", JsonArray(x5c.map { JsonPrimitive(it) }))
                         } else {
-                            put("kid", JsonPrimitive(signingAlias))
+                            put("kid", JsonPrimitive(request.signer?.keyId ?: request.signer?.signerId ?: request.walletUnitId))
                         }
                     },
                 )
             val compact =
-                signCompactJwt(
-                    request.walletUnitId,
-                    signerKey,
-                    protectedHeader,
-                    json.encodeToJsonElement(claims).let { it as JsonObject },
-                    request.operationBinding,
+                signWalletProviderCompactJwt(
+                    walletUnitId = request.walletUnitId,
+                    signerRef = request.signer,
+                    protectedHeader = protectedHeader,
+                    payload = json.encodeToJsonElement(claims).let { it as JsonObject },
+                    operationBinding = request.operationBinding,
                 ).getOrElse { return Err(it) }
             validateSelfIssuedKeyAttestation(compact, request.nonce).getOrElse { return Err(it) }
             val artifactHash = compactJwtArtifactHash(compact)
@@ -404,7 +399,7 @@ class LocalWsca
                             signingEvidence =
                                 mapOf(
                                     "alg" to joseAlgorithm(signerAlgorithm),
-                                    "signerId" to signingAlias,
+                                    "signerId" to (request.signer?.signerId ?: request.walletUnitId),
                                     "x5cCount" to x5c.size.toString(),
                                 ),
                             claimSummary =
@@ -556,6 +551,64 @@ class LocalWsca
             val signingInput = "$encodedHeader.$encodedPayload".encodeToByteArray()
             val signature = sign(walletUnitId, signerKey, signingInput, operationBinding).getOrElse { return Err(it) }
             return Ok("$encodedHeader.$encodedPayload.${signature.encodeToBase64Url()}")
+        }
+
+        private suspend fun signWalletProviderCompactJwt(
+            walletUnitId: String,
+            signerRef: WalletProviderAttestationSignerRef?,
+            protectedHeader: JsonObject,
+            payload: JsonObject,
+            operationBinding: String,
+        ): IdkResult<String, IdkError> {
+            if (signerRef == null) {
+                val localKey =
+                    ensureKey(
+                        walletUnitId = walletUnitId,
+                        usage = SecureComponentUsage.WALLET_ATTESTATION,
+                        algorithm = SignatureAlgorithm.ECDSA_SHA256,
+                        keyAlias = null,
+                    ).getOrElse { return Err(it) }
+                return signCompactJwt(walletUnitId, localKey, protectedHeader, payload, operationBinding)
+            }
+
+            val algorithm = parseWalletAttestationSigningAlgorithm(signerRef).getOrElse { return Err(it) }
+            val signerProfile = parseSignerProfile(signerRef).getOrElse { return Err(it) }
+            if (signerProfile == WalletAttestationSignerProfile.LOCAL_WSCD) {
+                val localSignatureAlgorithm = signatureAlgorithm(signerRef.signingAlgorithm)
+                val keyAlias =
+                    signerRef.keyId?.takeIf { it.isNotBlank() }
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "LOCAL_WSCD Wallet Provider attestation signer '${signerRef.signerId}' requires a keyId",
+                            ),
+                        )
+                val localKey =
+                    ensureKey(
+                        walletUnitId = walletUnitId,
+                        usage = SecureComponentUsage.WALLET_ATTESTATION,
+                        algorithm = localSignatureAlgorithm,
+                        keyAlias = keyAlias,
+                    ).getOrElse { return Err(it) }
+                return signCompactJwt(walletUnitId, localKey, protectedHeader, payload, operationBinding)
+            }
+            val signer = walletProviderAttestationSignerResolver.resolve(signerRef).getOrElse { return Err(it) }
+            val encodedHeader = json.encodeToString(protectedHeader).encodeToByteArray().encodeToBase64Url()
+            val encodedPayload = json.encodeToString(payload).encodeToByteArray().encodeToBase64Url()
+            val signingInput = "$encodedHeader.$encodedPayload".encodeToByteArray()
+            val signed =
+                signer
+                    .sign(
+                        WalletAttestationSigningRequest(
+                            algorithm = algorithm,
+                            signerProfile = signerProfile,
+                            signerId = signerRef.signerId,
+                            signingInput = signingInput,
+                            x5c = signerRef.certificateChain,
+                            providerId = signerRef.providerId,
+                            keyId = signerRef.keyId,
+                        ),
+                    ).getOrElse { return Err(it) }
+            return Ok("$encodedHeader.$encodedPayload.${signed.signature.encodeToBase64Url()}")
         }
 
         private fun publicJwk(keyRef: WalletAttestedKeyRef): IdkResult<Jwk, IdkError> =

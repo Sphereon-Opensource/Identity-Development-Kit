@@ -21,7 +21,7 @@ import com.sphereon.core.api.conf.DefaultMapPropertySourceFactory
 import com.sphereon.core.api.conf.DefaultPropertySources
 import com.sphereon.core.api.conf.PrincipalConfigEnvironment
 import com.sphereon.core.api.conf.PropertyInterpolator
-import com.sphereon.core.api.conf.SecretResolver
+import com.sphereon.core.api.conf.InterpolationPolicyProvider
 import com.sphereon.core.api.conf.StaticProtectedEnvPropertySourceObject
 import com.sphereon.core.api.conf.SyncConfigSnapshotCache
 import com.sphereon.core.api.conf.TenantConfigEnvironment
@@ -48,7 +48,7 @@ class PrincipalConfigEnvironmentImpl(
     snapshotCache: SyncConfigSnapshotCache,
     override val parent: TenantConfigEnvironment,
     interpolator: PropertyInterpolator?,
-    secretResolver: SecretResolver?,
+    interpolationPolicyProvider: InterpolationPolicyProvider,
 ) : AbstractConfigEnvironment(
         profile = profile,
         appId = appId,
@@ -57,7 +57,7 @@ class PrincipalConfigEnvironmentImpl(
         tenantId = userContextInstance.context.tenant.tenantId,
         principalId = userContextInstance.context.principal?.toString() ?: IdentityConstants.ANONYMOUS_PRINCIPAL_ID,
         interpolator = interpolator,
-        secretResolver = secretResolver,
+        interpolationPolicyProvider = interpolationPolicyProvider,
     ),
     PrincipalConfigEnvironment {
     override fun getNamespace(): String = super<AbstractConfigEnvironment>.getNamespace()

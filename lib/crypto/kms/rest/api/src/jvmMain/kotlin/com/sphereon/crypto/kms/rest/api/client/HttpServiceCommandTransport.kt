@@ -75,8 +75,6 @@ import kotlin.time.Duration.Companion.seconds
 class HttpServiceCommandTransport(
     private val baseUrl: String,
     private val commandRoutes: Map<String, Pair<String, String>> = emptyMap(),
-    private val tenantHeaderName: String = "X-Tenant-ID",
-    private val principalHeaderName: String = "X-User-ID",
 ) : KmsCommandTransport {
     private val json =
         Json {
@@ -257,22 +255,10 @@ class HttpServiceCommandTransport(
         }
 
         private fun io.ktor.client.request.HttpRequestBuilder.addAuthHeaders() {
-            val tenantId = sessionContext.context.tenant.tenantId
-            if (tenantId.isNotBlank() && tenantId != "<anonymous>") {
-                header(tenantHeaderName, tenantId)
+            val jwt = requireNotNull(sessionContext.context.secureDetails?.jwt?.takeIf { it.isNotBlank() }) {
+                "A validated JWT is required for remote KMS requests"
             }
-
-            val principal = sessionContext.context.principal?.toString()
-            if (!principal.isNullOrBlank() && principal != "<anonymous>") {
-                header(principalHeaderName, principal)
-            }
-
-            // Add JWT token if available from secure details
-            sessionContext.context.secureDetails?.jwt?.let { jwt ->
-                if (jwt.isNotBlank()) {
-                    header("Authorization", "Bearer $jwt")
-                }
-            }
+            header("Authorization", "Bearer $jwt")
         }
     }
 

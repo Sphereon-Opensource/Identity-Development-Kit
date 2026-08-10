@@ -19,6 +19,8 @@ package com.sphereon.openid.oid4vci.issuer.impl.format
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -58,7 +60,7 @@ class MsoMdocFormatHandlerTest {
         }
 
     @Test
-    fun canHandleReturnsFalseForSdJwtDcFormat() =
+    fun canHandleReturnsFalseForSdJwtVcFormat() =
         runTest {
             val config = makeConfig("dc+sd-jwt")
             val request = makeRequest()
@@ -107,6 +109,48 @@ class MsoMdocFormatHandlerTest {
     }
 
     @Test
+    fun groupAttributesByNamespaceRemovesJsonPointerPrefixFromNamespace() {
+        val attributes =
+            mapOf(
+                "/org.iso.18013.5.1.family_name" to JsonPrimitive("Doe"),
+                "/org.iso.18013.5.1.given_name" to JsonPrimitive("John"),
+            )
+
+        val grouped = MsoMdocFormatHandler.groupAttributesByNamespace(attributes, "org.iso.18013.5.1.mDL")
+
+        assertEquals(setOf("org.iso.18013.5.1"), grouped.keys)
+        assertEquals(listOf("family_name", "given_name"), grouped.getValue("org.iso.18013.5.1").map { it.first })
+    }
+
+    @Test
+    fun completeMdlClaimSetProducesElevenIssuerSignedElementsInTheMdlNamespace() {
+        val namespace = "org.iso.18013.5.1"
+        val attributes =
+            listOf(
+                "family_name",
+                "given_name",
+                "birth_date",
+                "issue_date",
+                "expiry_date",
+                "issuing_country",
+                "issuing_authority",
+                "document_number",
+                "portrait",
+                "driving_privileges",
+                "un_distinguishing_sign",
+            ).associate { element -> "$namespace.$element" to JsonPrimitive("sample-$element") }
+
+        val grouped = MsoMdocFormatHandler.groupAttributesByNamespace(attributes, "$namespace.mDL")
+
+        assertEquals(setOf(namespace), grouped.keys)
+        assertEquals(attributes.size, grouped.getValue(namespace).size)
+        assertEquals(
+            attributes.keys.map { it.substringAfterLast('.') }.toSet(),
+            grouped.getValue(namespace).map { it.first }.toSet(),
+        )
+    }
+
+    @Test
     fun groupAttributesByNamespaceMixesDottedAndSimpleKeys() {
         val doctype = "org.iso.18013.5.1.mDL"
         val attributes =
@@ -120,6 +164,24 @@ class MsoMdocFormatHandlerTest {
         assertEquals(2, grouped.size)
         assertTrue(grouped.containsKey("org.iso.18013.5.1"))
         assertTrue(grouped.containsKey(doctype))
+    }
+
+    @Test
+    fun claimlessMdocIssuanceIsRejectedInsteadOfInventingFallbackData() {
+        val result = MsoMdocFormatHandler.requireMdocAttributes(emptyMap())
+
+        assertTrue(result.isErr)
+        assertEquals("invalid_credential_request", result.error.code)
+    }
+
+    @Test
+    fun resolvedMdocClaimsPassTheIssuanceGuardUnchanged() {
+        val attributes = mapOf("family_name" to JsonPrimitive("Mustermann"))
+
+        val result = MsoMdocFormatHandler.requireMdocAttributes(attributes)
+
+        assertTrue(result.isOk)
+        assertEquals(attributes, result.value)
     }
 
     // --- JSON to native value conversion tests ---
@@ -146,5 +208,55 @@ class MsoMdocFormatHandlerTest {
     fun jsonElementToNativeValueConvertsDouble() {
         val result = MsoMdocFormatHandler.jsonElementToNativeValue(JsonPrimitive(3.14))
         assertEquals(3.14, result)
+    }
+
+    @Test
+    fun jsonElementToNativeValuePreservesNestedCollections() {
+        val value =
+            JsonArray(
+                listOf(
+                    JsonObject(
+                        mapOf(
+                            "vehicle_category_code" to JsonPrimitive("B"),
+                            "issue_date" to JsonPrimitive("2026-01-01"),
+                        ),
+                    ),
+                ),
+            )
+
+        assertEquals(
+            listOf(
+                mapOf(
+                    "vehicle_category_code" to "B",
+                    "issue_date" to "2026-01-01",
+                ),
+            ),
+            MsoMdocFormatHandler.jsonElementToNativeValue(value),
+        )
+    }
+
+    @Test
+    fun jsonElementToNativeValueParsesStructuredDeveloperFormText() {
+        val value = JsonPrimitive(
+            """[{"vehicle_category_code":"B","issue_date":"2024-01-01"}]""",
+        )
+
+        assertEquals(
+            listOf(
+                mapOf(
+                    "vehicle_category_code" to "B",
+                    "issue_date" to "2024-01-01",
+                ),
+            ),
+            MsoMdocFormatHandler.jsonElementToNativeValue(value),
+        )
+    }
+
+    @Test
+    fun jsonElementToNativeValueLeavesNonJsonStringUntouched() {
+        assertEquals(
+            "[not-json",
+            MsoMdocFormatHandler.jsonElementToNativeValue(JsonPrimitive("[not-json")),
+        )
     }
 }

@@ -39,6 +39,7 @@ enum class WalletSecureComponentType {
 @Serializable
 enum class SecureComponentUsage {
     WALLET_ATTESTATION,
+    OAUTH_CLIENT_AUTHENTICATION,
     WALLET_CREDENTIAL_PROOF,
     EIDAS_SIGNATURE,
     EIDAS_SEAL,

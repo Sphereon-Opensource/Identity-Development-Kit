@@ -474,6 +474,7 @@ class VerifyAttestationClientAuthCommandImpl(
                 method = ClientAuthenticationMethod.ATTEST_JWT_CLIENT_AUTH,
                 clientInstanceKey = clientInstanceKey,
                 walletInstanceAttestation = walletInstanceAttestation,
+                clientAuthorization = client.toVerifiedClientAuthorization(),
             ),
         )
     }

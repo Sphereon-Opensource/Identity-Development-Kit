@@ -146,6 +146,7 @@ data class BinaryError(
                     code = code,
                     message = IdkError.Message(i18nKey = code, defaultMessage = message),
                     category = parseCategory(category),
+                    meta = details,
                 )
             }
         }

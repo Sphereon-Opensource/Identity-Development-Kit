@@ -22,15 +22,15 @@ internal object Iso18013TestSensitiveInputAuthority : WalletInteractionSensitive
 internal fun WalletInteractionContext(
     sessionId: WalletInteractionSessionId,
     walletUnitId: String,
-    executionMode: WalletInteractionExecutionMode,
-    protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
+    executionOwner: ProtocolExecutionOwner,
+    protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
     trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
     trustPolicy: WalletTrustPolicy = WalletTrustPolicy.warn,
     securityGate: WalletSecurityGate = WalletSecurityGate.allow,
     privateSessionStore: WalletInteractionPrivateSessionStore = WalletInteractionPrivateSessionStore.none,
     attributes: Map<String, String> = emptyMap(),
 ): CoreWalletInteractionContext = CoreWalletInteractionContext(
-    sessionId, walletUnitId, executionMode, protocolExecutor, trustResolver, trustPolicy, securityGate,
+    sessionId, walletUnitId, executionOwner, protocolExecutor, trustResolver, trustPolicy, securityGate,
     privateSessionStore, Iso18013TestSensitiveInputAuthority, attributes,
 )
 

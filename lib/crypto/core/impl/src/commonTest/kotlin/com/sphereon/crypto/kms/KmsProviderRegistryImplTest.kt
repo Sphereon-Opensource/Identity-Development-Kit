@@ -27,78 +27,82 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 class KmsProviderRegistryImplTest {
     @Test
-    fun resolvesProviderAddedAfterInitialSnapshot() {
-        val app = createCryptoTestAppGraph(this)
-        val context = app.userContextManager.getAnonymous()
-        val session = context.sessionContextManager.createOrGetFromId("kms-registry-refresh-test")
-        val principalConfig =
-            session
-                .asCoreApiServiceGraph()
-                .serviceExecution.conf.principal
+    fun resolvesProviderAddedAfterInitialSnapshot() =
+        runTest {
+            val app = createCryptoTestAppGraph(this@KmsProviderRegistryImplTest)
+            val context = app.userContextManager.getAnonymous()
+            val session = context.sessionContextManager.createOrGetFromId("kms-registry-refresh-test", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val principalConfig =
+                session
+                    .asCoreApiServiceGraph()
+                    .serviceExecution.conf.principal
 
-        principalConfig.addPropertySource(kmsProviderSource("initial-kms-provider", "snapshot-provider"))
-        val registry = (session.graph as KmsProviderRegistryGraph).kmsProviderRegistry
+            principalConfig.addPropertySource(kmsProviderSource("initial-kms-provider", "snapshot-provider"))
+            val registry = (session.graph as KmsProviderRegistryGraph).kmsProviderRegistry
 
-        assertEquals("snapshot-provider", registry.getProviderById("snapshot-provider").id)
+            assertEquals("snapshot-provider", registry.getProviderById("snapshot-provider").id)
 
-        principalConfig.addPropertySource(kmsProviderSource("late-kms-provider", "late-tenant-provider"))
+            principalConfig.addPropertySource(kmsProviderSource("late-kms-provider", "late-tenant-provider"))
 
-        assertEquals("late-tenant-provider", registry.getProviderById("late-tenant-provider").id)
-        assertTrue(registry.getProviderIds().contains("late-tenant-provider"))
-    }
-
-    @Test
-    fun resolvesProviderAddedByRefreshableConfigSourceWithoutStructuralSourceChange() {
-        val app = createCryptoTestAppGraph(this)
-        val context = app.userContextManager.getAnonymous()
-        val session = context.sessionContextManager.createOrGetFromId("kms-registry-refreshable-source-test")
-        val principalConfig =
-            session
-                .asCoreApiServiceGraph()
-                .serviceExecution.conf.principal
-
-        val source = RefreshableKmsProviderSource("refreshable-kms-provider", "snapshot-provider")
-        principalConfig.addPropertySource(source)
-        val registry = (session.graph as KmsProviderRegistryGraph).kmsProviderRegistry
-
-        assertEquals("snapshot-provider", registry.getProviderById("snapshot-provider").id)
-
-        source.publishProviderOnNextRefresh("late-refresh-provider")
-
-        assertTrue(registry.getProviderIds().contains("late-refresh-provider"))
-        assertEquals("late-refresh-provider", registry.getProviderById("late-refresh-provider").id)
-    }
+            assertEquals("late-tenant-provider", registry.getProviderById("late-tenant-provider").id)
+            assertTrue(registry.getProviderIds().contains("late-tenant-provider"))
+        }
 
     @Test
-    fun resolvesProviderAddedByRefreshableConfigSourceAfterInitialEmptySnapshot() {
-        val app = createCryptoTestAppGraph(this)
-        val context = app.userContextManager.getAnonymous()
-        val session = context.sessionContextManager.createOrGetFromId("kms-registry-refreshable-empty-source-test")
-        val principalConfig =
-            session
-                .asCoreApiServiceGraph()
-                .serviceExecution.conf.principal
+    fun resolvesProviderAddedByRefreshableConfigSourceWithoutStructuralSourceChange() =
+        runTest {
+            val app = createCryptoTestAppGraph(this@KmsProviderRegistryImplTest)
+            val context = app.userContextManager.getAnonymous()
+            val session = context.sessionContextManager.createOrGetFromId("kms-registry-refreshable-source-test", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val principalConfig =
+                session
+                    .asCoreApiServiceGraph()
+                    .serviceExecution.conf.principal
 
-        val source = RefreshableKmsProviderSource("refreshable-empty-kms-provider")
-        principalConfig.addPropertySource(source)
-        val registry = (session.graph as KmsProviderRegistryGraph).kmsProviderRegistry
+            val source = RefreshableKmsProviderSource("refreshable-kms-provider", "snapshot-provider")
+            principalConfig.addPropertySource(source)
+            val registry = (session.graph as KmsProviderRegistryGraph).kmsProviderRegistry
 
-        assertTrue(registry.getProviderIds().isEmpty())
+            assertEquals("snapshot-provider", registry.getProviderById("snapshot-provider").id)
 
-        source.publishProviderOnNextRefresh("tenant-slug-provider")
+            source.publishProviderOnNextRefresh("late-refresh-provider")
 
-        assertTrue(registry.getProviderIds().contains("tenant-slug-provider"))
-        assertEquals("tenant-slug-provider", registry.getProviderById("tenant-slug-provider").id)
-    }
+            assertTrue(registry.getProviderIds().contains("late-refresh-provider"))
+            assertEquals("late-refresh-provider", registry.getProviderById("late-refresh-provider").id)
+        }
+
+    @Test
+    fun resolvesProviderAddedByRefreshableConfigSourceAfterInitialEmptySnapshot() =
+        runTest {
+            val app = createCryptoTestAppGraph(this@KmsProviderRegistryImplTest)
+            val context = app.userContextManager.getAnonymous()
+            val session = context.sessionContextManager.createOrGetFromId("kms-registry-refreshable-empty-source-test", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val principalConfig =
+                session
+                    .asCoreApiServiceGraph()
+                    .serviceExecution.conf.principal
+
+            val source = RefreshableKmsProviderSource("refreshable-empty-kms-provider")
+            principalConfig.addPropertySource(source)
+            val registry = (session.graph as KmsProviderRegistryGraph).kmsProviderRegistry
+
+            assertTrue(registry.getProviderIds().isEmpty())
+
+            source.publishProviderOnNextRefresh("tenant-slug-provider")
+
+            assertTrue(registry.getProviderIds().contains("tenant-slug-provider"))
+            assertEquals("tenant-slug-provider", registry.getProviderById("tenant-slug-provider").id)
+        }
 
     @Test
     fun removesConfigManagedProviderDisabledByRefreshableConfigSource() {
-        val app = createCryptoTestAppGraph(this)
+        val app = createCryptoTestAppGraph(this@KmsProviderRegistryImplTest)
         val context = app.userContextManager.getAnonymous()
-        val session = context.sessionContextManager.createOrGetFromId("kms-registry-disable-refreshable-source-test")
+        val session = context.sessionContextManager.createOrGetFromId("kms-registry-disable-refreshable-source-test", principalType = com.sphereon.di.context.PrincipalType.USER)
         val principalConfig =
             session
                 .asCoreApiServiceGraph()

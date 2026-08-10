@@ -32,8 +32,9 @@ import dev.zacsweers.metro.SingleIn
 
 /**
  * Ensures configured status lists exist before they are used — call [provisionConfigured] once at
- * startup so each hosted token is available even before the first artifact references it. Idempotent:
- * a list already present (by `correlationId`) is left untouched.
+ * startup so each hosted token is available even before the first artifact references it. Existing
+ * lists are reconciled in place so REST-configured signing changes become effective without losing
+ * allocated entries or status bits.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -44,15 +45,14 @@ class StatusListProvisioner(
     /** Create every configured status-list definition that does not yet exist. */
     suspend fun provisionConfigured(): IdkResult<Unit, IdkError> = ensureExists(definitionsProvider.definitions)
 
-    /** Create each of the given definitions that does not yet exist. Returns Ok once all are present. */
+    /** Create missing definitions and safely refresh mutable fields on existing resources. */
     suspend fun ensureExists(definitions: List<CreateStatusListArgs>): IdkResult<Unit, IdkError> {
         for (definition in definitions) {
             StatusListErrors.validateCreateArgs(definition)?.let { return Err(it) }
             val existing =
                 driver.getStatusList(StatusListRef(correlationId = definition.correlationId)).getOrElse { return Err(it) }
-            if (existing == null) {
-                driver.createStatusList(definition).getOrElse { return Err(it) }
-            }
+            if (existing == null) driver.createStatusList(definition).getOrElse { return Err(it) }
+            else driver.refreshStatusListDefinition(definition).getOrElse { return Err(it) }
         }
         return Ok(Unit)
     }

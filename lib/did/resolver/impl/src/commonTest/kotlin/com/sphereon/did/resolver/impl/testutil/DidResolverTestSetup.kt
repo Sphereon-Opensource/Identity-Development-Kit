@@ -34,7 +34,7 @@ class DidResolverTestContext(
 ) {
     val app: AppGraph = createDidResolverTestAppGraph(testInstance)
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
     val resolverRegistry: DidResolverRegistry = (session.graph as DidResolverRegistryImpl.Graph).didResolverRegistry
     val keyDidResolver: KeyDidResolver = (session.graph as KeyDidResolver.Graph).keyDidResolver
     val jwkDidResolver: JwkDidResolver = (session.graph as JwkDidResolver.Graph).jwkDidResolver

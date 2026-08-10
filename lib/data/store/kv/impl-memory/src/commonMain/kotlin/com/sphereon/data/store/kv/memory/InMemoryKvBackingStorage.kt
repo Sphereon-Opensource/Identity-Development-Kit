@@ -22,6 +22,9 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.binding
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.sync.Mutex
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -74,17 +77,21 @@ interface InMemoryKvBackingStorage {
  */
 @Inject
 @SingleIn(AppScope::class)
-@ContributesBinding(AppScope::class)
+@ContributesBinding(AppScope::class, binding = binding<InMemoryKvBackingStorage>())
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InMemoryKvBackingStorageImpl", exact = true)
-class InMemoryKvBackingStorageImpl : InMemoryKvBackingStorage {
+class InMemoryKvBackingStorageImpl :
+    SynchronizedObject(),
+    InMemoryKvBackingStorage {
     private val partitions = mutableMapOf<KvPartitionKey, InMemoryKvPartition>()
 
-    override fun getPartition(partitionKey: KvPartitionKey): InMemoryKvPartition = partitions.getOrPut(partitionKey) { InMemoryKvPartition() }
+    override fun getPartition(partitionKey: KvPartitionKey): InMemoryKvPartition =
+        synchronized(this) { partitions.getOrPut(partitionKey) { InMemoryKvPartition() } }
 
-    override fun removePartition(partitionKey: KvPartitionKey): Boolean = partitions.remove(partitionKey) != null
+    override fun removePartition(partitionKey: KvPartitionKey): Boolean =
+        synchronized(this) { partitions.remove(partitionKey) != null }
 
     override fun clearAll() {
-        partitions.clear()
+        synchronized(this) { partitions.clear() }
     }
 }

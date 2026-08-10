@@ -25,6 +25,10 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import qrcode.QRCode
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
+import java.util.zip.CRC32
+import java.util.zip.DeflaterOutputStream
 
 /**
  * JVM implementation of QR code generation using qrcode-kotlin.
@@ -45,7 +49,7 @@ class JvmQrCodeService : QrCodeService {
             val lightColor = parseColor(options.colorLight)
             val cellSize = maxOf(1, minOf(25, options.size / 40))
 
-            val pngBytes =
+            val qrCode =
                 QRCode
                     .ofSquares()
                     .withSize(cellSize)
@@ -59,13 +63,72 @@ class JvmQrCodeService : QrCodeService {
                     // rendered matrix, so no extra `withMargin` is needed.
                     .withInnerSpacing(0)
                     .build(content)
-                    .renderToBytes()
+            val pngBytes = encodePng(qrCode, cellSize, darkColor, lightColor)
 
             val base64 = pngBytes.encodeToBase64()
             "data:image/png;base64,$base64"
         } catch (_: Exception) {
             "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         }
+
+    /**
+     * Encodes the QR matrix directly instead of using qrcode-kotlin's JVM renderer. The latter
+     * creates a java.awt BufferedImage, which attempts to load libawt_headless at runtime and can
+     * terminate a GraalVM native executable before an exception can be caught.
+     */
+    private fun encodePng(
+        qrCode: QRCode,
+        cellSize: Int,
+        darkColor: Int,
+        lightColor: Int,
+    ): ByteArray {
+        val matrix = qrCode.rawData
+        val size = matrix.size * cellSize
+        val scanlines = ByteArrayOutputStream(size * (size * 4 + 1))
+        repeat(size) { y ->
+            scanlines.write(0) // PNG filter type: None
+            val row = matrix[y / cellSize]
+            repeat(size) { x ->
+                val color = if (row[x / cellSize].dark) darkColor else lightColor
+                scanlines.write((color ushr 16) and 0xFF)
+                scanlines.write((color ushr 8) and 0xFF)
+                scanlines.write(color and 0xFF)
+                scanlines.write((color ushr 24) and 0xFF)
+            }
+        }
+
+        val compressed = ByteArrayOutputStream()
+        DeflaterOutputStream(compressed).use { it.write(scanlines.toByteArray()) }
+
+        return ByteArrayOutputStream().also { png ->
+            png.write(PNG_SIGNATURE)
+            png.writeChunk("IHDR", ByteArrayOutputStream(13).also { header ->
+                DataOutputStream(header).use { data ->
+                    data.writeInt(size)
+                    data.writeInt(size)
+                    data.writeByte(8) // bit depth
+                    data.writeByte(6) // RGBA
+                    data.writeByte(0) // compression
+                    data.writeByte(0) // filter
+                    data.writeByte(0) // no interlace
+                }
+            }.toByteArray())
+            png.writeChunk("IDAT", compressed.toByteArray())
+            png.writeChunk("IEND", byteArrayOf())
+        }.toByteArray()
+    }
+
+    private fun ByteArrayOutputStream.writeChunk(type: String, data: ByteArray) {
+        val typeBytes = type.encodeToByteArray()
+        DataOutputStream(this).writeInt(data.size)
+        write(typeBytes)
+        write(data)
+        val crc = CRC32().apply {
+            update(typeBytes)
+            update(data)
+        }
+        DataOutputStream(this).writeInt(crc.value.toInt())
+    }
 
     private fun parseColor(cssColor: String): Int =
         try {
@@ -94,6 +157,10 @@ class JvmQrCodeService : QrCodeService {
         } catch (_: Exception) {
             0xFF000000.toInt()
         }
+
+    private companion object {
+        val PNG_SIGNATURE = byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10)
+    }
 }
 
 actual fun createPlatformQrCodeService(): QrCodeService = JvmQrCodeService()

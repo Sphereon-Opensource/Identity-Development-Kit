@@ -39,7 +39,7 @@ class OkdEndpointCommandsTest {
         assertEquals("okd", config.id)
         assertTrue(config.enabled)
         assertEquals("", config.baseUrl)
-        assertEquals(OkdAuthMode.PASSTHROUGH, config.auth.mode)
+        assertEquals(OkdAuthMode.BEARER, config.auth.mode)
     }
 
     @Test
@@ -53,7 +53,7 @@ class OkdEndpointCommandsTest {
                         mode = OkdAuthMode.CLIENT_CREDENTIALS,
                         tokenUri = "https://dms.school.nl/oauth2/token",
                         clientId = "portal",
-                        clientSecret = "secret",
+                        clientSecretId = "sec_0123456789abcdef",
                         scopes = listOf("okd:alldocuments"),
                     ),
             )
@@ -126,12 +126,11 @@ class OkdEndpointCommandsTest {
     @Test
     fun authConfigDefaults() {
         val auth = OkdAuthConfig()
-        assertEquals(OkdAuthMode.PASSTHROUGH, auth.mode)
-        assertNull(auth.token)
+        assertEquals(OkdAuthMode.BEARER, auth.mode)
+        assertNull(auth.tokenSecretId)
         assertNull(auth.tokenUri)
         assertNull(auth.clientId)
-        assertEquals("Authorization", auth.authHeader)
-        assertTrue(auth.useTenantFromContext)
+        assertNull(auth.clientSecretId)
     }
 
     @Test
@@ -141,7 +140,7 @@ class OkdEndpointCommandsTest {
                 mode = OkdAuthMode.CLIENT_CREDENTIALS,
                 tokenUri = "https://auth.school.nl/token",
                 clientId = "portal",
-                clientSecret = "\${OKD_SECRET}",
+                clientSecretId = "sec_0123456789abcdef",
                 scopes = listOf("okd:alldocuments", "okd:studentinfo"),
             )
         assertEquals(OkdAuthMode.CLIENT_CREDENTIALS, auth.mode)

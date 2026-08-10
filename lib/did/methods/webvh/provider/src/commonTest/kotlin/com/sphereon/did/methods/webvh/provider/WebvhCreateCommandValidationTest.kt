@@ -53,7 +53,7 @@ class WebvhCreateCommandValidationTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("webvh-create-validation-test")
+                .createOrGetFromId("webvh-create-validation-test", principalType = com.sphereon.di.context.PrincipalType.USER)
         val registry = (session.graph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
         val command = registry.get(CreateWebvhDidServiceCommand.COMMAND_ID)
         assertNotNull(command, "did.webvh.create must be resolvable from session registry")

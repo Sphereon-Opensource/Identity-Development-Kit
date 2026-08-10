@@ -14,14 +14,10 @@ export interface BlobServiceClientConfig {
   baseUrl: string
   /** Store ID (defaults to "default") */
   storeId?: string
-  /** Tenant ID for multi-tenant operations */
-  tenantId?: string
   /** Auth mode */
   auth?: BlobAuthMode
   /** Static token for "static-token" mode, or JWT for "bearer" mode */
   token?: string | (() => string | null)
-  /** Tenant header name (fallback when auth doesn't carry tenant claims) */
-  tenantHeader?: string
 }
 
 /**
@@ -35,7 +31,6 @@ export interface BlobServiceClientConfig {
  * const client = new BlobServiceClient({
  *   baseUrl: 'http://localhost:8081',
  *   storeId: 'documents',
- *   tenantId: 'my-tenant',
  *   auth: 'bearer',
  *   token: () => sessionToken,
  * })
@@ -51,18 +46,14 @@ export interface BlobServiceClientConfig {
 export class BlobServiceClient {
   private readonly baseUrl: string
   private readonly storeId: string
-  private readonly tenantId: string
   private readonly auth: BlobAuthMode
   private readonly token?: string | (() => string | null)
-  private readonly tenantHeader?: string
 
   constructor(config: BlobServiceClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, '')
     this.storeId = config.storeId ?? 'default'
-    this.tenantId = config.tenantId ?? 'default'
     this.auth = config.auth ?? 'none'
     this.token = config.token
-    this.tenantHeader = config.tenantHeader
   }
 
   private blobsUrl(path?: string): string {
@@ -76,10 +67,6 @@ export class BlobServiceClient {
     const resolvedToken = typeof this.token === 'function' ? this.token() : this.token
     if (resolvedToken && this.auth !== 'none') {
       headers['Authorization'] = `Bearer ${resolvedToken}`
-    }
-
-    if (this.tenantHeader && this.tenantId !== 'default') {
-      headers[this.tenantHeader] = this.tenantId
     }
 
     return headers
@@ -167,7 +154,6 @@ export class BlobServiceClient {
       method: 'PUT',
       headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        tenantId: this.tenantId,
         path,
         dataBase64,
         metadata: resolvedContentType ? { contentType: resolvedContentType } : {},
@@ -212,7 +198,7 @@ export class BlobServiceClient {
     const response = await fetch(`${this.blobsUrl(path)}/temp-url`, {
       method: 'POST',
       headers: this.getHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ tenantId: this.tenantId }),
+      body: JSON.stringify({}),
     })
     if (!response.ok) await this.handleError(response, path)
     const data = await response.json()

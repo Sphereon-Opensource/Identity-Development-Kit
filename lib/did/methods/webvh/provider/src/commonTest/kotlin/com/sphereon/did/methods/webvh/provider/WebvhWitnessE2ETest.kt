@@ -80,7 +80,7 @@ class WebvhWitnessE2ETest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("webvh-witness-e2e")
+                .createOrGetFromId("webvh-witness-e2e", principalType = com.sphereon.di.context.PrincipalType.USER)
         val sessionGraph = session.graph
         registry = (sessionGraph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
         keyManager = (sessionGraph as KeyManagerServiceGraph).keyManagerService

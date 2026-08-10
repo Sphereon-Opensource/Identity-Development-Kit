@@ -66,6 +66,24 @@ enum class ResponseMode(
     DIRECT_POST_JWT("direct_post.jwt"),
 
     /**
+     * W3C Digital Credentials API response mode.
+     *
+     * The holder returns the authorization response to the calling user agent instead of
+     * submitting it to a response URI.
+     */
+    @SerialName("dc_api")
+    DC_API("dc_api"),
+
+    /**
+     * JWT-secured W3C Digital Credentials API response mode.
+     *
+     * The holder creates the same encrypted authorization-response JWT used by
+     * [DIRECT_POST_JWT], but returns it to the calling user agent without an HTTP POST.
+     */
+    @SerialName("dc_api.jwt")
+    DC_API_JWT("dc_api.jwt"),
+
+    /**
      * Query response mode (OAuth 2.0)
      *
      * Authorization response parameters are encoded in the query graph of the redirect URI.

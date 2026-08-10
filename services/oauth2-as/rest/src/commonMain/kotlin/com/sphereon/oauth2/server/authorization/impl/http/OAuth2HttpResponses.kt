@@ -24,6 +24,7 @@ import com.sphereon.core.api.http.percentDecode
 import com.sphereon.core.api.log.Log
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import dev.whyoleg.cryptography.random.CryptographyRandom
+import io.ktor.http.Url
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -714,11 +715,15 @@ internal fun GenericHttpRequest.loginCsrfCookieValue(): String? {
 internal fun loginCsrfCookieHeader(
     tabId: String,
     secure: Boolean,
+    path: String,
 ): String {
+    require(path.startsWith('/') && ';' !in path && '\r' !in path && '\n' !in path) {
+        "Login CSRF cookie path must be an absolute safe path"
+    }
     val attrs =
         buildList {
             add("$OIDC_LOGIN_CSRF_COOKIE_NAME=$tabId")
-            add("Path=/login")
+            add("Path=$path")
             add("HttpOnly")
             add("SameSite=Strict")
             if (secure) add("Secure")
@@ -731,17 +736,29 @@ internal fun loginCsrfCookieHeader(
  * Emitted on successful `POST /login` so the one-shot cookie doesn't outlive the form
  * round-trip — defense in depth against a downstream XSS or referrer leak harvesting it.
  */
-internal fun loginCsrfCookieScrubHeader(secure: Boolean): String {
+internal fun loginCsrfCookieScrubHeader(
+    secure: Boolean,
+    path: String,
+): String {
+    require(path.startsWith('/') && ';' !in path && '\r' !in path && '\n' !in path) {
+        "Login CSRF cookie path must be an absolute safe path"
+    }
     val attrs =
         buildList {
             add("$OIDC_LOGIN_CSRF_COOKIE_NAME=")
-            add("Path=/login")
+            add("Path=$path")
             add("HttpOnly")
             add("SameSite=Strict")
             add("Max-Age=0")
             if (secure) add("Secure")
         }
     return attrs.joinToString("; ")
+}
+
+/** Resolve the externally visible login path from the trusted authorization-server base URL. */
+internal fun loginCsrfCookiePath(trustedBaseUrl: String): String {
+    val basePath = Url(trustedBaseUrl).encodedPath.trimEnd('/')
+    return if (basePath.isEmpty()) "/login" else "$basePath/login"
 }
 
 /**

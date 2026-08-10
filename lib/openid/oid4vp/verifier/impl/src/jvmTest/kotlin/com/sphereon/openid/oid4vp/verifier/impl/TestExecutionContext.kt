@@ -34,7 +34,7 @@ object TestExecutionContext {
 
         val app = createOid4vpRpJvmTestAppGraph(testScope, "test-verifier-app", "test", "1.0.0")
         val context = app.userContextManager.getAnonymous()
-        return context.sessionContextManager.createOrGetFromId("test")
+        return context.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
     }
 
     /**

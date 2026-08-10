@@ -53,7 +53,7 @@ class IdentityMatchingHttpAdapter(
     private val listCommand: ListIdentityMatchesCommand,
 ) : RoutedHttpAdapter() {
     companion object {
-        const val ID: String = "IDENTITY_MATCHING"
+        const val ID: String = "identity.matching.http"
     }
 
     override val id: String = ID

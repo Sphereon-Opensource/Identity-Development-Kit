@@ -45,7 +45,7 @@ class MergeRequestObjectCommandTest {
 
     val app = createOAuth2ClientTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("merge-test")
+    val session = context.sessionContextManager.createOrGetFromId("merge-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

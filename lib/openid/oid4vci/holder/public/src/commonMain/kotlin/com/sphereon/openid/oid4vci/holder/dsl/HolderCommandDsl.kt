@@ -86,6 +86,8 @@ fun createProofArgs(builder: CreateCredentialRequestProofArgsBuilder.() -> Unit)
         "createProofArgs batch proofs require one signing key per proof; construct CreateCredentialRequestProofArgs(signingKeyIds = ...) directly"
     }
     return CreateCredentialRequestProofArgs(
+        walletUnitId = state.walletUnitId,
+        operationBinding = state.operationBinding,
         issuerUrl = state.issuerUrl,
         cNonce = state.cNonce,
         signingKeyIds = listOf(state.signingKeyId),
@@ -116,6 +118,8 @@ fun credentialFlowArgs(builder: RequestCredentialWithFlowArgsBuilder.() -> Unit)
     val state = RequestCredentialWithFlowArgsBuilder().apply(builder).buildState()
     return RequestCredentialWithFlowArgs(
         sessionId = state.sessionId,
+        walletUnitId = state.walletUnitId,
+        operationBinding = state.operationBinding,
         credentialEndpoint = state.credentialEndpoint,
         accessToken = state.accessToken,
         issuerUrl = state.issuerUrl,

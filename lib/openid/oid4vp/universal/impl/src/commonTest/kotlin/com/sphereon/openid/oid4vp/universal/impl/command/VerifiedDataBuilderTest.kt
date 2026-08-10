@@ -18,9 +18,9 @@ package com.sphereon.openid.oid4vp.universal.impl.command
 
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
-import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetOption
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
@@ -46,7 +46,7 @@ class VerifiedDataBuilderTest {
                     DcqlQuery(
                         credentials =
                             listOf(
-                                DcqlCredentialQuery(id = "passport"),
+                                DcqlCredentialQuery(id = "passport", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:passport")),
                             ),
                         credential_sets =
                             listOf(
@@ -54,7 +54,7 @@ class VerifiedDataBuilderTest {
                                     required = true,
                                     options =
                                         listOf(
-                                            DcqlCredentialSetOption(credential_ids = listOf("passport")),
+                                            listOf("passport"),
                                         ),
                                 ),
                             ),
@@ -123,15 +123,6 @@ class VerifiedDataBuilderTest {
         assertEquals("state-123", authorizationResponse["state"]?.toString()?.trim('"'))
         assertNotNull(authorizationResponse["vp_token"])
 
-        val dcqlResponse = authorizationResponse["dcql_response"]
-        assertNotNull(dcqlResponse)
-        val dcqlResponseObject = dcqlResponse.toString()
-        assertEquals(true, dcqlResponseObject.contains("credential_matches"))
-        assertEquals(true, dcqlResponseObject.contains("credential_set_matches"))
-        assertEquals(true, dcqlResponseObject.contains("\"credential_set_id\":\"0\""))
-        assertEquals(true, dcqlResponseObject.contains("\"credential_id\":\"passport\""))
-        assertEquals(true, dcqlResponseObject.contains("\"issuer\":\"https://issuer.example.com\""))
-        assertEquals(true, dcqlResponseObject.contains("\"trust_domain_ids\":[\"domain-1\"]"))
-        assertEquals(true, dcqlResponseObject.contains("\"matched_anchor_id\":\"anchor-1\""))
+        assertEquals(null, authorizationResponse["dcql_response"])
     }
 }

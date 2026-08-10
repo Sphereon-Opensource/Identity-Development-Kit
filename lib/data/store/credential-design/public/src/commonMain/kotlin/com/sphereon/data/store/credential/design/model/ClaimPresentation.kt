@@ -51,4 +51,10 @@ data class ClaimPresentation
         val entryCodes: List<String>? = null,
         val unit: String? = null,
         val defaultValue: String? = null,
+        /**
+         * Illustrative sample value for this claim, used only to pre-fill authoring / testing
+         * forms (e.g. the issuer testing console's operator form). Distinct from [defaultValue]:
+         * this is NEVER applied to a production-issued credential.
+         */
+        val exampleValue: String? = null,
     )

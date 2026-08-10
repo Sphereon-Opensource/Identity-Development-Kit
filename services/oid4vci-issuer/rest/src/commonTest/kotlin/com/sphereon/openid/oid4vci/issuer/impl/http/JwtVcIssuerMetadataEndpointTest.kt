@@ -83,7 +83,7 @@ class JwtVcIssuerMetadataEndpointTest {
             aliases.associateWith { CredentialConfigurationSupported(format = "dc+sd-jwt") }
         override val authorizationServers: List<String>? = null
         override val display: List<DisplayProperties>? get() = displaySupplier()
-        override val credentialSigningConfigs: Map<String, CredentialSigningConfig> =
+        override suspend fun credentialSigningConfigs(): Map<String, CredentialSigningConfig> =
             aliases.associateWith {
                 CredentialSigningConfig(signingKeyAlias = it, signingKeyMode = SigningKeyMode.Did("jwk"))
             }

@@ -12,15 +12,17 @@ import com.sphereon.data.store.kv.KvStoreScopeBinding
 import com.sphereon.data.store.kv.memory.InMemoryKvBackingStorageImpl
 import com.sphereon.data.store.kv.memory.InMemoryKvStoreFactoryImpl
 import com.sphereon.wallet.interaction.WalletEntryPoint
+import com.sphereon.wallet.interaction.WalletCredentialPreview
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.WalletInteractionSession
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
+import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletProtocol
@@ -49,7 +51,7 @@ class DefaultWalletInteractionEngineTest {
     fun selectsSingleStrongAdapterAutomatically() =
         runTest {
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters =
                         listOf(
                             StaticWalletInteractionProtocolAdapter.oid4vci(),
@@ -67,7 +69,7 @@ class DefaultWalletInteractionEngineTest {
     fun emitsImplementationChoiceWhenStrongMatchesTie() =
         runTest {
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters =
                         listOf(
                             StaticWalletInteractionProtocolAdapter.oid4vci(adapterId = "a", match = WalletProtocolMatch.strong()),
@@ -86,7 +88,7 @@ class DefaultWalletInteractionEngineTest {
     fun chooseImplementationStartsSelectedAdapter() =
         runTest {
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters =
                         listOf(
                             StaticWalletInteractionProtocolAdapter.oid4vci(adapterId = "a", match = WalletProtocolMatch.strong()),
@@ -112,7 +114,7 @@ class DefaultWalletInteractionEngineTest {
     @Test
     fun unsupportedEntryPointIsTerminal() =
         runTest {
-            val engine = DefaultWalletInteractionEngine(sessionIdGenerator = FixedWalletInteractionSessionIdGenerator())
+            val engine = testWalletInteractionEngine(sessionIdGenerator = FixedWalletInteractionSessionIdGenerator())
 
             val session = engine.start(WalletInteractionInput("wallet", WalletEntryPoint.rawQr("not-a-wallet-link")))
 
@@ -125,7 +127,7 @@ class DefaultWalletInteractionEngineTest {
         runTest {
             val privateStore = InMemoryWalletInteractionPrivateSessionStore()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(PrivateWritingAdapter()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     privateSessionStore = privateStore,
@@ -139,12 +141,48 @@ class DefaultWalletInteractionEngineTest {
         }
 
     @Test
+    fun terminalCompletionHandoffSurvivesForOneUseClientRetrieval() =
+        runTest {
+            val privateStore = InMemoryWalletInteractionPrivateSessionStore()
+            val authority = StoreBackedWalletInteractionSensitiveInputAuthority(privateStore)
+            val engine =
+                testWalletInteractionEngine(
+                    adapters = listOf(CompletionHandoffAdapter()),
+                    sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
+                    privateSessionStore = privateStore,
+                    sensitiveInputAuthority = authority,
+                )
+
+            val session = engine.start(WalletInteractionInput("wallet", WalletEntryPoint.rawQr("completion-handoff")))
+            engine.dispatch(session.sessionId, WalletInteractionAction.continueFlow())
+
+            val completed = engine.observe(session.sessionId).value
+            val ref = assertNotNull(completed.completionHandoffRef)
+            assertEquals(true, completed.terminal)
+            assertEquals(
+                "https://verifier.example/callback?response=opaque",
+                authority.consume(
+                    session.sessionId,
+                    WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
+                    ref,
+                ),
+            )
+            assertNull(
+                authority.consume(
+                    session.sessionId,
+                    WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
+                    ref,
+                ),
+            )
+        }
+
+    @Test
     fun contextProtocolExecutorFollowsInputExecutionMode() =
         runTest {
-            val executor = RecordingProtocolExecutor(WalletInteractionExecutionMode.LOCAL)
+            val executor = RecordingProtocolExecutor(ProtocolExecutionOwner.WALLET_APP)
             val adapter = ContextCapturingAdapter()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(adapter),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     protocolExecutor = executor,
@@ -154,12 +192,12 @@ class DefaultWalletInteractionEngineTest {
                 WalletInteractionInput(
                     walletUnitId = "wallet",
                     entryPoint = WalletEntryPoint.rawQr("capture"),
-                    executionMode = WalletInteractionExecutionMode.SPLIT,
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
                 ),
             )
 
-            assertEquals(WalletInteractionExecutionMode.SPLIT, adapter.lastContext?.executionMode)
-            assertEquals(WalletInteractionExecutionMode.SPLIT, adapter.lastContext?.protocolExecutor?.executionMode)
+            assertEquals(ProtocolExecutionOwner.WALLET_APP, adapter.lastContext?.executionOwner)
+            assertEquals(ProtocolExecutionOwner.WALLET_APP, adapter.lastContext?.protocolExecutor?.executionOwner)
         }
 
     @Test
@@ -167,14 +205,14 @@ class DefaultWalletInteractionEngineTest {
         runTest {
             val sessionStore = InMemoryWalletInteractionSessionStore()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = sessionStore,
                 )
             val started = engine.start(WalletInteractionInput("wallet", WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x")))
             val restartedEngine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = sessionStore,
@@ -192,14 +230,14 @@ class DefaultWalletInteractionEngineTest {
         runTest {
             val sessionStore = InMemoryWalletInteractionSessionStore()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = sessionStore,
                 )
             val started = engine.start(WalletInteractionInput("wallet", WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x")))
             val restartedEngine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = sessionStore,
@@ -215,7 +253,7 @@ class DefaultWalletInteractionEngineTest {
         runTest {
             val sessionStore = InMemoryWalletInteractionSessionStore()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = sessionStore,
@@ -224,7 +262,7 @@ class DefaultWalletInteractionEngineTest {
             engine.dispatch(started.sessionId, WalletInteractionAction.continueFlow())
 
             val restartedEngine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = sessionStore,
@@ -242,7 +280,7 @@ class DefaultWalletInteractionEngineTest {
             val backingStorage = InMemoryKvBackingStorageImpl()
             val firstStore = KvWalletInteractionSessionStore(createInteractionTestKvStore(backingStorage))
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = firstStore,
@@ -252,7 +290,7 @@ class DefaultWalletInteractionEngineTest {
 
             val recreatedStore = KvWalletInteractionSessionStore(createInteractionTestKvStore(backingStorage))
             val restartedEngine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = recreatedStore,
@@ -267,25 +305,74 @@ class DefaultWalletInteractionEngineTest {
         }
 
     @Test
+    fun kvSessionStorePersistsSafeActivityWithAtomicPerUnitSequencesAcrossRestart() =
+        runTest {
+            val backingStorage = InMemoryKvBackingStorageImpl()
+            val firstStore = KvWalletInteractionSessionStore(createInteractionTestKvStore(backingStorage))
+            val secondStore = KvWalletInteractionSessionStore(createInteractionTestKvStore(backingStorage))
+
+            suspend fun saveTerminal(
+                store: KvWalletInteractionSessionStore,
+                sessionId: String,
+                acceptedRecordId: String,
+                offeredRecordId: String,
+            ) {
+                val id = WalletInteractionSessionId(sessionId)
+                store.save(
+                    WalletInteractionStoredSession(
+                        sessionId = id,
+                        input = WalletInteractionInput("wallet", WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=opaque")),
+                        adapterId = "oid4vci",
+                        state =
+                            WalletInteractionState(
+                                sessionId = id,
+                                walletUnitId = "wallet",
+                                status = WalletInteractionStatus.Completed,
+                                revision = 4,
+                                flowKind = WalletInteractionFlowKind.CredentialReceive,
+                                credentialPreview = listOf(WalletCredentialPreview(offeredRecordId)),
+                                receivedCredentialPreview = listOf(WalletCredentialPreview(acceptedRecordId)),
+                                terminal = true,
+                            ),
+                    ),
+                )
+            }
+
+            val first = async { saveTerminal(firstStore, "activity-one", "record-one", "offer-only-one") }
+            val second = async { saveTerminal(secondStore, "activity-two", "record-two", "offer-only-two") }
+            first.await()
+            second.await()
+
+            firstStore.remove(WalletInteractionSessionId("activity-one"))
+            val recreatedStore = KvWalletInteractionSessionStore(createInteractionTestKvStore(backingStorage))
+            val activity = recreatedStore.listActivity("wallet")
+
+            assertEquals(listOf(1L, 2L), activity.map { it.sequence }.sorted())
+            assertEquals(setOf("record-one", "record-two"), activity.flatMap { it.credentialRecordIds }.toSet())
+            assertFalse(activity.any { projection -> projection.credentialRecordIds.any { it.startsWith("offer-only") } })
+            assertEquals(1, recreatedStore.listActivity("wallet", afterSequence = 1).size)
+        }
+
+    @Test
     fun kvSessionStorePublishesLiveEventsAcrossStoreInstancesWhenEventBusIsShared() =
         runTest {
             val backingStorage = InMemoryKvBackingStorageImpl()
             val liveEventBus = ProcessLocalWalletInteractionLiveEventBus()
             val startingEngine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = KvWalletInteractionSessionStore(createInteractionTestKvStore(backingStorage), liveEventBus = liveEventBus),
                 )
             val started = startingEngine.start(WalletInteractionInput("wallet", WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x")))
             val observingEngine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = KvWalletInteractionSessionStore(createInteractionTestKvStore(backingStorage), liveEventBus = liveEventBus),
                 )
             val mutatingEngine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = KvWalletInteractionSessionStore(createInteractionTestKvStore(backingStorage), liveEventBus = liveEventBus),
@@ -359,7 +446,7 @@ class DefaultWalletInteractionEngineTest {
                         WalletInteractionInput(
                             walletUnitId = "wallet",
                             entryPoint = WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=pre-authorized_code-secret"),
-                            executionMode = WalletInteractionExecutionMode.BACKEND,
+                            executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
                         ),
                     adapterId = "oid4vci",
                     state = state,
@@ -378,7 +465,7 @@ class DefaultWalletInteractionEngineTest {
             val sessionStore = InMemoryWalletInteractionSessionStore()
             val privateStore = InMemoryWalletInteractionPrivateSessionStore()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                     sessionStore = sessionStore,
@@ -406,7 +493,7 @@ class DefaultWalletInteractionEngineTest {
             val privateStore = InMemoryWalletInteractionPrivateSessionStore()
             val selectedAdapter = EntryPointCapturingAdapter()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters =
                         listOf(
                             StaticWalletInteractionProtocolAdapter.oid4vci(adapterId = "a", match = WalletProtocolMatch.strong()),
@@ -422,7 +509,7 @@ class DefaultWalletInteractionEngineTest {
 
             val restartedAdapter = EntryPointCapturingAdapter()
             val restartedEngine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters =
                         listOf(
                             StaticWalletInteractionProtocolAdapter.oid4vci(adapterId = "a", match = WalletProtocolMatch.strong()),
@@ -449,18 +536,18 @@ private fun createInteractionTestKvStore(backingStorage: InMemoryKvBackingStorag
     )
 
 private class RecordingProtocolExecutor(
-    override val executionMode: WalletInteractionExecutionMode,
+    override val executionOwner: ProtocolExecutionOwner,
 ) : WalletProtocolExecutor {
-    override fun withExecutionMode(mode: WalletInteractionExecutionMode): WalletProtocolExecutor = RecordingProtocolExecutor(mode)
+    override fun withExecutionOwner(mode: ProtocolExecutionOwner): WalletProtocolExecutor = RecordingProtocolExecutor(mode)
 
     override suspend fun plan(request: WalletProtocolExecutionRequest): WalletProtocolExecutionDecision =
         WalletProtocolExecutionDecision(
-            executionMode = executionMode,
+            executionOwner = executionOwner,
             placement =
-                if (executionMode == WalletInteractionExecutionMode.SPLIT) {
-                    WalletProtocolExecutionPlacement.SPLIT_LOCAL_SECURITY
+                if (executionOwner == ProtocolExecutionOwner.WALLET_APP) {
+                    WalletProtocolExecutionPlacement.WALLET_APP
                 } else {
-                    WalletProtocolExecutionPlacement.LOCAL
+                    WalletProtocolExecutionPlacement.WALLET_APP
                 },
         )
 }
@@ -543,6 +630,51 @@ private class PrivateWritingAdapter : WalletInteractionProtocolAdapter {
             com.sphereon.wallet.interaction.WalletInteractionActionType.DECLINE -> sessionState.next(WalletInteractionStatus.Cancelled, terminal = true)
             else -> sessionState.next()
         }
+}
+
+private class CompletionHandoffAdapter : WalletInteractionProtocolAdapter {
+    override val capability: WalletProtocolCapability =
+        WalletProtocolCapability(
+            adapterId = "completion-handoff-test",
+            protocol = WalletProtocol.CUSTOM,
+            flowKinds = listOf(WalletInteractionFlowKind.CredentialPresent),
+        )
+
+    override suspend fun canHandle(entryPoint: WalletEntryPoint): WalletProtocolMatch = WalletProtocolMatch.strong()
+
+    override suspend fun start(
+        context: WalletInteractionContext,
+        entryPoint: WalletEntryPoint,
+    ): WalletInteractionSession =
+        WalletInteractionSession(
+            context.sessionId,
+            context.baseState(
+                status = WalletInteractionStatus.DisclosureConsent,
+                flowKind = WalletInteractionFlowKind.CredentialPresent,
+                protocol = WalletProtocol.CUSTOM,
+                adapterId = capability.adapterId,
+                entryPoint = entryPoint,
+            ),
+        )
+
+    override suspend fun handle(
+        context: WalletInteractionContext,
+        sessionState: WalletInteractionState,
+        action: WalletInteractionAction,
+    ): WalletInteractionState {
+        val ref =
+            context.sensitiveInputAuthority.register(
+                context.sessionId,
+                WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
+                "https://verifier.example/callback?response=opaque",
+            )
+        return sessionState.copy(
+            status = WalletInteractionStatus.Completed,
+            revision = sessionState.revision + 1,
+            completionHandoffRef = ref,
+            terminal = true,
+        )
+    }
 }
 
 private class EntryPointCapturingAdapter : WalletInteractionProtocolAdapter {

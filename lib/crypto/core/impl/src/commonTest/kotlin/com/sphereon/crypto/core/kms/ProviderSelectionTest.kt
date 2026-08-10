@@ -102,13 +102,14 @@ class ProviderSelectionTest {
     }
 
     @Test
-    fun testProviderRegistration() {
-        val mock = TestKmsMock()
-        val provider = TestKmsProviderMock()
-        mock.registerProvider(provider, makeDefaultKms = true)
+    fun testProviderRegistration() =
+        runTest {
+            val mock = TestKmsMock()
+            val provider = TestKmsProviderMock()
+            mock.registerProvider(provider, makeDefaultKms = true)
 
-        assertEquals(provider.id, mock.defaultProviderId())
-        assertEquals(provider, mock.getProviderById(provider.id))
-        assertTrue(mock.getProviderIds().contains(provider.id))
-    }
+            assertEquals(provider.id, mock.defaultProviderId())
+            assertEquals(provider, mock.getProviderById(provider.id))
+            assertTrue(mock.getProviderIds().contains(provider.id))
+        }
 }

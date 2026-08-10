@@ -18,13 +18,12 @@ package com.sphereon.oauth2.server.authorization.impl.command.token
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
-import com.sphereon.oauth2.common.config.InternalClientConfig
-import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
-import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
-import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
 import kotlinx.coroutines.test.runTest
@@ -52,12 +51,19 @@ class RegisterPreAuthorizedCodeCommandImplTest {
         override suspend fun isCodeUsed(code: String): IdkResult<Boolean, AuthorizationServerError.StorageError> = Ok(false)
     }
 
-    private fun configProvider(internalClients: Map<String, InternalClientConfig>) =
-        TestOAuth2ServersConfigProvider(
-            OAuth2ServersConfig(
-                servers = mapOf("default" to OAuth2ServerInstanceConfig(issuer = "https://as.example.com", internalClients = internalClients)),
-            ),
-        )
+    private fun clientRegistry(
+        clientId: String = "issuer-client",
+        clientSecret: String = "issuer-secret",
+    ) = StubClientRegistry(
+        mapOf(
+            clientId to
+                ClientRegistration(
+                    clientId = clientId,
+                    clientSecret = clientSecret,
+                    grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                ),
+        ),
+    )
 
     @Test
     fun storesCodeAfterValidatingBasicAuthCredentials() =
@@ -66,16 +72,7 @@ class RegisterPreAuthorizedCodeCommandImplTest {
             val command =
                 RegisterPreAuthorizedCodeCommandImpl(
                     execution = ctx.execution,
-                    configProvider =
-                        configProvider(
-                            mapOf(
-                                "issuer" to
-                                    InternalClientConfig(
-                                        clientId = "issuer-client",
-                                        clientSecret = "issuer-secret",
-                                    ),
-                            ),
-                        ),
+                    clientRegistry = clientRegistry(),
                     preAuthorizedCodeStorage = storage,
                 )
 
@@ -104,16 +101,7 @@ class RegisterPreAuthorizedCodeCommandImplTest {
             val command =
                 RegisterPreAuthorizedCodeCommandImpl(
                     execution = ctx.execution,
-                    configProvider =
-                        configProvider(
-                            mapOf(
-                                "issuer" to
-                                    InternalClientConfig(
-                                        clientId = "issuer-client",
-                                        clientSecret = "issuer-secret",
-                                    ),
-                            ),
-                        ),
+                    clientRegistry = clientRegistry(),
                     preAuthorizedCodeStorage = FakePreAuthorizedCodeStorage(),
                 )
 
@@ -133,12 +121,12 @@ class RegisterPreAuthorizedCodeCommandImplTest {
         }
 
     @Test
-    fun rejectsRequestWhenInternalClientsNotConfigured() =
+    fun rejectsRequestWhenOpaqueAwareRegistryDoesNotRecognizeCredentials() =
         runTest {
             val command =
                 RegisterPreAuthorizedCodeCommandImpl(
                     execution = ctx.execution,
-                    configProvider = configProvider(emptyMap()),
+                    clientRegistry = StubClientRegistry(),
                     preAuthorizedCodeStorage = FakePreAuthorizedCodeStorage(),
                 )
 

@@ -71,7 +71,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -104,7 +104,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -172,7 +172,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -219,7 +219,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -248,7 +248,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -281,7 +281,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -318,7 +318,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -347,7 +347,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -376,7 +376,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -408,7 +408,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )
@@ -447,13 +447,13 @@ class ClaimMappingDslTest {
                 listOf(
                     CredentialWithId(
                         credentialId = "pid",
-                        format = CredentialFormat.SD_JWT_DC,
+                        format = CredentialFormat.SD_JWT_VC,
                         payload = "",
                         disclosedClaims = pidClaims,
                     ),
                     CredentialWithId(
                         credentialId = "mdl",
-                        format = CredentialFormat.SD_JWT_DC,
+                        format = CredentialFormat.SD_JWT_VC,
                         payload = "",
                         disclosedClaims = mdlClaims,
                     ),
@@ -486,7 +486,7 @@ class ClaimMappingDslTest {
             val credential =
                 CredentialWithId(
                     credentialId = "pid",
-                    format = CredentialFormat.SD_JWT_DC,
+                    format = CredentialFormat.SD_JWT_VC,
                     payload = "",
                     disclosedClaims = disclosedClaims,
                 )

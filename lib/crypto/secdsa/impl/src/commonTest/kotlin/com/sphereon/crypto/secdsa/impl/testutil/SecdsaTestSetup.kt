@@ -34,7 +34,7 @@ class SecdsaTestContext(
 ) {
     val app: AppGraph = createSecdsaTestAppGraph(testInstance)
     val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
 
     val softwareKmsProvider: SoftwareKmsProvider =
         (app as SoftwareKmsProviderFactoryImpl.Graph)

@@ -91,6 +91,7 @@ class RefreshTokenGrantHandlerImpl(
                     VerifyRefreshTokenGrantArgs(
                         refreshToken = rtParams.refreshToken,
                         clientId = tokenRequest.clientId,
+                        clientInstanceKeyJkt = context.clientInstanceKeyJkt,
                         requestedScope = rtParams.scope,
                         requestedResource = rtParams.resource,
                     ),
@@ -157,6 +158,17 @@ class RefreshTokenGrantHandlerImpl(
         // back to the stored binding when no proof was presented (which only reaches here
         // for non-DPoP refresh-token chains since the previous block returned).
         val refreshBoundJkt = proofJkt ?: storedJkt
+        // Every refreshed access token gets a newly minted set of opaque credential identifiers.
+        // The refresh token stores only the authorized configuration ids, never old identifiers,
+        // so identifiers cannot accidentally outlive or drift away from the access token that
+        // carries them.
+        val refreshedAuthorizationDetails =
+            buildRefreshedCredentialAuthorizationDetails(verified.credentialConfigurationIds)
+        val refreshedAccessTokenClaims =
+            buildMap<String, Any> {
+                refreshedAuthorizationDetails?.let { put("authorization_details", it) }
+                verified.oid4vciIssuerState?.let { put(INTERNAL_OID4VCI_ISSUER_STATE_CLAIM, it) }
+            }
 
         // Create new access token
         val accessToken =
@@ -169,38 +181,50 @@ class RefreshTokenGrantHandlerImpl(
                         audience = verified.resource.ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) },
                         dpopJkt = refreshBoundJkt,
                         certificateThumbprintS256 = certThumbprint,
+                        authTime = verified.authTime,
+                        acr = verified.acr,
+                        amr = verified.amr,
+                        additionalClaims = refreshedAccessTokenClaims,
                         baseUrlOverride = applied.baseUrlOverride,
                     ),
                 ).getOrElse { error -> return Err(error) }
 
         val responseRefreshToken =
             if (rotateRefreshToken) {
-                // Atomically consume (mark used + revoked) the presented refresh
-                // token so replays are rejected by the verifier's revoked check.
-                tokenStorage
-                    .consumeRefreshToken(verified.refreshTokenId, revoke = true)
-                    .getOrElse { error -> return Err(IdkError.fromDTO(error)) }
-
-                // Mint a fresh refresh token for the rotated chain. Carry the
-                // preserved OIDC fields so the chain continues to support id_token
-                // reissue on subsequent refreshes.
-                commands.createRefreshToken
-                    .execute(
-                        CreateRefreshTokenArgs(
-                            subject = verified.subject,
-                            clientId = tokenRequest.clientId,
-                            scope = verified.scope,
-                            resource = verified.resource,
-                            defaultAccessTokenAudience = verified.defaultAccessTokenAudience,
-                            dpopJkt = refreshBoundJkt,
-                            authTime = verified.authTime,
-                            acr = verified.acr,
-                            amr = verified.amr,
-                            nonce = verified.nonce,
-                            loginSessionId = verified.loginSessionId,
-                        ),
-                    ).getOrElse { error -> return Err(error) }
-                    .value
+                verified.replacementRefreshToken ?: run {
+                    // Mint one successor and atomically attach it to the consumed row. If two
+                    // requests race, storage keeps the first successor and both responses use
+                    // that authoritative value rather than branching the refresh-token chain.
+                    val candidate =
+                        commands.createRefreshToken
+                            .execute(
+                                CreateRefreshTokenArgs(
+                                    subject = verified.subject,
+                                    clientId = tokenRequest.clientId,
+                                    scope = verified.scope,
+                                    resource = verified.resource,
+                                    defaultAccessTokenAudience = verified.defaultAccessTokenAudience,
+                                    credentialConfigurationIds = verified.credentialConfigurationIds,
+                                    oid4vciIssuerState = verified.oid4vciIssuerState,
+                                    dpopJkt = refreshBoundJkt,
+                                    clientInstanceKeyJkt = verified.clientInstanceKeyJkt,
+                                    authTime = verified.authTime,
+                                    acr = verified.acr,
+                                    amr = verified.amr,
+                                    nonce = verified.nonce,
+                                    loginSessionId = verified.loginSessionId,
+                                ),
+                            ).getOrElse { error -> return Err(error) }
+                            .value
+                    val rotated =
+                        tokenStorage
+                            .rotateRefreshToken(
+                                token = verified.refreshTokenId,
+                                replacementRefreshToken = candidate,
+                                rotatedAt = kotlin.time.Clock.System.now(),
+                            ).getOrElse { error -> return Err(IdkError.fromDTO(error)) }
+                    rotated?.replacementRefreshToken ?: candidate
+                }
             } else {
                 // Rotation disabled: reuse the presented refresh token (RFC 6749 §6
                 // permits this) and leave the stored entry untouched so it remains
@@ -242,7 +266,16 @@ class RefreshTokenGrantHandlerImpl(
                 refreshToken = responseRefreshToken,
                 scope = verified.scope,
                 idToken = refreshedIdToken,
+                authorizationDetails = refreshedAuthorizationDetails,
             ),
         )
     }
+
+    private companion object {
+        const val INTERNAL_OID4VCI_ISSUER_STATE_CLAIM = "oid4vci.internal.issuer_state"
+    }
 }
+
+/** Rebuilds token-response authorization details so refresh never reuses prior access-token handles. */
+internal fun buildRefreshedCredentialAuthorizationDetails(credentialConfigurationIds: List<String>) =
+    buildAuthorizationCodeCredentialAuthorizationDetails(credentialConfigurationIds)

@@ -27,32 +27,119 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ScopedPropertySourceWrapper", exact = true)
 class ScopedPropertySourceWrapper<T>(
-    private val delegate: PropertySource<T>,
+    internal val delegateSource: PropertySource<T>,
     override val configLevel: ConfigLevel,
-) : ScopedPropertySource<T> {
-    override val isPlatformSupported: Boolean get() = delegate.isPlatformSupported
+) : ScopedPropertySource<T>,
+    ProtectedPropertySource<T>,
+    RefreshablePropertySource {
+    init {
+        if (configLevel != ConfigLevel.APP && delegateSource.isPlatformSupported) {
+            delegateSource.getAllPropertyNames().forEach { key ->
+                val value =
+                    runCatching { delegateSource.getProperty(key, Any::class) }.getOrNull()
+                        ?: runCatching { delegateSource.getPropertyAsString(key) }.getOrNull()
+                validateEnvironmentReferencesForWrite(value, configLevel)
+            }
+        }
+    }
 
-    override fun hasProperty(name: String): Boolean = delegate.hasProperty(name)
+    override val isPlatformSupported: Boolean get() = delegateSource.isPlatformSupported
+
+    override fun hasProperty(name: String): Boolean {
+        val present = delegateSource.hasProperty(name)
+        if (present) {
+            validateCurrentValue(name)
+        }
+        return present
+    }
 
     override fun <T : Any> getProperty(
         name: String,
         targetType: kotlin.reflect.KClass<T>,
-    ): T? = delegate.getProperty(name, targetType)
+    ): T? {
+        validateCurrentValue(name)
+        return delegateSource.getProperty(name, targetType)
+    }
 
-    override fun getPropertyAsString(name: String): String? = delegate.getPropertyAsString(name)
+    override fun getPropertyAsString(name: String): String? {
+        validateCurrentValue(name)
+        return delegateSource.getPropertyAsString(name)
+    }
 
-    override fun removeProperty(name: String) = delegate.removeProperty(name)
+    override fun removeProperty(name: String) = delegateSource.removeProperty(name)
 
-    override fun getName(): String = delegate.getName()
+    override fun getName(): String = delegateSource.getName()
 
-    override fun getSource(): T = delegate.getSource()
+    @Suppress("UNCHECKED_CAST")
+    override fun getSource(): T {
+        val source = delegateSource.getSource()
+        return if (source is MutableMap<*, *>) {
+            source.toMutableMap() as T
+        } else {
+            source
+        }
+    }
 
-    override fun getAllPropertyNames(): Set<String> = delegate.getAllPropertyNames()
+    override fun getAllPropertyNames(): Set<String> {
+        val names = delegateSource.getAllPropertyNames()
+        if (configLevel != ConfigLevel.APP) {
+            names.forEach(::validateCurrentValue)
+        }
+        return names
+    }
 
-    override fun getOrder(): Int = delegate.getOrder()
+    override fun getOrder(): Int = delegateSource.getOrder()
 
-    override fun compareTo(other: PropertySource<*>): Int = delegate.compareTo(other)
+    override fun compareTo(other: PropertySource<*>): Int = delegateSource.compareTo(other)
+
+    override fun getProtection(canonicalKey: String): PropertyProtection? = (delegateSource as? ProtectedPropertySource<*>)?.getProtection(canonicalKey)
+
+    override fun canSet(
+        key: String,
+        fromScope: ConfigLevel,
+    ): Boolean = (delegateSource as? ProtectedPropertySource<*>)?.canSet(key, fromScope) ?: true
+
+    override fun canInterpolate(
+        key: String,
+        fromScope: ConfigLevel,
+    ): Boolean = (delegateSource as? ProtectedPropertySource<*>)?.canInterpolate(key, fromScope) ?: true
+
+    override val contentRevision: Long
+        get() = (delegateSource as? RefreshablePropertySource)?.contentRevision ?: 0L
+
+    override fun refreshIfNeeded() {
+        (delegateSource as? RefreshablePropertySource)?.refreshIfNeeded()
+    }
+
+    private fun validateCurrentValue(name: String) {
+        if (configLevel == ConfigLevel.APP) {
+            return
+        }
+        val value =
+            runCatching { delegateSource.getProperty(name, Any::class) }.getOrNull()
+                ?: runCatching { delegateSource.getPropertyAsString(name) }.getOrNull()
+        validateConfigurationValueForRead(value, configLevel)
+    }
 }
+
+internal fun PropertySource<*>.unwrappedPropertySource(): PropertySource<*> =
+    if (this is ScopedPropertySourceWrapper<*>) {
+        delegateSource.unwrappedPropertySource()
+    } else {
+        this
+    }
+
+internal fun PropertySource<*>.isDirectEnvironmentPropertySource(): Boolean {
+    val unwrapped = unwrappedPropertySource()
+    return unwrapped is EnvPropertySource ||
+        unwrapped is ProtectedEnvPropertySource ||
+        unwrapped.getName() == "environment" ||
+        unwrapped.getName() == "protected-environment"
+}
+
+internal fun PropertySource<*>.isDirectlyVisibleAt(level: ConfigLevel): Boolean = level == ConfigLevel.APP || !isDirectEnvironmentPropertySource()
+
+internal fun PropertySource<*>.effectiveSourceScope(fallback: ConfigLevel): ConfigLevel = (this as? ScopedPropertySource<*>)?.configLevel ?: fallback
 
 /**
  * Return property sources ordered by scope first (PRINCIPAL -> TENANT -> APP),

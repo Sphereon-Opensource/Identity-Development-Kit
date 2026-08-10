@@ -34,7 +34,8 @@ import com.sphereon.core.api.http.error.DefaultRestErrorRenderer
 import com.sphereon.core.api.http.error.HttpErrorRenderer
 import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.core.api.session.Command
-import com.sphereon.core.api.session.ExecutionScopedCommandAdapter
+import com.sphereon.core.api.session.CommandId
+import com.sphereon.core.api.session.ExecutionScopedAdapter
 import com.sphereon.core.api.session.ICommandExecutionExtension
 import com.sphereon.core.api.session.ICommandInitExtension
 import com.sphereon.core.api.session.IEnhancedCommandExecutionExtension
@@ -44,7 +45,7 @@ import com.sphereon.di.context.MutableResolvedTenantIdProvider
 /**
  * Base class for HTTP adapters backed by the IDK command infrastructure.
  *
- * This adapter integrates [HttpAdapter] with [ExecutionScopedCommandAdapter], enabling:
+ * This adapter integrates [HttpAdapter] with [ExecutionScopedAdapter], enabling:
  * - **Lifecycle integration**: Automatic session registration via `onEnterScope`
  * - **Enablement/feature gating**: Commands and endpoints can be toggled via `isEnabled`
  * - **Extension hooks**: Before/during/after execution callbacks
@@ -67,7 +68,7 @@ import com.sphereon.di.context.MutableResolvedTenantIdProvider
  *     execution: SessionExecution,
  *     private val myService: MyService
  * ) : CommandBackedHttpAdapter(
- *     id = "my-adapter",
+ *     id = "example.http.adapter",
  *     execution = execution,
  *     mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/my")
  * ) {
@@ -114,8 +115,8 @@ abstract class CommandBackedHttpAdapter(
      * - Authorization / token / par / callback adapters: [TenantPathPolicy.LeadingSlug]
      */
     open val tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None,
-) : ExecutionScopedCommandAdapter<GenericHttpRequest, GenericHttpResponse, IdkError>(
-        id = id,
+) : ExecutionScopedAdapter<GenericHttpRequest, GenericHttpResponse, IdkError>(
+        id = CommandId(id).value,
         isEnabled = isEnabled,
         initExtensions = initExtensions,
         executionExtensions = executionExtensions,
@@ -496,7 +497,7 @@ abstract class CommandBackedHttpAdapter(
     ) {
         val segments = relativeRequest.path.split('/').filter { it.isNotEmpty() }
         var currentTenantId: String? = null
-        val baseTenantId = relativeRequest.headers[INTERNAL_BASE_TENANT_HEADER]
+        val baseTenantId = relativeRequest.resolvedTenantId
         var parent: String? = baseTenantId
         for (i in 1..minOf(maxDepth, segments.size)) {
             val seg = segments[i - 1]
@@ -541,7 +542,7 @@ abstract class CommandBackedHttpAdapter(
         // chain is parent → child. We collect peeled candidates as we walk, then
         // descend the chain in URL order to validate.
         var currentTenantId: String? = null
-        val baseTenantId = relativeRequest.headers[INTERNAL_BASE_TENANT_HEADER]
+        val baseTenantId = relativeRequest.resolvedTenantId
         for (peelCount in 1..minOf(maxDepth, segments.size)) {
             val peeled = segments.takeLast(peelCount)
             val remaining = segments.dropLast(peelCount)
@@ -611,17 +612,6 @@ abstract class CommandBackedHttpAdapter(
     private fun pathHasUnsafeTokens(path: String): Boolean = FORBIDDEN_PATH_TOKENS.any { token -> path.contains(token, ignoreCase = true) }
 
     companion object {
-        /**
-         * Internal request header set by the Ktor tenant-resolution plugin to pass
-         * the Layer 1 (host/JWT) base tenant id into the dispatcher. The header
-         * name is intentionally a name no client could send through a normal HTTP
-         * request — it lives only in the in-process [GenericHttpRequest] copy and
-         * is stripped by the plugin if it appears on inbound traffic. Used so the
-         * dispatcher can validate path peels relative to the host-resolved parent
-         * tenant without needing to read SessionExecution mid-flight.
-         */
-        const val INTERNAL_BASE_TENANT_HEADER: String = "__sphereon_internal_base_tenant__"
-
         private val SAFE_SLUG_RE = Regex("^[a-z][a-z0-9-]{0,62}$")
 
         private val FORBIDDEN_PATH_TOKENS = listOf("..", "//", "%2f", "%5c", "\\")

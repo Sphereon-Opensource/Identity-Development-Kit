@@ -23,11 +23,15 @@ import com.sphereon.di.app.AppGraph
 import com.sphereon.ktor.server.inject.interceptor.UserContextInterceptor
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.BaseApplicationPlugin
 import io.ktor.server.application.call
 import io.ktor.server.application.plugin
+import io.ktor.server.request.header
+import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.util.AttributeKey
 
@@ -127,6 +131,18 @@ class KotlinInjectPlugin(
                 )
 
             pipeline.intercept(ApplicationCallPipeline.Plugins) {
+                // Route-scoped Ktor CORS handling runs after application plugins.
+                // A real browser preflight has no bearer token and must therefore
+                // pass through without constructing a tenant/user session; the
+                // CORS plugin will validate the requested origin and method.
+                if (
+                    call.request.httpMethod == HttpMethod.Options &&
+                    call.request.header(HttpHeaders.Origin) != null &&
+                    call.request.header("Access-Control-Request-Method") != null
+                ) {
+                    proceed()
+                    return@intercept
+                }
                 if (plugin.ignoredPathPrefixes.any { call.request.path().startsWith(it) }) {
                     proceed()
                     return@intercept

@@ -31,16 +31,12 @@ import kotlin.native.ObjCName
  *
  * SD-JWT VC (format: "dc+sd-jwt") supports the following metadata properties:
  * - `vct_values`: Acceptable Verifiable Credential Type URIs
- * - `sd_jwt_alg_values`: Acceptable JWS algorithms for SD-JWT
- * - `kb_jwt_alg_values`: Acceptable JWS algorithms for Key Binding JWT
  *
  * Example:
  * ```kotlin
  * credential("identity") {
  *     sdJwtVc {
  *         vctValues("https://credentials.example.com/identity")
- *         sdJwtAlgorithms("ES256", "ES384")
- *         kbJwtAlgorithms("ES256")
  *     }
  * }
  * ```
@@ -51,8 +47,6 @@ import kotlin.native.ObjCName
 @JsExportCompat
 class SdJwtVcMetaScope {
     private val vctValues = mutableListOf<String>()
-    private val sdJwtAlgValues = mutableListOf<String>()
-    private val kbJwtAlgValues = mutableListOf<String>()
 
     /**
      * Sets acceptable Verifiable Credential Type URIs.
@@ -63,47 +57,15 @@ class SdJwtVcMetaScope {
         vctValues.addAll(values)
     }
 
-    /**
-     * Sets acceptable JWS algorithms for SD-JWT signing.
-     *
-     * @param algorithms One or more algorithm names (e.g., "ES256", "RS256")
-     */
-    fun sdJwtAlgorithms(vararg algorithms: String) {
-        sdJwtAlgValues.addAll(algorithms)
-    }
-
-    /**
-     * Sets acceptable JWS algorithms for Key Binding JWT.
-     *
-     * @param algorithms One or more algorithm names (e.g., "ES256")
-     */
-    fun kbJwtAlgorithms(vararg algorithms: String) {
-        kbJwtAlgValues.addAll(algorithms)
-    }
-
-    internal fun buildMeta(): JsonObject? {
-        if (vctValues.isEmpty() && sdJwtAlgValues.isEmpty() && kbJwtAlgValues.isEmpty()) {
-            return null
-        }
-
-        return buildJsonObject {
-            if (vctValues.isNotEmpty()) {
-                putJsonArray("vct_values") {
-                    vctValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
-                }
+    internal fun buildMeta(): JsonObject =
+        buildJsonObject {
+            require(vctValues.isNotEmpty() && vctValues.all { it.isNotEmpty() }) {
+                "dc+sd-jwt requires at least one non-empty vct_values entry"
             }
-            if (sdJwtAlgValues.isNotEmpty()) {
-                putJsonArray("sd_jwt_alg_values") {
-                    sdJwtAlgValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
-                }
-            }
-            if (kbJwtAlgValues.isNotEmpty()) {
-                putJsonArray("kb_jwt_alg_values") {
-                    kbJwtAlgValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
-                }
+            putJsonArray("vct_values") {
+                vctValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
             }
         }
-    }
 }
 
 // ============================================================================
@@ -115,14 +77,12 @@ class SdJwtVcMetaScope {
  *
  * mDoc (format: "mso_mdoc") supports the following metadata properties:
  * - `doctype_value`: Document type identifier (e.g., "org.iso.18013.5.1.mDL")
- * - `namespace_values`: Acceptable namespace identifiers
  *
  * Example:
  * ```kotlin
  * credential("mdl") {
  *     mDoc {
  *         mDL()  // Convenience: sets doctype to MDL
- *         namespaces("org.iso.18013.5.1", "org.iso.18013.5.1.aamva")
  *     }
  * }
  * ```
@@ -133,7 +93,6 @@ class SdJwtVcMetaScope {
 @JsExportCompat
 class MdocMetaScope {
     private var doctypeValue: String? = null
-    private val namespaceValues = mutableListOf<String>()
 
     /**
      * Sets the document type identifier.
@@ -153,31 +112,12 @@ class MdocMetaScope {
         doctypeValue = MdocDoctypes.MDL
     }
 
-    /**
-     * Sets acceptable namespace identifiers.
-     *
-     * @param namespaces One or more namespace identifiers
-     */
-    fun namespaces(vararg namespaces: String) {
-        namespaceValues.addAll(namespaces)
-    }
-
-    internal fun buildMeta(): JsonObject? {
-        if (doctypeValue == null && namespaceValues.isEmpty()) {
-            return null
+    internal fun buildMeta(): JsonObject =
+        buildJsonObject {
+            val doctype = requireNotNull(doctypeValue) { "mso_mdoc requires doctype_value" }
+            require(doctype.isNotEmpty()) { "mso_mdoc doctype_value must not be empty" }
+            put("doctype_value", kotlinx.serialization.json.JsonPrimitive(doctype))
         }
-
-        return buildJsonObject {
-            doctypeValue?.let {
-                put("doctype_value", kotlinx.serialization.json.JsonPrimitive(it))
-            }
-            if (namespaceValues.isNotEmpty()) {
-                putJsonArray("namespace_values") {
-                    namespaceValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
-                }
-            }
-        }
-    }
 }
 
 // ============================================================================
@@ -188,15 +128,13 @@ class MdocMetaScope {
  * Builder scope for JWT VC JSON format metadata.
  *
  * JWT VC JSON (format: "jwt_vc_json") supports the following metadata properties:
- * - `type_values`: Acceptable credential type identifiers from the 'type' array
- * - `alg_values`: Acceptable JWS signing algorithms
+ * - `type_values`: Alternative sets of fully-expanded credential type identifiers
  *
  * Example:
  * ```kotlin
  * credential("degree") {
  *     jwtVcJson {
- *         types("VerifiableCredential", "UniversityDegreeCredential")
- *         algorithms("ES256", "ES384")
+ *         typeValues("VerifiableCredential", "UniversityDegreeCredential")
  *     }
  * }
  * ```
@@ -206,45 +144,31 @@ class MdocMetaScope {
 @ObjCName("JwtVcJsonMetaScope", exact = true)
 @JsExportCompat
 class JwtVcJsonMetaScope {
-    private val typeValues = mutableListOf<String>()
-    private val algValues = mutableListOf<String>()
+    private val typeValues = mutableListOf<List<String>>()
 
     /**
      * Sets acceptable credential type identifiers.
      *
      * @param types One or more type values (e.g., "VerifiableCredential", "UniversityDegreeCredential")
      */
-    fun types(vararg types: String) {
-        typeValues.addAll(types)
+    fun typeValues(vararg types: String) {
+        require(types.isNotEmpty()) { "A type_values alternative must contain at least one type" }
+        typeValues.add(types.toList())
     }
 
-    /**
-     * Sets acceptable JWS signing algorithms.
-     *
-     * @param algorithms One or more algorithm names (e.g., "ES256", "RS256")
-     */
-    fun algorithms(vararg algorithms: String) {
-        algValues.addAll(algorithms)
-    }
-
-    internal fun buildMeta(): JsonObject? {
-        if (typeValues.isEmpty() && algValues.isEmpty()) {
-            return null
-        }
-
-        return buildJsonObject {
-            if (typeValues.isNotEmpty()) {
-                putJsonArray("type_values") {
-                    typeValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
-                }
+    internal fun buildMeta(): JsonObject =
+        buildJsonObject {
+            require(typeValues.isNotEmpty() && typeValues.flatten().all { it.isNotEmpty() }) {
+                "jwt_vc_json requires non-empty type_values alternatives"
             }
-            if (algValues.isNotEmpty()) {
-                putJsonArray("alg_values") {
-                    algValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
+            putJsonArray("type_values") {
+                typeValues.forEach { alternative ->
+                    add(kotlinx.serialization.json.buildJsonArray {
+                        alternative.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
+                    })
                 }
             }
         }
-    }
 }
 
 // ============================================================================
@@ -255,15 +179,13 @@ class JwtVcJsonMetaScope {
  * Builder scope for LDP VC format metadata.
  *
  * LDP VC (format: "ldp_vc") supports the following metadata properties:
- * - `type_values`: Acceptable credential type identifiers from the 'type' array
- * - `proof_type_values`: Acceptable Linked Data Proof types
+ * - `type_values`: Alternative sets of fully-expanded credential type identifiers
  *
  * Example:
  * ```kotlin
  * credential("degree") {
  *     ldpVc {
- *         types("VerifiableCredential", "UniversityDegreeCredential")
- *         proofTypes("Ed25519Signature2020", "JsonWebSignature2020")
+ *         typeValues("VerifiableCredential", "UniversityDegreeCredential")
  *     }
  * }
  * ```
@@ -273,43 +195,29 @@ class JwtVcJsonMetaScope {
 @ObjCName("LdpVcMetaScope", exact = true)
 @JsExportCompat
 class LdpVcMetaScope {
-    private val typeValues = mutableListOf<String>()
-    private val proofTypeValues = mutableListOf<String>()
+    private val typeValues = mutableListOf<List<String>>()
 
     /**
      * Sets acceptable credential type identifiers.
      *
      * @param types One or more type values (e.g., "VerifiableCredential", "UniversityDegreeCredential")
      */
-    fun types(vararg types: String) {
-        typeValues.addAll(types)
+    fun typeValues(vararg types: String) {
+        require(types.isNotEmpty()) { "A type_values alternative must contain at least one type" }
+        typeValues.add(types.toList())
     }
 
-    /**
-     * Sets acceptable Linked Data Proof types.
-     *
-     * @param proofTypes One or more proof type names (e.g., "Ed25519Signature2020")
-     */
-    fun proofTypes(vararg proofTypes: String) {
-        proofTypeValues.addAll(proofTypes)
-    }
-
-    internal fun buildMeta(): JsonObject? {
-        if (typeValues.isEmpty() && proofTypeValues.isEmpty()) {
-            return null
-        }
-
-        return buildJsonObject {
-            if (typeValues.isNotEmpty()) {
-                putJsonArray("type_values") {
-                    typeValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
-                }
+    internal fun buildMeta(): JsonObject =
+        buildJsonObject {
+            require(typeValues.isNotEmpty() && typeValues.flatten().all { it.isNotEmpty() }) {
+                "ldp_vc requires non-empty type_values alternatives"
             }
-            if (proofTypeValues.isNotEmpty()) {
-                putJsonArray("proof_type_values") {
-                    proofTypeValues.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
+            putJsonArray("type_values") {
+                typeValues.forEach { alternative ->
+                    add(kotlinx.serialization.json.buildJsonArray {
+                        alternative.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
+                    })
                 }
             }
         }
-    }
 }

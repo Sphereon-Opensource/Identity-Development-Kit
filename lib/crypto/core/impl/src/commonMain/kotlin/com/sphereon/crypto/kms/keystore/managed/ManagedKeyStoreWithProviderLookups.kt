@@ -129,6 +129,15 @@ class ManagedKeyStoreWithProviderLookups(
     }
 
     /**
+     * Whether the provider behind an id records its own keys in the managed key-reference index.
+     *
+     * Asked by callers that would otherwise index what a store returns. An id that resolves to no
+     * provider answers false: there is nothing that could have written a row.
+     */
+    suspend fun maintainsKeyReferenceIndex(providerId: String): Boolean =
+        runCatching { providerRegistry.getProviderById(providerId).maintainsKeyReferenceIndex }.getOrDefault(false)
+
+    /**
      * Delete a key from the appropriate provider.
      * @return true if the key was found and deleted, false if not found or provider not available
      */

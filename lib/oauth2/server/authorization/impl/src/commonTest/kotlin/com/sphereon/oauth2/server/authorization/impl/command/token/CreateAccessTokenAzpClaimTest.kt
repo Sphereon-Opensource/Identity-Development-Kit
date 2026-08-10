@@ -22,6 +22,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.sourceAs
 import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.JwsJsonFlattened
@@ -37,19 +38,24 @@ import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
+import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.config.OAuth2SigningKeyUnavailableException
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryTokenStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -80,7 +86,11 @@ class CreateAccessTokenAzpClaimTest {
             ),
         )
 
-    private fun newCommand(jwtService: RecordingJwtService): CreateAccessTokenCommandImpl =
+    private fun newCommand(
+        jwtService: RecordingJwtService,
+        signingIdentifierResolver: AsServerSigningIdentifierResolver =
+            fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = "as-signing-key")),
+    ): CreateAccessTokenCommandImpl =
         CreateAccessTokenCommandImpl(
             execution = ctx.execution,
             jwtService = jwtService,
@@ -88,9 +98,34 @@ class CreateAccessTokenAzpClaimTest {
             secureRandom = defaultSecureRandom(),
             configProvider = configProvider,
             // Non-null signing identifier forces the JWT (not opaque) path so a payload is built.
-            signingIdentifierResolver = fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = "as-signing-key")),
+            signingIdentifierResolver = signingIdentifierResolver,
             eventService = null,
         )
+
+    @Test
+    fun unavailableSigningKeyReturnsTemporarilyUnavailableInsteadOfThrowing() =
+        runTest {
+            val resolver =
+                object : AsServerSigningIdentifierResolver {
+                    override suspend fun resolveSigningIdentifier() =
+                        throw OAuth2SigningKeyUnavailableException(
+                            tenantId = "platform",
+                            message = "platform bootstrap has not provisioned its signing key",
+                        )
+                }
+
+            val result =
+                newCommand(RecordingJwtService(), resolver).execute(
+                    CreateAccessTokenArgs(
+                        subject = SERVICE_CLIENT_ID,
+                        clientId = SERVICE_CLIENT_ID,
+                        scope = "service",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertIs<AuthorizationServerError.TemporarilyUnavailable>(result.error.sourceAs())
+        }
 
     /**
      * Decode the middle (payload) segment of the compact JWT the command produced and parse it
@@ -157,6 +192,36 @@ class CreateAccessTokenAzpClaimTest {
                 payload.containsKey("azp"),
                 "human user token (sub != client_id) MUST NOT carry azp, or it would be mistaken for a workload token",
             )
+        }
+
+    @Test
+    fun humanUserTokenStampsTypedAuthenticationContextButRejectsReservedClaimOverrides() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val command = newCommand(jwtService)
+
+            val result =
+                command.execute(
+                    CreateAccessTokenArgs(
+                        subject = "user-123",
+                        clientId = "web-app-client",
+                        authTime = 1_784_485_200L,
+                        acr = "urn:nist:sp:800-63:aal1",
+                        amr = listOf("pwd"),
+                        additionalClaims =
+                            mapOf(
+                                "auth_time" to 1L,
+                                "acr" to "attacker-override",
+                                "amr" to listOf("attacker"),
+                            ),
+                    ),
+                )
+
+            assertTrue(result.isOk, "user token mint must succeed: ${if (result.isErr) result.error else ""}")
+            val payload = decodePayload(result.value.value)
+            assertEquals(1_784_485_200L, payload["auth_time"]?.jsonPrimitive?.content?.toLong())
+            assertEquals("urn:nist:sp:800-63:aal1", payload["acr"]?.jsonPrimitive?.contentOrNull)
+            assertEquals(listOf("pwd"), payload["amr"]?.jsonArray?.map { it.jsonPrimitive.content })
         }
 
     @Test

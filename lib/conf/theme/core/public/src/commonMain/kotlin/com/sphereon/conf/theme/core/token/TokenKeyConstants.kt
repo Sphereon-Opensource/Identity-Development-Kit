@@ -193,6 +193,8 @@ object TokenKeyConstants {
     const val BRANDING_FONT_RESOURCE_ID = "branding.fontResourceId"
     const val BRANDING_LOGO_RESOURCE_ID = "branding.logoResourceId"
     const val BRANDING_LOGO_DARK_RESOURCE_ID = "branding.logoDarkResourceId"
+    const val BRANDING_SUPPORT_URL = "branding.supportUrl"
+    const val BRANDING_SUPPORT_EMAIL = "branding.supportEmail"
 
     // Shape
     const val SHAPE_CORNER_EXTRA_SMALL = "shape.cornerExtraSmall"

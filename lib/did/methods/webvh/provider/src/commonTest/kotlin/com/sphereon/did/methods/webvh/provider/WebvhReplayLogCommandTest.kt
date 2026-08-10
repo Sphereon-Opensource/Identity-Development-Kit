@@ -63,7 +63,7 @@ class WebvhReplayLogCommandTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("webvh-replay-cmd")
+                .createOrGetFromId("webvh-replay-cmd", principalType = com.sphereon.di.context.PrincipalType.USER)
         val sessionGraph = session.graph
         registry = (sessionGraph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
         keyManager = (sessionGraph as KeyManagerServiceGraph).keyManagerService

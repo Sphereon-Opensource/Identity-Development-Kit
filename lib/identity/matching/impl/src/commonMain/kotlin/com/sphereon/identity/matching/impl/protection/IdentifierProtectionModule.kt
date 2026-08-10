@@ -16,8 +16,14 @@
 
 package com.sphereon.identity.matching.impl.protection
 
-import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.kms.command.DecryptCommand
+import com.sphereon.crypto.core.kms.command.EncryptCommand
+import com.sphereon.crypto.core.kms.command.GenerateKeyCommand
 import com.sphereon.crypto.core.kms.command.GenerateMacCommand
+import com.sphereon.crypto.core.kms.command.ListKeysCommand
+import com.sphereon.core.api.conf.DEFAULT_APPLICATION_TENANT_ID
+import com.sphereon.core.api.conf.KEY_APPLICATION_TENANT_ID
+import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import com.sphereon.identity.matching.protection.DefaultIdentifierProtectionPolicyService
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicyService
@@ -35,6 +41,20 @@ import dev.zacsweers.metro.SingleIn
  */
 @ContributesTo(SessionScope::class)
 interface IdentifierProtectionModule {
+    companion object {
+        const val APPLICATION_IDENTIFIER_PROTECTION_PROVIDER_ID: String = "software"
+
+        /**
+         * Logical tenant provider resolved by the enterprise KMS typed-resource registry.
+         *
+         * Identifier protection must not use algorithm-only provider selection: a split tenant-KMS
+         * also has a system-only bootstrap HMAC provider for token verification, and selecting by
+         * HMAC capability would create tenant material in that transient provider. The logical
+         * `default` id is resolved server-side through the tenant's opaque KMS resource binding.
+         */
+        const val TENANT_IDENTIFIER_PROTECTION_PROVIDER_ID: String = "default"
+    }
+
     @Provides
     @SingleIn(SessionScope::class)
     fun provideIdentifierProtectionPolicyService(): IdentifierProtectionPolicyService = DefaultIdentifierProtectionPolicyService()
@@ -42,11 +62,45 @@ interface IdentifierProtectionModule {
     @Provides
     @SingleIn(SessionScope::class)
     fun provideIdentifierProtector(
+        generateKeyCommand: GenerateKeyCommand,
+        listKeysCommand: ListKeysCommand,
         generateMacCommand: GenerateMacCommand,
-        keyManagerService: KeyManagerService,
+        encryptCommand: EncryptCommand,
+        decryptCommand: DecryptCommand,
+        execution: SessionExecution,
     ): IdentifierProtector =
         KmsBackedIdentifierProtector(
+            generateKeyCommand = generateKeyCommand,
+            listKeysCommand = listKeysCommand,
             generateMacCommand = generateMacCommand,
-            keyManagerService = keyManagerService,
+            encryptCommand = encryptCommand,
+            decryptCommand = decryptCommand,
+            providerId =
+                identifierProtectionProviderId(
+                    sessionTenantId = execution.tenantId,
+                    applicationTenantId =
+                        execution.conf.app
+                            .getPropertyAsString(KEY_APPLICATION_TENANT_ID, DEFAULT_APPLICATION_TENANT_ID)
+                            ?.trim()
+                            ?.takeIf(String::isNotEmpty)
+                            ?: DEFAULT_APPLICATION_TENANT_ID,
+                ),
         )
 }
+
+/**
+ * The application tenant owns a local persisted software provider. Customer tenants are routed to
+ * tenant-KMS, where the server resolves the logical `default` id through the tenant's active typed
+ * provider binding. Keeping this decision session-scoped prevents platform identities from being
+ * written into a customer-provider namespace and prevents customer identifiers from falling into
+ * a system-only bootstrap provider selected only because it supports the same algorithm.
+ */
+internal fun identifierProtectionProviderId(
+    sessionTenantId: String,
+    applicationTenantId: String,
+): String =
+    if (sessionTenantId == applicationTenantId) {
+        IdentifierProtectionModule.APPLICATION_IDENTIFIER_PROTECTION_PROVIDER_ID
+    } else {
+        IdentifierProtectionModule.TENANT_IDENTIFIER_PROTECTION_PROVIDER_ID
+    }

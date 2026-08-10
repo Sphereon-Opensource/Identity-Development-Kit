@@ -24,9 +24,9 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureArgs
-import io.mockk.every
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -58,7 +58,7 @@ class ResolvedPublicJwkSignatureVerifierTest {
                     keyVisibility = KeyVisibility.PUBLIC,
                 )
             val registry = mockk<KmsProviderRegistry>()
-            every { registry.getProvider(any(), any()) } throws
+            coEvery { registry.getProvider(any(), any()) } throws
                 IllegalStateException("A resolved verifier public key must not be routed through KMS")
             val command =
                 VerifyRawSignatureCommandImpl(
@@ -77,6 +77,6 @@ class ResolvedPublicJwkSignatureVerifierTest {
 
             assertTrue(result.isOk, result.errorOrNull()?.message?.defaultMessage)
             assertTrue(result.value.isValid)
-            verify(exactly = 0) { registry.getProvider(any(), any()) }
+            coVerify(exactly = 0) { registry.getProvider(any(), any()) }
         }
 }

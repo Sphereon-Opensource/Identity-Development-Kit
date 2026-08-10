@@ -16,11 +16,10 @@
 
 package com.sphereon.openid.oid4vp.common
 
-// Shared CredentialFormat lives in oid4vc/common; these typealiases
-// maintain backward compatibility for existing OID4VP consumers.
+// OID4VP uses the protocol-neutral CredentialFormat model from oid4vc/common.
 typealias CredentialFormat = com.sphereon.openid.oid4vc.common.CredentialFormat
 
-// Re-export extension functions so existing imports keep working
+// Protocol-local convenience functions delegate to that single shared model.
 fun String.detectCredentialFormat(): CredentialFormat? =
     com.sphereon.openid.oid4vc.common.CredentialFormat
         .detectFormat(this)
@@ -29,5 +28,5 @@ fun String.matchesCredentialFormat(format: CredentialFormat): Boolean {
     val detected =
         com.sphereon.openid.oid4vc.common.CredentialFormat
             .fromValueLenient(this)
-    return detected == format || (detected?.isSdJwt == true && format.isSdJwt)
+    return detected == format
 }

@@ -31,6 +31,8 @@ import kotlin.native.ObjCName
 interface ConfigEnvironment : PropertyResolver {
     val parent: ConfigEnvironment?
     val level: ConfigLevel
+    val interpolationPolicyProvider: InterpolationPolicyProvider
+        get() = DefaultInterpolationPolicyProvider()
 
     fun getActiveProfile(): String
 

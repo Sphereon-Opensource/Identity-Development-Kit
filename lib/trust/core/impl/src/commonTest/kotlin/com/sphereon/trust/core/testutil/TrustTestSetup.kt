@@ -18,7 +18,7 @@ class TrustTestContext(
 ) {
     val app: AppGraph = createTrustTestAppGraph(testInstance)
     private val context = app.userContextManager.getAnonymous()
-    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId)
+    val session: SessionInstance = context.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
 
     val commandRegistry: SessionScopedCommandRegistry
         get() = (session.graph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry

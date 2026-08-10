@@ -370,6 +370,29 @@ class ParseTokenRequestCommandImplTest {
         }
 
     @Test
+    fun `test private key jwt resolves client id from assertion subject when form omits client id`() =
+        runTest {
+            val requestBody =
+                mapOf(
+                    "grant_type" to listOf("authorization_code"),
+                    "code" to listOf("authorization-code"),
+                    "redirect_uri" to listOf("https://client.example/callback"),
+                    "client_assertion_type" to listOf("urn:ietf:params:oauth:client-assertion-type:jwt-bearer"),
+                    "client_assertion" to
+                        listOf(
+                            "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJqd3QtY2xpZW50Iiwic3ViIjoiand0LWNsaWVudCJ9.sig",
+                        ),
+                )
+
+            val result = command.execute(ParseTokenRequestArgs(requestBody, emptyMap()))
+
+            assertTrue(result.isOk)
+            assertEquals("jwt-client", result.value.clientId)
+            val auth = result.value.clientAuthentication as ClientAuthenticationConfig.PrivateKeyJwt
+            assertEquals("jwt-client", auth.assertion.clientId)
+        }
+
+    @Test
     fun `test parse with unknown assertion type produces SecretJwt config`() =
         runTest {
             val requestBody =

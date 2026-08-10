@@ -42,7 +42,7 @@ class DidManagerAdapterDescriptorParityTest {
         val appGraph = createDidManagerAppGraph(application = this, appId = "did-manager-rest-parity")
         try {
             val userContext = appGraph.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("rest-parity")
+            val session = userContext.sessionContextManager.createOrGetFromId("rest-parity", principalType = com.sphereon.di.context.PrincipalType.USER)
             val composite = TestSessionGraph.fromSession(session).adapter
 
             val config = DidManagerRestConfig()

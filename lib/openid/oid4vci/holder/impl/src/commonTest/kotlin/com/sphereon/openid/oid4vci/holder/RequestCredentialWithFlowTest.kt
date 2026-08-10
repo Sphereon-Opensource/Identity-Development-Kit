@@ -45,6 +45,8 @@ class RequestCredentialWithFlowTest {
         val args =
             RequestCredentialWithFlowArgs(
                 sessionId = "sess-001",
+                walletUnitId = "wallet-unit-1",
+                operationBinding = "issuance-sess-001",
                 credentialEndpoint = "https://issuer.example.com/credential",
                 accessToken = "tok",
                 issuerUrl = "https://issuer.example.com",
@@ -59,6 +61,8 @@ class RequestCredentialWithFlowTest {
         val args =
             RequestCredentialWithFlowArgs(
                 sessionId = "sess-001",
+                walletUnitId = "wallet-unit-1",
+                operationBinding = "issuance-sess-001",
                 credentialEndpoint = "https://issuer.example.com/credential",
                 accessToken = "tok",
                 issuerUrl = "https://issuer.example.com",
@@ -79,6 +83,8 @@ class RequestCredentialWithFlowTest {
         val args =
             RequestCredentialWithFlowArgs(
                 sessionId = "sess-002",
+                walletUnitId = "wallet-unit-2",
+                operationBinding = "issuance-sess-002",
                 credentialEndpoint = "https://issuer.example.com/credential",
                 accessToken = "Bearer eyJ.tok.sig",
                 issuerUrl = "https://issuer.example.com",
@@ -104,6 +110,8 @@ class RequestCredentialWithFlowTest {
         val args =
             RequestCredentialWithFlowArgs(
                 sessionId = "sess-003",
+                walletUnitId = "wallet-unit-3",
+                operationBinding = "issuance-sess-003",
                 credentialEndpoint = "https://issuer.example.com/credential",
                 accessToken = "tok",
                 issuerUrl = "https://issuer.example.com",

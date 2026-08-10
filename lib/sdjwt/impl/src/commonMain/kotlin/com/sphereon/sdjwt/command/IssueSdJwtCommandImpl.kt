@@ -92,11 +92,11 @@ class IssueSdJwtCommandImpl(
             // Set typ header if this is an SD-JWT-VC
             val jwsOpts =
                 if (isVc && appliedArgs.opts.protectedHeader == null) {
-                    // Add typ header for SD-JWT-VC (draft-13 §4.1)
+                    // Default raw SD-JWT issuance to the IETF SD-JWT VC media type.
                     appliedArgs.opts.copy(
                         protectedHeader =
                             buildJsonObject {
-                                put("typ", JsonPrimitive(SdJwtVcTypeHeaders.DC_SD_JWT))
+                                put("typ", JsonPrimitive(SdJwtVcTypeHeaders.IETF_SD_JWT_VC))
                             },
                     )
                 } else {

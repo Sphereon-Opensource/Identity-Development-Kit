@@ -16,7 +16,6 @@
 
 package com.sphereon.core.api.http.util
 
-import com.sphereon.core.api.http.command.CommandBackedHttpAdapter.Companion.INTERNAL_BASE_TENANT_HEADER
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -70,52 +69,6 @@ class ExtractHeaderValueTest {
                 "host" to "lowercase"
             )
         assertEquals("exact", RequestUtils.extractHeaderValue(headers, "Host"))
-    }
-}
-
-// ========================================
-// extractTenantId
-// ========================================
-
-class ExtractTenantIdTest {
-    // `extractTenantId` reads the internal in-process header stamped by the Layer 1
-    // tenant-resolution pipeline. `X-Tenant-Id` from the wire is intentionally NOT
-    // consulted — it is information-only and must never influence auth/tenant decisions.
-
-    @Test
-    fun extractsTenantId() {
-        val headers = mapOf(INTERNAL_BASE_TENANT_HEADER to "tenant-abc")
-        assertEquals("tenant-abc", RequestUtils.extractTenantId(headers))
-    }
-
-    @Test
-    fun caseInsensitiveTenantId() {
-        val headers = mapOf(INTERNAL_BASE_TENANT_HEADER.uppercase() to "tenant-abc")
-        assertEquals("tenant-abc", RequestUtils.extractTenantId(headers))
-    }
-
-    @Test
-    fun trimsWhitespace() {
-        val headers = mapOf(INTERNAL_BASE_TENANT_HEADER to "  tenant-abc  ")
-        assertEquals("tenant-abc", RequestUtils.extractTenantId(headers))
-    }
-
-    @Test
-    fun returnsNullForBlankValue() {
-        val headers = mapOf(INTERNAL_BASE_TENANT_HEADER to "   ")
-        assertNull(RequestUtils.extractTenantId(headers))
-    }
-
-    @Test
-    fun returnsNullWhenMissing() {
-        assertNull(RequestUtils.extractTenantId(emptyMap()))
-    }
-
-    @Test
-    fun ignoresWireXTenantIdHeader() {
-        // Guard against regression: X-Tenant-Id from the wire must NEVER be a tenant source.
-        val headers = mapOf("X-Tenant-Id" to "wire-tenant")
-        assertNull(RequestUtils.extractTenantId(headers))
     }
 }
 

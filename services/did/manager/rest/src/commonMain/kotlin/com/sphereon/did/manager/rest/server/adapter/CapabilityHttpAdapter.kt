@@ -45,7 +45,7 @@ class CapabilityHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-CAPABILITY"
+        const val ID: String = "did.manager.capability"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

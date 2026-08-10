@@ -30,6 +30,10 @@ actual class MultiplatformSettings actual constructor(
     userContext: UserContext?,
 ) {
     actual val isPlatformSupported: Boolean = false
+    actual val mutationRevision: Long = 0L
+
+    actual internal fun getStoredTypeTag(key: String): String? =
+        throw UnsupportedOperationException("MultiplatformSettings is not supported on Linux")
 
     actual inline fun <reified T : Any> get(
         key: String,

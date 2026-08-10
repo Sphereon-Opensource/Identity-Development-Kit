@@ -22,10 +22,9 @@ import kotlin.jvm.JvmOverloads
 
 /**
  * The effective value of one design element after resolution.
- * Exactly one of [asset] or [text] is set, matching the element kind.
+ * The [value] variant always matches the declaring element's own variant.
  *
- * @property asset Resolved asset value for ASSET elements
- * @property text Resolved text value for TEXT elements
+ * @property value The resolved value for the design element
  * @property origin The resolution layer the value came from
  */
 @JsExportCompat
@@ -33,7 +32,6 @@ import kotlin.jvm.JvmOverloads
 data class ResolvedElement
     @JvmOverloads
     constructor(
-        val asset: ThemeAssetReference? = null,
-        val text: String? = null,
+        val value: ElementValue,
         val origin: ElementOrigin,
     )

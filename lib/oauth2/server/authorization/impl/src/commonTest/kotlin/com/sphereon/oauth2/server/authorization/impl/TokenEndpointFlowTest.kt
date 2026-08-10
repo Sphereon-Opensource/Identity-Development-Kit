@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl
 
+import com.sphereon.core.api.Ok
 import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.PkceMethod
@@ -24,7 +25,9 @@ import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.impl.command.introspection.AuthServerIntrospectTokenCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.command.introspection.InternalIntrospectionClientAuthorizer
 import com.sphereon.oauth2.server.authorization.impl.command.token.CreateRefreshTokenCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyAuthorizationCodeGrantCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyClientCredentialsGrantCommandImpl
@@ -44,6 +47,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Integration tests for token endpoint operations
@@ -129,6 +133,52 @@ class TokenEndpointFlowTest {
                 )
 
             assertTrue(secondAttempt.isErr)
+        }
+
+    @Test
+    fun `authorization code uses verified non-secret client authorization without a registry reread`() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val codeStorage = InMemoryAuthorizationCodeStorageImpl(storage)
+            val now = Clock.System.now()
+            val codeData =
+                AuthorizationCodeData(
+                    code = "verified-client-code",
+                    clientId = TestFixtures.publicClient.clientId,
+                    subject = "user123",
+                    redirectUri = TestFixtures.publicClient.redirectUris.first(),
+                    scope = "read",
+                    codeChallenge = TestFixtures.Pkce.CODE_CHALLENGE_S256,
+                    codeChallengeMethod = PkceMethod.S256,
+                    issuedAt = now,
+                    expiresAt = now + 10.minutes,
+                )
+            assertTrue(codeStorage.storeAuthorizationCode(codeData.code, codeData).isOk)
+
+            val command =
+                VerifyAuthorizationCodeGrantCommandImpl(
+                    execution = execution,
+                    authorizationCodeStorage = codeStorage,
+                    tokenStorage = InMemoryTokenStorageImpl(storage),
+                    clientRegistry = InMemoryClientRegistryImpl(storage),
+                    configProvider = configProvider,
+                )
+            val result =
+                command.verifyWithTrustedClientAuthorization(
+                    VerifyAuthorizationCodeGrantArgs(
+                        code = codeData.code,
+                        redirectUri = codeData.redirectUri,
+                        clientId = codeData.clientId,
+                        codeVerifier = TestFixtures.Pkce.CODE_VERIFIER,
+                    ),
+                    VerifiedClientAuthorization(
+                        clientId = codeData.clientId,
+                        grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
+                        requirePkce = true,
+                    ),
+                )
+
+            assertTrue(result.isOk)
         }
 
     @Test
@@ -262,6 +312,7 @@ class TokenEndpointFlowTest {
                 VerifyRefreshTokenGrantCommandImpl(
                     execution = execution,
                     tokenStorage = tokenStorage,
+                    configProvider = configProvider,
                 )
 
             val result =
@@ -311,6 +362,7 @@ class TokenEndpointFlowTest {
                 VerifyRefreshTokenGrantCommandImpl(
                     execution = execution,
                     tokenStorage = tokenStorage,
+                    configProvider = configProvider,
                 )
 
             val result =
@@ -326,6 +378,85 @@ class TokenEndpointFlowTest {
         }
 
     @Test
+    fun `rotated refresh token retry returns its existing successor inside grace period`() =
+        runTest {
+            val tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
+            val createCommand =
+                CreateRefreshTokenCommandImpl(execution, tokenStorage, configProvider, defaultSecureRandom())
+            val original =
+                createCommand
+                    .execute(
+                        CreateRefreshTokenArgs(
+                            subject = "user-grace",
+                            clientId = "wallet-client",
+                            scope = "eu_pid",
+                            clientInstanceKeyJkt = "instance-key-1",
+                        ),
+                    ).value.value
+            tokenStorage.rotateRefreshToken(original, "successor-token", Clock.System.now())
+
+            val verified =
+                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider)
+                    .execute(
+                        VerifyRefreshTokenGrantArgs(
+                            refreshToken = original,
+                            clientId = "wallet-client",
+                            clientInstanceKeyJkt = "instance-key-1",
+                            requestedScope = "eu_pid",
+                        ),
+                    )
+
+            assertTrue(verified.isOk)
+            assertEquals("successor-token", verified.value.replacementRefreshToken)
+        }
+
+    @Test
+    fun `refresh token chain rejects a different attested client instance key`() =
+        runTest {
+            val tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
+            val original =
+                CreateRefreshTokenCommandImpl(execution, tokenStorage, configProvider, defaultSecureRandom())
+                    .execute(
+                        CreateRefreshTokenArgs(
+                            subject = "user-bound",
+                            clientId = "wallet-client",
+                            clientInstanceKeyJkt = "instance-key-1",
+                        ),
+                    ).value.value
+
+            val verified =
+                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider)
+                    .execute(
+                        VerifyRefreshTokenGrantArgs(
+                            refreshToken = original,
+                            clientId = "wallet-client",
+                            clientInstanceKeyJkt = "instance-key-2",
+                        ),
+                    )
+
+            assertTrue(verified.isErr)
+            assertEquals("invalid_grant", verified.error.code)
+        }
+
+    @Test
+    fun `rotated refresh token retry is rejected after grace period`() =
+        runTest {
+            val tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
+            val original =
+                CreateRefreshTokenCommandImpl(execution, tokenStorage, configProvider, defaultSecureRandom())
+                    .execute(CreateRefreshTokenArgs(subject = "user-expired-grace", clientId = "wallet-client"))
+                    .value.value
+            tokenStorage.rotateRefreshToken(original, "successor-token", Clock.System.now() - 61.seconds)
+
+            val verified =
+                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider)
+                    .execute(VerifyRefreshTokenGrantArgs(refreshToken = original, clientId = "wallet-client"))
+
+            assertTrue(verified.isErr)
+            assertEquals("invalid_grant", verified.error.code)
+        }
+
+    @Test
     fun `test client credentials grant verification`() =
         runTest {
             val storage = InMemoryOAuth2BackingStorageImpl()
@@ -335,10 +466,8 @@ class TokenEndpointFlowTest {
             val client =
                 TestFixtures.confidentialClient.copy(
                     defaultAccessTokenAudience = "enterprise-platform",
+                    additionalMetadata = mapOf("tenant_id" to "tenant-acme"),
                 )
-            val registerResult = clientRegistry.registerClient(client)
-            assertTrue(registerResult.isOk)
-
             val verifyCommand =
                 VerifyClientCredentialsGrantCommandImpl(
                     execution = execution,
@@ -346,10 +475,17 @@ class TokenEndpointFlowTest {
                 )
 
             val result =
-                verifyCommand.execute(
+                verifyCommand.verifyWithTrustedClientAuthorization(
                     VerifyClientCredentialsGrantArgs(
                         clientId = client.clientId,
                         requestedScope = "read",
+                    ),
+                    VerifiedClientAuthorization(
+                        clientId = client.clientId,
+                        grantTypes = client.grantTypes,
+                        allowedScopes = client.allowedScopes,
+                        defaultAccessTokenAudience = client.defaultAccessTokenAudience,
+                        tenantId = "tenant-acme",
                     ),
                 )
             assertTrue(result.isOk)
@@ -357,6 +493,7 @@ class TokenEndpointFlowTest {
             assertEquals(client.clientId, result.value.clientId)
             assertEquals("read", result.value.scope)
             assertEquals(listOf("enterprise-platform"), result.value.audience)
+            assertEquals(mapOf("tenant_id" to "tenant-acme"), result.value.additionalClaims)
         }
 
     @Test
@@ -523,6 +660,7 @@ class TokenEndpointFlowTest {
                     execution = execution,
                     tokenStorage = tokenStorage,
                     configProvider = configProvider,
+                    internalClientAuthorizer = InternalIntrospectionClientAuthorizer { Ok(false) },
                 )
 
             val result =
@@ -566,6 +704,7 @@ class TokenEndpointFlowTest {
                     execution = execution,
                     tokenStorage = tokenStorage,
                     configProvider = configProvider,
+                    internalClientAuthorizer = InternalIntrospectionClientAuthorizer { Ok(false) },
                 )
 
             val result =
@@ -592,6 +731,7 @@ class TokenEndpointFlowTest {
                     execution = execution,
                     tokenStorage = tokenStorage,
                     configProvider = configProvider,
+                    internalClientAuthorizer = InternalIntrospectionClientAuthorizer { Ok(false) },
                 )
 
             val result =

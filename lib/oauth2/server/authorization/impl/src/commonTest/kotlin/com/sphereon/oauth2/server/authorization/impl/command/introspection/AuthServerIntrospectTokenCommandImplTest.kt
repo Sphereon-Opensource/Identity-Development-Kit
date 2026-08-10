@@ -19,6 +19,7 @@ package com.sphereon.oauth2.server.authorization.impl.command.introspection
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.oauth2.common.config.FeaturePolicy
+import com.sphereon.oauth2.common.config.InternalClientConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
@@ -29,6 +30,7 @@ import com.sphereon.oauth2.server.authorization.model.AccessTokenData
 import com.sphereon.oauth2.server.authorization.model.RefreshTokenData
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -38,7 +40,11 @@ import kotlin.time.Duration.Companion.minutes
 class AuthServerIntrospectTokenCommandImplTest {
     private val ctx = OAuth2ServerTestContext("introspect-test", this)
 
-    private fun command(storage: TokenStorage): AuthServerIntrospectTokenCommandImpl =
+    private fun command(
+        storage: TokenStorage,
+        internalClients: Map<String, InternalClientConfig> = emptyMap(),
+        opaqueInternalClientIds: Set<String> = emptySet(),
+    ): AuthServerIntrospectTokenCommandImpl =
         AuthServerIntrospectTokenCommandImpl(
             execution = ctx.execution,
             tokenStorage = storage,
@@ -51,10 +57,18 @@ class AuthServerIntrospectTokenCommandImplTest {
                                     OAuth2ServerInstanceConfig(
                                         issuer = "https://auth.example.com",
                                         introspection = FeaturePolicy.SUPPORTED,
+                                        internalClients = internalClients,
                                     ),
                             ),
                     ),
                 ),
+            internalClientAuthorizer =
+                InternalIntrospectionClientAuthorizer { clientId ->
+                    Ok(
+                        internalClients.values.any { it.clientId == clientId } ||
+                            opaqueInternalClientIds.contains(clientId),
+                    )
+                },
         )
 
     private fun accessToken(clientId: String): AccessTokenData {
@@ -97,6 +111,67 @@ class AuthServerIntrospectTokenCommandImplTest {
             assertEquals("owner-client", response.clientId)
             assertEquals("user-1", response.sub)
             assertEquals("read write", response.scope)
+            assertTrue(response.additionalClaims.isEmpty(), "Internal token metadata must not be disclosed to ordinary clients")
+        }
+
+    @Test
+    fun introspect_internalResourceServer_receivesStoredExtensionClaims() =
+        runTest {
+            val token =
+                accessToken(clientId = "owner-client").copy(
+                    additionalData =
+                        mapOf(
+                            "oid4vci.internal.issuer_state" to "offer-session-exact",
+                            "authorization_details" to JsonPrimitive("details-marker"),
+                        ),
+                )
+            val store = FixedTokenStorage(accessToken = token)
+            val internalClient =
+                InternalClientConfig(
+                    clientId = "credential-issuer",
+                    clientSecret = "credential-issuer-secret",
+                )
+            val cmd = command(store, internalClients = mapOf("issuer" to internalClient))
+
+            val result = cmd.execute(IntrospectTokenArgs(token = "opaque-access", clientId = "credential-issuer"))
+
+            assertTrue(result.isOk)
+            assertEquals(true, result.value.active)
+            assertEquals(
+                JsonPrimitive("offer-session-exact"),
+                result.value.additionalClaims["oid4vci.internal.issuer_state"],
+            )
+            assertEquals(JsonPrimitive("details-marker"), result.value.additionalClaims["authorization_details"])
+        }
+
+    @Test
+    fun introspect_opaqueInternalResourceServer_receivesStoredExtensionClaimsWithoutLegacyServerConfig() =
+        runTest {
+            val token =
+                accessToken(clientId = "").copy(
+                    additionalData =
+                        mapOf(
+                            "oid4vci.internal.issuer_state" to "opaque-offer-session",
+                            "authorization_details" to JsonPrimitive("opaque-details-marker"),
+                        ),
+                )
+            val store = FixedTokenStorage(accessToken = token)
+            val cmd =
+                command(
+                    storage = store,
+                    internalClients = emptyMap(),
+                    opaqueInternalClientIds = setOf("issuer-service"),
+                )
+
+            val result = cmd.execute(IntrospectTokenArgs(token = "opaque-access", clientId = "issuer-service"))
+
+            assertTrue(result.isOk)
+            assertEquals(true, result.value.active)
+            assertEquals(
+                JsonPrimitive("opaque-offer-session"),
+                result.value.additionalClaims["oid4vci.internal.issuer_state"],
+            )
+            assertEquals(JsonPrimitive("opaque-details-marker"), result.value.additionalClaims["authorization_details"])
         }
 
     // ========================================================================

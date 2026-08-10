@@ -26,4 +26,13 @@ package com.sphereon.trust.x509
  */
 interface X509TrustAnchorLoader {
     suspend fun loadTrustedCerts(): List<String>
+
+    /**
+     * Loads the configured anchors plus request-scoped PEM bundle paths.
+     *
+     * Protocol configuration supplies these paths through its typed runtime
+     * configuration (for example OID4VCI key-attester trust). Implementations
+     * that cannot read local files retain their configured anchors.
+     */
+    suspend fun loadTrustedCerts(additionalCaBundlePaths: List<String>): List<String> = loadTrustedCerts()
 }

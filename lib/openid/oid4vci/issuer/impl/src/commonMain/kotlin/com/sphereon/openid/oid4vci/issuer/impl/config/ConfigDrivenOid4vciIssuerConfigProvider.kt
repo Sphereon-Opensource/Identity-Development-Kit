@@ -20,6 +20,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.VctTypeMetadataProvider
+import com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver
 import com.sphereon.statuslist.StatusListDefinitionsProvider
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -95,10 +96,12 @@ import dev.zacsweers.metro.binding
 class ConfigDrivenOid4vciIssuerConfigProvider(
     execution: SessionExecution,
     statusListDefinitionsProvider: Provider<StatusListDefinitionsProvider>? = null,
+    keyNameResolver: Provider<IssuerKeyNameResolver>? = null,
 ) : AbstractConfigOid4vciIssuerConfigProvider(
         execution = execution,
         statusListDefinitionsProvider = statusListDefinitionsProvider,
         namespaceProvider = { NAMESPACE },
+        keyNameResolver = keyNameResolver,
     ) {
     companion object {
         /** Root config namespace for all singular-issuer metadata properties. */

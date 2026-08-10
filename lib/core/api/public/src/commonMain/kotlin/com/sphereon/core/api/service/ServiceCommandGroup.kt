@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.service
 
+import com.sphereon.core.api.session.CommandId
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.Serializable
 
@@ -43,7 +44,11 @@ data class ServiceCommandGroupDescription(
     val commandIds: List<String>,
     /** Whether this entire group is enabled */
     val isEnabled: Boolean = true,
-)
+) {
+    init {
+        commandIds.forEach { CommandId(it) }
+    }
+}
 
 /**
  * Provides metadata about a service command group at app startup time.

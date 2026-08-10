@@ -345,7 +345,7 @@ fun buildVpFormatInfo(block: VpFormatInfoBuilder.() -> Unit): VpFormatInfo = VpF
 // =============================================================================
 
 /**
- * Create VpFormatInfo for SD-JWT format (dc+sd-jwt, vc+sd-jwt).
+ * Create VP format metadata for an SD-JWT based representation.
  *
  * @param sdJwtAlgValues JWS algorithms for SD-JWT issuer signature (default: ES256, ES384)
  * @param kbJwtAlgValues JWS algorithms for Key Binding JWT (default: ES256, ES384)
@@ -413,9 +413,9 @@ class VpFormatsBuilder {
     private val formats = mutableMapOf<String, VpFormatInfo>()
 
     /**
-     * Add support for SD-JWT DC format (dc+sd-jwt).
+     * Add support for IETF SD-JWT VC (`dc+sd-jwt`).
      */
-    fun sdJwtDc(
+    fun sdJwtVc(
         sdJwtAlgValues: List<String> = listOf("ES256", "ES384"),
         kbJwtAlgValues: List<String> = listOf("ES256", "ES384"),
     ) = apply {
@@ -423,9 +423,9 @@ class VpFormatsBuilder {
     }
 
     /**
-     * Add support for SD-JWT VC format (vc+sd-jwt).
+     * Add support for a W3C VCDM credential secured using SD-JWT (`vc+sd-jwt`).
      */
-    fun sdJwtVc(
+    fun w3cVcSdJwt(
         sdJwtAlgValues: List<String> = listOf("ES256", "ES384"),
         kbJwtAlgValues: List<String> = listOf("ES256", "ES384"),
     ) = apply {
@@ -505,7 +505,7 @@ class VpFormatsBuilder {
  * Example:
  * ```kotlin
  * val vpFormats = buildVpFormats {
- *     sdJwtDc()
+ *     sdJwtVc()
  *     msoMdoc()
  *     jwtVpJson(listOf("ES256"))
  * }

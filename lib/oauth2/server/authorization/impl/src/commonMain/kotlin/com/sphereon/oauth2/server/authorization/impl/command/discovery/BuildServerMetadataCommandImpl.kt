@@ -23,7 +23,9 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
@@ -220,6 +222,7 @@ class BuildServerMetadataCommandImpl(
                     },
                 responseTypesSupported = config.responseTypesSupported.toList(),
                 scopesSupported = config.scopesSupported,
+                authorizationDetailsTypesSupported = config.authorizationDetailsTypesSupported,
                 // RFC 8705 §5: extend the advertised list with the mTLS auth methods when the
                 // mTLS feature is enabled, so clients discover that `tls_client_auth` and
                 // `self_signed_tls_client_auth` are accepted at the (mTLS) token endpoint.
@@ -438,7 +441,7 @@ class BuildServerMetadataCommandImpl(
      * rather than crashing — discovery should still succeed even if a provider exposes an alg the
      * JOSE family doesn't name.
      */
-    private fun deriveJwsVerifyAlgsFromKms(): List<String> {
+    private suspend fun deriveJwsVerifyAlgsFromKms(): List<String> {
         val jwsAlgs = linkedSetOf<String>()
         for (id in kmsProviderRegistry.getProviderIds()) {
             val capabilities =
@@ -465,6 +468,18 @@ class BuildServerMetadataCommandImpl(
             )
             return listOf(DEFAULT_ID_TOKEN_SIGNING_ALG)
         }
+        // SigningKeyStore requires a signatureAlgorithm on every registered key. A
+        // ManagedOptsKeyInfo therefore already carries everything discovery needs to advertise
+        // the signing algorithm. Do not resolve the key material merely to build public metadata:
+        // a tenant AS deliberately does not host the KMS provider that owns its private key.
+        (serverIdentifier as? ManagedOptsKeyInfo)
+            ?.identifier
+            ?.signatureAlgorithm
+            ?.let { return advertisedSigningAlg(it, "Registered OAuth2 signing key") }
+
+        // Alias and other legacy identifier shapes do not carry an algorithm descriptor. Keep
+        // resolving those through the local IDK provider registry so standalone IDK deployments
+        // retain their existing behavior.
         val resolved = identifierService.resolve(serverIdentifier)
         if (resolved.isErr) {
             log.warn(
@@ -482,11 +497,18 @@ class BuildServerMetadataCommandImpl(
             )
             return listOf(DEFAULT_ID_TOKEN_SIGNING_ALG)
         }
+        return advertisedSigningAlg(keyAlg, "Resolved OAuth2 signing key")
+    }
+
+    private fun advertisedSigningAlg(
+        keyAlg: SignatureAlgorithm,
+        source: String,
+    ): List<String> {
         return try {
             listOf(keyAlgorithmToJwsAlg(keyAlg))
         } catch (expected: IllegalStateException) {
             log.warn(
-                "Resolved OAuth2 signing key alg '$keyAlg' has no JWS mapping; advertising RS256: ${expected.message}",
+                "$source alg '$keyAlg' has no JWS mapping; advertising RS256: ${expected.message}",
             )
             listOf(DEFAULT_ID_TOKEN_SIGNING_ALG)
         }

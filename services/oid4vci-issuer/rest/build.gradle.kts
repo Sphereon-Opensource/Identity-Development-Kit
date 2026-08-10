@@ -3,6 +3,8 @@ plugins {
     alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
     alias(sphereonplug.plugins.com.google.devtools.ksp.com.google.devtools.ksp.gradle.plugin)
     alias(sphereonplug.plugins.dev.zacsweers.metro)
+    // Maven publications (service-deployable alone does not register publish tasks).
+    alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
     id("com.sphereon.gradle.plugin.service-deployable")
 }
 metro {

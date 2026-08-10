@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Copyright 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,43 +21,42 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
-import com.sphereon.crypto.jose.jws.JwsHeaderBuilder
-import com.sphereon.crypto.jose.jws.JwsPayloadBuilder
-import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
-import com.sphereon.crypto.jose.jws.command.CreateJwsCompactCommand
-import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
-import com.sphereon.crypto.resolution.managed.ManagedOptsKid
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.CredentialRequestProofs
 import com.sphereon.openid.oid4vci.holder.CreateCredentialRequestProofArgs
 import com.sphereon.openid.oid4vci.holder.CreateCredentialRequestProofCommand
 import com.sphereon.openid.oid4vci.holder.CreatedProof
+import com.sphereon.wallet.unit.SecureComponentUsage
+import com.sphereon.wallet.unit.WalletAttestedKeyRef
+import com.sphereon.wallet.wsca.Wsca
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlin.time.Clock
 
 /**
- * Creates one or more JWT key-binding proofs for an OID4VCI credential request.
+ * Creates OID4VCI 1.0 Final Appendix F.1 credential-request proofs.
  *
- * Per OID4VCI 1.1 Appendix F.1:
- * - JWT header: typ=openid4vci-proof+jwt, alg=<signing-alg>, plus a key identifier header
- *   whose form depends on [CreateCredentialRequestProofArgs.keyInclusionMode]:
- *   KID → kid, JWK → jwk, X5C → x5c, DID → kid (DID URL), AUTO → resolved automatically
- * - JWT payload: aud=<issuer-url>, iat=<current-timestamp>, nonce=<c_nonce> (optional), iss=<client_id> (optional)
- *
- * Always returns the `proofs` (plural) format per OID4VCI spec.
+ * Holder keys are created and used exclusively through [Wsca]. WSCA selects the WSCD; that WSCD
+ * owns its configured KMS. This command never accepts or resolves a KMS provider or managed key.
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<CreateCredentialRequestProofCommand>())
 class CreateCredentialRequestProofCommandImpl(
     execution: SessionExecution,
-    private val createJwsCompactCommand: CreateJwsCompactCommand,
+    private val wsca: Wsca,
 ) : TypedServiceCommandAdapter<CreateCredentialRequestProofArgs, CreatedProof, IdkError>(
         commandId = CreateCredentialRequestProofCommand.COMMAND_ID,
         execution = execution,
@@ -96,83 +95,115 @@ class CreateCredentialRequestProofCommandImpl(
             )
         }
 
-        val signingKeyIds = applied.signingKeyIds
-        val count = signingKeyIds.size
-        log.debug("Creating $count JWT proof(s) for issuer: ${applied.issuerUrl}")
-
+        val walletUnitId = requireNotNull(applied.walletUnitId)
+        val operationBinding = requireNotNull(applied.operationBinding)
+        val signatureAlgorithm = signatureAlgorithm(applied.signingAlgorithm).getOrElse { return Err(it) }
         val signedJwts = mutableListOf<String>()
-        for (signingKeyId in signingKeyIds) {
-            val jwtResult = createSingleProofJwt(applied, signingKeyId).getOrElse { return Err(it) }
-            signedJwts.add(jwtResult)
+        for (signingKeyId in applied.signingKeyIds) {
+            val keyRef =
+                wsca
+                    .ensureKey(
+                        walletUnitId = walletUnitId,
+                        usage = SecureComponentUsage.WALLET_CREDENTIAL_PROOF,
+                        algorithm = signatureAlgorithm,
+                        keyAlias = signingKeyId,
+                    ).getOrElse { return Err(it) }
+            val jwt =
+                createSingleProofJwt(
+                    args = applied,
+                    keyRef = keyRef,
+                    walletUnitId = walletUnitId,
+                    operationBinding = operationBinding,
+                ).getOrElse { return Err(it) }
+            signedJwts += jwt
         }
 
-        val createdProof =
-            CreatedProof(
-                proofs = CredentialRequestProofs.jwt(signedJwts),
-            )
-
-        log.debug("Successfully created $count JWT proof(s)")
-        return Ok(createdProof)
+        return Ok(CreatedProof(proofs = CredentialRequestProofs.jwt(signedJwts)))
     }
 
     private suspend fun createSingleProofJwt(
         args: CreateCredentialRequestProofArgs,
-        signingKeyId: String,
+        keyRef: WalletAttestedKeyRef,
+        walletUnitId: String,
+        operationBinding: String,
     ): IdkResult<String, IdkError> {
-        val iat = Clock.System.now().epochSeconds
-
-        // Build the protected header with only typ and alg — the key identifier header
-        // (kid, jwk, x5c, etc.) is added by CreateJwsCompactCommand based on keyInclusionMode.
         val protectedHeader =
-            JwsHeaderBuilder
-                .create()
-                .typ(PROOF_JWT_TYP)
-                .alg(args.signingAlgorithm)
-                .apply {
-                    args.keyAttestationJwt?.takeIf { it.isNotBlank() }?.let { claim("key_attestation", it) }
+            buildJsonObject {
+                put("typ", JsonPrimitive(PROOF_JWT_TYP))
+                put("alg", JsonPrimitive(args.signingAlgorithm))
+                when (args.keyInclusionMode) {
+                    JwsIdentifierMode.AUTO,
+                    JwsIdentifierMode.JWK,
+                    -> {
+                        val publicJwk =
+                            keyRef.publicKeyJwk
+                                ?: return Err(
+                                    IdkError.fromString(
+                                        code = "oid4vci.credential_proof_key_missing_jwk",
+                                        message = "WSCA holder key '${keyRef.keyId}' does not expose its public JWK",
+                                    ),
+                                )
+                        put("jwk", json.parseToJsonElement(publicJwk))
+                    }
+
+                    JwsIdentifierMode.KID -> put("kid", JsonPrimitive(keyRef.keyId))
+                    JwsIdentifierMode.DID -> {
+                        if (!keyRef.keyId.startsWith("did:")) {
+                            return Err(
+                                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                    message = "DID proof mode requires the WSCA key id to be a DID URL",
+                                ),
+                            )
+                        }
+                        put("kid", JsonPrimitive(keyRef.keyId))
+                    }
+
+                    JwsIdentifierMode.X5C ->
+                        return Err(
+                            IdkError.INVALID_STATE(
+                                message = "X5C proof mode requires a certificate chain surfaced by the selected WSCD",
+                            ),
+                        )
                 }
-                .build()
-
-        // Build the payload per OID4VCI 1.1 Appendix F.1
-        val payloadBuilder =
-            JwsPayloadBuilder
-                .create()
-                .aud(args.issuerUrl)
-                .iat(iat)
-
-        args.cNonce?.let { payloadBuilder.claim("nonce", it) }
-        args.clientId?.let { payloadBuilder.iss(it) }
-
-        val payload = payloadBuilder.build()
-
-        // Use KID-based managed identifier to sign with the specified key.
-        // The KMS resolves the full key material regardless of keyInclusionMode,
-        // so ManagedOptsKid is correct for all modes.
-        val issuer = ManagedOptsKid(identifier = signingKeyId)
-
-        val jwsArgs =
-            CreateJwsArgs(
-                issuer = issuer,
-                payload = payload,
-                mode = args.keyInclusionMode,
-                opts =
-                    CreateJwsOpts(
-                        // Prevent PrepareJwsCommand from overwriting iss in the payload since we set
-                        // it explicitly above via clientId.
-                        noIssPayloadUpdate = true,
-                        // Do NOT set noIdentifierInHeader — PrepareJwsCommand adds kid/jwk/x5c
-                        // based on the resolved key and keyInclusionMode.
-                        protectedHeader = protectedHeader,
-                    ),
-            )
-
-        val result = createJwsCompactCommand.execute(jwsArgs).getOrElse { return Err(it) }
-        return Ok(result.jwt)
+                args.keyAttestationJwt?.takeIf { it.isNotBlank() }?.let { put("key_attestation", JsonPrimitive(it)) }
+            }
+        val payload =
+            buildJsonObject {
+                put("aud", JsonPrimitive(args.issuerUrl))
+                put("iat", JsonPrimitive(Clock.System.now().epochSeconds))
+                args.cNonce?.let { put("nonce", JsonPrimitive(it)) }
+                args.clientId?.let { put("iss", JsonPrimitive(it)) }
+            }
+        val encodedHeader = json.encodeToString(protectedHeader).encodeToByteArray().encodeToBase64Url()
+        val encodedPayload = json.encodeToString(payload).encodeToByteArray().encodeToBase64Url()
+        val signingInput = "$encodedHeader.$encodedPayload".encodeToByteArray()
+        val signature =
+            wsca
+                .sign(
+                    walletUnitId = walletUnitId,
+                    keyRef = keyRef,
+                    signingInput = signingInput,
+                    operationBinding = operationBinding,
+                ).getOrElse { return Err(it) }
+        return Ok("$encodedHeader.$encodedPayload.${signature.encodeToBase64Url()}")
     }
+
+    private fun signatureAlgorithm(value: String): IdkResult<SignatureAlgorithm, IdkError> =
+        try {
+            Ok(SignatureAlgorithm.fromJose(JwaAlgorithm.fromValue(value)))
+        } catch (expected: Exception) {
+            Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Unsupported OID4VCI proof signing algorithm '$value'",
+                    throwable = expected,
+                ),
+            )
+        }
 
     companion object {
         const val PROOF_JWT_TYP = "openid4vci-proof+jwt"
         const val JWT_PROOF_TYPE = "jwt"
         const val ATTESTATION_PROOF_TYPE = "attestation"
+        val json = Json { encodeDefaults = false; explicitNulls = false }
     }
 }

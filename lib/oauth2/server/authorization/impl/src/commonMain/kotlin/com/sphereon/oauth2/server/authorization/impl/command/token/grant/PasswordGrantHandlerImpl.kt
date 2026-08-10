@@ -28,9 +28,11 @@ import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.clientauth.toVerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
@@ -62,6 +64,18 @@ class PasswordGrantHandlerImpl(
     override suspend fun handle(
         params: GrantParameters,
         context: GrantContext,
+    ): IdkResult<TokenResponse, IdkError> = handleInternal(params, context, null)
+
+    internal suspend fun handleTrusted(
+        params: GrantParameters,
+        context: GrantContext,
+        clientAuthorization: VerifiedClientAuthorization?,
+    ): IdkResult<TokenResponse, IdkError> = handleInternal(params, context, clientAuthorization)
+
+    private suspend fun handleInternal(
+        params: GrantParameters,
+        context: GrantContext,
+        clientAuthorization: VerifiedClientAuthorization?,
     ): IdkResult<TokenResponse, IdkError> {
         val passwordParams = params as GrantParameters.Password
         val tokenRequest = context.tokenRequest
@@ -69,6 +83,7 @@ class PasswordGrantHandlerImpl(
         val commands = context.commands
         val proofJkt = context.proofJkt
         val certThumbprint = context.certThumbprintS256
+        val authenticatedClientAuthorization = clientAuthorization
 
         if (passwordParams.username.isBlank() || passwordParams.password.isBlank()) {
             return errOf(AuthorizationServerError.InvalidRequest(details = "Missing required parameter: username or password"))
@@ -77,10 +92,17 @@ class PasswordGrantHandlerImpl(
             return errOf(AuthorizationServerError.InvalidClient(details = "Missing required parameter: client_id"))
         }
 
+        if (authenticatedClientAuthorization != null && authenticatedClientAuthorization.clientId != tokenRequest.clientId) {
+            return errOf(AuthorizationServerError.InvalidClient(details = "Authenticated client does not match requested client"))
+        }
         val client =
-            clientRegistry.getClient(tokenRequest.clientId).getOrElse { error ->
-                return Err(IdkError.fromDTO(error))
-            } ?: return errOf(AuthorizationServerError.InvalidClient(details = "Client not found"))
+            authenticatedClientAuthorization
+                ?: clientRegistry
+                    .getClient(tokenRequest.clientId)
+                    .getOrElse { error ->
+                        return Err(IdkError.fromDTO(error))
+                    }?.toVerifiedClientAuthorization()
+                ?: return errOf(AuthorizationServerError.InvalidClient(details = "Client not found"))
 
         if (GrantType.PASSWORD !in client.grantTypes) {
             return errOf(AuthorizationServerError.UnauthorizedClient(clientId = tokenRequest.clientId))
@@ -124,12 +146,9 @@ class PasswordGrantHandlerImpl(
                         scope = grantedScope,
                         dpopJkt = proofJkt,
                         certificateThumbprintS256 = certThumbprint,
-                        additionalClaims =
-                            buildMap {
-                                authenticatedUser.acr?.let { put("acr", it) }
-                                authenticatedUser.amr?.let { put("amr", it) }
-                                put("auth_time", authenticatedUser.authenticatedAt.epochSeconds)
-                            },
+                        authTime = authenticatedUser.authenticatedAt.epochSeconds,
+                        acr = authenticatedUser.acr,
+                        amr = authenticatedUser.amr,
                         baseUrlOverride = applied.baseUrlOverride,
                     ),
                 ).getOrElse { error -> return Err(error) }

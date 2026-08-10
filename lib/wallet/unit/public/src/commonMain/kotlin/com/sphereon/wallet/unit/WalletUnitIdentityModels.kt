@@ -44,6 +44,7 @@ data class WalletSolutionCertificationEvidence(
 data class WalletProviderAttestationSignerRef(
     val signerId: String,
     val issuer: String,
+    val providerId: String? = null,
     val keyId: String? = null,
     val signingAlgorithm: String = "ES256",
     val signerProfile: String = "REMOTE_WSCD",

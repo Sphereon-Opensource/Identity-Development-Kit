@@ -46,8 +46,14 @@ import kotlin.time.Instant
  */
 class SqliteDidRepositoryImpl(
     private val database: DidDatabaseSqlite,
-) : DidRepository {
+    private val closeAction: (() -> Unit)? = null,
+) : DidRepository,
+    AutoCloseable {
     private val queries get() = database.didQueries
+
+    override fun close() {
+        closeAction?.invoke()
+    }
 
     // ============ Aggregate ops ============
 

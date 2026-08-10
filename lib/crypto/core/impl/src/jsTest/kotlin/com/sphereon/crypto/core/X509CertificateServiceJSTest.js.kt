@@ -45,7 +45,7 @@ object JsCallbackVerify : com.sphereon.crypto.core.x509.IX509JSCallback {
 class X509CertificateServiceJSTest {
     val app = createJsCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("test")
+    val session = context.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @OptIn(ExperimentalStdlibApi::class)
     @Test

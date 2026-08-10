@@ -34,6 +34,26 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
+ * How the verifier delivers the authorization request to the wallet.
+ *
+ * [URL_QUERY] emits the authorization parameters directly on the wallet-facing
+ * URI. [REQUEST_URI] emits a request_uri reference whose contents are served by
+ * the verifier. This is separate from `request_uri_method`, which selects GET or
+ * POST only after [REQUEST_URI] has been chosen.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("AuthorizationRequestMethod", exact = true)
+@Serializable
+@JsExportCompat
+enum class AuthorizationRequestMethod {
+    @SerialName("url_query")
+    URL_QUERY,
+
+    @SerialName("request_uri")
+    REQUEST_URI,
+}
+
+/**
  * Request body for POST /backend/auth/requests per the Universal OID4VP spec.
  *
  * Creates a new OID4VP authorization session. [queryId] references a pre-configured
@@ -106,6 +126,12 @@ data class CreateAuthorizationRequestInput(
     @SerialName("request_uri_method")
     val requestUriMethod: String? = null,
     /**
+     * Whether authorization parameters are carried inline or through request_uri.
+     * Defaults to request_uri, the normal signed-request-object deployment mode.
+     */
+    @SerialName("authorization_request_method")
+    val authorizationRequestMethod: AuthorizationRequestMethod = AuthorizationRequestMethod.REQUEST_URI,
+    /**
      * Response type: "vp_token" or "id_token". Default: "vp_token".
      */
     @SerialName("response_type")
@@ -156,6 +182,13 @@ data class CreateAuthorizationRequestInput(
     @SerialName("verifier_id")
     val verifierId: String? = null,
     /**
+     * Identifier of the verification template this request was created from (extension). Set by
+     * `createAuthorizationRequestFromVerificationTemplate` so EDK can resolve TEMPLATE-scoped
+     * trust-domain defaults at response validation time; opaque to IDK otherwise.
+     */
+    @SerialName("template_id")
+    val templateId: String? = null,
+    /**
      * Optional per-DCQL-credential-query credential status policy, keyed by the DCQL credential query
      * `id`. Decides how the verifier treats a received credential's resolved status (accept revoked /
      * suspended, require a status list, fail-closed on unresolvable). A verifier-internal extension:
@@ -200,7 +233,14 @@ data class CallbackConfig(
 @Serializable
 data class CreateAuthorizationRequestOutput(
     /**
-     * Session/correlation identifier. Required by spec.
+     * Immutable protocol-session identifier. Use this identifier for durable session-history
+     * detail and event APIs. It is deliberately distinct from [correlationId], which remains the
+     * business/status-polling key echoed by the wallet.
+     */
+    @SerialName("session_id")
+    val sessionId: String,
+    /**
+     * Business/status-polling correlation identifier. Required by spec.
      */
     @SerialName("correlation_id")
     val correlationId: String,
@@ -211,7 +251,14 @@ data class CreateAuthorizationRequestOutput(
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val queryId: String? = null,
     /**
-     * Deeplink URI initiating the authentication flow (e.g., openid4vp://...). Required by spec.
+     * Inline authorization request object. At least one of this value or [requestUri] is required.
+     */
+    @SerialName("request")
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val request: String? = null,
+    /**
+     * Deeplink URI initiating the authentication flow (e.g., openid4vp://...). At least one of
+     * this value or [request] is required.
      */
     @SerialName("request_uri")
     @EncodeDefault(EncodeDefault.Mode.NEVER)
@@ -228,7 +275,13 @@ data class CreateAuthorizationRequestOutput(
     @SerialName("qr_uri")
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val qrUri: String? = null,
-)
+) {
+    init {
+        require(!request.isNullOrBlank() || !requestUri.isNullOrBlank()) {
+            "Either request or request_uri should be present"
+        }
+    }
+}
 
 /**
  * Response body for GET /backend/auth/requests/{correlation_id} per the Universal OID4VP spec.

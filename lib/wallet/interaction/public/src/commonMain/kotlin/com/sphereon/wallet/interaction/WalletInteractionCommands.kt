@@ -31,6 +31,15 @@ interface StartWalletInteractionCommand : ServiceCommand<WalletInteractionInput,
     }
 }
 
+interface StartCapturedWalletInteractionCommand : ServiceCommand<CapturedInteractionInput, WalletInteractionSession, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+    override val actionType: ActionType get() = ActionType.CREATE
+
+    companion object {
+        const val COMMAND_ID: String = "wallet.interaction.start-captured"
+    }
+}
+
 interface ResumeWalletInteractionCommand : ServiceCommand<ResumeWalletInteractionArgs, WalletInteractionSession, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.READ
@@ -60,7 +69,30 @@ data class SubmitWalletInteractionActionArgs(
     val walletUnitId: String,
     val sessionId: WalletInteractionSessionId,
     val action: WalletInteractionAction,
-)
+    /** Required by managed backends; omitted only by local in-process wallet runtimes. */
+    val expectedProcessRevision: Long? = null,
+    /** Required by managed backends and scoped to the interaction plus app registration. */
+    val idempotencyKey: String? = null,
+    /** Independently revocable controller registration selected by the authoritative runtime plan. */
+    val appRegistrationId: String? = null,
+    /** Current controller lease returned by an acquire, renew, or takeover command. */
+    val controllerLeaseId: String? = null,
+) {
+    init {
+        require(expectedProcessRevision == null || expectedProcessRevision >= 0) {
+            "wallet_interaction_expected_process_revision_invalid"
+        }
+        require(idempotencyKey == null || idempotencyKey.isNotBlank()) {
+            "wallet_interaction_action_idempotency_key_blank"
+        }
+        require(appRegistrationId == null || appRegistrationId.isNotBlank()) {
+            "wallet_interaction_action_app_registration_blank"
+        }
+        require(controllerLeaseId == null || controllerLeaseId.isNotBlank()) {
+            "wallet_interaction_action_controller_lease_blank"
+        }
+    }
+}
 
 interface CancelWalletInteractionCommand : ServiceCommand<CancelWalletInteractionArgs, CancelWalletInteractionResult, IdkError> {
     override val commandId: String get() = COMMAND_ID
@@ -130,12 +162,100 @@ interface ObserveWalletInteractionEventsCommand : ServerStreamingServiceCommand<
     }
 }
 
+/**
+ * Registers client-supplied protocol input without putting the value in public interaction state.
+ * Implementations accept only purposes whose value originates at the wallet client.
+ */
+interface RegisterWalletInteractionSensitiveInputCommand :
+    ServiceCommand<RegisterWalletInteractionSensitiveInputArgs, RegisterWalletInteractionSensitiveInputResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+    override val actionType: ActionType get() = ActionType.CREATE
+
+    companion object {
+        const val COMMAND_ID: String = "wallet.interaction.register-sensitive-input"
+    }
+}
+
+@Serializable
+data class RegisterWalletInteractionSensitiveInputArgs(
+    val walletUnitId: String,
+    val sessionId: WalletInteractionSessionId,
+    val purpose: WalletInteractionSensitiveInputPurpose,
+    val value: String,
+) {
+    init {
+        require(walletUnitId.isNotBlank()) { "wallet_interaction_wallet_unit_id_blank" }
+        require(value.isNotBlank()) { "wallet_interaction_sensitive_input_blank" }
+        require(
+            purpose == WalletInteractionSensitiveInputPurpose.OID4VCI_TRANSACTION_CODE ||
+                purpose == WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_CALLBACK ||
+                purpose == WalletInteractionSensitiveInputPurpose.INTERACTION_SECURITY_GRANT,
+        ) { "wallet_interaction_sensitive_input_purpose_not_client_supplied" }
+    }
+
+    override fun toString(): String =
+        "RegisterWalletInteractionSensitiveInputArgs(walletUnitId=$walletUnitId, sessionId=$sessionId, purpose=$purpose, value=[redacted])"
+}
+
+@Serializable
+data class RegisterWalletInteractionSensitiveInputResult(
+    val ref: WalletInteractionSensitiveInputRef,
+)
+
+interface ConsumeWalletInteractionAuthorizationHandoffCommand :
+    ServiceCommand<ConsumeWalletInteractionHandoffArgs, ConsumeWalletInteractionHandoffResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+    override val actionType: ActionType get() = ActionType.EXECUTE
+
+    companion object {
+        const val COMMAND_ID: String = "wallet.interaction.consume-authorization-handoff"
+    }
+}
+
+interface ConsumeWalletInteractionCompletionHandoffCommand :
+    ServiceCommand<ConsumeWalletInteractionHandoffArgs, ConsumeWalletInteractionHandoffResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+    override val actionType: ActionType get() = ActionType.EXECUTE
+
+    companion object {
+        const val COMMAND_ID: String = "wallet.interaction.consume-completion-handoff"
+    }
+}
+
+@Serializable
+data class ConsumeWalletInteractionHandoffArgs(
+    val walletUnitId: String,
+    val sessionId: WalletInteractionSessionId,
+    val ref: WalletInteractionSensitiveInputRef,
+) {
+    init {
+        require(walletUnitId.isNotBlank()) { "wallet_interaction_wallet_unit_id_blank" }
+    }
+}
+
+@Serializable
+data class ConsumeWalletInteractionHandoffResult(
+    val value: String,
+) {
+    override fun toString(): String = "ConsumeWalletInteractionHandoffResult(value=[redacted])"
+}
+
 @ContributesTo(SessionScope::class)
 interface WalletInteractionCommandBindings {
+    @Provides
+    fun ensureWalletClientRegistrationKey(registry: SessionScopedCommandRegistry): EnsureWalletClientRegistrationKeyCommand =
+        registry.get(EnsureWalletClientRegistrationKeyCommand.COMMAND_ID) as? EnsureWalletClientRegistrationKeyCommand
+            ?: error("No binding for ${EnsureWalletClientRegistrationKeyCommand.COMMAND_ID}")
+
     @Provides
     fun startWalletInteraction(registry: SessionScopedCommandRegistry): StartWalletInteractionCommand =
         registry.get(StartWalletInteractionCommand.COMMAND_ID) as? StartWalletInteractionCommand
             ?: error("No binding for ${StartWalletInteractionCommand.COMMAND_ID}")
+
+    @Provides
+    fun startCapturedWalletInteraction(registry: SessionScopedCommandRegistry): StartCapturedWalletInteractionCommand =
+        registry.get(StartCapturedWalletInteractionCommand.COMMAND_ID) as? StartCapturedWalletInteractionCommand
+            ?: error("No binding for ${StartCapturedWalletInteractionCommand.COMMAND_ID}")
 
     @Provides
     fun resumeWalletInteraction(registry: SessionScopedCommandRegistry): ResumeWalletInteractionCommand =
@@ -166,4 +286,19 @@ interface WalletInteractionCommandBindings {
     fun observeWalletInteractionEvents(registry: SessionScopedCommandRegistry): ObserveWalletInteractionEventsCommand =
         registry.get(ObserveWalletInteractionEventsCommand.COMMAND_ID) as? ObserveWalletInteractionEventsCommand
             ?: error("No binding for ${ObserveWalletInteractionEventsCommand.COMMAND_ID}")
+
+    @Provides
+    fun registerWalletInteractionSensitiveInput(registry: SessionScopedCommandRegistry): RegisterWalletInteractionSensitiveInputCommand =
+        registry.get(RegisterWalletInteractionSensitiveInputCommand.COMMAND_ID) as? RegisterWalletInteractionSensitiveInputCommand
+            ?: error("No binding for ${RegisterWalletInteractionSensitiveInputCommand.COMMAND_ID}")
+
+    @Provides
+    fun consumeWalletInteractionAuthorizationHandoff(registry: SessionScopedCommandRegistry): ConsumeWalletInteractionAuthorizationHandoffCommand =
+        registry.get(ConsumeWalletInteractionAuthorizationHandoffCommand.COMMAND_ID) as? ConsumeWalletInteractionAuthorizationHandoffCommand
+            ?: error("No binding for ${ConsumeWalletInteractionAuthorizationHandoffCommand.COMMAND_ID}")
+
+    @Provides
+    fun consumeWalletInteractionCompletionHandoff(registry: SessionScopedCommandRegistry): ConsumeWalletInteractionCompletionHandoffCommand =
+        registry.get(ConsumeWalletInteractionCompletionHandoffCommand.COMMAND_ID) as? ConsumeWalletInteractionCompletionHandoffCommand
+            ?: error("No binding for ${ConsumeWalletInteractionCompletionHandoffCommand.COMMAND_ID}")
 }

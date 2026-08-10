@@ -40,6 +40,8 @@ import com.sphereon.oauth2.common.jarm.VerifyJarmResponseCommand
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import kotlinx.serialization.json.JsonObject
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseArgs
 import com.sphereon.openid.oid4vp.verifier.RetrieveAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
@@ -154,7 +156,7 @@ class ResponseCodeProtectionTest {
                     redirectUri = "https://verifier.example.com/callback",
                     state = "test-state",
                 )
-            val testDcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt")))
+            val testDcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))))
             val args =
                 HandleDirectPostResponseArgs(
                     responseParams =
@@ -199,7 +201,7 @@ class ResponseCodeProtectionTest {
                 HandleDirectPostResponseArgs(
                     responseParams = mapOf("vp_token" to vpToken, "state" to "response-code-existing-query-state"),
                     originalRequest = originalRequest,
-                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                     redirectUri = "https://verifier.example.com/callback?existing=param",
                 )
             f.persistAuthorizationSession(args, instanceId = "verifier-instance-response-code-existing-query")
@@ -227,7 +229,7 @@ class ResponseCodeProtectionTest {
                             redirectUri = "https://verifier.example.com/callback",
                             state = "response-code-invalid-vp-token-state",
                         ),
-                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                     redirectUri = "https://verifier.example.com/callback",
                 )
             f.persistAuthorizationSession(args, instanceId = "verifier-instance-response-code-invalid-vp-token")
@@ -264,7 +266,7 @@ class ResponseCodeProtectionTest {
                             redirectUri = "https://verifier.example.com/callback",
                             state = "retrieve-test",
                         ),
-                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                     redirectUri = "https://verifier.example.com/callback",
                 )
             f.persistAuthorizationSession(handleArgs, instanceId = "verifier-instance-response-code-retrieval")
@@ -302,7 +304,7 @@ class ResponseCodeProtectionTest {
                             redirectUri = "https://verifier.example.com/callback",
                             state = "response-code-single-use-state",
                         ),
-                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                     redirectUri = "https://verifier.example.com/callback",
                 )
             f.persistAuthorizationSession(handleArgs, instanceId = "verifier-instance-response-code-single-use")
@@ -340,7 +342,7 @@ class ResponseCodeProtectionTest {
                             redirectUri = "https://verifier.example.com/callback",
                             state = "response-code-reusable-state",
                         ),
-                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt"))),
+                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                     redirectUri = "https://verifier.example.com/callback",
                 )
             f.persistAuthorizationSession(handleArgs, instanceId = "verifier-instance-response-code-reusable")

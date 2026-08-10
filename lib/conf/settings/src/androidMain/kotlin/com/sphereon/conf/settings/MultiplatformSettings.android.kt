@@ -87,6 +87,14 @@ actual class MultiplatformSettings actual constructor(
      * Checks whether MultiplatformSettings is supported on the current platform
      */
     actual val isPlatformSupported: Boolean = true
+    actual val mutationRevision: Long
+        get() = settings.getLongOrNull(SETTINGS_NAMESPACE_REVISION_KEY) ?: 0L
+
+    actual internal fun getStoredTypeTag(key: String): String? {
+        val normKey = propKeyNormalizer.normalize(key)
+        requirePublicSettingsKey(normKey)
+        return settings.getStringOrNull(settingsTypeStorageKey(normKey))
+    }
 
     /**
      * Retrieves the value of a property corresponding to the specified name with type safety.
@@ -102,6 +110,7 @@ actual class MultiplatformSettings actual constructor(
         defaultValue: T?,
     ): T? {
         val normKey = propKeyNormalizer.normalize(key)
+        requirePublicSettingsKey(normKey)
         return if (settings.hasKey(normKey)) {
             settings.get<T>(normKey)
         } else {
@@ -117,9 +126,10 @@ actual class MultiplatformSettings actual constructor(
      */
     actual fun getAsString(key: String): String? {
         val normKey = propKeyNormalizer.normalize(key)
+        requirePublicSettingsKey(normKey)
         val value =
             settings.getStringOrNull(normKey) ?: settings.getIntOrNull(normKey)
-                ?: settings.getDoubleOrNull(normKey) ?: settings.getFloatOrNull(normKey)
+                ?: settings.getLongOrNull(normKey) ?: settings.getDoubleOrNull(normKey) ?: settings.getFloatOrNull(normKey)
                 ?: settings.getBooleanOrNull(normKey) ?: return null
         return "$value"
     }
@@ -138,7 +148,14 @@ actual class MultiplatformSettings actual constructor(
         value: T?,
     ) {
         val normKey = propKeyNormalizer.normalize(key)
+        requirePublicSettingsKey(normKey)
         setTypedValue(normKey, value, settings::set, settings::remove)
+        if (value == null) {
+            settings.remove(settingsTypeStorageKey(normKey))
+        } else {
+            settings.putString(settingsTypeStorageKey(normKey), storedSettingsTypeTag(value))
+        }
+        advanceNamespaceRevision()
     }
 
     /**
@@ -148,7 +165,10 @@ actual class MultiplatformSettings actual constructor(
      */
     actual fun remove(key: String) {
         val normKey = propKeyNormalizer.normalize(key)
+        requirePublicSettingsKey(normKey)
         settings.remove(normKey)
+        settings.remove(settingsTypeStorageKey(normKey))
+        advanceNamespaceRevision()
     }
 
     /**
@@ -156,5 +176,14 @@ actual class MultiplatformSettings actual constructor(
      *
      * @return a set containing all property names.
      */
-    actual fun getKeys(): Set<String> = settings.keys.map { propKeyNormalizer.normalize(it) }.toSet()
+    actual fun getKeys(): Set<String> =
+        settings.keys
+            .asSequence()
+            .filterNot(::isInternalSettingsStorageKey)
+            .map { propKeyNormalizer.normalize(it) }
+            .toSet()
+
+    private fun advanceNamespaceRevision() {
+        settings.putLong(SETTINGS_NAMESPACE_REVISION_KEY, mutationRevision + 1L)
+    }
 }

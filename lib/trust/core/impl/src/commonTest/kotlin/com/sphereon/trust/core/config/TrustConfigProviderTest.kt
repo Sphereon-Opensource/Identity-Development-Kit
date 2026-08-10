@@ -89,6 +89,46 @@ class TrustConfigProviderTest {
     }
 
     @Test
+    fun readsRestAuthoredCommaDelimitedX509Lists() {
+        val provider =
+            createProvider(
+                mapOf(
+                    "trust.anchors.x509.enabled" to true,
+                    "trust.anchors.x509.ca-bundle-paths" to "/app/trust/oidf-ca.pem,/app/trust/partner-ca.pem",
+                    "trust.anchors.x509.ca-bundle-urls" to "https://trust.example/ca.pem",
+                    "trust.anchors.x509.trusted-fingerprints" to "sha256:AABB,sha256:CCDD",
+                ),
+            )
+        val config = provider.getTrustConfig()
+
+        assertEquals(listOf("/app/trust/oidf-ca.pem", "/app/trust/partner-ca.pem"), config.anchors.x509.caBundlePaths)
+        assertEquals(listOf("https://trust.example/ca.pem"), config.anchors.x509.caBundleUrls)
+        assertEquals(listOf("sha256:AABB", "sha256:CCDD"), config.anchors.x509.trustedFingerprints)
+    }
+
+    @Test
+    fun principalRestConfigurationIsAuthoritativeOverAppConfiguration() {
+        val provider =
+            createProvider(
+                properties =
+                    mapOf(
+                        "trust.anchors.x509.enabled" to true,
+                        "trust.anchors.x509.ca-bundle-paths" to "/app/oidf/suite-signing-ca.pem",
+                    ),
+                appProperties =
+                    mapOf(
+                        "trust.anchors.x509.enabled" to false,
+                        "trust.anchors.x509.ca-bundle-paths" to "/wrong/app-level-ca.pem",
+                    ),
+            )
+
+        val config = provider.getTrustConfig()
+
+        assertTrue(config.anchors.x509.enabled)
+        assertEquals(listOf("/app/oidf/suite-signing-ca.pem"), config.anchors.x509.caBundlePaths)
+    }
+
+    @Test
     fun readsEtsiConfig() {
         val provider =
             createProvider(
@@ -166,17 +206,19 @@ class TrustConfigProviderTest {
     }
 
     @Test
-    fun cachesConfigAcrossCalls() {
+    fun observesRuntimeConfigChangesAcrossCalls() {
         val props = mutableMapOf<String, Any>("trust.anchors.did.enabled" to true)
         val provider = createProvider(props)
 
         val config1 = provider.getTrustConfig()
         assertTrue(config1.anchors.did.enabled)
 
-        // Mutating the map shouldn't affect cached result
+        // Production tenant configuration is REST-authored and refreshable at runtime.
+        // The typed provider must not retain a stale snapshot after the underlying
+        // PrincipalConfigService has observed an update.
         props["trust.anchors.did.enabled"] = false
         val config2 = provider.getTrustConfig()
-        assertTrue(config2.anchors.did.enabled) // still true from cache
+        assertFalse(config2.anchors.did.enabled)
     }
 
     @Test
@@ -201,22 +243,42 @@ class TrustConfigProviderTest {
 
     // -- Test infrastructure --
 
-    private fun createProvider(properties: Map<String, Any>): DefaultTrustConfigProvider {
-        val appConfig = MapBackedAppConfigService(properties)
+    private fun createProvider(
+        properties: Map<String, Any>,
+        appProperties: Map<String, Any> = emptyMap(),
+    ): DefaultTrustConfigProvider {
+        val appConfig = MapBackedAppConfigService(appProperties)
+        val principalConfig = MapBackedPrincipalConfigService(properties)
         val execution =
             TestSessionExecution(
                 createAnonymousSessionContext("config-test", "config-test-correlation"),
                 appConfig,
+                principalConfig,
             )
         return DefaultTrustConfigProvider(execution)
     }
 
+    private class MapBackedPrincipalConfigService(
+        properties: Map<String, Any>,
+    ) : MapBackedConfigService(properties),
+        PrincipalConfigService {
+        override val level: ConfigLevel get() = ConfigLevel.PRINCIPAL
+        override val configLevel: ConfigLevel get() = ConfigLevel.PRINCIPAL
+        override val parent: TenantConfigService get() = throw NotImplementedError()
+    }
+
     private class MapBackedAppConfigService(
-        private val properties: Map<String, Any>,
-    ) : AppConfigService {
+        properties: Map<String, Any>,
+    ) : MapBackedConfigService(properties),
+        AppConfigService {
         override val level: ConfigLevel get() = ConfigLevel.APP
         override val parent: ConfigService? get() = null
         override val configLevel: ConfigLevel get() = ConfigLevel.APP
+    }
+
+    private abstract class MapBackedConfigService(
+        private val properties: Map<String, Any>,
+    ) : ConfigService {
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : Any> getProperty(
@@ -291,6 +353,7 @@ class TrustConfigProviderTest {
     private class TestSessionExecution(
         override val sessionContext: SessionContext,
         private val appConfig: AppConfigService,
+        private val principalConfig: PrincipalConfigService,
     ) : SessionExecution {
         override val sessionContextManager: SessionContextManager get() = throw NotImplementedError()
         override val log: SessionLogService = TestLogService(sessionContext)
@@ -298,9 +361,14 @@ class TrustConfigProviderTest {
             object : ContextConfig {
                 override val app: AppConfigService get() = appConfig
                 override val tenant: TenantConfigService get() = throw NotImplementedError()
-                override val principal: PrincipalConfigService get() = throw NotImplementedError()
+                override val principal: PrincipalConfigService get() = principalConfig
 
-                override fun conf(level: ConfigLevel): ConfigService = if (level == ConfigLevel.APP) appConfig else throw NotImplementedError()
+                override fun conf(level: ConfigLevel): ConfigService =
+                    when (level) {
+                        ConfigLevel.APP -> appConfig
+                        ConfigLevel.PRINCIPAL -> principalConfig
+                        else -> throw NotImplementedError()
+                    }
             }
     }
 

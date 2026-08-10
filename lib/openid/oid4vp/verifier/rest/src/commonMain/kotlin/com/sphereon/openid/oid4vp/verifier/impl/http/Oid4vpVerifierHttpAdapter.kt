@@ -26,6 +26,8 @@ import com.sphereon.openid.oid4vp.verifier.impl.http.command.DirectPostResponseE
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.GetRequestObjectEndpointCommand
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.PostRequestObjectEndpointCommand
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.ReadyEndpointCommand
+import com.sphereon.openid.oid4vp.verifier.config.MutableOid4vpVerifierInstanceIdProvider
+import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.ContributesTo
@@ -60,12 +62,14 @@ import dev.zacsweers.metro.binding
 @ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
 class Oid4vpVerifierHttpAdapter(
     execution: SessionExecution,
+    verifierInstanceResolver: Oid4vpVerifierInstanceResolver,
+    verifierInstanceIdProvider: MutableOid4vpVerifierInstanceIdProvider,
     // Commands are INJECTED via DI
     private val getRequestObjectCommand: GetRequestObjectEndpointCommand,
     private val postRequestObjectCommand: PostRequestObjectEndpointCommand,
     private val directPostResponseCommand: DirectPostResponseEndpointCommand,
     private val readyCommand: ReadyEndpointCommand,
-) : CommandBackedHttpAdapter(
+) : AbstractOid4vpVerifierHttpAdapter(
         id = ID,
         execution = execution,
         mount =
@@ -73,9 +77,11 @@ class Oid4vpVerifierHttpAdapter(
                 serverPrefix = "",
                 adapterBasePath = "/oid4vp",
             ),
+        verifierInstanceResolver = verifierInstanceResolver,
+        verifierInstanceIdProvider = verifierInstanceIdProvider,
     ) {
     companion object {
-        const val ID: String = "OID4VP_RP"
+        const val ID: String = "oid4vp.verifier.http"
 
         /**
          * Base path for serving request objects by reference.

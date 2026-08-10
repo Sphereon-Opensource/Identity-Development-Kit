@@ -29,6 +29,128 @@ import kotlin.time.Clock
  */
 class SecretRedactionIntegrationTest {
     @Test
+    fun directBulkStringRedactionUsesCanonicalKeyBeforePrefixStripping() {
+        val resolver =
+            PropertySourcesPropertyResolver(
+                DefaultPropertySources(
+                    mutableListOf(
+                        MapPropertySource(
+                            "direct",
+                            mapOf("credentials.value" to "direct-bulk-secret"),
+                        ),
+                    ),
+                ),
+            )
+
+        val result =
+            resolver.getSubPropertiesAsString(
+                prefixes = setOf("credentials"),
+                stripPrefix = true,
+                redact = true,
+            )
+
+        assertEquals("***REDACTED***", result["value"])
+        assertFalse(result.toString().contains("direct-bulk-secret"))
+    }
+
+    @Test
+    fun interpolatingBulkStringRedactionUsesResolvedSensitiveProvenance() {
+        val source =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProperty("credentials.password", "interpolated-bulk-secret")
+                addProperty("public.display", "\${credentials.password}")
+            }
+        val resolver =
+            InterpolatingPropertySourcesPropertyResolver(
+                propertySources = DefaultPropertySources(mutableListOf(source)),
+                interpolator = DefaultPropertyInterpolator(),
+                resolverLevel = ConfigLevel.APP,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf("public.display" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                    ),
+            )
+
+        val result =
+            resolver.getSubPropertiesAsString(
+                prefixes = setOf("public"),
+                stripPrefix = true,
+                redact = true,
+            )
+
+        assertEquals("***REDACTED***", result["display"])
+        assertFalse(result.toString().contains("interpolated-bulk-secret"))
+    }
+
+    @Test
+    fun bulkRedactionFailsClosedWhenMaterializedValueNoLongerMatchesResolvedProvenance() {
+        val source =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProperty("public.display", "rotated-after-enumeration")
+            }
+        val delegate =
+            ProtectedPropertySourcesResolver(
+                DefaultPropertySources(mutableListOf(source)),
+                ConfigLevel.APP,
+            )
+        val changedResolver =
+            object : ProtectedPropertyResolver by delegate {
+                override fun resolvePropertyWithScope(
+                    key: String,
+                    requiredScope: ConfigLevel?,
+                ): ResolvedPropertyWithScope? =
+                    delegate
+                        .resolvePropertyWithScope(key, requiredScope)
+                        ?.copy(value = "different-current-value")
+            }
+
+        val rendered =
+            redactBulkValueIfNeeded(
+                outputKey = "display",
+                value = "materialized-before-rotation",
+                prefixes = setOf("public"),
+                stripPrefix = true,
+                redact = true,
+                resolver = changedResolver,
+                scope = ConfigLevel.APP,
+                redactionPolicy = DefaultSecretRedactionPolicy(),
+            )
+
+        assertEquals("***REDACTED***", rendered)
+        assertFalse(rendered.contains("materialized-before-rotation"))
+    }
+
+    @Test
+    fun cachingBulkStringRedactionUsesResolvedSensitiveProvenance() {
+        val source =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProperty("credentials.password", "cached-bulk-secret")
+                addProperty("public.display", "\${credentials.password}")
+            }
+        val resolver =
+            CachingPropertySourcesPropertyResolver(
+                propertySources = DefaultPropertySources(mutableListOf(source)),
+                snapshotCache = InMemorySyncSnapshotCache(),
+                level = ConfigLevel.APP,
+                interpolator = DefaultPropertyInterpolator(),
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf("public.display" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                    ),
+            )
+
+        val result =
+            resolver.getSubPropertiesAsString(
+                prefixes = setOf("public"),
+                stripPrefix = true,
+                redact = true,
+            )
+
+        assertEquals("***REDACTED***", result["display"])
+        assertFalse(result.toString().contains("cached-bulk-secret"))
+    }
+
+    @Test
     fun getAllPropertiesAsStringRedactsSensitiveKeysByDefault() {
         val source =
             MapPropertySource(
@@ -327,7 +449,10 @@ class SecretRedactionIntegrationTest {
                         "app.database.password" to "secret123",
                     ),
                 )
-            val sources = DefaultPropertySources().apply { add(source) }
+            val sources =
+                DefaultPropertySources().apply {
+                    add(ScopedPropertySourceWrapper(source, ConfigLevel.APP))
+                }
             val pipeline = DefaultConfigResolutionPipeline(sources)
 
             val result =
@@ -353,7 +478,10 @@ class SecretRedactionIntegrationTest {
                         "app.database.password" to "secret123",
                     ),
                 )
-            val sources = DefaultPropertySources().apply { add(source) }
+            val sources =
+                DefaultPropertySources().apply {
+                    add(ScopedPropertySourceWrapper(source, ConfigLevel.APP))
+                }
             val pipeline = DefaultConfigResolutionPipeline(sources)
 
             val result =
@@ -366,5 +494,117 @@ class SecretRedactionIntegrationTest {
             assertTrue(result.isOk)
             val stringMap = result.value
             assertEquals("secret123", stringMap["app.database.password"])
+        }
+
+    @Test
+    fun resolutionPipelineRedactsBenignOutputKeyWhenProvenanceIsSensitive() =
+        runTest {
+            val source =
+                ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                    addProperty("credentials.password", "provenance-secret-value")
+                    addProperty("public.display", "\${credentials.password}")
+                }
+            val pipeline =
+                DefaultConfigResolutionPipeline(
+                    propertySources = DefaultPropertySources(mutableListOf(source)),
+                    interpolator = DefaultPropertyInterpolator(),
+                    interpolationPolicyProvider =
+                        DefaultInterpolationPolicyProvider(
+                            mapOf("public.display" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                        ),
+                )
+
+            val result =
+                pipeline.resolveAllAsString(
+                    prefix = "public",
+                    context = ResolutionContext.app(),
+                    redact = true,
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("***REDACTED***", result.value["public.display"])
+            assertFalse(result.value.toString().contains("provenance-secret-value"))
+        }
+
+    @Test
+    fun resolutionPipelinePropagatesCallSpecificCustomRedactionPolicyToReferencedChild() =
+        runTest {
+            val customPolicy =
+                object : SecretRedactionPolicy {
+                    override fun shouldRedact(
+                        key: String,
+                        metadata: ResolutionMetadata,
+                    ): Boolean =
+                        key == "custom.material" ||
+                            metadata.provenance.hasTaint(ResolutionTaint.SENSITIVE)
+
+                    override fun redact(value: String): String = "<custom-redacted>"
+                }
+            val source =
+                ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                    addProperty("custom.material", "custom-policy-secret")
+                    addProperty("public.alias", "\${custom.material}")
+                }
+            val pipeline =
+                DefaultConfigResolutionPipeline(
+                    propertySources = DefaultPropertySources(mutableListOf(source)),
+                    interpolator = DefaultPropertyInterpolator(),
+                    interpolationPolicyProvider =
+                        DefaultInterpolationPolicyProvider(
+                            mapOf("public.alias" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                        ),
+                )
+
+            val result =
+                pipeline.resolveAllAsString(
+                    prefix = "public",
+                    context = ResolutionContext.app(),
+                    redact = true,
+                    redactionPolicy = customPolicy,
+            )
+
+            assertTrue(result.isOk)
+            assertEquals("***REDACTED***", result.value["public.alias"])
+            assertFalse(result.value.toString().contains("custom-policy-secret"))
+        }
+
+    @Test
+    fun resolutionPipelineCallerCannotWeakenConstructorRedactionPolicy() =
+        runTest {
+            val permissivePolicy =
+                object : SecretRedactionPolicy {
+                    override fun shouldRedact(
+                        key: String,
+                        metadata: ResolutionMetadata,
+                    ): Boolean = false
+
+                    override fun redact(value: String): String = value
+                }
+            val source =
+                ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                    addProperty("credentials.password", "must-remain-redacted")
+                    addProperty("public.alias", "\${credentials.password}")
+                }
+            val pipeline =
+                DefaultConfigResolutionPipeline(
+                    propertySources = DefaultPropertySources(mutableListOf(source)),
+                    interpolator = DefaultPropertyInterpolator(),
+                    interpolationPolicyProvider =
+                        DefaultInterpolationPolicyProvider(
+                            mapOf("public.alias" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                        ),
+                )
+
+            val result =
+                pipeline.resolveAllAsString(
+                    prefix = "public",
+                    context = ResolutionContext.app(),
+                    redact = true,
+                    redactionPolicy = permissivePolicy,
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("***REDACTED***", result.value["public.alias"])
+            assertFalse(result.value.toString().contains("must-remain-redacted"))
         }
 }

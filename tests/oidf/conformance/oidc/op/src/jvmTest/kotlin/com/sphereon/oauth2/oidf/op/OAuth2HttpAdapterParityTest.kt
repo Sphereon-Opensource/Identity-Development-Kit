@@ -45,7 +45,7 @@ class OAuth2HttpAdapterParityTest {
             graph.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("http-adapter-parity-test")
+                .createOrGetFromId("http-adapter-parity-test", principalType = com.sphereon.di.context.PrincipalType.USER)
                 .graph as HttpAdapterParitySessionGraph
         val adapterIds = sessionGraph.httpAdapters.map { it.id }.toSet()
         val descriptorIds = graph.httpAdapterDescriptorProviders.map { it.id }.toSet()

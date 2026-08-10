@@ -30,26 +30,34 @@ import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.UserContextLogManager
 import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.core.defaults.context.DefaultTenantInputString
-import com.sphereon.ktor.server.inject.resolver.DefaultPrincipalResolver
+import com.sphereon.core.defaults.context.JwtClaimsInput
+import com.sphereon.core.defaults.context.markValidated
+import com.sphereon.di.context.IdentityConstants
+import com.sphereon.di.context.PrincipalType
+import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.options
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.header
+import io.ktor.server.application.createApplicationPlugin
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
+import io.ktor.server.routing.options
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -60,6 +68,141 @@ import kotlin.test.assertTrue
  * Test suite for the KotlinInject Ktor plugin.
  */
 class KotlinInjectPluginTest {
+    @Test
+    fun `cors preflight bypasses tenant and principal session resolution`() =
+        testApplication {
+            val appGraph =
+                createTestAppGraph(
+                    application = Unit,
+                    appId = "test-app",
+                    profile = "test",
+                    version = "1.0.0",
+                )
+            var tenantResolutionAttempts = 0
+
+            install(KotlinInjectPlugin) {
+                this.appGraph = appGraph
+                tenantResolver =
+                    object : TenantResolver {
+                        override fun resolve(call: ApplicationCall): com.sphereon.di.context.TenantInput {
+                            tenantResolutionAttempts += 1
+                            error("Preflight must not resolve a tenant")
+                        }
+                    }
+            }
+
+            routing {
+                options("/api/test") {
+                    call.respondText("", status = HttpStatusCode.NoContent)
+                }
+            }
+
+            val response =
+                client.options("/api/test") {
+                    header(HttpHeaders.Origin, "http://localhost:3002")
+                    header("Access-Control-Request-Method", "GET")
+                }
+
+            assertEquals(HttpStatusCode.NoContent, response.status)
+            assertEquals(0, tenantResolutionAttempts)
+        }
+
+    @Test
+    fun `public request stays anonymous and ignores spoofed identity header`() =
+        testApplication {
+            val appGraph =
+                createTestAppGraph(
+                    application = Unit,
+                    appId = "test-app",
+                    profile = "test",
+                    version = "1.0.0",
+                )
+
+            install(KotlinInjectPlugin) {
+                this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("public-route-tenant")
+            }
+
+            routing {
+                get("/authorize") {
+                    val context = call.userInstance.context
+                    call.respondText("${context.principal}|${context.principalType}")
+                }
+            }
+
+            val response =
+                client.get("/authorize") {
+                    header("X-User-ID", "attacker-controlled")
+                    header("X-Principal-ID", "attacker-controlled")
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(
+                "${IdentityConstants.ANONYMOUS_PRINCIPAL_ID}|${PrincipalType.ANONYMOUS}",
+                response.bodyAsText(),
+            )
+        }
+
+    @Test
+    fun `authenticated principal comes from validated JWT claims attribute`() =
+        testApplication {
+            val appGraph =
+                createTestAppGraph(
+                    application = Unit,
+                    appId = "test-app",
+                    profile = "test",
+                    version = "1.0.0",
+                )
+
+            install(ValidatedJwtTestPlugin)
+            install(KotlinInjectPlugin) {
+                this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("tenant-from-validated-jwt")
+            }
+
+            routing {
+                get("/authenticated") {
+                    val context = call.userInstance.context
+                    call.respondText("${context.principal}|${context.principalType}")
+                }
+            }
+
+            val response = client.get("/authenticated")
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals("jwt-user|${PrincipalType.USER}", response.bodyAsText())
+        }
+
+    @Test
+    fun `validated client credentials identity creates a workload context`() =
+        testApplication {
+            val appGraph =
+                createTestAppGraph(
+                    application = Unit,
+                    appId = "test-app",
+                    profile = "test",
+                    version = "1.0.0",
+                )
+
+            install(ValidatedWorkloadJwtTestPlugin)
+            install(KotlinInjectPlugin) {
+                this.appGraph = appGraph
+                tenantResolver = FixedTenantResolver("workload-tenant")
+            }
+
+            routing {
+                get("/workload") {
+                    val context = call.userInstance.context
+                    call.respondText("${context.principal}|${context.principalType}")
+                }
+            }
+
+            val response = client.get("/workload")
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals("issuer-service:workload-tenant|${PrincipalType.WORKLOAD}", response.bodyAsText())
+        }
+
     @Test
     fun `test plugin installation`() =
         testApplication {
@@ -75,6 +218,7 @@ class KotlinInjectPluginTest {
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
                 tenantResolver = FixedTenantResolver("test-tenant")
+                principalResolver = FixedPrincipalResolver("test-user")
             }
 
             // Verify the plugin is installed by making a request
@@ -103,6 +247,7 @@ class KotlinInjectPluginTest {
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
                 tenantResolver = FixedTenantResolver("test-tenant")
+                principalResolver = FixedPrincipalResolver("test-user")
             }
 
             routing {
@@ -146,7 +291,7 @@ class KotlinInjectPluginTest {
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
                 tenantResolver = FixedTenantResolver("custom-tenant")
-                principalResolver = DefaultPrincipalResolver("X-Custom-User")
+                principalResolver = FixedPrincipalResolver("custom-user")
             }
 
             routing {
@@ -189,6 +334,7 @@ class KotlinInjectPluginTest {
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
                 tenantResolver = FixedTenantResolver("test-tenant")
+                principalResolver = FixedPrincipalResolver("test-user")
             }
 
             routing {
@@ -219,6 +365,7 @@ class KotlinInjectPluginTest {
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
                 tenantResolver = FixedTenantResolver("test-tenant")
+                principalResolver = FixedPrincipalResolver("test-user")
             }
 
             routing {
@@ -250,6 +397,7 @@ class KotlinInjectPluginTest {
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
                 tenantResolver = FixedTenantResolver("test-tenant")
+                principalResolver = FixedPrincipalResolver("test-user")
             }
 
             routing {
@@ -288,6 +436,7 @@ class KotlinInjectPluginTest {
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
                 tenantResolver = FixedTenantResolver("test-tenant")
+                principalResolver = FixedPrincipalResolver("test-user")
             }
 
             routing {
@@ -328,7 +477,8 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
-                tenantResolver = HeaderTenantResolver()
+                tenantResolver = FixedTenantResolver("test-tenant")
+                principalResolver = FixedPrincipalResolver("test-user")
             }
 
             routing {
@@ -374,7 +524,8 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
-                tenantResolver = HeaderTenantResolver()
+                tenantResolver = FixedTenantResolver("acme-corp")
+                principalResolver = FixedPrincipalResolver("john.doe")
             }
 
             routing {
@@ -431,7 +582,8 @@ class KotlinInjectPluginTest {
 
             install(KotlinInjectPlugin) {
                 this.appGraph = appGraph
-                tenantResolver = HeaderTenantResolver()
+                tenantResolver = FixedTenantResolver("tenant1")
+                principalResolver = FixedPrincipalResolver("user1")
             }
 
             routing {
@@ -454,7 +606,7 @@ class KotlinInjectPluginTest {
             val body1 = response1.bodyAsText()
             assertTrue(body1.contains("tenant1"))
 
-            // Second request with tenant2/user2 - should get different context
+            // A second request with spoofed identity headers must retain JWT-resolved identity.
             val response2 =
                 client.get("/check-user-context") {
                     header("X-Tenant-ID", "tenant2")
@@ -462,7 +614,7 @@ class KotlinInjectPluginTest {
                 }
             assertEquals(HttpStatusCode.OK, response2.status)
             val body2 = response2.bodyAsText()
-            assertTrue(body2.contains("tenant2"))
+            assertTrue(body2.contains("tenant1"))
 
             // Third request with same tenant1/user1 - should reuse context
             val response3 =
@@ -670,6 +822,42 @@ class KotlinInjectPluginTest {
         }
 }
 
+private val ValidatedJwtTestPlugin =
+    createApplicationPlugin("ValidatedJwtTestPlugin") {
+        onCall { call ->
+            call.attributes.put(
+                ValidatedJwtClaimsAttribute,
+                JwtClaimsInput(
+                    claims =
+                        mapOf(
+                            "sub" to JsonPrimitive("jwt-user"),
+                            "tenant_id" to JsonPrimitive("tenant-from-validated-jwt"),
+                        ),
+                    rawToken = "header.payload.signature",
+                ).markValidated(),
+            )
+        }
+    }
+
+private val ValidatedWorkloadJwtTestPlugin =
+    createApplicationPlugin("ValidatedWorkloadJwtTestPlugin") {
+        onCall { call ->
+            call.attributes.put(
+                ValidatedJwtClaimsAttribute,
+                JwtClaimsInput(
+                    claims =
+                        mapOf(
+                            "sub" to JsonPrimitive("issuer-service:workload-tenant"),
+                            "azp" to JsonPrimitive("issuer-service:workload-tenant"),
+                            "client_id" to JsonPrimitive("issuer-service:workload-tenant"),
+                            "tenant_id" to JsonPrimitive("workload-tenant"),
+                        ),
+                    rawToken = "header.payload.signature",
+                ).markValidated(),
+            )
+        }
+    }
+
 /**
  * Test HTTP adapter for Universal HTTP Adapter integration tests.
  *
@@ -732,9 +920,8 @@ private class TestHttpAdapter : RoutedHttpAdapter() {
     }
 }
 
-private class HeaderTenantResolver(
-    private val headerName: String = "X-Tenant-ID",
-    private val defaultTenant: String = "test-tenant",
-) : TenantResolver {
-    override fun resolve(call: ApplicationCall) = DefaultTenantInputString(call.request.header(headerName) ?: defaultTenant)
+private class FixedPrincipalResolver(
+    private val principalId: String,
+) : PrincipalResolver {
+    override fun resolve(call: ApplicationCall) = DefaultPrincipalInputString(principalId)
 }

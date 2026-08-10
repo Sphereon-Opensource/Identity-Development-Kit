@@ -77,7 +77,7 @@ class DidManagerCommandBehaviorTest {
         app = createDidManagerTestAppGraph(testInstance = this)
         app.userContextManager.destroyAll()
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("idk-20-cmd-behavior")
+        val session = userContext.sessionContextManager.createOrGetFromId("idk-20-cmd-behavior", principalType = com.sphereon.di.context.PrincipalType.USER)
         val g = session.graph
         dslProcessor = (g as DidCreationDslProcessorImpl.Graph).didCreationDslProcessor
         didManager = (g as DidManagerServiceImpl.Graph).didManager

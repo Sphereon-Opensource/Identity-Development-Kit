@@ -27,8 +27,8 @@ internal object Oid4vpTestSensitiveInputAuthority : WalletInteractionSensitiveIn
 internal fun WalletInteractionContext(
     sessionId: WalletInteractionSessionId,
     walletUnitId: String,
-    executionMode: WalletInteractionExecutionMode,
-    protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
+    executionOwner: ProtocolExecutionOwner,
+    protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
     counterpartyEncounterRegistry: WalletCounterpartyEncounterRegistry = WalletCounterpartyEncounterRegistry.none,
     trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
     trustPolicy: WalletTrustPolicy = WalletTrustPolicy.allow,
@@ -38,7 +38,7 @@ internal fun WalletInteractionContext(
 ): CoreWalletInteractionContext = CoreWalletInteractionContext(
     sessionId = sessionId,
     walletUnitId = walletUnitId,
-    executionMode = executionMode,
+    executionOwner = executionOwner,
     protocolExecutor = protocolExecutor,
     trustResolver = trustResolver,
     trustPolicy = trustPolicy,

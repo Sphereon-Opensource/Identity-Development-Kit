@@ -21,6 +21,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.OpaqueSecretResolver
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeToHex
 import com.sphereon.crypto.resolution.IdentifierService
@@ -86,6 +87,7 @@ import kotlin.uuid.Uuid
 @ContributesIntoSet(SessionScope::class, binding = binding<IdvMethodDriver>())
 class OidcMethodDriver(
     private val principalConfigService: PrincipalConfigService,
+    private val opaqueSecretResolver: OpaqueSecretResolver,
     private val createPkceCommand: CreatePkceCommand,
     private val exchangeTokenCommand: ExchangeTokenCommand,
     private val fetchUserInfoCommand: FetchUserInfoCommand,
@@ -103,8 +105,6 @@ class OidcMethodDriver(
         val clientId =
             resolveConfig(definition.clientIdRef.key, definition.clientIdRef.required)
                 ?: return driverError(work, "Missing config value '${definition.clientIdRef.key}'")
-        val clientSecret = resolveSecret(definition)
-
         val metadata =
             oidcDiscoveryService.getMetadata(definition.discoveryUrl).getOrElse { error ->
                 return driverError(work, "OIDC discovery failed for '${definition.discoveryUrl}': ${error.message}")
@@ -135,7 +135,7 @@ class OidcMethodDriver(
                 callbackRef = callbackRef,
                 redirectUri = callbackRef,
                 clientId = clientId,
-                clientSecret = clientSecret,
+                clientSecretId = definition.clientSecretId,
                 codeVerifier = pkce.codeVerifier,
                 authorizationEndpoint = authorizationEndpoint,
                 tokenEndpoint = tokenEndpoint,
@@ -182,24 +182,36 @@ class OidcMethodDriver(
         }
 
         val tokenResponse =
-            exchangeTokenCommand
-                .execute(
-                    ExchangeTokenArgs(
-                        tokenEndpoint = state.tokenEndpoint,
-                        request =
-                            TokenRequest(
-                                grantType = "authorization_code",
-                                code = code,
-                                redirectUri = state.redirectUri,
-                                codeVerifier = state.codeVerifier,
-                                clientId = state.clientId,
-                                clientSecret = state.clientSecret,
-                                scope = definition.scopes.joinToString(" "),
+            opaqueSecretResolver.resolve(state.clientSecretId).getOrElse {
+                return Ok(CallbackFailed(driverErrorValue(work.nodeId.value, definition, "OIDC client secret is unavailable")))
+            }.let { clientSecret ->
+                exchangeTokenCommand
+                    .execute(
+                        ExchangeTokenArgs(
+                            tokenEndpoint = state.tokenEndpoint,
+                            request =
+                                TokenRequest(
+                                    grantType = "authorization_code",
+                                    code = code,
+                                    redirectUri = state.redirectUri,
+                                    codeVerifier = state.codeVerifier,
+                                    clientId = state.clientId,
+                                    clientSecret = clientSecret,
+                                    scope = definition.scopes.joinToString(" "),
+                                ),
+                        ),
+                    ).getOrElse { error ->
+                        return Ok(
+                            CallbackFailed(
+                                driverErrorValue(
+                                    work.nodeId.value,
+                                    definition,
+                                    "Token exchange failed: ${error.message.defaultMessage}",
+                                ),
                             ),
-                    ),
-                ).getOrElse { error ->
-                    return Ok(CallbackFailed(driverErrorValue(work.nodeId.value, definition, "Token exchange failed: ${error.message.defaultMessage}")))
-                }
+                        )
+                    }
+            }
 
         val idTokenClaims = tokenResponse.idToken?.let(::decodeJwtPayload).orEmpty()
         val userInfoEndpoint = state.metadata.userinfoEndpoint
@@ -294,11 +306,6 @@ class OidcMethodDriver(
             required -> null
             else -> null
         }
-    }
-
-    private fun resolveSecret(definition: OidcMethodDefinition): String? {
-        val candidates = listOfNotNull(definition.clientSecretRef.key, definition.clientSecretRef.path)
-        return candidates.firstNotNullOfOrNull { principalConfigService.getPropertyAsString(it, null) }
     }
 
     private suspend fun resolveJwks(

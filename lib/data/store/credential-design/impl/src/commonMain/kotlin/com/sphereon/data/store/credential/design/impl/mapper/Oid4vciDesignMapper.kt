@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright 2023-2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -95,7 +95,7 @@ object Oid4vciDesignMapper {
 
         val vct: String? =
             when (format) {
-                CredentialFormat.SD_JWT_DC.value, CredentialFormat.SD_JWT_VC.value -> binding?.vct
+                CredentialFormat.SD_JWT_VC.value -> binding?.vct
                 else -> null
             }
 
@@ -107,13 +107,20 @@ object Oid4vciDesignMapper {
 
         val credentialDefinition: CredentialDefinition? =
             when (format) {
-                CredentialFormat.JWT_VC_JSON.value, "ldp_vc", "jwt_vc_json-ld" -> {
+                CredentialFormat.W3C_VC_SD_JWT.value,
+                CredentialFormat.JWT_VC_JSON.value,
+                "ldp_vc",
+                "jwt_vc_json-ld",
+                -> {
                     val types =
                         buildList {
                             add("VerifiableCredential")
                             binding?.type?.let { add(it) }
                         }
-                    CredentialDefinition(type = types)
+                    CredentialDefinition(
+                        type = types,
+                        context = binding?.context?.let(::listOf),
+                    )
                 }
 
                 else -> {

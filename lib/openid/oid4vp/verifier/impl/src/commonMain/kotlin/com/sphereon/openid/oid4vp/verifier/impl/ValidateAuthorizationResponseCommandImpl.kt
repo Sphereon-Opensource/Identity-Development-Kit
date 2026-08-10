@@ -108,7 +108,17 @@ class ValidateAuthorizationResponseCommandImpl(
      * in lib-statuslist-public, so the graph resolves even with zero implementations.
      */
     private val credentialStatusVerifiers: Set<CredentialStatusVerifier>,
-    private val credentialTrustValidators: Set<Oid4vpCredentialTrustValidator> = emptySet(),
+    /**
+     * Optional, possibly-empty set of OID4VP credential-trust validators. No default: a defaulted
+     * `Set<T>` constructor parameter is silently skipped by Metro codegen (the binding is never
+     * resolved and the default is always used), which would make this always resolve to an empty
+     * set regardless of what is actually contributed - defeating the R3 fail-closed trust-domain
+     * validator. The set is declared `allowEmpty` by `Oid4vpCredentialTrustValidatorMultibinds` in
+     * lib-openid-oid4vp-verifier-public (mirrors `credentialStatusVerifiers`/
+     * `CredentialStatusVerifierMultibinds` above), so the graph still resolves with zero
+     * implementations when no trust validator is contributed.
+     */
+    private val credentialTrustValidators: Set<Oid4vpCredentialTrustValidator>,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<ValidateAuthorizationResponseArgs, ValidationResult, IdkError>(
         commandId = ValidateAuthorizationResponseCommand.COMMAND_ID,
@@ -224,6 +234,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 ?.let { authorizationSessionStore.getByCorrelationId(it).getOrNull() }
         val effectiveVerifierId = processedArgs.verifierId ?: authorizationSession?.verifierId
         val effectiveDcqlQueryId = processedArgs.dcqlQueryId ?: authorizationSession?.dcqlQueryId
+        val effectiveTemplateId = processedArgs.templateId ?: authorizationSession?.templateId
 
         // Per-DCQL-query credential status policies, pinned on the session at create time. Loaded only
         // to drive status acceptance; absence (no session / no map) falls back to the strict default
@@ -251,7 +262,7 @@ class ValidateAuthorizationResponseCommandImpl(
         for ((queryId, presentationElements) in vpToken.presentationElements) {
             submittedQueryIds.add(queryId)
             // Validate the credential query ID exists in the DCQL query
-            val credentialQueries = dcqlQuery.credentials ?: emptyList()
+            val credentialQueries = dcqlQuery.credentials
             val matchingQuery = credentialQueries.find { it.id == queryId }
 
             if (matchingQuery == null) {
@@ -283,7 +294,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     continue
                 }
 
-                // Validate format matches query if specified.
+                // Validate the required Credential Format Identifier.
                 //
                 // Special case for `vc+ld+json+jwt`: detectFormat returns
                 // JWT_VC_JSON for any compact JWS, since VCDM 1.1 JWT-VC and
@@ -298,8 +309,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     queryFormat == CredentialFormat.VC_LD_JSON_JWT.value &&
                         detectedFormat == CredentialFormat.JWT_VC_JSON
                 val formatMatches =
-                    queryFormat == null ||
-                        queryFormat == detectedFormat.value ||
+                    queryFormat == detectedFormat.value ||
                         CredentialFormat.fromValueLenient(queryFormat) == detectedFormat ||
                         isVcLdJsonJwtQueryOverJwtWire
 
@@ -308,18 +318,17 @@ class ValidateAuthorizationResponseCommandImpl(
                     continue
                 }
 
-                // OID4VP §10 (VP Token Validation): the verifier MUST validate the integrity
-                // and authenticity of the Presentation and Credential, and MUST validate the
-                // Holder Binding (KB-JWT signature for SD-JWT, DeviceAuth COSE_Sign1 for
-                // mdoc, JWS proof for jwt-vp). Any failure means the Presentation MUST be
-                // discarded; if every required Presentation is discarded, the VP Token MUST
-                // be rejected and the §8.2 Response endpoint returns 4xx.
+                // OID4VP 1.0 Final Sections 5.3 and 6.1 allow a Credential Query to accept a
+                // Credential without a cryptographic Holder Binding proof. Credential integrity,
+                // authenticity, disclosure integrity, and any proof that is actually present are
+                // still verified. The format-specific command enforces the query's binding mode.
                 val bindingArgs =
                     VerifyHolderBindingArgs(
                         presentation = presentation,
                         format = detectedFormat.value,
                         expectedNonce = expectedNonce,
                         expectedAudience = originalRequest.clientId,
+                        requireCryptographicHolderBinding = matchingQuery.require_cryptographic_holder_binding,
                         clientId = originalRequest.clientId,
                         responseUri = originalRequest.responseUri,
                         verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
@@ -407,6 +416,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     validateCredentialTrust(
                         verifierId = effectiveVerifierId,
                         dcqlQueryId = effectiveDcqlQueryId,
+                        templateId = effectiveTemplateId,
                         credentialQueryId = queryId,
                         presentation = presentation,
                         detectedFormat = detectedFormat,
@@ -459,10 +469,10 @@ class ValidateAuthorizationResponseCommandImpl(
 
         // Validate all required credentials are present
         val requiredCredentials =
-            dcqlQuery.credentials?.filter { query ->
+            dcqlQuery.credentials.filter { query ->
                 // If no credential_sets, all credentials are required
                 dcqlQuery.credential_sets.isNullOrEmpty()
-            } ?: emptyList()
+            }
 
         for (required in requiredCredentials) {
             if (matchedCredentials.none { it.credentialQueryId == required.id }) {
@@ -479,7 +489,7 @@ class ValidateAuthorizationResponseCommandImpl(
         dcqlQuery.credential_sets?.filter { it.required }?.forEach { credentialSet ->
             val anySatisfied =
                 credentialSet.options.any { option ->
-                    option.credential_ids.all { credId ->
+                    option.all { credId ->
                         matchedCredentials.any { it.credentialQueryId == credId }
                     }
                 }
@@ -611,7 +621,7 @@ class ValidateAuthorizationResponseCommandImpl(
         format: CredentialFormat,
     ): Map<String, Any?> =
         when (format) {
-            CredentialFormat.SD_JWT_DC, CredentialFormat.SD_JWT_VC -> {
+            CredentialFormat.SD_JWT_VC, CredentialFormat.W3C_VC_SD_JWT -> {
                 SdJwtCodec.parse(presentation).fold(
                     success = { sdJwt ->
                         // fullPayload has all disclosures resolved into a JsonObject
@@ -653,7 +663,7 @@ class ValidateAuthorizationResponseCommandImpl(
         format: CredentialFormat,
     ): JsonObject? =
         when (format) {
-            CredentialFormat.SD_JWT_DC, CredentialFormat.SD_JWT_VC -> {
+            CredentialFormat.SD_JWT_VC, CredentialFormat.W3C_VC_SD_JWT -> {
                 SdJwtCodec
                     .parse(presentation)
                     .getOrNull()
@@ -673,6 +683,7 @@ class ValidateAuthorizationResponseCommandImpl(
     private suspend fun validateCredentialTrust(
         verifierId: String?,
         dcqlQueryId: String?,
+        templateId: String?,
         credentialQueryId: String,
         presentation: String,
         detectedFormat: CredentialFormat,
@@ -682,6 +693,7 @@ class ValidateAuthorizationResponseCommandImpl(
             Oid4vpCredentialTrustValidationArgs(
                 verifierId = verifierId,
                 dcqlQueryId = dcqlQueryId,
+                templateId = templateId,
                 credentialQueryId = credentialQueryId,
                 format = detectedFormat.value,
                 presentation = presentation,
@@ -711,7 +723,7 @@ class ValidateAuthorizationResponseCommandImpl(
         format: CredentialFormat,
     ): CredentialIssuerRef? =
         when (format) {
-            CredentialFormat.SD_JWT_DC, CredentialFormat.SD_JWT_VC -> {
+            CredentialFormat.SD_JWT_VC, CredentialFormat.W3C_VC_SD_JWT -> {
                 val issuerJwt = presentation.substringBefore("~").takeIf { it.contains(".") }
                 issuerJwt?.let(::extractJwtIssuer)
             }

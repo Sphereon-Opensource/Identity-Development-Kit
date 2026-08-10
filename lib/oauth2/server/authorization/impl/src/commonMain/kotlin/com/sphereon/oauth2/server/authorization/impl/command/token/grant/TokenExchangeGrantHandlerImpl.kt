@@ -25,9 +25,11 @@ import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.impl.command.token.executeWithTrustedClientAuthorization
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -51,6 +53,18 @@ class TokenExchangeGrantHandlerImpl : GrantHandler {
     override suspend fun handle(
         params: GrantParameters,
         context: GrantContext,
+    ): IdkResult<TokenResponse, IdkError> = handleInternal(params, context, null)
+
+    internal suspend fun handleTrusted(
+        params: GrantParameters,
+        context: GrantContext,
+        clientAuthorization: VerifiedClientAuthorization?,
+    ): IdkResult<TokenResponse, IdkError> = handleInternal(params, context, clientAuthorization)
+
+    private suspend fun handleInternal(
+        params: GrantParameters,
+        context: GrantContext,
+        clientAuthorization: VerifiedClientAuthorization?,
     ): IdkResult<TokenResponse, IdkError> {
         val txParams = params as GrantParameters.TokenExchange
         val tokenRequest = context.tokenRequest
@@ -61,7 +75,7 @@ class TokenExchangeGrantHandlerImpl : GrantHandler {
 
         val verified =
             commands.verifyTokenExchangeGrant
-                .execute(
+                .executeWithTrustedClientAuthorization(
                     VerifyTokenExchangeGrantArgs(
                         subjectToken = txParams.subjectToken,
                         subjectTokenType = txParams.subjectTokenType,
@@ -73,6 +87,7 @@ class TokenExchangeGrantHandlerImpl : GrantHandler {
                         requestedTokenType = txParams.requestedTokenType,
                         clientId = tokenRequest.clientId,
                     ),
+                    clientAuthorization,
                 ).getOrElse { error -> return Err(error) }
 
         // RFC 9449 §10.1: when the subject token carries `cnf.jkt`, the DPoP proof
@@ -107,6 +122,9 @@ class TokenExchangeGrantHandlerImpl : GrantHandler {
                         audience = verified.audience,
                         dpopJkt = exchangeBoundJkt,
                         certificateThumbprintS256 = certThumbprint,
+                        authTime = verified.authTime,
+                        acr = verified.acr,
+                        amr = verified.amr,
                         additionalClaims = additionalClaims,
                         baseUrlOverride = applied.baseUrlOverride,
                     ),

@@ -211,7 +211,7 @@ class WalletInteractionHttpAdapter(
         )
 
     companion object {
-        const val ADAPTER_ID: String = "wallet-interaction.http"
+        const val ADAPTER_ID: String = "wallet.interaction.http"
         const val BASE_PATH: String = WalletInteractionApiConstants.BASE_PATH
     }
 }

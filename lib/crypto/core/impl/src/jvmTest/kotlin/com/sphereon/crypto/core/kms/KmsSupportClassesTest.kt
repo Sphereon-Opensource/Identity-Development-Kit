@@ -24,6 +24,7 @@ import com.sphereon.core.api.conf.DefaultSyncConfigSnapshotCache
 import com.sphereon.core.api.conf.NoOpSyncSnapshotCache
 import com.sphereon.core.api.conf.PropertySource
 import com.sphereon.core.api.conf.RefreshablePropertySource
+import com.sphereon.core.api.conf.SyncConfigSnapshotCache
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.JvmCryptoTestAppGraph
 import com.sphereon.crypto.core.createJvmCryptoTestAppGraph
@@ -52,7 +53,7 @@ import kotlin.test.assertTrue
 class KmsSupportClassesTest {
     val app = createJvmCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("kms-support-test")
+    val session = context.sessionContextManager.createOrGetFromId("kms-support-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     /**
      * Clears the sync config snapshot cache.
@@ -340,11 +341,11 @@ class KmsSupportClassesTest {
     }
 
     @Test
-    fun kmsProviderManagerCachesBoundProviderConfigsByScopeAndRevision() {
+    fun kmsProviderManagerRejectsUnsafeCompositeProviderConfigSnapshots() {
         app as JvmCryptoTestAppGraph
         val configService = (app as AppConfigService.Graph).appConfigService
-        val snapshotCache = (app as DefaultSyncConfigSnapshotCache.Graph).syncConfigSnapshotCache
         val execution = session.asCoreApiServiceGraph().serviceExecution
+        val snapshotCache = mockk<SyncConfigSnapshotCache>()
         val mockBinder = mockk<KmsProviderConfigBinder>()
         val mockFactory = mockk<KmsProviderFactory>()
         val mockProvider = mockk<KmsProvider>()
@@ -354,30 +355,26 @@ class KmsSupportClassesTest {
                 kmsProviderType = "cached-type",
             )
 
-        snapshotCache.clear()
+        every { snapshotCache.getSnapshot(any()) } returns null
         every { mockBinder.getKmsProviderConfigs(configService) } returns arrayOf(config)
         every { mockFactory.kmsProviderType } returns "cached-type"
         every { mockFactory.create(config, execution) } returns mockProvider
 
-        try {
-            val manager =
-                KmsProviderManagerImpl(
-                    factories = setOf(mockFactory),
-                    binder = mockBinder,
-                    snapshotCache = snapshotCache,
-                    appLogManager = app.appLogManager,
-                )
+        val manager =
+            KmsProviderManagerImpl(
+                factories = setOf(mockFactory),
+                binder = mockBinder,
+                snapshotCache = snapshotCache,
+                appLogManager = app.appLogManager,
+            )
 
-            manager.createFromProperties(configService, execution)
-            manager.createFromProperties(configService, execution)
-            snapshotCache.invalidateByPrefix("kms.providers")
-            manager.createFromProperties(configService, execution)
+        manager.createFromProperties(configService, execution)
+        manager.createFromProperties(configService, execution)
 
-            verify(exactly = 1) { mockBinder.getKmsProviderConfigs(configService) }
-            verify(exactly = 3) { mockFactory.create(config, execution) }
-        } finally {
-            snapshotCache.clear()
-        }
+        verify(exactly = 2) { snapshotCache.getSnapshot(any()) }
+        verify(exactly = 0) { snapshotCache.putSnapshot(any(), any()) }
+        verify(exactly = 2) { mockBinder.getKmsProviderConfigs(configService) }
+        verify(exactly = 2) { mockFactory.create(config, execution) }
     }
 
     @Test
@@ -776,6 +773,7 @@ class KmsSupportClassesTest {
         DefaultAppMapPropertySource.addProperty("kms.providers.platform.id", "platform")
         DefaultAppMapPropertySource.addProperty("kms.providers.platform.type", "software")
         DefaultAppMapPropertySource.addProperty("kms.providers.platform.enabled", "true")
+        DefaultAppMapPropertySource.addProperty("kms.providers.platform.displayName", "Platform signing keys")
         DefaultAppMapPropertySource.addProperty("kms.providers.platform.system", "true")
         DefaultAppMapPropertySource.addProperty("kms.providers.platform.role", "PLATFORM_AUTHORIZATION_SERVER")
         DefaultAppMapPropertySource.addProperty("kms.providers.platform.autoCreateCertificate", "true")
@@ -797,6 +795,7 @@ class KmsSupportClassesTest {
             DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.id")
             DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.type")
             DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.enabled")
+            DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.displayName")
             DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.system")
             DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.role")
             DefaultAppMapPropertySource.deleteProperty("kms.providers.platform.autoCreateCertificate")

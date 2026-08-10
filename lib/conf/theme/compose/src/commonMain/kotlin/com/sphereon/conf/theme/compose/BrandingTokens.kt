@@ -27,7 +27,7 @@ import com.sphereon.conf.theme.core.token.TokenKeyConstants
  */
 @Immutable
 data class BrandingTokens(
-    val appName: String = "Sphereon",
+    val appName: String = "VDX",
     val primaryColor: String? = null,
     val secondaryColor: String? = null,
     val logoUrl: String? = null,

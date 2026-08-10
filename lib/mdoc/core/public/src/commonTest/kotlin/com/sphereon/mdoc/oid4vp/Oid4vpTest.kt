@@ -45,7 +45,7 @@ class Oid4vpTest {
     @Test
     fun testOid4vpFormatIdentifierSdJwtVc() {
         val format = Oid4VPFormatIdentifier.SD_JWT_VC
-        assertEquals("vc+sd-jwt", format.value)
+        assertEquals("dc+sd-jwt", format.value)
     }
 
     @Test
@@ -56,7 +56,7 @@ class Oid4vpTest {
 
     @Test
     fun testOid4vpFormatIdentifierFromValueSdJwtVc() {
-        val format = Oid4VPFormatIdentifier.fromValue("vc+sd-jwt")
+        val format = Oid4VPFormatIdentifier.fromValue("dc+sd-jwt")
         assertEquals(Oid4VPFormatIdentifier.SD_JWT_VC, format)
     }
 
@@ -139,29 +139,29 @@ class Oid4vpTest {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
         val format = Oid4VPFormat(mso_mdoc = supportedAlg)
         assertNotNull(format.mso_mdoc)
-        assertNull(format.vc_sd_jwt)
+        assertNull(format.dc_sd_jwt)
     }
 
     @Test
     fun testOid4vpFormatWithSdJwtVc() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
-        val format = Oid4VPFormat(vc_sd_jwt = supportedAlg)
+        val format = Oid4VPFormat(dc_sd_jwt = supportedAlg)
         assertNull(format.mso_mdoc)
-        assertNotNull(format.vc_sd_jwt)
+        assertNotNull(format.dc_sd_jwt)
     }
 
     @Test
     fun testOid4vpFormatBothPresentThrows() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
         assertFailsWith<IllegalArgumentException> {
-            Oid4VPFormat(mso_mdoc = supportedAlg, vc_sd_jwt = supportedAlg)
+            Oid4VPFormat(mso_mdoc = supportedAlg, dc_sd_jwt = supportedAlg)
         }
     }
 
     @Test
     fun testOid4vpFormatBothAbsentThrows() {
         assertFailsWith<IllegalArgumentException> {
-            Oid4VPFormat(mso_mdoc = null, vc_sd_jwt = null)
+            Oid4VPFormat(mso_mdoc = null, dc_sd_jwt = null)
         }
     }
 
@@ -177,7 +177,7 @@ class Oid4vpTest {
     fun testOid4vpFormatEmptySdJwtVcAlgorithmsThrows() {
         val emptyAlg = Oid4VPSupportedAlgorithm(arrayOf())
         assertFailsWith<IllegalArgumentException> {
-            Oid4VPFormat(vc_sd_jwt = emptyAlg)
+            Oid4VPFormat(dc_sd_jwt = emptyAlg)
         }
     }
 
@@ -191,7 +191,7 @@ class Oid4vpTest {
     @Test
     fun testOid4vpFormatValidateAlgorithmsSdJwtVc() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
-        val format = Oid4VPFormat(vc_sd_jwt = supportedAlg)
+        val format = Oid4VPFormat(dc_sd_jwt = supportedAlg)
         assertTrue(format.validateAlgorithms())
     }
 
@@ -843,7 +843,7 @@ class Oid4vpTest {
     @Test
     fun testOid4vpSubmissionDescriptorFromInputDescriptorSdJwtVc() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
-        val format = Oid4VPFormat(vc_sd_jwt = supportedAlg)
+        val format = Oid4VPFormat(dc_sd_jwt = supportedAlg)
         val field =
             Oid4VPConstraintField(
                 path = arrayOf("$['eu.europa.ec.eudi.pid.1']['family_name']"),
@@ -859,7 +859,7 @@ class Oid4vpTest {
 
         val descriptor = Oid4vpSubmissionDescriptor.fromInputDescriptor(inputDescriptor)
         assertEquals("eu.europa.ec.eudi.pid.1", descriptor.id)
-        assertEquals("vc+sd-jwt", descriptor.format)
+        assertEquals("dc+sd-jwt", descriptor.format)
     }
 
     // Oid4VPPresentationSubmission fromPresentationDefinition tests
@@ -898,7 +898,7 @@ class Oid4vpTest {
     @Test
     fun testOid4vpFormatHasFormatSdJwtVc() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
-        val format = Oid4VPFormat(vc_sd_jwt = supportedAlg)
+        val format = Oid4VPFormat(dc_sd_jwt = supportedAlg)
         assertTrue(format.hasFormat(Oid4VPFormatIdentifier.SD_JWT_VC))
     }
 
@@ -1062,7 +1062,7 @@ class Oid4vpTest {
     fun testOid4vpFormatInequalityDifferentFormats() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
         val format1 = Oid4VPFormat(mso_mdoc = supportedAlg)
-        val format2 = Oid4VPFormat(vc_sd_jwt = supportedAlg)
+        val format2 = Oid4VPFormat(dc_sd_jwt = supportedAlg)
         assertNotEquals(format1, format2)
     }
 
@@ -1343,14 +1343,14 @@ class Oid4vpTest {
         assertEquals(definition.input_descriptors.size, fromDTO.input_descriptors.size)
     }
 
-    // Oid4VPFormat with only vc_sd_jwt
+    // Oid4VPFormat with only dc_sd_jwt
 
     @Test
     fun testOid4vpFormatFromDTOWithVcSdJwt() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
-        val format = Oid4VPFormat(vc_sd_jwt = supportedAlg)
+        val format = Oid4VPFormat(dc_sd_jwt = supportedAlg)
         val fromDTO = Oid4VPFormat.fromDTO(format)
-        assertNotNull(fromDTO.vc_sd_jwt)
+        assertNotNull(fromDTO.dc_sd_jwt)
         assertNull(fromDTO.mso_mdoc)
     }
 
@@ -1367,7 +1367,7 @@ class Oid4vpTest {
     fun testOid4vpFormatIdentifierSerializeSdJwtVc() {
         val format = Oid4VPFormatIdentifier.SD_JWT_VC
         val json = oid4vpJsonSerializer.encodeToString(format)
-        assertTrue(json.contains("vc+sd-jwt"))
+        assertTrue(json.contains("dc+sd-jwt"))
     }
 
     @Test
@@ -1379,7 +1379,7 @@ class Oid4vpTest {
 
     @Test
     fun testOid4vpFormatIdentifierDeserializeSdJwtVc() {
-        val json = "\"vc+sd-jwt\""
+        val json = "\"dc+sd-jwt\""
         val format = oid4vpJsonSerializer.decodeFromString<Oid4VPFormatIdentifier>(json)
         assertEquals(Oid4VPFormatIdentifier.SD_JWT_VC, format)
     }
@@ -1672,7 +1672,7 @@ class Oid4vpTest {
     fun testOid4vpInputDescriptorInequalityDifferentFormat() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256"))
         val formatMso = Oid4VPFormat(mso_mdoc = supportedAlg)
-        val formatSdJwt = Oid4VPFormat(vc_sd_jwt = supportedAlg)
+        val formatSdJwt = Oid4VPFormat(dc_sd_jwt = supportedAlg)
         val field =
             Oid4VPConstraintField(
                 path = arrayOf("$['org.iso.18013.5.1']['family_name']"),
@@ -1858,7 +1858,7 @@ class Oid4vpTest {
         val descriptor2 =
             Oid4vpSubmissionDescriptor(
                 id = "test-id",
-                format = "vc+sd-jwt",
+                format = "dc+sd-jwt",
                 path = "$",
             )
 
@@ -1959,7 +1959,7 @@ class Oid4vpTest {
     @Test
     fun testOid4vpFormatValidateAlgorithmsSdJwtVcMultiple() {
         val supportedAlg = Oid4VPSupportedAlgorithm(arrayOf("ES256", "EdDSA"))
-        val format = Oid4VPFormat(vc_sd_jwt = supportedAlg)
+        val format = Oid4VPFormat(dc_sd_jwt = supportedAlg)
         assertTrue(format.validateAlgorithms())
     }
 

@@ -664,6 +664,8 @@ class RestApiWebsiteE2ETest {
                     sessionId: String,
                     correlationId: String,
                     makeActive: Boolean,
+                    secureDetails: com.sphereon.di.context.SecuredTenantContextDetails?,
+                    principalType: com.sphereon.di.context.PrincipalType,
                 ) = throw NotImplementedError()
 
                 override fun destroyById(sessionId: String) {}

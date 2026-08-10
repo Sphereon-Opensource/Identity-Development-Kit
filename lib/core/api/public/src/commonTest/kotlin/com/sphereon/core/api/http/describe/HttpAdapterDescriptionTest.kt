@@ -19,6 +19,7 @@ package com.sphereon.core.api.http.describe
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -200,23 +201,6 @@ class TenantPathModeTest {
     }
 }
 
-class TenantResolutionPriorityTest {
-    @Test
-    fun enumHasTwoValues() {
-        assertEquals(2, TenantResolutionPriority.entries.size)
-    }
-
-    @Test
-    fun headerThenPathExists() {
-        assertEquals("HEADER_THEN_PATH", TenantResolutionPriority.HEADER_THEN_PATH.name)
-    }
-
-    @Test
-    fun pathThenHeaderExists() {
-        assertEquals("PATH_THEN_HEADER", TenantResolutionPriority.PATH_THEN_HEADER.name)
-    }
-}
-
 class HttpAdapterMountTest {
     @Test
     fun defaultTenantSegmentPatternIsCorrect() {
@@ -248,12 +232,6 @@ class HttpAdapterMountTest {
     }
 
     @Test
-    fun mountDefaultsTenantResolutionPriority() {
-        val mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/users")
-        assertEquals(TenantResolutionPriority.HEADER_THEN_PATH, mount.tenantResolutionPriority)
-    }
-
-    @Test
     fun mountsAreEqual() {
         val mount1 = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/users")
         val mount2 = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/users")
@@ -262,6 +240,45 @@ class HttpAdapterMountTest {
 }
 
 class HttpEndpointDescriptorTest {
+    @Test
+    fun endpointAllowsNullCommandId() {
+        val endpoint = HttpEndpointDescriptor(method = HttpMethod.GET, pathPattern = "/users", commandId = null)
+
+        assertNull(endpoint.commandId)
+    }
+
+    @Test
+    fun endpointAcceptsCanonicalThreeSegmentCommandId() {
+        val endpoint =
+            HttpEndpointDescriptor(
+                method = HttpMethod.GET,
+                pathPattern = "/users",
+                commandId = "core.users.get",
+            )
+
+        assertEquals("core.users.get", endpoint.commandId)
+    }
+
+    @Test
+    fun endpointRejectsTwoSegmentCommandId() {
+        assertInvalidCommandId("core.get")
+    }
+
+    @Test
+    fun endpointRejectsFourSegmentCommandId() {
+        assertInvalidCommandId("core.users.get.current")
+    }
+
+    @Test
+    fun endpointRejectsFiveSegmentCommandId() {
+        assertInvalidCommandId("core.users.get.current.record")
+    }
+
+    @Test
+    fun endpointRejectsCommandIdWithUnderscore() {
+        assertInvalidCommandId("core.users.get_current")
+    }
+
     @Test
     fun endpointHasMethod() {
         val endpoint = HttpEndpointDescriptor(method = HttpMethod.GET, pathPattern = "/users")
@@ -323,6 +340,22 @@ class HttpEndpointDescriptorTest {
         assertEquals("createUser", endpoint.operationId)
         assertEquals(setOf("users"), endpoint.tags)
         assertEquals("Create a new user", endpoint.summary)
+    }
+
+    private fun assertInvalidCommandId(commandId: String) {
+        val failure =
+            assertFailsWith<IllegalArgumentException> {
+                HttpEndpointDescriptor(
+                    method = HttpMethod.GET,
+                    pathPattern = "/users",
+                    commandId = commandId,
+                )
+            }
+
+        assertEquals(
+            "Invalid command ID format: $commandId. Format: module.service.command",
+            failure.message,
+        )
     }
 }
 
@@ -508,16 +541,6 @@ class HttpAdapterMountBuilderTest {
         assertEquals("/tenant/{tid}", description.mount.tenantSegmentPattern)
     }
 
-    @Test
-    fun mountBuilderSetsTenantResolutionPriority() {
-        val description =
-            httpAdapterDescription("test") {
-                mount {
-                    tenantResolutionPriority = TenantResolutionPriority.PATH_THEN_HEADER
-                }
-            }
-        assertEquals(TenantResolutionPriority.PATH_THEN_HEADER, description.mount.tenantResolutionPriority)
-    }
 }
 
 class HttpEndpointDescriptorBuilderTest {

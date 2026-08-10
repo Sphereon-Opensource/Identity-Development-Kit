@@ -59,8 +59,12 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * Implementation of SubmitAuthorizationResponseCommand for OpenID4VP.
@@ -147,6 +151,14 @@ class SubmitAuthorizationResponseCommandImpl(
 
             ResponseMode.DIRECT_POST_JWT -> {
                 submitDirectPostJwt(processedArgs)
+            }
+
+            ResponseMode.DC_API -> {
+                buildDigitalCredentialResponse(response)
+            }
+
+            ResponseMode.DC_API_JWT -> {
+                submitDirectPostJwt(processedArgs, digitalCredentialsApi = true)
             }
 
             ResponseMode.FRAGMENT -> {
@@ -252,7 +264,7 @@ class SubmitAuthorizationResponseCommandImpl(
                         null
                     }
 
-                val redirectUri = responseBody?.get("redirect_uri")?.jsonPrimitive?.content
+                val redirectUri = (responseBody?.get("redirect_uri") as? JsonPrimitive)?.contentOrNull
 
                 log.info(
                     "Authorization response submitted successfully" +
@@ -283,11 +295,18 @@ class SubmitAuthorizationResponseCommandImpl(
                         null
                     }
 
+                // `error` is a plain OAuth error string per OID4VP 8.3.2, but server-side error
+                // envelopes ({"error": {"code": ..., "message": ...}}) must not crash the holder.
+                val errorElement = errorBody?.get("error")
                 val error =
-                    errorBody?.get("error")?.jsonPrimitive?.content
-                        ?: "http_error_${httpResponse.status.value}"
+                    when (errorElement) {
+                        is JsonPrimitive -> errorElement.contentOrNull
+                        is JsonObject -> (errorElement["code"] as? JsonPrimitive)?.contentOrNull
+                        else -> null
+                    } ?: "http_error_${httpResponse.status.value}"
                 val errorDescription =
-                    errorBody?.get("error_description")?.jsonPrimitive?.content
+                    (errorBody?.get("error_description") as? JsonPrimitive)?.contentOrNull
+                        ?: (errorElement as? JsonObject)?.get("message")?.let { (it as? JsonPrimitive)?.contentOrNull }
                         ?: "HTTP ${httpResponse.status.value}: ${httpResponse.status.description}"
 
                 log.error("Authorization response submission failed: $error - $errorDescription")
@@ -322,7 +341,10 @@ class SubmitAuthorizationResponseCommandImpl(
      * @param args The submission args including JARM options
      * @return SubmissionResult with optional redirect_uri
      */
-    private suspend fun submitDirectPostJwt(args: SubmitAuthorizationResponseArgs): IdkResult<SubmissionResult, IdkError> {
+    private suspend fun submitDirectPostJwt(
+        args: SubmitAuthorizationResponseArgs,
+        digitalCredentialsApi: Boolean = false,
+    ): IdkResult<SubmissionResult, IdkError> {
         val resolvedRequest = args.resolvedRequest
         val response = args.response
         val jarmOptions = args.jarmOptions
@@ -337,18 +359,16 @@ class SubmitAuthorizationResponseCommandImpl(
         }
 
         // Get response_uri from request
-        val responseUri =
-            resolvedRequest.request.responseUri
-                ?: return Err(
+        val responseUri = resolvedRequest.request.responseUri
+        if (!digitalCredentialsApi) {
+            if (responseUri == null) {
+                return Err(
                     IdkError.ILLEGAL_ARGUMENT_ERROR(
                         message = "response_uri is required for direct_post.jwt mode but not present in request",
                     ),
                 )
-
-        // Validate URI
-        val validationError = validateUri(responseUri)
-        if (validationError != null) {
-            return Err(validationError)
+            }
+            validateUri(responseUri)?.let { return Err(it) }
         }
 
         // Get VP token from response
@@ -424,6 +444,16 @@ class SubmitAuthorizationResponseCommandImpl(
                 return Err(error)
             }
 
+        if (digitalCredentialsApi) {
+            return Ok(
+                SubmissionResult.DigitalCredential(
+                    buildJsonObject { put("response", JsonPrimitive(jarmResult.jarmJwt)) },
+                ),
+            )
+        }
+
+        requireNotNull(responseUri)
+
         log.info("Submitting JARM authorization response to: $responseUri (mode: ${jarmResult.mode})")
 
         // Build form parameters - JARM uses "response" parameter per RFC 9101
@@ -467,7 +497,7 @@ class SubmitAuthorizationResponseCommandImpl(
                         null
                     }
 
-                val redirectUri = responseBody?.get("redirect_uri")?.jsonPrimitive?.content
+                val redirectUri = (responseBody?.get("redirect_uri") as? JsonPrimitive)?.contentOrNull
 
                 log.info(
                     "JARM authorization response submitted successfully" +
@@ -497,11 +527,18 @@ class SubmitAuthorizationResponseCommandImpl(
                         null
                     }
 
+                // `error` is a plain OAuth error string per OID4VP 8.3.2, but server-side error
+                // envelopes ({"error": {"code": ..., "message": ...}}) must not crash the holder.
+                val errorElement = errorBody?.get("error")
                 val error =
-                    errorBody?.get("error")?.jsonPrimitive?.content
-                        ?: "http_error_${httpResponse.status.value}"
+                    when (errorElement) {
+                        is JsonPrimitive -> errorElement.contentOrNull
+                        is JsonObject -> (errorElement["code"] as? JsonPrimitive)?.contentOrNull
+                        else -> null
+                    } ?: "http_error_${httpResponse.status.value}"
                 val errorDescription =
-                    errorBody?.get("error_description")?.jsonPrimitive?.content
+                    (errorBody?.get("error_description") as? JsonPrimitive)?.contentOrNull
+                        ?: (errorElement as? JsonObject)?.get("message")?.let { (it as? JsonPrimitive)?.contentOrNull }
                         ?: "HTTP ${httpResponse.status.value}: ${httpResponse.status.description}"
 
                 log.error("JARM authorization response submission failed: $error - $errorDescription")
@@ -749,6 +786,25 @@ class SubmitAuthorizationResponseCommandImpl(
     private fun resolveVpTokenElement(response: AuthorizationResponse): JsonElement? {
         response.vpToken?.let { return it.toJson() }
         return response.additionalParameters["vp_token"]
+    }
+
+    private fun buildDigitalCredentialResponse(response: AuthorizationResponse): IdkResult<SubmissionResult, IdkError> {
+        val vpToken =
+            resolveVpTokenElement(response)
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "vp_token is required in Digital Credentials API authorization response",
+                    ),
+                )
+        return Ok(
+            SubmissionResult.DigitalCredential(
+                buildJsonObject {
+                    put("vp_token", vpToken)
+                    response.additionalParameters.forEach { (name, value) -> put(name, value) }
+                    response.state?.let { put("state", JsonPrimitive(it)) }
+                },
+            ),
+        )
     }
 
     private fun encodeJsonElement(element: JsonElement): String = json.encodeToString(JsonElement.serializer(), element)

@@ -25,6 +25,9 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.binding
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Instant
@@ -92,7 +95,7 @@ data class OAuth2StoragePartition(
     // verification UI can resolve a typed user code to its record without scanning.
     val deviceAuthorizations: MutableMap<String, com.sphereon.oauth2.server.authorization.storage.DeviceAuthorizationRecord> = mutableMapOf(),
     val deviceAuthorizationUserCodeIndex: MutableMap<String, String> = mutableMapOf(),
-)
+) : SynchronizedObject()
 
 /**
  * Stored authorization request for PAR
@@ -121,23 +124,28 @@ data class StoredAuthorizationRequest(
  */
 @Inject
 @SingleIn(AppScope::class)
-@ContributesBinding(AppScope::class)
+@ContributesBinding(AppScope::class, binding = binding<InMemoryOAuth2BackingStorage>())
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("InMemoryOAuth2BackingStorageImpl", exact = true)
-class InMemoryOAuth2BackingStorageImpl : InMemoryOAuth2BackingStorage {
+class InMemoryOAuth2BackingStorageImpl :
+    SynchronizedObject(),
+    InMemoryOAuth2BackingStorage {
     private val partitions = mutableMapOf<OAuth2StoragePartitionKey, OAuth2StoragePartition>()
 
-    override fun getPartition(partitionKey: OAuth2StoragePartitionKey): OAuth2StoragePartition = partitions.getOrPut(partitionKey) { OAuth2StoragePartition() }
+    override fun getPartition(partitionKey: OAuth2StoragePartitionKey): OAuth2StoragePartition =
+        synchronized(this) { partitions.getOrPut(partitionKey) { OAuth2StoragePartition() } }
 
-    override fun removePartition(partitionKey: OAuth2StoragePartitionKey): Boolean = partitions.remove(partitionKey) != null
+    override fun removePartition(partitionKey: OAuth2StoragePartitionKey): Boolean =
+        synchronized(this) { partitions.remove(partitionKey) != null }
 
     override fun clearAll() {
-        partitions.clear()
+        synchronized(this) { partitions.clear() }
     }
 
-    override fun getPartitionCount(): Int = partitions.size
+    override fun getPartitionCount(): Int = synchronized(this) { partitions.size }
 
-    override fun getPartitionKeys(): Set<OAuth2StoragePartitionKey> = partitions.keys.toSet()
+    override fun getPartitionKeys(): Set<OAuth2StoragePartitionKey> =
+        synchronized(this) { partitions.keys.toSet() }
 }
 
 /**

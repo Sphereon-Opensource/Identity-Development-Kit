@@ -670,6 +670,116 @@ class ConfigSnapshotTest {
 
         assertFalse(snapshot.isExpired())
     }
+
+    @Test
+    fun structuralConsistencyRejectsMapKeyMetadataMismatch() {
+        val now = Clock.System.now()
+        val snapshot =
+            ConfigSnapshot(
+                values =
+                    mapOf(
+                        "feature.name" to
+                            CachedConfigValue(
+                                value = "visible",
+                                metadata =
+                                    ResolutionMetadata(
+                                        source = "test",
+                                        scope = ConfigLevel.APP,
+                                        originalKey = "other.name",
+                                        normalizedKey = "other.name",
+                                        order = 0,
+                                        isSecret = false,
+                                        isInterpolated = false,
+                                        resolvedAt = now,
+                                        ttl = 1.hours,
+                                        provenance = ResolutionProvenance.known(ConfigLevel.APP),
+                                    ),
+                                cachedAt = now,
+                                expiresAt = now + 1.hours,
+                            ),
+                    ),
+                createdAt = now,
+                expiresAt = now + 1.hours,
+            )
+
+        assertFalse(snapshot.isStructurallyConsistent())
+        assertNull(snapshot.safeCopyOrNull())
+    }
+
+    @Test
+    fun structuralConsistencyRejectsTypeAndProvenanceMismatch() {
+        val now = Clock.System.now()
+        val metadata =
+            ResolutionMetadata(
+                source = "test",
+                scope = ConfigLevel.APP,
+                originalKey = "feature.enabled",
+                normalizedKey = "feature.enabled",
+                order = 0,
+                isSecret = false,
+                isInterpolated = false,
+                resolvedAt = now,
+                ttl = 1.hours,
+                provenance = ResolutionProvenance.known(ConfigLevel.TENANT),
+            )
+        val snapshot =
+            ConfigSnapshot(
+                values =
+                    mapOf(
+                        "feature.enabled" to
+                            CachedConfigValue(
+                                stringValue = "not-a-boolean",
+                                metadata = metadata,
+                                cachedAt = now,
+                                expiresAt = now + 1.hours,
+                                valueType = CachedConfigValueType.BOOLEAN,
+                            ),
+                    ),
+                createdAt = now,
+                expiresAt = now + 1.hours,
+            )
+
+        assertFalse(snapshot.isStructurallyConsistent())
+        assertNull(snapshot.safeCopyOrNull())
+    }
+
+    @Test
+    fun syncCacheNeverReturnsStructurallyInconsistentSnapshot() {
+        val now = Clock.System.now()
+        val cache = InMemorySyncSnapshotCache()
+        val key = SnapshotKey(ConfigLevel.APP, null, null, "feature")
+        val malformed =
+            ConfigSnapshot(
+                values =
+                    mapOf(
+                        "feature.name" to
+                            CachedConfigValue(
+                                value = "forged",
+                                metadata =
+                                    ResolutionMetadata(
+                                        source = "test",
+                                        scope = ConfigLevel.APP,
+                                        originalKey = "feature.name",
+                                        normalizedKey = "different.name",
+                                        order = 0,
+                                        isSecret = false,
+                                        isInterpolated = false,
+                                        resolvedAt = now,
+                                        ttl = 1.hours,
+                                        provenance = ResolutionProvenance.known(ConfigLevel.APP),
+                                    ),
+                                cachedAt = now,
+                                expiresAt = now + 1.hours,
+                            ),
+                    ),
+                createdAt = now,
+                expiresAt = now + 1.hours,
+            )
+
+        cache.putSnapshot(key, malformed)
+
+        assertNull(cache.getSnapshot(key))
+    }
 }
 
 class NoOpSnapshotCacheTest {
@@ -1435,11 +1545,12 @@ class SnapshotKeyToStringKeyExtendedTest {
             )
 
         val stringKey = key.toStringKey()
+        val segments = stringKey.split("::")
 
         assertTrue(stringKey.contains("TENANT"))
         assertTrue(stringKey.contains("t:tenant-123"))
         assertTrue(stringKey.contains("db"))
-        assertFalse(stringKey.contains("p:"))
+        assertFalse(segments.any { it.startsWith("p:") })
     }
 
     @Test
@@ -1471,11 +1582,12 @@ class SnapshotKeyToStringKeyExtendedTest {
             )
 
         val stringKey = key.toStringKey()
+        val segments = stringKey.split("::")
 
         assertTrue(stringKey.contains("APP"))
         assertTrue(stringKey.contains("app.config"))
-        assertFalse(stringKey.contains("t:"))
-        assertFalse(stringKey.contains("p:"))
+        assertFalse(segments.any { it.startsWith("t:") })
+        assertFalse(segments.any { it.startsWith("p:") })
     }
 }
 
@@ -2453,4 +2565,123 @@ class CachedConfigValueDataClassTest {
         val value = CachedConfigValue.of(resolved)
         assertFalse(value.equals("not a cached value"))
     }
+}
+
+class ProvenanceSafeSnapshotCacheTest {
+    private fun cachedValue(
+        key: String,
+        value: String,
+        provenance: ResolutionProvenance,
+    ): CachedConfigValue {
+        val now = Clock.System.now()
+        return CachedConfigValue(
+            value = value,
+            metadata =
+                ResolutionMetadata(
+                    source = "test",
+                    scope = provenance.sourceScope ?: ConfigLevel.APP,
+                    originalKey = key,
+                    normalizedKey = key,
+                    order = 0,
+                    isSecret = false,
+                    isInterpolated = provenance.hasTaint(ResolutionTaint.INTERPOLATED),
+                    resolvedAt = now,
+                    ttl = 1.hours,
+                    provenance = provenance,
+                ),
+            cachedAt = now,
+            expiresAt = now + 1.hours,
+            preserveType = true,
+        )
+    }
+
+    @Test
+    fun mixedSafeAndUnsafePrefixSnapshotIsRejectedAtomically() {
+        val cache = InMemorySyncSnapshotCache()
+        val key = SnapshotKey(ConfigLevel.APP, null, null, "mixed", sourceRevision = 4L, contentRevision = 9L)
+        val now = Clock.System.now()
+        val snapshot =
+            ConfigSnapshot(
+                values =
+                    mapOf(
+                        "mixed.safe" to cachedValue("mixed.safe", "safe", ResolutionProvenance.known(ConfigLevel.APP)),
+                        "mixed.environment" to
+                            cachedValue(
+                                "mixed.environment",
+                                "materialized",
+                                ResolutionProvenance
+                                    .known(ConfigLevel.APP)
+                                    .withTaint(ResolutionTaint.ENVIRONMENT),
+                            ),
+                        "mixed.sensitive" to
+                            cachedValue(
+                                "mixed.sensitive",
+                                "materialized",
+                                ResolutionProvenance
+                                    .known(ConfigLevel.APP)
+                                    .withTaint(ResolutionTaint.SENSITIVE),
+                            ),
+                    ),
+                createdAt = now,
+                expiresAt = now + 1.hours,
+            )
+
+        cache.putSnapshot(key, snapshot)
+
+        assertNull(cache.getSnapshot(key))
+        assertEquals(0L, cache.getStats().size)
+    }
+
+    @Test
+    fun warmupUsesCompleteRevisionIdentityAndDoesNotReopenAsyncCache() =
+        runTest {
+            val asyncCache = InMemorySnapshotCache()
+            val syncCache = InMemorySyncSnapshotCache()
+            val adapter = AsyncToSyncCacheAdapter(asyncCache, syncCache)
+            val currentKey =
+                SnapshotKey(
+                    ConfigLevel.APP,
+                    null,
+                    null,
+                    "feature",
+                    sourceRevision = 7L,
+                    contentRevision = 11L,
+                )
+            val staleKey = currentKey.copy(contentRevision = 10L)
+            val now = Clock.System.now()
+            asyncCache.putSnapshot(
+                currentKey,
+                ConfigSnapshot(
+                    values =
+                        mapOf(
+                            "feature.name" to
+                                cachedValue(
+                                    "feature.name",
+                                    "safe",
+                                    ResolutionProvenance.known(ConfigLevel.APP),
+                                ),
+                        ),
+                    createdAt = now,
+                    expiresAt = now + 1.hours,
+                ),
+            )
+
+            adapter.warmupAsync(
+                prefixes = setOf("feature"),
+                level = ConfigLevel.APP,
+                tenantId = null,
+                principalId = null,
+                sourceRevision = 7L,
+                contentRevision = 11L,
+            )
+            val asyncStatsAfterWarmup = asyncCache.getStats()
+
+            assertTrue(adapter.isWarmedUp(currentKey))
+            assertFalse(adapter.isWarmedUp(staleKey))
+            assertNotNull(adapter.getSnapshot(currentKey))
+            assertNotNull(adapter.getSnapshot(currentKey))
+            assertNull(adapter.getSnapshot(staleKey))
+            assertEquals(asyncStatsAfterWarmup.hits, asyncCache.getStats().hits)
+            assertEquals(asyncStatsAfterWarmup.misses, asyncCache.getStats().misses)
+        }
 }

@@ -19,7 +19,6 @@ package com.sphereon.openid.oid4vci.issuer.impl.http
 import com.sphereon.core.api.conf.AppConfigService
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
-import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.RoutableSlugLookup
 import com.sphereon.core.api.http.command.TenantPathPolicy
@@ -27,6 +26,8 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
+import com.sphereon.openid.oid4vci.issuer.config.MutableOid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceResolver
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.GetCredentialOfferEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleCredentialEndpointCommand
 import com.sphereon.openid.oid4vci.issuer.impl.http.command.HandleDeferredCredentialEndpointCommand
@@ -58,12 +59,14 @@ class Oid4vciIssuerProtocolHttpAdapter(
     slugLookup: RoutableSlugLookup,
     tenantIdProvider: MutableResolvedTenantIdProvider,
     appConfig: AppConfigService,
+    issuerInstanceResolver: Oid4vciIssuerInstanceResolver,
+    issuerInstanceIdProvider: MutableOid4vciIssuerInstanceIdProvider,
     private val credentialOfferCommand: GetCredentialOfferEndpointCommand,
     private val nonceCommand: IssueNonceEndpointCommand,
     private val credentialCommand: HandleCredentialEndpointCommand,
     private val deferredCredentialCommand: HandleDeferredCredentialEndpointCommand,
     private val notificationCommand: HandleNotificationEndpointCommand,
-) : CommandBackedHttpAdapter(
+) : AbstractOid4vciIssuerHttpAdapter(
         id = ID,
         execution = execution,
         mount =
@@ -72,13 +75,13 @@ class Oid4vciIssuerProtocolHttpAdapter(
                 adapterBasePath = resolveBasePath(appConfig),
             ),
         tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
-        errorRenderer = Oid4vciErrorRenderer(),
+        issuerInstanceResolver = issuerInstanceResolver,
+        issuerInstanceIdProvider = issuerInstanceIdProvider,
+        slugLookup = slugLookup,
+        tenantIdProvider = tenantIdProvider,
     ) {
-    override val routableSlugLookup: RoutableSlugLookup = slugLookup
-    override val resolvedTenantIdProvider: MutableResolvedTenantIdProvider = tenantIdProvider
-
     companion object {
-        const val ID: String = "OID4VCI_ISSUER"
+        const val ID: String = "oid4vci.issuer.protocol"
 
         const val BASE_PATH_KEY: String = Oid4vciIssuerProtocolConfig.BASE_PATH_KEY
 

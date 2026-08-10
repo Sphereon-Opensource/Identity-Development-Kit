@@ -52,7 +52,7 @@ class ComplexStructureTest {
 
     val app = createSdJwtTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("sdjwt-complex-test")
+    val session = context.sessionContextManager.createOrGetFromId("sdjwt-complex-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

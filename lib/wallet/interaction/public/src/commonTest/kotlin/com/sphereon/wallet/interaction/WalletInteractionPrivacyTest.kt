@@ -6,6 +6,8 @@
 
 package com.sphereon.wallet.interaction
 
+import kotlinx.serialization.json.JsonPrimitive
+
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -29,8 +31,8 @@ class WalletInteractionPrivacyTest {
                     WalletDisclosureSummary(
                         requestedClaims =
                             listOf(
-                                WalletClaimDescriptor(path = listOf("given_name"), valueAvailable = true),
-                                WalletClaimDescriptor(path = listOf("family_name"), valueAvailable = true),
+                                WalletClaimDescriptor(path = listOf(JsonPrimitive("given_name")), valueAvailable = true),
+                                WalletClaimDescriptor(path = listOf(JsonPrimitive("family_name")), valueAvailable = true),
                             ),
                     ),
             )
@@ -43,7 +45,6 @@ class WalletInteractionPrivacyTest {
             "pre-authorized_code",
             "private_key",
             "secret",
-            "executionMode",
             "BACKEND",
             "SPLIT",
             "Alice",

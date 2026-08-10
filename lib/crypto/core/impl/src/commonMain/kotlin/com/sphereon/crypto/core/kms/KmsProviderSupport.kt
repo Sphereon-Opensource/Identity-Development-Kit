@@ -180,8 +180,7 @@ class KmsProviderManagerImpl(
         configs: Array<KmsProviderConfigBase>,
     ) {
         val now = Clock.System.now()
-        snapshotCache.putSnapshot(
-            snapshotKey,
+        val snapshot =
             ConfigSnapshot(
                 values =
                     mapOf(
@@ -207,10 +206,23 @@ class KmsProviderManagerImpl(
                     ),
                 createdAt = now,
                 expiresAt = null,
-            ),
-        )
+            )
+        val safeSnapshot = snapshot.safeCopyOrNull()
+        if (safeSnapshot == null) {
+            // Provider configs are composite values and may contain credentials. The generic
+            // configuration cache intentionally rejects them. Keep that fail-closed boundary and
+            // report the rejection instead of claiming that an entry was stored.
+            log.debug(
+                "VDX_KMS_PROVIDER_CONFIG_CACHE_REJECTED scope=${snapshotKey.scope} " +
+                    "tenant=${snapshotKey.tenantId ?: "none"} principal=${snapshotKey.principalId ?: "none"} " +
+                    "prefix=${snapshotKey.prefix} size=${configs.size} reason=unsafe-composite-value",
+            )
+            return
+        }
+
+        snapshotCache.putSnapshot(snapshotKey, safeSnapshot)
         log.debug(
-            "VDX_KMS_PROVIDER_CONFIG_CACHE_STORED scope=${snapshotKey.scope} tenant=${snapshotKey.tenantId ?: "none"} " +
+            "VDX_KMS_PROVIDER_CONFIG_CACHE_WRITE_ATTEMPTED scope=${snapshotKey.scope} tenant=${snapshotKey.tenantId ?: "none"} " +
                 "principal=${snapshotKey.principalId ?: "none"} prefix=${snapshotKey.prefix} size=${configs.size}",
         )
     }
@@ -268,6 +280,7 @@ private val KmsPropertyNameAliases =
         "httpclientoptions" to "httpClientOptions",
         "authconfig" to "authConfig",
         "applicationid" to "applicationId",
+        "endpointurl" to "endpointUrl",
         "keyvaulturl" to "keyvaultUrl",
         "credentialopts" to "credentialOpts",
         "hsmtype" to "hsmType",
@@ -280,14 +293,8 @@ private val KmsPropertyNameAliases =
         "scopebinding" to "scopeBinding",
         // Legacy config field aliases
         "keystoretype" to "type",
-        // Rest auth nested fields
-        "authheader" to "authHeader",
-        "tenantheader" to "tenantHeader",
-        "principalheader" to "principalHeader",
-        "usetenantfromcontext" to "useTenantFromContext",
-        "useprincipalfromcontext" to "usePrincipalFromContext",
-        "tenantid" to "tenantId",
-        "principalid" to "principalId",
+        // REST authentication is JWT-only. Identity is carried in validated claims.
+        "bearerjwt" to "bearerJwt",
         // Azure credential nested fields
         "credentialmode" to "credentialMode",
         "secretcredentialopts" to "secretCredentialOpts",
@@ -326,7 +333,7 @@ class KmsProviderConfigBinderImpl(
     /**
      * Build prefixes for KMS provider configuration.
      */
-    private fun buildPrefixes(_configService: ConfigService) = setOf(KMS_PROVIDERS_PREFIX)
+    private fun buildPrefixes() = setOf(KMS_PROVIDERS_PREFIX)
 
     /**
      * Creates a polymorphic config binder for KMS providers using the given prefix.
@@ -344,22 +351,25 @@ class KmsProviderConfigBinderImpl(
                 mapOf(
                     "keystore" to "keyStore",
                     "key.store" to "keyStore",
+                    "credentialOpts" to "credentialOpts",
                 ),
             propertyNameAliases = KmsPropertyNameAliases,
             ignoredPropertyNames = KmsOperationalMetadataKeys,
             redact = false,
         )
 
+    // The owner is AppScope and DefaultPolymorphicConfigBinder is immutable, so construct each
+    // configured prefix binder once instead of rebuilding its normalized alias tables per request.
+    private val polymorphicBinders = buildPrefixes().associateWith(::createPolymorphicBinder)
+
     override fun getKmsProviderIds(configService: ConfigService): Array<String> {
         log.debug("[KmsProviderConfigBinder] Getting KMS provider IDs from config service at level: ${configService.configLevel}")
-        val prefixes = buildPrefixes(configService)
-        log.debug("[KmsProviderConfigBinder] Using prefix: ${prefixes.joinToString(",")}")
+        log.debug("[KmsProviderConfigBinder] Using prefix: ${polymorphicBinders.keys.joinToString(",")}")
 
         // Use polymorphic binder to detect entry IDs for each prefix.
         // Prefer the explicit config id field when present to preserve original IDs (e.g., with hyphens).
         val allIds = mutableSetOf<String>()
-        for (prefix in prefixes) {
-            val binder = createPolymorphicBinder(prefix)
+        for ((prefix, binder) in polymorphicBinders) {
             val configsResult = binder.getEntryConfigsAsMapResult(configService, strict = true)
             require(configsResult.isOk) {
                 "Failed to bind KMS provider configs for prefix '$prefix': ${configsResult.error.message.defaultMessage}"
@@ -382,11 +392,9 @@ class KmsProviderConfigBinderImpl(
         providerId: String,
     ): KmsProviderConfigBase {
         log.debug("Getting Kms provider config for $providerId, from config service at level: ${configService.level}")
-        val prefixes = buildPrefixes(configService)
 
         // Try each prefix until we find the config
-        for (prefix in prefixes) {
-            val binder = createPolymorphicBinder(prefix)
+        for ((prefix, binder) in polymorphicBinders) {
             val configResult = binder.getEntryConfigResult(configService, providerId)
             if (configResult.isOk) {
                 log.debug("Kms provider config for $providerId: ${configResult.value}")
@@ -404,12 +412,10 @@ class KmsProviderConfigBinderImpl(
 
     override fun getKmsProviderConfigs(configService: ConfigService): Array<KmsProviderConfigBase> {
         log.debug("[KmsProviderConfigBinder] Getting all KMS provider configs in batch")
-        val prefixes = buildPrefixes(configService)
 
         // Collect all configs from all prefixes
         val allConfigs = mutableMapOf<String, KmsProviderConfigBase>()
-        for (prefix in prefixes) {
-            val binder = createPolymorphicBinder(prefix)
+        for ((prefix, binder) in polymorphicBinders) {
             val configsResult = binder.getEntryConfigsAsMapResult(configService, strict = true)
             require(configsResult.isOk) {
                 "Failed to bind KMS provider configs for prefix '$prefix': ${configsResult.error.message.defaultMessage}"
@@ -430,6 +436,7 @@ class KmsProviderConfigBinderImpl(
 
 private val KmsOperationalMetadataKeys =
     setOf(
+        "displayName",
         "system",
         "role",
     )

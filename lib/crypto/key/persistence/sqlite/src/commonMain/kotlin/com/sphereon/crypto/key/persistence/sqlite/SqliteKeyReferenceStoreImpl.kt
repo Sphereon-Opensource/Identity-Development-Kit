@@ -67,6 +67,7 @@ class SqliteKeyReferenceStoreImpl(
                     signatureAlgorithm = record.signatureAlgorithm?.let { it::class.simpleName },
                     keyVisibility = record.keyVisibility?.name,
                     keyEncoding = record.keyEncoding?.name,
+                    publicKeyJwk = record.publicKeyJwk,
                     createdAt = record.createdAt.toString(),
                     createdById = record.createdById,
                     updatedAt = record.updatedAt.toString(),
@@ -98,6 +99,7 @@ class SqliteKeyReferenceStoreImpl(
                         signatureAlgorithm = record.signatureAlgorithm?.let { it::class.simpleName },
                         keyVisibility = record.keyVisibility?.name,
                         keyEncoding = record.keyEncoding?.name,
+                        publicKeyJwk = record.publicKeyJwk,
                         updatedAt = record.updatedAt.toString(),
                         updatedById = record.updatedById,
                     )
@@ -275,6 +277,7 @@ class SqliteKeyReferenceStoreImpl(
             signatureAlgorithm = signature_algorithm?.let { SignatureAlgorithm.fromValue(it) },
             keyVisibility = key_visibility?.let { KeyVisibility.fromValue(it) },
             keyEncoding = key_encoding?.let { KeyEncoding.fromValue(it) },
+            publicKeyJwk = public_key_jwk,
             createdAt = Instant.parse(created_at),
             createdById = created_by_id,
             updatedAt = Instant.parse(updated_at),

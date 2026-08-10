@@ -1,8 +1,8 @@
 package com.sphereon.crypto.kms.rest.server
 
-import com.sphereon.crypto.kms.rest.server.ktor.kmsRouting
 import com.sphereon.di.app.AppGraph
 import com.sphereon.ktor.server.inject.KotlinInjectPlugin
+import com.sphereon.ktor.server.inject.installUniversalHttpAdapters
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import io.ktor.http.HttpStatusCode
@@ -17,31 +17,23 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 
 /**
- * Configure the Ktor application with KMS routes.
+ * Installs the per-request DI plumbing a KMS host needs, plus JSON negotiation and a liveness route.
  *
- * @param appGraph Your application's AppGraph (from kotlin-inject).
- *                     REQUIRED - the KMS API cannot function without DI.
+ * This mounts the self-contained KMS REST API. Hosting assemblies remain responsible for
+ * authentication and tenant resolution before this function is called.
+ *
+ * @param appGraph The application's AppGraph. Required: session resolution cannot run without DI.
  *
  * The plugin will automatically:
  * - Create UserContextGraph per tenant/principal
  * - Create SessionGraph per request
- * - Inject HttpAdapter from SessionScope
  * - Clean up after request completes
  *
- * Example usage - see KmsKtorServerExample.kt:
  * ```kotlin
- * fun main() {
- *     val appGraph = KmsKtorAppGraph.init(
- *         application = Unit,
- *         appId = "kms-api",
- *         profile = "production",
- *         version = "1.0.0"
- *     )
- *
- *     embeddedServer(CIO, port = 8080) {
- *         configureKms(appGraph)  // ← Pass AppGraph here!
- *     }.start(wait = true)
- * }
+ * embeddedServer(CIO, port = 8080) {
+ *     configureKms(appGraph)
+ *     installUniversalHttpAdapters()
+ * }.start(wait = true)
  * ```
  */
 fun Application.configureKms(
@@ -58,6 +50,12 @@ fun Application.configureKms(
      * StatusPages (e.g. a GraalVM-native-safe handler) pass false to avoid a Ktor DuplicatePluginException.
      */
     installStatusPages: Boolean = true,
+    /**
+     * Whether this self-contained host should mount the generic KMS HTTP surface itself. Composite
+     * enterprise hosts set this to false and mount the same adapters after their authenticated,
+     * explicitly allow-listed API boundary has been installed.
+     */
+    installUniversalRoutes: Boolean = true,
 ) {
     // Install kotlin-inject plugin with AppGraph
     install(KotlinInjectPlugin) {
@@ -86,8 +84,10 @@ fun Application.configureKms(
         get("/health") {
             call.respondText("OK")
         }
-
-        // KMS routes - uses HttpAdapter from session scope
-        kmsRouting()
+    }
+    // KMS is composed from seven path-focused adapters. The former keys-only shortcut left
+    // providers, certificates, encryption, signatures and resolvers advertised but unreachable.
+    if (installUniversalRoutes) {
+        installUniversalHttpAdapters()
     }
 }

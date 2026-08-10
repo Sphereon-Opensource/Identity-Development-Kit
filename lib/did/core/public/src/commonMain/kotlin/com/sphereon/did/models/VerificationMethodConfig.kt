@@ -37,6 +37,7 @@ import kotlin.native.ObjCName
  *
  * @property kmsKeyAlias Reference to KMS key by alias
  * @property kmsProviderId KMS provider ID
+ * @property kmsKid Optional KMS key identifier when the key was selected by kid
  * @property verificationMethodId Fragment ID (e.g., "key-1") used in the DID Document
  * @property purposes List of verification purposes this key serves
  * @property valueVerificationRelation Verification relationship that embeds this VM by value
@@ -63,6 +64,7 @@ data class VerificationMethodConfig
         val type: VerificationMethodType = VerificationMethodType.JSON_WEB_KEY_2020,
         val controller: String? = null,
         val publicKeyJwk: com.sphereon.crypto.core.jose.Jwk? = null,
+        val kmsKid: String? = null,
     ) {
         init {
             require(verificationMethodId.isNotBlank()) {

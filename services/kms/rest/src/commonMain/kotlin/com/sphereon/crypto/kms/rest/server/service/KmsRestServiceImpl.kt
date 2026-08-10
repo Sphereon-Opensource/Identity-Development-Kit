@@ -98,7 +98,7 @@ class KmsRestServiceImpl(
         kms.generateKeyAsync(
             alias = alias,
             providerId = providerId ?: kms.defaultProviderId(),
-            use = use,
+            use = use ?: JwkUse.sig,
             keyOperations = keyOperations,
             alg = alg,
         )

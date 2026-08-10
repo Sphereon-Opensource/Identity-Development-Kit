@@ -17,6 +17,8 @@
 
 package com.sphereon.core.api.error
 
+import com.sphereon.core.api.http.GenericHttpBody
+import com.sphereon.core.api.http.GenericHttpRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -433,9 +435,29 @@ class IdkErrorFactoryMethodsTest {
     }
 
     @Test
-    fun commandArgNotSupportedErrorIncludesArgInMessage() {
+    fun commandArgNotSupportedErrorIncludesOnlyArgTypeInMessage() {
         val error = IdkError.COMMAND_ARG_NOT_SUPPORTED_ERROR(arg = "unsupportedArg")
-        assertTrue(error.message.defaultMessage.contains("unsupportedArg"))
+        assertTrue(error.message.defaultMessage.contains("String"))
+        assertFalse(error.message.defaultMessage.contains("unsupportedArg"))
+    }
+
+    @Test
+    fun commandArgNotSupportedErrorDoesNotReflectHttpRequestSecrets() {
+        val error =
+            IdkError.COMMAND_ARG_NOT_SUPPORTED_ERROR(
+                arg =
+                    GenericHttpRequest(
+                        method = "POST",
+                        path = "/api/platform/config/v1/tenants/tenant-a/kms/providers",
+                        headers = mapOf("Authorization" to "Bearer secret-token"),
+                        bodyContent = GenericHttpBody.Text("""{"clientSecret":"secret-body"}"""),
+                    ),
+            )
+
+        assertTrue(error.message.defaultMessage.contains("GenericHttpRequest"))
+        assertFalse(error.message.defaultMessage.contains("secret-token"))
+        assertFalse(error.message.defaultMessage.contains("secret-body"))
+        assertFalse(error.message.defaultMessage.contains("/api/platform/config"))
     }
 }
 

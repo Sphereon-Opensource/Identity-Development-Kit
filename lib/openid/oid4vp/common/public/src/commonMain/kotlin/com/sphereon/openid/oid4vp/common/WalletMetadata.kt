@@ -327,13 +327,27 @@ class WalletMetadataBuilder {
     private var logoUri: String? = null
 
     /**
-     * Add support for SD-JWT DC format.
+     * Add support for IETF SD-JWT VC (`dc+sd-jwt`).
      */
-    fun supportSdJwtDc(
+    fun supportSdJwtVc(
         sdJwtAlgValues: List<String> = listOf("ES256", "ES384"),
         kbJwtAlgValues: List<String> = listOf("ES256", "ES384"),
     ) = apply {
         vpFormatsSupported["dc+sd-jwt"] =
+            VpFormatSupport(
+                sdJwtAlgValuesSupported = sdJwtAlgValues,
+                kbJwtAlgValuesSupported = kbJwtAlgValues,
+            )
+    }
+
+    /**
+     * Add support for a W3C VCDM credential secured using SD-JWT (`vc+sd-jwt`).
+     */
+    fun supportW3cVcSdJwt(
+        sdJwtAlgValues: List<String> = listOf("ES256", "ES384"),
+        kbJwtAlgValues: List<String> = listOf("ES256", "ES384"),
+    ) = apply {
+        vpFormatsSupported["vc+sd-jwt"] =
             VpFormatSupport(
                 sdJwtAlgValuesSupported = sdJwtAlgValues,
                 kbJwtAlgValuesSupported = kbJwtAlgValues,
@@ -464,7 +478,7 @@ class WalletMetadataBuilder {
  * Example:
  * ```kotlin
  * val metadata = buildWalletMetadata {
- *     supportSdJwtDc()
+ *     supportSdJwtVc()
  *     supportMsoMdoc()
  *     walletName("My Wallet")
  *     clientIdSchemes(

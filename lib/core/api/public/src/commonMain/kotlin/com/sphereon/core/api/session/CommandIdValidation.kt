@@ -28,7 +28,8 @@ import com.sphereon.core.api.error.IdkError
  * Rules:
  * - Lowercase ASCII, dot-separated
  * - Exactly 3 segments: module.service.command
- * - Each segment starts with a letter and contains only lowercase letters, digits, and hyphens
+ * - Each segment starts with a letter and contains lowercase letters, digits, and single hyphen separators
+ * - Hyphens cannot lead or trail a segment, and doubled hyphens are not allowed
  * - No environment/tenant-specific data in IDs
  *
  * Examples:
@@ -37,7 +38,8 @@ import com.sphereon.core.api.error.IdkError
  * - party.parties.create
  * - identity.identities.read
  */
-private val CommandIdRegex = Regex("^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*){2}$")
+private val CommandIdRegex =
+    Regex("""^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*){2}$""")
 
 /**
  * Validates that a command ID matches the hierarchical format.

@@ -20,6 +20,7 @@ import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.did.manager.DidProviderRegistry
+import com.sphereon.did.resolver.DidResolverRegistry
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
@@ -37,6 +38,9 @@ abstract class JvmStatusListTestAppGraph : AbstractAppGraph() {
     // `did:` signing mode, so a no-op registry satisfies the graph without pulling in DID providers.
     @Provides
     fun provideDidProviderRegistry(): DidProviderRegistry = NoopDidProviderRegistry
+
+    @Provides
+    fun provideDidResolverRegistry(): DidResolverRegistry = NoopDidResolverRegistry
 
     @DependencyGraph.Factory
     fun interface Factory {

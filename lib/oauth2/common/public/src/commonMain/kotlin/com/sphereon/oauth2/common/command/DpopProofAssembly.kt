@@ -95,7 +95,7 @@ class DpopProofAssembly(
         val ath = request.accessToken?.let { calculateAccessTokenHash(it) }
         val normalizedHtu = normalizeUrl(request.httpUrl)
         val iat = request.issuedAt ?: Clock.System.now().epochSeconds
-        val algorithm = determineAlgorithm(publicJwk)
+        val algorithm = resolveJoseSignatureAlgorithm(publicJwk)
 
         val header = DpopJwtHeader(typ = "dpop+jwt", alg = algorithm, jwk = publicJwk)
         val payload =
@@ -157,32 +157,29 @@ class DpopProofAssembly(
         return url.substring(0, cutPosition)
     }
 
-    /**
-     * Determines the signing algorithm from the JWK: uses the explicit `alg` if present,
-     * otherwise infers it from key type and curve.
-     */
-    private fun determineAlgorithm(jwk: Jwk): String {
-        jwk.alg?.let { return it.value }
-        return when (jwk.kty.value) {
-            "RSA" -> "RS256"
-            "EC" ->
-                when (jwk.crv?.value) {
-                    "P-256" -> "ES256"
-                    "P-384" -> "ES384"
-                    "P-521" -> "ES512"
-                    "secp256k1" -> "ES256K"
-                    else -> throw IllegalArgumentException("Unsupported EC curve: ${jwk.crv?.value}")
-                }
-            "OKP" ->
-                when (jwk.crv?.value) {
-                    "Ed25519" -> "EdDSA"
-                    else -> throw IllegalArgumentException("Unsupported OKP curve: ${jwk.crv?.value}")
-                }
-            else -> throw IllegalArgumentException("Unsupported key type for DPoP: ${jwk.kty.value}")
-        }
-    }
-
     private companion object {
         const val JTI_RANDOM_BYTES = 16
+    }
+}
+
+/** Resolves the asymmetric JOSE signing algorithm represented by a public JWK. */
+fun resolveJoseSignatureAlgorithm(jwk: Jwk): String {
+    jwk.alg?.let { return it.value }
+    return when (jwk.kty.value) {
+        "RSA" -> "RS256"
+        "EC" ->
+            when (jwk.crv?.value) {
+                "P-256" -> "ES256"
+                "P-384" -> "ES384"
+                "P-521" -> "ES512"
+                "secp256k1" -> "ES256K"
+                else -> throw IllegalArgumentException("Unsupported EC curve: ${jwk.crv?.value}")
+            }
+        "OKP" ->
+            when (jwk.crv?.value) {
+                "Ed25519" -> "EdDSA"
+                else -> throw IllegalArgumentException("Unsupported OKP curve: ${jwk.crv?.value}")
+            }
+        else -> throw IllegalArgumentException("Unsupported asymmetric JOSE key type: ${jwk.kty.value}")
     }
 }

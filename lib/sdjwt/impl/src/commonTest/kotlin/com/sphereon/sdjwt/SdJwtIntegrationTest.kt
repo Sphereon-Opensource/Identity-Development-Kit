@@ -43,7 +43,7 @@ class SdJwtIntegrationTest {
 
     val app = createSdJwtTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("sdjwt-test")
+    val session = context.sessionContextManager.createOrGetFromId("sdjwt-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

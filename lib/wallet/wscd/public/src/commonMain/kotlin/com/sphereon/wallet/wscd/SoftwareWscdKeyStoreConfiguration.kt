@@ -10,11 +10,11 @@ package com.sphereon.wallet.wscd
  * API: the software-WSCD implementation alone translates this contract to its keystore backend.
  */
 sealed interface SoftwareWscdKeyStoreConfiguration {
-    /** Fail-closed default for product roots that have not installed durable key custody yet. */
-    data object PersistentStorageRequired : SoftwareWscdKeyStoreConfiguration
-
     /** Explicitly test-only. Product composition roots must never select this mode. */
     data object InMemoryForTestingOnly : SoftwareWscdKeyStoreConfiguration
+
+    /** Non-exportable signing keys held by the Apple Keychain/Secure Enclave implementation. */
+    data object AppleKeychain : SoftwareWscdKeyStoreConfiguration
 
     data class PersistentEncryptedFile(
         val path: String,

@@ -8,13 +8,11 @@ package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.decodeFromBase64Url
-import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.di.session.SessionScope
-import com.sphereon.oauth2.common.command.DpopProofAssembly
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.IssueNonceArgs
 import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
@@ -30,24 +28,24 @@ import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.interaction.WalletSecurityGate
 import com.sphereon.wallet.interaction.WalletProtocol
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
+import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionSessionStore
 import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciCredentialRequestProofProvider
+import com.sphereon.wallet.interaction.protocol.oid4vci.HolderServiceOid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceExecutor
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciHolderIssuanceOptions
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuanceOptionsProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciIssuedCredentialAcceptance
-import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciKeyAttestationProvider
-import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciRefreshTokenGrantProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.Oid4vciWalletInteractionProtocolAdapter
+import com.sphereon.wallet.interaction.protocol.oid4vci.SecureComponentOid4vciKeyAttestationProvider
 import com.sphereon.wallet.interaction.protocol.oid4vci.WalletStoreOid4vciCredentialResponseReceiver
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.unit.attestation.KeyAttestationIssueRequest
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationProfile
-import com.sphereon.wallet.wsca.impl.DevModeWalletUserAuthenticator
-import com.sphereon.wallet.wsca.impl.LocalWsca
-import com.sphereon.wallet.wscd.software.KmsProviderBootstrap
-import com.sphereon.wallet.wscd.software.SoftwareWscd
+import com.sphereon.wallet.wsca.Wsca
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
@@ -141,11 +139,11 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             wireInProcessAdapters()
             ctx.ensureAsSigningKey()
             ensureIssuerSigningKey()
-            ensureHolderSigningKey()
 
             val graph = ctx.session.graph as Oid4vciIssuanceTestGraph
             val issuer = graph.oid4vciIssuerService
             val holder = graph.oid4vciHolder
+            val wsca = (ctx.session.graph as WalletInteractionOid4vciWscaTestGraph).wsca
             val storeGraph = ctx.session.graph as WalletInteractionOid4vciStoreTestGraph
             val credentialStore = storeGraph.walletCredentialStore
             val issuanceSessionStore = storeGraph.walletIssuanceSessionStore
@@ -158,6 +156,7 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vc-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf(CREDENTIAL_CONFIG_ID),
                         preAuthorizedCodeGrant = true,
@@ -187,25 +186,31 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                                     ): Oid4vciHolderIssuanceOptions =
                                         Oid4vciHolderIssuanceOptions(
                                             signingKeyId = HOLDER_SIGNING_KEY_ALIAS,
+                                            operationBinding = "test:oid4vci-credential-request-proof",
                                             signingAlgorithm = "ES256",
                                             clientId = WALLET_CLIENT_ID,
                                             credentialConfigurationId = CREDENTIAL_CONFIG_ID,
                                         )
                                 },
                             credentialReceiver = WalletStoreOid4vciCredentialResponseReceiver(credentialStore, issuanceSessionStore, acceptance),
+                            nestedPresentationExecutor = com.sphereon.wallet.interaction.WalletNestedPresentationExecutor.notConfigured,
                             credentialStore = credentialStore,
                             issuanceSessionStore = issuanceSessionStore,
-                            refreshTokenGrantProvider = Oid4vciRefreshTokenGrantProvider.unsupported,
-                            keyAttestationProvider = Oid4vciKeyAttestationProvider.unsupported,
-                            // HOLDER_SIGNING_KEY_ALIAS is provisioned directly in the KMS (see
-                            // ensureHolderSigningKey()), not through Wsca, so the generic
-                            // KMS-resolving provider is correct here.
+                            refreshTokenGrantProvider = HolderServiceOid4vciRefreshTokenGrantProvider(holder),
+                            keyAttestationProvider = SecureComponentOid4vciKeyAttestationProvider(wsca),
+                            // The holder service provisions and uses this alias exclusively through
+                            // WSCA -> selected WSCD. The WSCD owns its configured KMS.
                             credentialRequestProofProvider = HolderServiceOid4vciCredentialRequestProofProvider(holder),
                         ),
                 )
             val engine =
                 DefaultWalletInteractionEngine(
                     sensitiveInputAuthority = integrationSensitiveInputAuthority(),
+                    privateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
+                    sessionStore = InMemoryWalletInteractionSessionStore(),
+                    // Promptless protocol test: the attended security ceremony is exercised by the
+                    // wallet-product/runner suites, not here.
+                    securityGate = WalletSecurityGate.allow,
                     adapters = listOf(adapter),
                 )
 
@@ -219,15 +224,20 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             val startStateJson = json.encodeToString(session.state)
 
             assertEquals(WalletProtocol.OID4VCI, session.state.protocol)
-            assertEquals(WalletInteractionStatus.CredentialOfferReview, session.state.status)
+            // A first interaction with this issuer surfaces the trust review step before the offer.
+            assertEquals(WalletInteractionStatus.TrustReview, session.state.status)
             assertFalse(startStateJson.contains(preAuthorizedCode))
+
+            engine.dispatch(session.sessionId, WalletInteractionAction.continueFlow())
+            val offerState = engine.observe(session.sessionId).value
+            assertEquals(WalletInteractionStatus.CredentialOfferReview, offerState.status)
 
             engine.dispatch(
                 session.sessionId,
                 WalletInteractionAction.selectCredentials(
                     WalletCredentialSelection(
                         selectedCredentialIdsByRequirement =
-                            mapOf("oid4vci-offer" to session.state.credentialOffer!!.credentialConfigurationIds),
+                            mapOf("oid4vci-offer" to offerState.credentialOffer!!.credentialConfigurationIds),
                     ),
                 ),
             )
@@ -295,17 +305,9 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             val holder = graph.oid4vciHolder
             val keyAttestationVerifier = (ctx.session.graph as KeyAttestationVerifierTestGraph).keyAttestationVerifier
 
-            // Real, Software-profile WSCA/WSCD over the SAME KMS the holder-proof command signs
-            // with: the credential-request proof's signing key and the key attestation's attested
-            // key must be the SAME key (the issuer requires their JWK thumbprints to match - see
-            // JwtProofVerifier's holder-binding-key check).
-            val kms = ctx.session.graph.asKeyManagerServiceGraph().keyManagerService
-            val wsca =
-                LocalWsca(
-                    SoftwareWscd(kms, providerBootstrap = KmsProviderBootstrap {}),
-                    DpopProofAssembly(defaultSecureRandom()),
-                    DevModeWalletUserAuthenticator(),
-                )
+            // Use the same graph-provided WSCA as the production holder command. WSCA selects the
+            // WSCD, and the selected WSCD owns its configured KMS.
+            val wsca = (ctx.session.graph as WalletInteractionOid4vciWscaTestGraph).wsca
             val holderKey =
                 wsca
                     .createCredentialKey(WALLET_UNIT_ID, SecureComponentUsage.WALLET_CREDENTIAL_PROOF, SignatureAlgorithm.ECDSA_SHA256)
@@ -339,6 +341,8 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             // Oid4vciHolderIssuanceExecutor makes.
             val proofResult =
                 holder.createCredentialRequestProof(
+                    walletUnitId = WALLET_UNIT_ID,
+                    operationBinding = "key-attestation-proof",
                     issuerUrl = issuerUrl,
                     cNonce = cNonce,
                     signingKeyIds = listOf(holderSigningKeyId),
@@ -369,7 +373,7 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
             val permissive =
                 keyAttestationVerifier.verify(
                     keyAttestationJwt = kaJwt,
-                    trustConfig = KeyAttesterTrustConfig(trustedJwks = listOf(pinnedTrustAnchor)),
+                    trustConfig = KeyAttesterTrustConfig(mode = "jwks", trustedJwks = listOf(pinnedTrustAnchor)),
                     policy = null,
                 )
             assertTrue(
@@ -402,22 +406,6 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
         )
     }
 
-    private suspend fun ensureHolderSigningKey() {
-        val kms =
-            ctx.session.graph
-                .asKeyManagerServiceGraph()
-                .keyManagerService
-        val result =
-            kms.generateKeyResult(
-                alias = HOLDER_SIGNING_KEY_ALIAS,
-                use = JwkUse.sig,
-                alg = SignatureAlgorithm.ECDSA_SHA256,
-            )
-        assertTrue(
-            result.isOk,
-            "Holder proof key generation should succeed: ${if (result.isErr) result.error.message.defaultMessage else ""}",
-        )
-    }
 }
 
 /**
@@ -429,4 +417,9 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
 @ContributesTo(SessionScope::class)
 interface KeyAttestationVerifierTestGraph {
     val keyAttestationVerifier: KeyAttestationVerifier
+}
+
+@ContributesTo(SessionScope::class)
+interface WalletInteractionOid4vciWscaTestGraph {
+    val wsca: Wsca
 }

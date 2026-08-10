@@ -51,7 +51,21 @@ data class BuildAuthorizationRequestArgs(
     val credentialIdentifiers: Map<String, List<String>>? = null,
     /** Locations (resource indicators) to include in each authorization_details entry. */
     val locations: List<String>? = null,
-)
+    /** Client authentication to apply to a PAR request. */
+    val clientAuthentication: ClientAuthenticationConfig? = null,
+    /** RFC 9449 proof bound to the PAR POST. */
+    val dpopProofJwt: String? = null,
+    /** OAuth client-attestation JWT for the PAR request. */
+    val clientAttestationJwt: String? = null,
+    /** OAuth client-attestation proof-of-possession JWT for the PAR request. */
+    val clientAttestationPopJwt: String? = null,
+) {
+    init {
+        require((clientAttestationJwt == null) == (clientAttestationPopJwt == null)) {
+            "clientAttestationJwt and clientAttestationPopJwt must be supplied together"
+        }
+    }
+}
 
 /**
  * Result of building an authorization request URL.

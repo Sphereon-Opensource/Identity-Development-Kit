@@ -22,7 +22,7 @@ import com.sphereon.core.api.conf.ConfigEnvironment
 import com.sphereon.core.api.conf.DefaultMapPropertySourceFactory
 import com.sphereon.core.api.conf.DefaultPropertySources
 import com.sphereon.core.api.conf.PropertyInterpolator
-import com.sphereon.core.api.conf.SecretResolver
+import com.sphereon.core.api.conf.InterpolationPolicyProvider
 import com.sphereon.core.api.conf.StaticProtectedEnvPropertySourceObject
 import com.sphereon.core.api.conf.SyncConfigSnapshotCache
 import dev.zacsweers.metro.AppScope
@@ -44,7 +44,7 @@ class AppConfigEnvironmentImpl(
     @Named("profile") profile: String,
     snapshotCache: SyncConfigSnapshotCache,
     interpolator: PropertyInterpolator?,
-    secretResolver: SecretResolver?,
+    interpolationPolicyProvider: InterpolationPolicyProvider,
 ) : AbstractConfigEnvironment(
         profile = profile,
         appId = appId,
@@ -53,7 +53,7 @@ class AppConfigEnvironmentImpl(
         tenantId = null, // APP scope: no tenant partitioning
         principalId = null,
         interpolator = interpolator,
-        secretResolver = secretResolver,
+        interpolationPolicyProvider = interpolationPolicyProvider,
     ),
     AppConfigEnvironment {
     override val parent: ConfigEnvironment? = null

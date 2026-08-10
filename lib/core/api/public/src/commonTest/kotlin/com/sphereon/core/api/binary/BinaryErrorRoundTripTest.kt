@@ -33,8 +33,13 @@ class BinaryErrorRoundTripTest {
                     IdkError.Message(
                         i18nKey = "auth.error.credentials.invalid",
                         defaultMessage = "Invalid username or password",
-                    ),
+                ),
                 category = ErrorCategory.UNAUTHORIZED,
+                meta =
+                    mapOf(
+                        "clientAction" to "UNWRAP_AND_RETRY",
+                        "wrappedPayloadRef" to "wrapped-payload-123",
+                    ),
             )
 
         val wire = BinaryError.fromIdkError(original)
@@ -43,6 +48,8 @@ class BinaryErrorRoundTripTest {
         assertEquals("AUTH_INVALID_CREDENTIALS", roundTripped.code)
         assertEquals(ErrorCategory.UNAUTHORIZED, roundTripped.category)
         assertEquals("Invalid username or password", roundTripped.message.defaultMessage)
+        assertEquals("UNWRAP_AND_RETRY", roundTripped.meta["clientAction"])
+        assertEquals("wrapped-payload-123", roundTripped.meta["wrappedPayloadRef"])
     }
 
     @Test

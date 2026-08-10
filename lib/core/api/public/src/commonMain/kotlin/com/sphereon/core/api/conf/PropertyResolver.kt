@@ -110,6 +110,7 @@ fun redactIfNeeded(
     redact: Boolean,
     scope: ConfigLevel = ConfigLevel.APP,
     redactionPolicy: SecretRedactionPolicy,
+    provenance: ResolutionProvenance = ResolutionProvenance.unknown(),
 ): String {
     if (value == null) {
         return "null"
@@ -129,9 +130,104 @@ fun redactIfNeeded(
             isInterpolated = false,
             resolvedAt = Clock.System.now(),
             ttl = null,
+            provenance = provenance,
         )
 
     return if (redactionPolicy.shouldRedact(key, metadata)) {
+        redactionPolicy.redact(value.toString())
+    } else {
+        value.toString()
+    }
+}
+
+internal fun redactBulkValueIfNeeded(
+    outputKey: String,
+    value: Any?,
+    prefixes: Set<String>?,
+    stripPrefix: Boolean,
+    redact: Boolean,
+    resolver: PropertyResolver,
+    scope: ConfigLevel,
+    redactionPolicy: SecretRedactionPolicy,
+): String {
+    if (value == null) {
+        return "null"
+    }
+    if (!redact) {
+        return value.toString()
+    }
+
+    val keyNormalizer = PropertyKeyNormalizerImpl.Default
+    val normalizedOutputKey = keyNormalizer.normalize(outputKey)
+    val candidateKeys =
+        if (stripPrefix && !prefixes.isNullOrEmpty()) {
+            prefixes
+                .map(keyNormalizer::normalize)
+                .map { prefix ->
+                    if (normalizedOutputKey.isEmpty()) {
+                        prefix
+                    } else {
+                        "$prefix.$normalizedOutputKey"
+                    }
+                }.toSet()
+        } else {
+            setOf(normalizedOutputKey)
+        }
+    val protectedResolver = resolver as? ProtectedPropertyResolver
+    val shouldRedact =
+        if (protectedResolver != null) {
+            val resolvedCandidates =
+                candidateKeys.mapNotNull { candidateKey ->
+                    protectedResolver
+                        .resolvePropertyWithScope(candidateKey, requiredScope = null)
+                        ?.takeIf { it.value == value.toString() }
+                        ?.let { candidateKey to it }
+                }
+            // Bulk enumeration and provenance lookup are separate operations for this legacy API.
+            // If the source changed, failed, or cannot prove the materialized value's provenance,
+            // fail closed rather than classifying an unknown value as safe.
+            resolvedCandidates.isEmpty() ||
+                resolvedCandidates.any { (candidateKey, resolved) ->
+                    val provenance = resolved.provenance
+                    val metadata =
+                        ResolutionMetadata(
+                            source = resolved.sourceName ?: "PropertyResolver",
+                            scope = resolved.sourceScope,
+                            originalKey = candidateKey,
+                            normalizedKey = candidateKey,
+                            order = resolved.sourceOrder ?: 0,
+                            isSecret = provenance.hasTaint(ResolutionTaint.SENSITIVE),
+                            isInterpolated = provenance.hasTaint(ResolutionTaint.INTERPOLATED),
+                            resolvedAt = Clock.System.now(),
+                            ttl = null,
+                            provenance = provenance,
+                        )
+                    provenance.sourceScope == null ||
+                        provenance.hasTaint(ResolutionTaint.UNKNOWN) ||
+                        provenance.hasTaint(ResolutionTaint.SENSITIVE) ||
+                        redactionPolicy.shouldRedact(candidateKey, metadata)
+                }
+        } else {
+            candidateKeys.any { candidateKey ->
+                redactionPolicy.shouldRedact(
+                    candidateKey,
+                    ResolutionMetadata(
+                        source = "PropertyResolver",
+                        scope = scope,
+                        originalKey = candidateKey,
+                        normalizedKey = candidateKey,
+                        order = 0,
+                        isSecret = false,
+                        isInterpolated = false,
+                        resolvedAt = Clock.System.now(),
+                        ttl = null,
+                        provenance = ResolutionProvenance.known(scope),
+                    ),
+                )
+            }
+        }
+
+    return if (shouldRedact) {
         redactionPolicy.redact(value.toString())
     } else {
         value.toString()
@@ -159,13 +255,37 @@ abstract class AbstractPropertyResolver(
         defaultValue: String?,
     ): String = getRequiredProperty(key, String::class, defaultValue)
 
-    override fun getAllPropertiesAsString(redact: Boolean): Map<String, String> = getAllProperties().mapValues { (key, value) -> redactIfNeeded(key, value, redact, redactionPolicy = redactionPolicy) }
+    override fun getAllPropertiesAsString(redact: Boolean): Map<String, String> =
+        getAllProperties().mapValues { (key, value) ->
+            redactBulkValueIfNeeded(
+                outputKey = key,
+                value = value,
+                prefixes = null,
+                stripPrefix = false,
+                redact = redact,
+                resolver = this,
+                scope = (this as? ProtectedPropertyResolver)?.resolverLevel ?: ConfigLevel.APP,
+                redactionPolicy = redactionPolicy,
+            )
+        }
 
     override fun getSubPropertiesAsString(
         prefixes: Set<String>,
         stripPrefix: Boolean,
         redact: Boolean,
-    ): Map<String, String> = getSubProperties(prefixes, stripPrefix).mapValues { (key, value) -> redactIfNeeded(key, value, redact, redactionPolicy = redactionPolicy) }
+    ): Map<String, String> =
+        getSubProperties(prefixes, stripPrefix).mapValues { (key, value) ->
+            redactBulkValueIfNeeded(
+                outputKey = key,
+                value = value,
+                prefixes = prefixes,
+                stripPrefix = stripPrefix,
+                redact = redact,
+                resolver = this,
+                scope = (this as? ProtectedPropertyResolver)?.resolverLevel ?: ConfigLevel.APP,
+                redactionPolicy = redactionPolicy,
+            )
+        }
 }
 
 @JsExportCompat

@@ -198,6 +198,19 @@ class CommandIdValueClassTest {
     }
 
     @Test
+    fun commandIdOfValidatesTheFinalCanonicalId() {
+        assertFailsWith<IllegalArgumentException> {
+            CommandId.of("party", "parties-", "create")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            CommandId.of("party", "parties", "create--record")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            CommandId.of("party.parties", "records", "create")
+        }
+    }
+
+    @Test
     fun commandIdTryParseReturnsCommandIdForValidId() {
         // Given a valid command ID string
         val id = CommandId.tryParse("identity.identities.read")

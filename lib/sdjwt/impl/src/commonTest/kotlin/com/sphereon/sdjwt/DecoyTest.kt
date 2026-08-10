@@ -52,7 +52,7 @@ class DecoyTest {
 
     val app = createSdJwtTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("sdjwt-decoy-test")
+    val session = context.sessionContextManager.createOrGetFromId("sdjwt-decoy-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

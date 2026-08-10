@@ -70,6 +70,7 @@ kotlin {
         val jvmMain by getting {
             dependencies {
                 implementation(sphereonlib.dev.whyoleg.cryptography.provider.jdk)
+                implementation(sphereonlib.com.mayakapps.kache.kache)
             }
         }
         findByName("jsMain")?.dependencies {

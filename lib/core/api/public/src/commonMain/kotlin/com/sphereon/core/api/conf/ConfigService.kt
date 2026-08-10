@@ -154,6 +154,8 @@ abstract class AbstractConfigService(
     protected val configEnvironment: ConfigEnvironment,
 ) : ConfigService {
     override val configLevel = configEnvironment.level
+    final override val interpolationPolicyProvider: InterpolationPolicyProvider
+        get() = configEnvironment.interpolationPolicyProvider
 
     override fun addPropertySource(source: PropertySource<*>): ConfigService = apply { configEnvironment.getPropertySources(includeParents = false).add(source) }
 

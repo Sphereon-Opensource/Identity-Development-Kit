@@ -42,16 +42,26 @@ const val OID4VP_STATIC_DISCOVERY_REQUEST_OBJECT_AUDIENCE: String = "https://sel
 /**
  * Arguments for parsing an OpenID4VP authorization request
  *
+ * Exactly one of [requestUri] and [digitalCredentialsRequest] must be supplied.
+ *
  * @property requestUri The authorization request URI (for example openid4vp:// or HAIP 1.0 Final's haip-vp://)
  * @property walletConfig Optional wallet configuration for JWT validation
+ * @property digitalCredentialsRequest Request delivered by the browser Digital Credentials API
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ParseAuthorizationRequestArgs", exact = true)
 @JsExportCompat
 data class ParseAuthorizationRequestArgs(
-    val requestUri: String,
+    val requestUri: String? = null,
     val walletConfig: WalletConfig? = null,
-)
+    val digitalCredentialsRequest: DigitalCredentialsAuthorizationRequest? = null,
+) {
+    init {
+        require((requestUri != null) xor (digitalCredentialsRequest != null)) {
+            "Exactly one authorization request transport must be supplied"
+        }
+    }
+}
 
 /**
  * Wallet configuration for request object validation
@@ -94,6 +104,11 @@ interface ParseAuthorizationRequestCommand : ServiceCommand<ParseAuthorizationRe
 interface ParseAuthorizationRequestCommandService {
     suspend fun parseAuthorizationRequest(
         requestUri: String,
+        walletConfig: WalletConfig? = null,
+    ): IdkResult<AuthorizationRequest, IdkError>
+
+    suspend fun parseDigitalCredentialsAuthorizationRequest(
+        request: DigitalCredentialsAuthorizationRequest,
         walletConfig: WalletConfig? = null,
     ): IdkResult<AuthorizationRequest, IdkError>
 }

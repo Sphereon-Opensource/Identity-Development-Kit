@@ -38,6 +38,7 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.config.OAuth2SigningKeyUnavailableException
 import com.sphereon.oauth2.server.authorization.impl.command.putClaims
 import com.sphereon.oauth2.server.authorization.model.AccessTokenData
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
@@ -150,6 +151,9 @@ class CreateAccessTokenCommandImpl(
                 applied.expiresInSeconds,
                 applied.dpopJkt,
                 applied.certificateThumbprintS256,
+                applied.authTime,
+                applied.acr,
+                applied.amr,
                 mergedClaims,
                 issuerUrl,
             ).map { StringResult(it) }.mapError { IdkError.fromDTO(it) }
@@ -191,13 +195,23 @@ class CreateAccessTokenCommandImpl(
         expiresInSeconds: Int,
         dpopJkt: String?,
         certificateThumbprintS256: String?,
+        authTime: Long?,
+        acr: String?,
+        amr: List<String>?,
         additionalClaims: Map<String, Any>,
         issuerUrl: String,
     ): IdkResult<String, AuthorizationServerError> {
-        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         return try {
+            val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
             val now = Clock.System.now()
             val expiresAt = now + expiresInSeconds.seconds
+            val tokenMetadataClaims =
+                buildMap<String, Any> {
+                    putAll(additionalClaims)
+                    authTime?.let { put("auth_time", it) }
+                    acr?.let { put("acr", it) }
+                    amr?.takeIf { it.isNotEmpty() }?.let { put("amr", it) }
+                }
 
             // If serverIdentifier is not configured, fall back to opaque tokens
             if (serverIdentifier == null) {
@@ -208,7 +222,7 @@ class CreateAccessTokenCommandImpl(
                     audience,
                     dpopJkt,
                     certificateThumbprintS256,
-                    additionalClaims,
+                    tokenMetadataClaims,
                     now,
                     expiresAt,
                     issuerUrl,
@@ -228,14 +242,21 @@ class CreateAccessTokenCommandImpl(
                     put("iat", now.epochSeconds)
                     put("exp", expiresAt.epochSeconds)
                     put("jti", jti)
+                    authTime?.let { put("auth_time", it) }
+                    acr?.let { put("acr", it) }
+                    amr
+                        ?.takeIf { it.isNotEmpty() }
+                        ?.let { methods ->
+                            put("amr", buildJsonArray { methods.forEach { add(JsonPrimitive(it)) } })
+                        }
 
                     // Authorized-party (`azp`). For self-issued SERVICE tokens (the
                     // client_credentials grant) the subject IS the client, so stamping `azp`
                     // makes the token self-describe as a workload identity. Downstream the
                     // binary/gRPC transport's AuthContextExtractor uses `sub == client_id == azp`
                     // (with no `email`) to recognise a workload token and apply the internal
-                    // service-forwarding trust policy (target tenant carried in X-Tenant-Id atop
-                    // the validated service token). Only stamped when subject == clientId so
+                    // service-forwarding trust policy. Tenant and principal authority still
+                    // come exclusively from validated JWT claims. Only stamped when subject == clientId so
                     // human (authorization_code) tokens, whose subject is the user, are unchanged.
                     if (subject == clientId) {
                         put("azp", clientId)
@@ -281,7 +302,11 @@ class CreateAccessTokenCommandImpl(
                     // §5.5 `claims` request-parameter wishlist threaded through to /userinfo)
                     // out of the JWT payload — they belong on the stored token's metadata only,
                     // not in the at+jwt body where every RP that introspects can read them.
-                    putClaims(additionalClaims.filterKeys { !it.startsWith("oidc.") })
+                    putClaims(
+                        additionalClaims.filterKeys {
+                            !it.startsWith("oidc.") && !it.startsWith("oid4vci.internal.")
+                        },
+                    )
                 }
 
             // Create JWT header with typ="at+jwt" per RFC 9068 Section 2.1
@@ -336,7 +361,7 @@ class CreateAccessTokenCommandImpl(
                     certificateThumbprintS256 = certificateThumbprintS256,
                     revoked = false,
                     refreshTokenId = null, // Set by caller if refresh token is issued
-                    additionalData = additionalClaims,
+                    additionalData = tokenMetadataClaims,
                 )
 
             // Store token for introspection and revocation
@@ -350,6 +375,13 @@ class CreateAccessTokenCommandImpl(
                 }.getOrElse { return Err(it) }
 
             Ok(accessToken)
+        } catch (expected: OAuth2SigningKeyUnavailableException) {
+            Err(
+                AuthorizationServerError.TemporarilyUnavailable(
+                    retryAfterSeconds = 5,
+                    exception = expected,
+                ),
+            )
         } catch (expected: Exception) {
             Err(
                 AuthorizationServerError.ServerError(

@@ -77,6 +77,10 @@ class X5cExternalIdentifierResolutionServiceImpl(
         val verificationResult =
             x509VerifyService.verifyCertificateChain(
                 X509VerificationRequest(
+                    // X5C resolution also serves as public-key extraction. Callers that defer
+                    // issuer policy to a Trust Domain can explicitly disable anchor validation
+                    // while certificate parsing and the subsequent signature check still run.
+                    enabled = opts.verify != false,
                     chainPEM = pems.toTypedArray(),
                     trustedCerts = opts.trustAnchors?.map { x509DerOrPemToPem(it) }?.toTypedArray(),
                     verificationTime = opts.verificationTime?.let { LocalDateTimeKMP.Companion.fromString(it) },

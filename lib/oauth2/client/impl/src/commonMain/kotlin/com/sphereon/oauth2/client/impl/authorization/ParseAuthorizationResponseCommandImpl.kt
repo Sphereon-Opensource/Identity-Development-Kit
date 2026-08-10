@@ -36,6 +36,7 @@ import com.sphereon.oauth2.common.model.AuthorizationErrorResponse
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Implementation of ParseAuthorizationResponseCommand
@@ -101,32 +102,43 @@ class ParseAuthorizationResponseCommandImpl(
             }
 
         return if (params.containsKey("error")) {
-            parseErrorResponse(params)
+            parseErrorResponse(params, args)
         } else {
-            parseSuccessResponse(params)
+            parseSuccessResponse(params, args)
         }
     }
 
-    private fun parseSuccessResponse(params: Map<String, String>): IdkResult<ParsedAuthorizationResponse, Oauth2Error> {
+    private fun parseSuccessResponse(
+        params: Map<String, String>,
+        args: ParseAuthorizationResponseArgs,
+    ): IdkResult<ParsedAuthorizationResponse, Oauth2Error> {
         val code = params["code"]
         if (code.isNullOrBlank()) {
             return Err(invalidRequest("code", "Authorization response must contain 'code' parameter"))
         }
 
+        validateBindings(params, args)?.let { return Err(it) }
+
         val response =
             AuthorizationResponse(
                 code = code,
                 state = params["state"],
+                additionalParameters = params.toAdditionalParameters(SUCCESS_PARAMETERS),
             )
 
         return Ok(ParsedAuthorizationResponse.Success(response))
     }
 
-    private fun parseErrorResponse(params: Map<String, String>): IdkResult<ParsedAuthorizationResponse, Oauth2Error> {
+    private fun parseErrorResponse(
+        params: Map<String, String>,
+        args: ParseAuthorizationResponseArgs,
+    ): IdkResult<ParsedAuthorizationResponse, Oauth2Error> {
         val error = params["error"]
         if (error.isNullOrBlank()) {
             return Err(invalidRequest("error", "Error response must contain non-empty 'error' parameter"))
         }
+
+        validateBindings(params, args)?.let { return Err(it) }
 
         val response =
             AuthorizationErrorResponse(
@@ -134,10 +146,36 @@ class ParseAuthorizationResponseCommandImpl(
                 errorDescription = params["error_description"],
                 errorUri = params["error_uri"],
                 state = params["state"],
+                additionalParameters = params.toAdditionalParameters(ERROR_PARAMETERS),
             )
 
         return Ok(ParsedAuthorizationResponse.Error(response))
     }
+
+    private fun validateBindings(
+        params: Map<String, String>,
+        args: ParseAuthorizationResponseArgs,
+    ): Oauth2Error.InvalidGrant? {
+        args.expectedState?.let { expected ->
+            if (params["state"] != expected) {
+                return Oauth2Error.InvalidGrant(reason = "Authorization response state mismatch")
+            }
+        }
+
+        val issuer = params["iss"]?.takeIf(String::isNotBlank)
+        if (args.requireIssuer && issuer == null) {
+            return Oauth2Error.InvalidGrant(reason = "Authorization response missing RFC 9207 issuer")
+        }
+        args.expectedIssuer?.let { expected ->
+            if (issuer != null && issuer != expected) {
+                return Oauth2Error.InvalidGrant(reason = "Authorization response issuer mismatch")
+            }
+        }
+        return null
+    }
+
+    private fun Map<String, String>.toAdditionalParameters(standardParameters: Set<String>) =
+        filterKeys { it !in standardParameters }.mapValues { JsonPrimitive(it.value) }
 
     private fun invalidRequest(
         path: String,
@@ -146,4 +184,9 @@ class ParseAuthorizationResponseCommandImpl(
         Oauth2Error.InvalidRequest(
             details = listOf(ValidationErrorDetail(path = path, message = message)),
         )
+
+    private companion object {
+        val SUCCESS_PARAMETERS = setOf("code", "state")
+        val ERROR_PARAMETERS = setOf("error", "error_description", "error_uri", "state")
+    }
 }

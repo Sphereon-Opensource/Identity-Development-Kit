@@ -22,7 +22,6 @@ import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertiesFilePrincipalPropertySource
 import com.sphereon.core.api.conf.PropertiesFileTenantPropertySource
 import com.sphereon.core.api.conf.PropertySourceBootstrap
-import com.sphereon.core.api.conf.SecretProviderBootstrap
 import com.sphereon.core.api.conf.TenantConfigService
 import com.sphereon.di.app.App
 import com.sphereon.di.app.RootScopeProvider
@@ -30,6 +29,7 @@ import com.sphereon.di.context.AnonymousContext
 import com.sphereon.di.context.AnonymousUserGraphManager
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.PrincipalAware
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.UserContext
 import com.sphereon.di.context.UserContextGraph
@@ -106,6 +106,7 @@ class AnonymousUserGraphManagerImpl(
                     contextId = UserContext.ANONYMOUS,
                     tenantContextData = AnonymousContext.tenant,
                     principal = anonymousPrincipalAware,
+                    principalType = PrincipalType.ANONYMOUS,
                 )
             try {
                 completeContextRegistration(holder)
@@ -137,6 +138,7 @@ class AnonymousUserGraphManagerImpl(
                     contextId = UserContext.BACKGROUND_SERVICE,
                     tenantContextData = AnonymousContext.tenant,
                     principal = anonymousPrincipalAware,
+                    principalType = PrincipalType.SERVICE,
                 )
             try {
                 completeContextRegistration(holder)
@@ -185,9 +187,15 @@ class AnonymousUserGraphManagerImpl(
         contextId: String,
         tenantContextData: TenantContextData,
         principal: PrincipalAware,
+        principalType: PrincipalType,
     ): ContextHolder {
         // Create new context
-        val context = UserContextImpl(tenant = tenantContextData, principal = principal.principal)
+        val context =
+            UserContextImpl(
+                tenant = tenantContextData,
+                principal = principal.principal,
+                principalType = principalType,
+            )
         val contextGraph = contextGraphFactory.createUserContext(context)
 
         val scope =
@@ -247,6 +255,5 @@ class AnonymousUserGraphManagerImpl(
 
         tenantConfigService?.let { propertySourceBootstrap.registerTenantSources(it, tenantId) }
         principalConfigService?.let { propertySourceBootstrap.registerPrincipalSources(it, tenantId, principalId) }
-        (contextGraph as? SecretProviderBootstrap.UserGraph)?.userSecretProviderBootstrap?.registerSecretProviders()
     }
 }

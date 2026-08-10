@@ -66,10 +66,11 @@ import kotlin.native.ObjCName
  *             DcqlCredentialQuery(
  *                 id = "id_card",
  *                 format = "dc+sd-jwt",
+ *                 meta = JsonObject(emptyMap()),
  *                 claims = listOf(
- *                     DcqlClaimQuery(path = listOf("given_name")),
- *                     DcqlClaimQuery(path = listOf("family_name")),
- *                     DcqlClaimQuery(path = listOf("portrait"))
+ *                     DcqlClaimQuery(path = claimsPathPointer("given_name")),
+ *                     DcqlClaimQuery(path = claimsPathPointer("family_name")),
+ *                     DcqlClaimQuery(path = claimsPathPointer("portrait"))
  *                 )
  *             )
  *         )
@@ -390,7 +391,7 @@ class ScopeResolver(
             val definition = registry.get(scopeValue) ?: continue
 
             // Collect credential IDs from this scope's DCQL query
-            definition.dcqlQuery.credentials?.forEach { credential ->
+            definition.dcqlQuery.credentials.forEach { credential ->
                 credentialIdToScopes.getOrPut(credential.id) { mutableListOf() }.add(scopeValue)
             }
         }
@@ -426,7 +427,7 @@ class ScopeResolver(
             // Merge credentials
             val allCredentials = mutableListOf<DcqlCredentialQuery>()
             queries.forEach { query ->
-                query.credentials?.let { allCredentials.addAll(it) }
+                allCredentials.addAll(query.credentials)
             }
 
             // Merge credential_sets
@@ -436,7 +437,7 @@ class ScopeResolver(
             }
 
             return DcqlQuery(
-                credentials = allCredentials.takeIf { it.isNotEmpty() },
+                credentials = allCredentials,
                 credential_sets = allCredentialSets.takeIf { it.isNotEmpty() },
             )
         }
@@ -517,7 +518,8 @@ class ScopeDefinitionBuilder {
  *             DcqlCredentialQuery(
  *                 id = "identity",
  *                 format = "dc+sd-jwt",
- *                 claims = listOf(DcqlClaimQuery(path = listOf("given_name")))
+ *                 meta = JsonObject(emptyMap()),
+ *                 claims = listOf(DcqlClaimQuery(path = claimsPathPointer("given_name")))
  *             )
  *         )
  *     ))

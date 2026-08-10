@@ -22,6 +22,7 @@ import com.sphereon.core.api.log.UserContextLogManager
 import com.sphereon.di.context.AnonymousUserGraphManager
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.SecuredTenantContextDetails
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.UserContext
 import com.sphereon.di.context.UserContextInstance
 import com.sphereon.di.context.UserContextManager
@@ -138,6 +139,8 @@ class SessionContextManagerImpl(
             sessionContext = runtimeSessionContext,
             correlationId = runtimeSessionContext.correlationId,
             makeActive = true,
+            secureDetails = runtimeSessionContext.context.secureDetails,
+            principalType = runtimeSessionContext.context.principalType,
             source = "callbacks",
         ).instance
     }
@@ -146,19 +149,19 @@ class SessionContextManagerImpl(
         sessionId: String,
         correlationId: String,
         makeActive: Boolean,
-    ): SessionInstance {
-        requireNotNull(sessionId) { "sessionId must not be null" }
-        return getOrCreateSessionInternal(sessionId, null, correlationId, makeActive, source = "id").instance
-    }
-
-    override fun createOrGetFromId(
-        sessionId: String,
-        correlationId: String,
-        makeActive: Boolean,
         secureDetails: SecuredTenantContextDetails?,
+        principalType: PrincipalType,
     ): SessionInstance {
         requireNotNull(sessionId) { "sessionId must not be null" }
-        return getOrCreateSessionInternal(sessionId, null, correlationId, makeActive, secureDetails, source = "id-secure").instance
+        return getOrCreateSessionInternal(
+            sessionId = sessionId,
+            sessionContext = null,
+            correlationId = correlationId,
+            makeActive = makeActive,
+            secureDetails = secureDetails,
+            principalType = principalType,
+            source = "id-secure-identity",
+        ).instance
     }
 
     // Session cleanup
@@ -435,6 +438,7 @@ class SessionContextManagerImpl(
         correlationId: String,
         makeActive: Boolean,
         secureDetails: SecuredTenantContextDetails? = null,
+        principalType: PrincipalType? = null,
         source: String,
     ): SessionGraph {
         // Fast-path: lock-free read if already created
@@ -500,13 +504,20 @@ class SessionContextManagerImpl(
                             sessionId = sessionId,
                             correlationId = correlationId,
                             secureDetails = secureDetails,
+                            principalType = principalType,
                         )
                     }
 
                 // Create the session graph and scope. The per-session secure details ride the
                 // graph factory so the DI-resolved SessionContext (what SessionExecution sees)
                 // carries the same credentials as the scope-service copy above.
-                val sessionGraph = sessionGraphFactory.createSessionGraph(sessionId, actualSessionContext.correlationId, secureDetails)
+                val sessionGraph =
+                    sessionGraphFactory.createSessionGraph(
+                        sessionId,
+                        actualSessionContext.correlationId,
+                        secureDetails,
+                        principalType,
+                    )
                 val scope =
                     contextScope.buildChild("session:$sessionId") {
                         addMetroDependencyGraph(sessionGraph)

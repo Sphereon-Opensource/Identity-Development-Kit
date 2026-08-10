@@ -26,7 +26,6 @@ import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceResolver
-import com.sphereon.oauth2.server.authorization.command.token.ProvisionSigningKeyHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeHttpEndpointCommand
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -39,8 +38,6 @@ import dev.zacsweers.metro.binding
  * Routes:
  * - `POST /internal/preauth/register` (called by the OID4VCI issuer in separate-process
  *   deployments; Basic-auth protected via `oauth2.servers.{id}.internal-clients`)
- * - `POST /internal/provision/signing-key` (called by the platform at tenant registration to
- *   provision the per-tenant AS signing key into THIS AS's KMS; Basic-auth protected)
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -52,7 +49,6 @@ class OAuth2InternalHttpAdapter(
     slugLookup: RoutableSlugLookup,
     tenantIdProvider: MutableResolvedTenantIdProvider,
     private val registerPreAuthorizedCodeCommand: RegisterPreAuthorizedCodeHttpEndpointCommand,
-    private val provisionSigningKeyCommand: ProvisionSigningKeyHttpEndpointCommand,
 ) : AbstractOAuth2HttpAdapter(
         id = ID,
         execution = execution,
@@ -67,6 +63,5 @@ class OAuth2InternalHttpAdapter(
         const val ID: String = "oauth2.as.internal"
     }
 
-    override val endpointCommands: List<HttpEndpointCommand> =
-        listOf(registerPreAuthorizedCodeCommand, provisionSigningKeyCommand)
+    override val endpointCommands: List<HttpEndpointCommand> = listOf(registerPreAuthorizedCodeCommand)
 }

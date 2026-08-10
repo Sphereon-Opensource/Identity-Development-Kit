@@ -19,10 +19,14 @@ package com.sphereon.core.defaults.conf
 import com.sphereon.core.api.conf.AppConfigEnvironment
 import com.sphereon.core.api.conf.ConfigEnvironment
 import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.DefaultInterpolationPolicyProvider
 import com.sphereon.core.api.conf.DefaultAppMapPropertySource
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.conf.DefaultPropertySources
 import com.sphereon.core.api.conf.DefaultTenantMapPropertySource
+import com.sphereon.core.api.conf.InterpolationPolicy
+import com.sphereon.core.api.conf.InterpolationPolicyCatalog
+import com.sphereon.core.api.conf.InterpolationPolicyProvider
 import com.sphereon.core.api.conf.MapPropertySource
 import com.sphereon.core.api.conf.NoOpSyncSnapshotCache
 import com.sphereon.core.api.conf.PrincipalConfigEnvironment
@@ -30,6 +34,8 @@ import com.sphereon.core.api.conf.ProtectedMutableMapPropertySource
 import com.sphereon.core.api.conf.TenantConfigEnvironment
 import com.sphereon.core.api.testutil.appConfigService
 import com.sphereon.core.api.testutil.createCoreApiTestAppGraph
+import com.sphereon.core.defaults.context.DefaultPrincipalInputString
+import com.sphereon.core.defaults.context.DefaultTenantInputString
 import com.sphereon.di.context.AnonymousContext
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.UserContext
@@ -38,13 +44,29 @@ import com.sphereon.di.context.UserContextInstance
 import com.sphereon.di.context.UserContextManager
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.di.session.SessionInstance
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesTo
 import software.amazon.app.platform.scope.Scope
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
+
+@ContributesTo(AppScope::class)
+interface InterpolationPolicyCatalogAppTestGraph {
+    val interpolationPolicyCatalog: InterpolationPolicyCatalog
+    val interpolationPolicyProvider: InterpolationPolicyProvider
+}
+
+@ContributesTo(com.sphereon.di.context.UserScope::class)
+interface InterpolationPolicyCatalogUserTestGraph {
+    val interpolationPolicyCatalog: InterpolationPolicyCatalog
+    val interpolationPolicyProvider: InterpolationPolicyProvider
+}
 
 class ConfigEnvironmentTest {
     private fun createAppGraph() =
@@ -97,21 +119,43 @@ class ConfigEnvironmentTest {
     private fun createTestAppConfig(
         appId: String = "test-app",
         profile: String = "test-profile",
-    ) = AppConfigEnvironmentImpl(appId, profile, NoOpSyncSnapshotCache, interpolator = null, secretResolver = null)
+    ) = AppConfigEnvironmentImpl(
+        appId,
+        profile,
+        NoOpSyncSnapshotCache,
+        interpolator = null,
+        interpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
+    )
 
     // Helper to create TenantConfigEnvironmentImpl with test defaults
     private fun createTestTenantConfig(
         appId: String = "test-app",
         profile: String = "test-profile",
         parent: AppConfigEnvironmentImpl = createTestAppConfig(appId, profile),
-    ) = TenantConfigEnvironmentImpl(appId, profile, createTestUserContextInstance(), NoOpSyncSnapshotCache, parent, interpolator = null, secretResolver = null)
+    ) = TenantConfigEnvironmentImpl(
+        appId,
+        profile,
+        createTestUserContextInstance(),
+        NoOpSyncSnapshotCache,
+        parent,
+        interpolator = null,
+        interpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
+    )
 
     // Helper to create PrincipalConfigEnvironmentImpl with test defaults
     private fun createTestPrincipalConfig(
         appId: String = "test-app",
         profile: String = "test-profile",
         parent: TenantConfigEnvironmentImpl = createTestTenantConfig(appId, profile),
-    ) = PrincipalConfigEnvironmentImpl(appId, profile, createTestUserContextInstance(), NoOpSyncSnapshotCache, parent, interpolator = null, secretResolver = null)
+    ) = PrincipalConfigEnvironmentImpl(
+        appId,
+        profile,
+        createTestUserContextInstance(),
+        NoOpSyncSnapshotCache,
+        parent,
+        interpolator = null,
+        interpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
+    )
 
     private fun getRequiredMutableSource(
         environment: ConfigEnvironment,
@@ -416,7 +460,6 @@ class ConfigEnvironmentTest {
                     propertySources = localSources,
                     snapshotCache = null,
                     interpolator = null,
-                    secretResolver = null,
                 ) {
                     override val parent: ConfigEnvironment? = null
                     override val level: ConfigLevel = ConfigLevel.APP
@@ -448,7 +491,6 @@ class ConfigEnvironmentTest {
                     propertySources = parentSources,
                     snapshotCache = null,
                     interpolator = null,
-                    secretResolver = null,
                 ) {
                     override val parent: ConfigEnvironment? = null
                     override val level: ConfigLevel = ConfigLevel.APP
@@ -461,7 +503,6 @@ class ConfigEnvironmentTest {
                     propertySources = DefaultPropertySources(mutableListOf(MapPropertySource("child", emptyMap()))),
                     snapshotCache = null,
                     interpolator = null,
-                    secretResolver = null,
                 ) {
                     override val parent: ConfigEnvironment = parentEnv
                     override val level: ConfigLevel = ConfigLevel.TENANT
@@ -577,6 +618,115 @@ class ConfigEnvironmentTest {
             assertEquals("app", app.getPropertyAsString("precedence.fallback.value"))
             assertEquals("tenant", tenant.getPropertyAsString("precedence.fallback.value"))
             assertEquals("principal", principal.getPropertyAsString("precedence.fallback.value"))
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun oneInterpolationPolicyCatalogGovernsAppTenantAndPrincipalEnvironments() {
+        val appGraph = createAppGraph()
+        try {
+            val catalog =
+                InterpolationPolicyCatalog(
+                    exactPolicies =
+                        mapOf(
+                            "deployment.path" to InterpolationPolicy.APP_ENVIRONMENT,
+                        ),
+                )
+            val appPolicyProvider = DefaultInterpolationPolicyProvider(catalog)
+            val userPolicyProvider = DefaultInterpolationPolicyProvider(catalog)
+
+            assertEquals(
+                InterpolationPolicy.APP_ENVIRONMENT,
+                appPolicyProvider.policyFor("deployment.path", ConfigLevel.APP),
+            )
+            assertEquals(
+                InterpolationPolicy.APP_ENVIRONMENT,
+                userPolicyProvider.policyFor("deployment.path", ConfigLevel.APP),
+            )
+
+            val app =
+                AppConfigEnvironmentImpl(
+                    "test-app",
+                    "test-profile",
+                    NoOpSyncSnapshotCache,
+                    interpolator = null,
+                    interpolationPolicyProvider = appPolicyProvider,
+                )
+            val tenant =
+                TenantConfigEnvironmentImpl(
+                    "test-app",
+                    "test-profile",
+                    createTestUserContextInstance(),
+                    NoOpSyncSnapshotCache,
+                    app,
+                    interpolator = null,
+                    interpolationPolicyProvider = userPolicyProvider,
+                )
+            val principal =
+                PrincipalConfigEnvironmentImpl(
+                    "test-app",
+                    "test-profile",
+                    createTestUserContextInstance(),
+                    NoOpSyncSnapshotCache,
+                    tenant,
+                    interpolator = null,
+                    interpolationPolicyProvider = userPolicyProvider,
+                )
+
+            val appSource = getRequiredMutableSource(app, DefaultAppMapPropertySource.NAME)
+            val tenantSource = getRequiredMutableSource(tenant, DefaultTenantMapPropertySource.NAME)
+            val principalSource = getRequiredMutableSource(principal, DefaultPrincipalMapPropertySource.NAME)
+
+            appSource.addProperty("deployment.path", "${'$'}{env:PATH}")
+            assertTrue(app.getRequiredPropertyAsString("deployment.path").isNotBlank())
+
+            assertFailsWith<IllegalArgumentException> {
+                tenantSource.addProperty("deployment.path", "${'$'}{env:PATH}")
+            }
+            assertFailsWith<IllegalArgumentException> {
+                principalSource.addProperty("deployment.path", "${'$'}{env:PATH}")
+            }
+
+            tenantSource.addProperty("tenant.environment.fragment", "env:PATH")
+            tenantSource.addProperty("deployment.path", "${'$'}{${'$'}{tenant.environment.fragment}}")
+            assertFailsWith<IllegalStateException> {
+                tenant.getPropertyAsString("deployment.path")
+            }
+
+            principalSource.addProperty("principal.environment.fragment", "env:PATH")
+            principalSource.addProperty("deployment.path", "${'$'}{${'$'}{principal.environment.fragment}}")
+            assertFailsWith<IllegalStateException> {
+                principal.getPropertyAsString("deployment.path")
+            }
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun productionMetroGraphSharesInterpolationPolicyCatalogAcrossAppAndUserScopes() {
+        val appGraph = createAppGraph()
+        try {
+            val context =
+                appGraph.userContextManager.createOrGetFromInputs(
+                    DefaultTenantInputString("catalog-tenant"),
+                    DefaultPrincipalInputString("catalog-principal"),
+                )
+            val appPolicyGraph = appGraph as InterpolationPolicyCatalogAppTestGraph
+            val userPolicyGraph = context.graph as InterpolationPolicyCatalogUserTestGraph
+            val appEnvironment = (appGraph as AppConfigEnvironment.Graph).appConfigEnvironment
+            val tenantEnvironment = (context.graph as TenantConfigEnvironment.Graph).tenantConfigEnvironment
+            val principalEnvironment = (context.graph as PrincipalConfigEnvironment.Graph).principalConfigEnvironment
+
+            assertSame(appPolicyGraph.interpolationPolicyCatalog, userPolicyGraph.interpolationPolicyCatalog)
+            assertEquals(
+                appPolicyGraph.interpolationPolicyProvider.policyFor("feature.value", ConfigLevel.APP),
+                userPolicyGraph.interpolationPolicyProvider.policyFor("feature.value", ConfigLevel.APP),
+            )
+            assertSame(appEnvironment, tenantEnvironment.parent)
+            assertSame(tenantEnvironment, principalEnvironment.parent)
         } finally {
             appGraph.destroy()
         }

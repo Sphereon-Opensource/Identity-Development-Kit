@@ -33,8 +33,7 @@ import kotlin.reflect.KClass
  *
  * On JVM/Native, [runBlockingCompat] delegates to `runBlocking`.
  * On JS/wasmJs, it uses `startCoroutine` which works as long as the interpolation
- * completes without actual suspension (true for all placeholder types except
- * secret references backed by async providers).
+ * completes without actual suspension. Property interpolation never resolves secrets.
  */
 @JsExportCompat
 @OptIn(ExperimentalObjCName::class)
@@ -43,9 +42,54 @@ class InterpolatingPropertySourcesPropertyResolver(
     private val propertySources: PropertySources,
     private val interpolator: PropertyInterpolator,
     redactionPolicy: SecretRedactionPolicy = DefaultSecretRedactionPolicy(),
+    override val resolverLevel: ConfigLevel,
+    private val interpolationPolicyProvider: InterpolationPolicyProvider = DefaultInterpolationPolicyProvider(),
 ) : AbstractPropertyResolver(redactionPolicy),
-    ScopeAwarePropertyResolver {
-    private val delegate = PropertySourcesPropertyResolver(propertySources, redactionPolicy)
+    ScopeAwarePropertyResolver,
+    ProtectedPropertyResolver {
+    private val protectedDelegate = ProtectedPropertySourcesResolver(propertySources, this.resolverLevel, redactionPolicy)
+    private val delegate = protectedDelegate
+    private val keyNormalizer = PropertyKeyNormalizerImpl.Default
+
+    override fun canSetProperty(key: String) = protectedDelegate.canSetProperty(key)
+
+    override fun canInterpolateProperty(
+        key: String,
+        fromScope: ConfigLevel,
+    ) = protectedDelegate.canInterpolateProperty(key, fromScope)
+
+    override fun canReadProperty(
+        key: String,
+        fromScope: ConfigLevel,
+    ) = protectedDelegate.canReadProperty(key, fromScope)
+
+    override fun canInterpolateEnvironment(
+        name: String,
+        fromScope: ConfigLevel,
+    ) = protectedDelegate.canInterpolateEnvironment(name, fromScope)
+
+    override fun getProtection(key: String): PropertyProtection? = protectedDelegate.getProtection(key)
+
+    override fun resolvePropertyWithScope(
+        key: String,
+        requiredScope: ConfigLevel?,
+    ): ResolvedPropertyWithScope? =
+        resolveCanonicalPropertyInternal(key, requiredScope)?.toResolvedPropertyWithScope()
+
+    internal fun resolveCanonicalPropertyInternal(
+        key: String,
+        requiredScope: ConfigLevel?,
+    ): ResolvedValue<Any>? {
+        val raw = protectedDelegate.resolveCanonicalPropertyInternal(key, requiredScope) ?: return null
+        return interpolateCanonical(keyNormalizer.normalize(key), raw)
+    }
+
+    internal fun resolveCanonicalPropertiesInternal(prefixes: Set<String>?): Map<String, ResolvedValue<Any>> =
+        protectedDelegate
+            .resolveCanonicalPropertiesInternal(prefixes)
+            .mapValues { (key, raw) ->
+                interpolateCanonical(key, raw)
+            }
 
     override fun containsProperty(key: String): Boolean = delegate.containsProperty(key)
 
@@ -53,29 +97,20 @@ class InterpolatingPropertySourcesPropertyResolver(
         key: String,
         targetType: KClass<T>,
         defaultValue: T?,
-    ): T? {
-        val resolved = resolvePlaceholderForType(targetType) { delegate.getProperty(key, String::class, null) }
-        if (resolved != PlaceholderNotApplied) {
-            @Suppress("UNCHECKED_CAST")
-            return resolved as T?
-        }
-        val raw = delegate.getProperty(key, targetType, defaultValue) ?: return null
-        return interpolateIfString(raw)
-    }
+    ): T? =
+        resolveCanonicalPropertyInternal(key, requiredScope = null)
+            ?.value
+            ?.let { coerceCanonicalValue(it, targetType) }
+            ?: defaultValue
 
     override fun <T : Any> getPropertyAtScope(
         key: String,
         targetType: KClass<T>,
         scope: ConfigLevel,
-    ): T? {
-        val resolved = resolvePlaceholderForType(targetType) { delegate.getPropertyAtScope(key, String::class, scope) }
-        if (resolved != PlaceholderNotApplied) {
-            @Suppress("UNCHECKED_CAST")
-            return resolved as T?
-        }
-        val raw = delegate.getPropertyAtScope(key, targetType, scope) ?: return null
-        return interpolateIfString(raw)
-    }
+    ): T? =
+        resolveCanonicalPropertyInternal(key, requiredScope = scope)
+            ?.value
+            ?.let { coerceCanonicalValue(it, targetType) }
 
     /**
      * When the caller asks for a non-String type (Boolean, Int, etc.) and the underlying
@@ -84,80 +119,116 @@ class InterpolatingPropertySourcesPropertyResolver(
      * placeholders, interpolate then coerce.
      *
      * Returns:
-     * - [PlaceholderNotApplied] sentinel when this path doesn't apply (target is
+     * - A null conversion when this path does not apply (target is
      *   String/Any, no String value at this key, or the value has no placeholders) —
      *   the caller falls back to the standard typed lookup.
      * - The coerced value (possibly null) when the path applied — the caller commits
      *   to that result. Falling back here would re-throw on the same raw template
      *   string the strict type check rejected, which is the bug we're fixing.
      */
-    private fun resolvePlaceholderForType(
-        targetType: KClass<*>,
-        rawStringFetcher: () -> String?,
-    ): Any? {
-        if (targetType == String::class || targetType == Any::class) {
-            return PlaceholderNotApplied
-        }
-        val rawString = runCatching { rawStringFetcher() }.getOrNull() ?: return PlaceholderNotApplied
-        if (!interpolator.containsPlaceholders(rawString)) {
-            return PlaceholderNotApplied
-        }
-        val result =
-            runBlockingCompat {
-                interpolator.interpolate(rawString, delegate)
-            }
-        if (!result.isOk) {
-            return PlaceholderNotApplied
-        }
-        return coerceStringTo(result.value, targetType)
-    }
-
-    private fun coerceStringTo(
-        value: String,
-        targetType: KClass<*>,
-    ): Any? =
+    @Suppress("UNCHECKED_CAST")
+    private fun <T : Any> coerceCanonicalValue(
+        value: Any,
+        targetType: KClass<T>,
+    ): T? =
         when (targetType) {
-            Boolean::class -> value.toBooleanStrictOrNull()
-            Int::class -> value.toIntOrNull()
-            Long::class -> value.toLongOrNull()
-            Double::class -> value.toDoubleOrNull()
-            Float::class -> value.toFloatOrNull()
-            String::class -> value
-            else -> null
-        }
-
-    private companion object {
-        private val PlaceholderNotApplied = Any()
-    }
+            Any::class -> value
+            String::class -> value.toString()
+            Boolean::class -> if (value is Boolean) value else (value as? String)?.toBooleanStrictOrNull()
+            Int::class -> if (value is Int) value else (value as? String)?.toIntOrNull()
+            Long::class -> if (value is Long) value else (value as? String)?.toLongOrNull()
+            Double::class -> if (value is Double) value else (value as? String)?.toDoubleOrNull()
+            Float::class -> if (value is Float) value else (value as? String)?.toFloatOrNull()
+            else -> if (targetType.isInstance(value)) value else null
+        } as T?
 
     override fun getPropertyAsStringAtScope(
         key: String,
         scope: ConfigLevel,
     ): String? = getPropertyAtScope(key, String::class, scope)
 
-    override fun getAllProperties(): Map<String, Any> = delegate.getAllProperties().mapValues { (_, value) -> interpolateIfString(value) }
+    override fun getAllProperties(): Map<String, Any> =
+        resolveCanonicalPropertiesInternal().mapValues { (_, resolved) -> resolved.value }
 
     override fun getSubProperties(
         prefixes: Set<String>,
         stripPrefix: Boolean,
-    ): Map<String, Any> = delegate.getSubProperties(prefixes, stripPrefix).mapValues { (_, value) -> interpolateIfString(value) }
+    ): Map<String, Any> {
+        // Keep the full property key until after interpolation so the winning scoped source
+        // remains available for property-level protection checks.
+        val normalizedPrefixes = prefixes.map { keyNormalizer.normalize(it) }.toSet()
+        val resolved =
+            resolveCanonicalPropertiesInternal(normalizedPrefixes)
+                .mapValues { (_, value) -> value.value }
+        return if (stripPrefix) stripPrefixes(resolved, normalizedPrefixes) else resolved
+    }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun <T> interpolateIfString(value: T): T {
-        if (value !is String) {
-            return value
+    private fun interpolateCanonical(
+        key: String,
+        raw: ResolvedValue<Any>,
+    ): ResolvedValue<Any> {
+        val value = raw.value
+        if (value !is String || !interpolator.containsPlaceholders(value)) {
+            return raw
         }
-        if (!interpolator.containsPlaceholders(value)) {
-            return value
-        }
+        rejectForbiddenExternalSource(value)
         val result =
             runBlockingCompat {
-                interpolator.interpolate(value, delegate)
+                interpolateCanonicalValue(key, raw)
             }
-        return if (result.isOk) {
-            result.value as T
-        } else {
-            value
+        if (result.isErr) {
+            throw IllegalStateException("Configuration interpolation was denied")
+        }
+        val provenance = result.value.provenance
+        return ResolvedValue(
+            value = result.value.value,
+            metadata =
+                raw.metadata.copy(
+                    scope = provenance.sourceScope ?: raw.metadata.scope,
+                    isSecret = provenance.hasTaint(ResolutionTaint.SENSITIVE),
+                    isInterpolated = true,
+                    provenance = provenance,
+                ),
+        )
+    }
+
+    private suspend fun interpolateCanonicalValue(
+        key: String,
+        resolved: ResolvedValue<Any>,
+    ): com.sphereon.core.api.IdkResult<InterpolatedPropertyValue, com.sphereon.core.api.error.IdkError> {
+        val rawValue = resolved.value as? String
+            ?: return com.sphereon.core.api.Err(
+                ConfigErrors.interpolationError(
+                    key = "property",
+                    reason = "property value is not interpolatable",
+                ),
+            )
+        val interpolationResolver = ProtectedPropertySourcesResolver(propertySources, resolved.metadata.scope, redactionPolicy)
+        return interpolator.interpolateWithProvenance(
+            value = rawValue,
+            resolver = interpolationResolver,
+            requestingScope = resolved.metadata.scope,
+            maxDepth = null,
+            policy = interpolationPolicyProvider.policyFor(key, resolved.metadata.scope),
+            sourceProvenance = resolved.metadata.provenance,
+        )
+    }
+
+    private fun rejectForbiddenExternalSource(value: String) {
+        if (forbiddenExternalReferenceError(value) != null) {
+            throw IllegalStateException("External secret-provider references are forbidden in configuration")
         }
     }
+
+    private fun stripPrefixes(
+        props: Map<String, Any>,
+        prefixes: Set<String>,
+    ): Map<String, Any> =
+        props.mapKeys { (key, _) ->
+            val normalizedKey = keyNormalizer.normalize(key)
+            prefixes
+                .firstOrNull { normalizedKey == it || normalizedKey.startsWith("$it.") }
+                ?.let { normalizedKey.removePrefix(it).removePrefix(".") }
+                ?: key
+        }
 }

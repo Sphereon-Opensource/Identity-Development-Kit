@@ -105,7 +105,7 @@ class HandleDeferredCredentialEndpointCommandImpl(
         val dpopProof = dpopValues.singleOrNull()
 
         val requestBody =
-            decryptRequestIfNeeded(request, decryptJweCommand, configProvider.credentialRequestDecryptionKey)
+            decryptRequestIfNeeded(request, decryptJweCommand, configProvider.credentialRequestDecryptionKey())
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to decrypt JWE request body"))
 
         val deferredRequest =

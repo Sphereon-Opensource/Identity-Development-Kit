@@ -1,0 +1,230 @@
+diff --git a/src/main/java/net/openid/conformance/condition/as/VP1FinalEncryptVPResponse.java b/src/main/java/net/openid/conformance/condition/as/VP1FinalEncryptVPResponse.java
+--- a/src/main/java/net/openid/conformance/condition/as/VP1FinalEncryptVPResponse.java
++++ b/src/main/java/net/openid/conformance/condition/as/VP1FinalEncryptVPResponse.java
+@@ -13,15 +13,16 @@ public class VP1FinalEncryptVPResponse extends AbstractJWEEncryptString
+ {
+ 
+ 	@Override
+-	@PreEnvironment(required = CreateAuthorizationEndpointResponseParams.ENV_KEY)
++	@PreEnvironment(required = { CreateAuthorizationEndpointResponseParams.ENV_KEY, CreateEffectiveAuthorizationRequestParameters.ENV_KEY })
+ 	@PostEnvironment(required = "direct_post_request_form_parameters")
+ 	public Environment evaluate(Environment env) {
+ 
+ 		final JsonElement jwksEl;
+ 		try {
+-			jwksEl = env.getElementFromObject("authorization_request_object", "claims.client_metadata.jwks");
++			jwksEl = env.getElementFromObject(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "client_metadata.jwks");
+ 		} catch (Exception e) {
+-			throw error("Couldn't read client_metadata.jwks from authorization request", e, args("authorization_request", env.getObject("authorization_request_object")));
++			throw error("Couldn't read client_metadata.jwks from authorization request", e,
++				args("authorization_request", env.getObject(CreateEffectiveAuthorizationRequestParameters.ENV_KEY)));
+ 		}
+ 		if (jwksEl == null) {
+ 			throw error("An encrypted response was requested but client_metadata.jwks is not present in the received request.");
+@@ -36,7 +37,8 @@ public class VP1FinalEncryptVPResponse extends AbstractJWEEncryptString
+ 		try {
+ 			algEl = clientJwks.get("keys").getAsJsonArray().get(0).getAsJsonObject().get("alg");
+ 		} catch (Exception e) {
+-			throw error("Couldn't read alg from first key in client_metadata.jwks from authorization request", e, args("authorization_request", env.getObject("authorization_request_object")));
++			throw error("Couldn't read alg from first key in client_metadata.jwks from authorization request", e,
++				args("authorization_request", env.getObject(CreateEffectiveAuthorizationRequestParameters.ENV_KEY)));
+ 		}
+ 		if (algEl == null) {
+ 			throw error("Key in client_metadata in request does not contain alg field", args("client_jwks", clientJwks));
+@@ -44,7 +46,8 @@ public class VP1FinalEncryptVPResponse extends AbstractJWEEncryptString
+ 		String alg = OIDFJSON.getString(algEl);
+ 
+ 		// and just use the first enc - if there's not one default to A128GCM as per OID4VP spec
+-		JsonElement encValuesSupported = env.getElementFromObject("authorization_request_object", "claims.client_metadata.encrypted_response_enc_values_supported");
++		JsonElement encValuesSupported = env.getElementFromObject(CreateEffectiveAuthorizationRequestParameters.ENV_KEY,
++			"client_metadata.encrypted_response_enc_values_supported");
+ 		String enc;
+ 		if (encValuesSupported != null) {
+ 			enc = OIDFJSON.getString(encValuesSupported.getAsJsonArray().get(0));
+diff --git a/src/main/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted.java b/src/main/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted.java
+--- a/src/main/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted.java
++++ b/src/main/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted.java
+@@ -4,19 +4,21 @@ import com.google.gson.JsonElement;
+ import com.google.gson.JsonObject;
+ import net.openid.conformance.condition.PostEnvironment;
+ import net.openid.conformance.condition.PreEnvironment;
++import net.openid.conformance.condition.as.CreateEffectiveAuthorizationRequestParameters;
+ import net.openid.conformance.testmodule.Environment;
+ 
+ public class CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted extends AbstractCreateVP1FinalIsoMdocRedirectSessionTranscript {
+ 	@Override
+-	@PreEnvironment(strings = { "client_id", "nonce"}, required = "authorization_request_object" )
++	@PreEnvironment(strings = { "client_id", "nonce"}, required = CreateEffectiveAuthorizationRequestParameters.ENV_KEY)
+ 	@PostEnvironment(strings = "session_transcript")
+ 	public Environment evaluate(Environment env) {
+ 
+ 		final JsonElement jwksEl;
+ 		try {
+-			jwksEl = env.getElementFromObject("authorization_request_object", "claims.client_metadata.jwks");
++			jwksEl = env.getElementFromObject(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "client_metadata.jwks");
+ 		} catch (Exception e) {
+-			throw error("Couldn't read client_metadata.jwks from authorization request", e, args("authorization_request", env.getObject("authorization_request_object")));
++			throw error("Couldn't read client_metadata.jwks from authorization request", e,
++				args("authorization_request", env.getObject(CreateEffectiveAuthorizationRequestParameters.ENV_KEY)));
+ 		}
+ 		if (jwksEl == null) {
+ 			throw error("An encrypted response was requested but client_metadata.jwks is not present in the received request.");
+@@ -31,13 +33,14 @@ public class CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted ext
+ 		try {
+ 			jwkJson = clientJwks.get("keys").getAsJsonArray().get(0).getAsJsonObject();
+ 		} catch (Exception e) {
+-			throw error("Couldn't read first key in client_metadata.jwks from authorization request", e, args("authorization_request", env.getObject("authorization_request_object")));
++			throw error("Couldn't read first key in client_metadata.jwks from authorization request", e,
++				args("authorization_request", env.getObject(CreateEffectiveAuthorizationRequestParameters.ENV_KEY)));
+ 		}
+ 
+ 		String clientId = env.getString("client_id");
+ 		String nonce =  env.getString("nonce");
+ 		// this could be redirect_uri if response_uri isn't present, but we currently only support response_modes where response_uri is present
+-		String responseUri = env.getString("authorization_request_object", "claims.response_uri");
++		String responseUri = env.getString(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "response_uri");
+ 
+ 		calculateSessionTranscript(env, jwkJson, clientId, nonce, responseUri);
+ 
+diff --git a/src/main/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted.java b/src/main/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted.java
+--- a/src/main/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted.java
++++ b/src/main/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted.java
+@@ -3,11 +3,12 @@ package net.openid.conformance.condition.client;
+ import com.google.gson.JsonObject;
+ import net.openid.conformance.condition.PostEnvironment;
+ import net.openid.conformance.condition.PreEnvironment;
++import net.openid.conformance.condition.as.CreateEffectiveAuthorizationRequestParameters;
+ import net.openid.conformance.testmodule.Environment;
+ 
+ public class CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted extends AbstractCreateVP1FinalIsoMdocRedirectSessionTranscript {
+ 	@Override
+-	@PreEnvironment(strings = { "client_id", "nonce"}, required = "authorization_request_object" )
++	@PreEnvironment(strings = { "client_id", "nonce"}, required = CreateEffectiveAuthorizationRequestParameters.ENV_KEY)
+ 	@PostEnvironment(strings = "session_transcript")
+ 	public Environment evaluate(Environment env) {
+ 
+@@ -15,7 +16,7 @@ public class CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted e
+ 		String clientId = env.getString("client_id");
+ 		String nonce =  env.getString("nonce");
+ 		// this could be redirect_uri if response_uri isn't present, but we currently only support response_modes where response_uri is present
+-		String responseUri = env.getString("authorization_request_object", "claims.response_uri");
++		String responseUri = env.getString(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "response_uri");
+ 
+ 		calculateSessionTranscript(env, jwkJson, clientId, nonce, responseUri);
+ 
+diff --git a/src/test/java/net/openid/conformance/condition/as/VP1FinalEncryptVPResponse_UnitTest.java b/src/test/java/net/openid/conformance/condition/as/VP1FinalEncryptVPResponse_UnitTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/net/openid/conformance/condition/as/VP1FinalEncryptVPResponse_UnitTest.java
+@@ -0,0 +1,53 @@
++package net.openid.conformance.condition.as;
++
++import com.google.gson.JsonObject;
++import net.openid.conformance.condition.Condition.ConditionResult;
++import net.openid.conformance.logging.BsonEncoding;
++import net.openid.conformance.logging.TestInstanceEventLog;
++import net.openid.conformance.testmodule.Environment;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Test;
++
++import static org.assertj.core.api.Assertions.assertThat;
++
++public class VP1FinalEncryptVPResponse_UnitTest {
++
++	private Environment env;
++
++	private VP1FinalEncryptVPResponse cond;
++
++	@BeforeEach
++	public void setUp() {
++		env = new Environment();
++		TestInstanceEventLog eventLog = BsonEncoding.testInstanceEventLog();
++		cond = new VP1FinalEncryptVPResponse();
++		cond.setProperties("UNIT-TEST", eventLog, ConditionResult.INFO);
++	}
++
++	@Test
++	public void readsEncryptionMetadataFromEffectiveAuthorizationRequest() {
++		env.putObjectFromJsonString(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "client_metadata", """
++			{
++			  "jwks": { "keys": [{
++			    "kty": "EC",
++			    "crv": "P-256",
++			    "x": "DxiH5Q4Yx3UrukE2lWCErq8N8bqC9CHLLrAwLz5BmE0",
++			    "y": "XtLM4-3h5o3HUH0MHVJV0kyq0iBlrBwlh8qEDMZ4-Pc",
++			    "use": "enc",
++			    "alg": "ECDH-ES",
++			    "kid": "1"
++			  }]},
++			  "encrypted_response_enc_values_supported": ["A128GCM"]
++			}
++			""");
++		JsonObject response = new JsonObject();
++		response.addProperty("state", "state-123");
++		env.putObject(CreateAuthorizationEndpointResponseParams.ENV_KEY, response);
++
++		cond.execute(env);
++
++		String encryptedResponse = env.getString("direct_post_request_form_parameters", "response");
++		assertThat(encryptedResponse).isNotBlank();
++		assertThat(encryptedResponse.split("\\.")).hasSize(5);
++	}
++}
+diff --git a/src/test/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted_UnitTest.java b/src/test/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted_UnitTest.java
+--- a/src/test/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted_UnitTest.java
++++ b/src/test/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted_UnitTest.java
+@@ -2,6 +2,7 @@ package net.openid.conformance.condition.client;
+ 
+ import net.openid.conformance.condition.Condition.ConditionResult;
+ import net.openid.conformance.condition.ConditionError;
++import net.openid.conformance.condition.as.CreateEffectiveAuthorizationRequestParameters;
+ import net.openid.conformance.logging.BsonEncoding;
+ import net.openid.conformance.logging.TestInstanceEventLog;
+ import net.openid.conformance.testmodule.Environment;
+@@ -32,7 +33,7 @@ public class CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted_Uni
+ 	@Test
+ 	public void testEvaluate_noError() throws Exception {
+ 		// example from https://openid.net/specs/openid-4-verifiable-presentations-1_0-29.html#appendix-B.2.6.1
+-		env.putObjectFromJsonString("authorization_request_object", "claims.client_metadata.jwks", """
++		env.putObjectFromJsonString(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "client_metadata.jwks", """
+ 			{ "keys": [
+ 			{
+ 			  "kty": "EC",
+@@ -47,7 +48,7 @@ public class CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted_Uni
+ 			}
+ 			""");
+ 		env.putString("client_id", "x509_san_dns:example.com");
+-		env.putString("authorization_request_object", "claims.response_uri", "https://example.com/response"); // FIXME key name might be wrong
++		env.putString(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "response_uri", "https://example.com/response");
+ 		env.putString("nonce", "exc7gBkxjx1rdc9udRrveKvSsJIq80avlXeLHhGwqtA");
+ 
+ 		cond.execute(env);
+@@ -64,7 +65,7 @@ public class CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptEncrypted_Uni
+ 	public void testEvaluate_noErrorNoJwk() throws Exception {
+ 		assertThrows(ConditionError.class, () -> {
+ 			env.putString("client_id", "x509_san_dns:example.com");
+-			env.putString("authorization_request_object", "claims.response_uri", "https://example.com/response"); // FIXME key name might be wrong
++			env.putString(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "response_uri", "https://example.com/response");
+ 			env.putString("nonce", "exc7gBkxjx1rdc9udRrveKvSsJIq80avlXeLHhGwqtA");
+ 
+ 			cond.execute(env);
+diff --git a/src/test/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted_UnitTest.java b/src/test/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted_UnitTest.java
+--- a/src/test/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted_UnitTest.java
++++ b/src/test/java/net/openid/conformance/condition/client/CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted_UnitTest.java
+@@ -1,6 +1,7 @@
+ package net.openid.conformance.condition.client;
+ 
+ import net.openid.conformance.condition.Condition.ConditionResult;
++import net.openid.conformance.condition.as.CreateEffectiveAuthorizationRequestParameters;
+ import net.openid.conformance.logging.BsonEncoding;
+ import net.openid.conformance.logging.TestInstanceEventLog;
+ import net.openid.conformance.testmodule.Environment;
+@@ -30,7 +31,7 @@ public class CreateVP1FinalVerifierIsoMdocRedirectSessionTranscriptUnencrypted_U
+ 	@Test
+ 	public void testEvaluate_noErrorNoJwk() throws Exception {
+ 		env.putString("client_id", "x509_san_dns:example.com");
+-		env.putString("authorization_request_object", "claims.response_uri", "https://example.com/response"); // FIXME key name might be wrong
++		env.putString(CreateEffectiveAuthorizationRequestParameters.ENV_KEY, "response_uri", "https://example.com/response");
+ 		env.putString("nonce", "exc7gBkxjx1rdc9udRrveKvSsJIq80avlXeLHhGwqtA");
+ 
+ 		cond.execute(env);

@@ -20,7 +20,6 @@ import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.TenantPathMode
-import com.sphereon.core.api.http.describe.TenantResolutionPriority
 import com.sphereon.core.compat.JsExportCompat
 
 /**
@@ -37,7 +36,7 @@ data class UniversalHttpDefaults(
     val serverPrefix: String = "",
     /**
      * Default tenant-in-path mode.
-     * OFF means tenant is resolved from headers/JWT only.
+     * OFF means tenant is resolved only from validated JWT claims.
      */
     val tenantPathMode: TenantPathMode = TenantPathMode.OFF,
     /**
@@ -49,10 +48,6 @@ data class UniversalHttpDefaults(
      * Default tenant segment pattern (e.g., "/t/{tenantId}").
      */
     val tenantSegmentPattern: String = HttpAdapterMount.DEFAULT_TENANT_SEGMENT_PATTERN,
-    /**
-     * Default tenant resolution priority when both header and path provide tenant.
-     */
-    val tenantResolutionPriority: TenantResolutionPriority = TenantResolutionPriority.HEADER_THEN_PATH,
     /**
      * Default content types this server accepts (consumes).
      */
@@ -91,10 +86,6 @@ data class UniversalHttpAdapterOverride(
      * Override the tenant segment pattern for this adapter.
      */
     val tenantSegmentPattern: String? = null,
-    /**
-     * Override the tenant resolution priority for this adapter.
-     */
-    val tenantResolutionPriority: TenantResolutionPriority? = null,
     /**
      * Whether this adapter is enabled.
      * Disabled adapters are not exposed.
@@ -179,13 +170,6 @@ data class UniversalHttpConfig(
                         declaredMount.tenantSegmentPattern
                     } else {
                         defaults.tenantSegmentPattern
-                    },
-            tenantResolutionPriority =
-                override?.tenantResolutionPriority
-                    ?: if (declaredMount.tenantResolutionPriority != TenantResolutionPriority.HEADER_THEN_PATH) {
-                        declaredMount.tenantResolutionPriority
-                    } else {
-                        defaults.tenantResolutionPriority
                     },
         )
     }

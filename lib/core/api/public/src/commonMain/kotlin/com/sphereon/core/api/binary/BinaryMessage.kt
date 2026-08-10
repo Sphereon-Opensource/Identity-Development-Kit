@@ -44,6 +44,8 @@ data class BinaryRequest(
     val contentType: String? = null,
     val accept: List<String> = emptyList(),
     val headers: Map<String, String> = emptyMap(),
+    /** Tenant established by validated authentication, never from request data. */
+    val resolvedTenantId: String? = null,
     /**
      * Raw multi-value header view, preserving each `name → List<value>` arrival shape from the
      * source HTTP request. Mirrors [GenericHttpRequest.multiValueHeaders] across the binary
@@ -92,6 +94,7 @@ data class BinaryRequest(
             pathParameters = pathParams,
             queryParameters = queryParams,
             headers = headers,
+            resolvedTenantId = resolvedTenantId,
             multiValueHeaders = multiValueHeaders,
             bodyContent = body.toGenericHttpBody(),
         )
@@ -113,6 +116,7 @@ data class BinaryRequest(
                 contentType = request.contentType,
                 accept = request.accept,
                 headers = request.headers,
+                resolvedTenantId = request.resolvedTenantId,
                 multiValueHeaders = request.multiValueHeaders,
                 pathParams = request.pathParameters,
                 queryParams = request.queryParameters.mapValues { it.value ?: "" },

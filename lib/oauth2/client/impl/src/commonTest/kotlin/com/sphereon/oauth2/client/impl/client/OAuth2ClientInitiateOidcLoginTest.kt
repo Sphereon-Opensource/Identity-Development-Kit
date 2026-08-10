@@ -41,7 +41,7 @@ interface OidcLoginTransactionStoreTestGraph {
 class OAuth2ClientInitiateOidcLoginTest {
     private val app = createOAuth2ClientTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("oidc-login-initiate-test")
+    private val session = context.sessionContextManager.createOrGetFromId("oidc-login-initiate-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     private val oauth2Client: OAuth2Client = (session.graph as OAuth2ClientImpl.Graph).oauth2Client
     private val transactionStore: OidcLoginTransactionStore =
         (app as OidcLoginTransactionStoreTestGraph).oidcLoginTransactionStore

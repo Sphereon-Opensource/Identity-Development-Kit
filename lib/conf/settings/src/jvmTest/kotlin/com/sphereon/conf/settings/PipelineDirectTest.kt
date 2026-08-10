@@ -16,15 +16,19 @@
 
 package com.sphereon.conf.settings
 
+import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.DefaultInterpolationPolicyProvider
 import com.sphereon.core.api.conf.DefaultPropertyInterpolator
 import com.sphereon.core.api.conf.DefaultPropertySources
+import com.sphereon.core.api.conf.InterpolationPolicy
 import com.sphereon.core.api.conf.MapPropertySource
 import com.sphereon.core.api.conf.PropertyResolver
 import com.sphereon.core.api.conf.PropertyResolverFactory
-import com.sphereon.core.api.conf.createDefaultSecretResolver
+import com.sphereon.core.api.conf.ScopedPropertySourceWrapper
 import com.sphereon.di.Order
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 
 /**
@@ -42,18 +46,25 @@ class PipelineDirectTest {
                 "base.url" to "https://api.example.com",
                 "users.endpoint" to "\${base.url}/users",
             )
-        val source = MapPropertySource("test", properties, Order.MEDIUM.orderValue)
+        val source =
+            ScopedPropertySourceWrapper(
+                MapPropertySource("test", properties, Order.MEDIUM.orderValue),
+                ConfigLevel.APP,
+            )
         val sources = DefaultPropertySources(mutableListOf(source))
 
-        // Create interpolator with default secret resolver
-        val secretResolver = createDefaultSecretResolver()
-        val interpolator = DefaultPropertyInterpolator(secretResolver = secretResolver)
+        val interpolator = DefaultPropertyInterpolator()
 
         // Create pipeline-backed resolver
         val resolver: PropertyResolver =
             PropertyResolverFactory.create(
                 propertySources = sources,
                 interpolator = interpolator,
+                resolverLevel = ConfigLevel.APP,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf("users.endpoint" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                    ),
             )
 
         // Verify base value
@@ -71,11 +82,24 @@ class PipelineDirectTest {
             mapOf(
                 "endpoint" to "\${missing.host:localhost}/api",
             )
-        val source = MapPropertySource("test", properties, Order.MEDIUM.orderValue)
+        val source =
+            ScopedPropertySourceWrapper(
+                MapPropertySource("test", properties, Order.MEDIUM.orderValue),
+                ConfigLevel.APP,
+            )
         val sources = DefaultPropertySources(mutableListOf(source))
 
         val interpolator = DefaultPropertyInterpolator()
-        val resolver = PropertyResolverFactory.create(sources, interpolator)
+        val resolver =
+            PropertyResolverFactory.create(
+                propertySources = sources,
+                interpolator = interpolator,
+                resolverLevel = ConfigLevel.APP,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf("endpoint" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                    ),
+            )
 
         // Verify default value is used
         val endpoint = resolver.getPropertyAsString("endpoint")
@@ -90,11 +114,15 @@ class PipelineDirectTest {
                 "name" to "World",
                 "message" to "\${greeting}, \${name}!",
             )
-        val source = MapPropertySource("test", properties, Order.MEDIUM.orderValue)
+        val source =
+            ScopedPropertySourceWrapper(
+                MapPropertySource("test", properties, Order.MEDIUM.orderValue),
+                ConfigLevel.APP,
+            )
         val sources = DefaultPropertySources(mutableListOf(source))
 
         val interpolator = DefaultPropertyInterpolator()
-        val resolver = PropertyResolverFactory.create(sources, interpolator)
+        val resolver = PropertyResolverFactory.create(sources, interpolator, resolverLevel = ConfigLevel.APP)
 
         val message = resolver.getPropertyAsString("message")
         assertEquals("Hello, World!", message)
@@ -108,11 +136,15 @@ class PipelineDirectTest {
                 "level2" to "\${level1}-extended",
                 "level3" to "\${level2}-final",
             )
-        val source = MapPropertySource("test", properties, Order.MEDIUM.orderValue)
+        val source =
+            ScopedPropertySourceWrapper(
+                MapPropertySource("test", properties, Order.MEDIUM.orderValue),
+                ConfigLevel.APP,
+            )
         val sources = DefaultPropertySources(mutableListOf(source))
 
         val interpolator = DefaultPropertyInterpolator()
-        val resolver = PropertyResolverFactory.create(sources, interpolator)
+        val resolver = PropertyResolverFactory.create(sources, interpolator, resolverLevel = ConfigLevel.APP)
 
         val result = resolver.getPropertyAsString("level3")
         assertEquals("value1-extended-final", result)
@@ -125,11 +157,24 @@ class PipelineDirectTest {
             mapOf(
                 "env.value" to "\${env:PATH}",
             )
-        val source = MapPropertySource("test", properties, Order.MEDIUM.orderValue)
+        val source =
+            ScopedPropertySourceWrapper(
+                MapPropertySource("test", properties, Order.MEDIUM.orderValue),
+                ConfigLevel.APP,
+            )
         val sources = DefaultPropertySources(mutableListOf(source))
 
         val interpolator = DefaultPropertyInterpolator()
-        val resolver = PropertyResolverFactory.create(sources, interpolator)
+        val resolver =
+            PropertyResolverFactory.create(
+                propertySources = sources,
+                interpolator = interpolator,
+                resolverLevel = ConfigLevel.APP,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(
+                        mapOf("env.value" to InterpolationPolicy.APP_ENVIRONMENT),
+                    ),
+            )
 
         val result = resolver.getPropertyAsString("env.value")
         assertNotNull(result)
@@ -138,8 +183,7 @@ class PipelineDirectTest {
     }
 
     @Test
-    fun testPipelineSecretEnvResolution() {
-        val secretResolver = createDefaultSecretResolver()
+    fun testPipelineRejectsSecretProviderReference() {
         val properties =
             mapOf(
                 "secret.value" to "\${secret:@env:PATH}",
@@ -147,13 +191,12 @@ class PipelineDirectTest {
         val source = MapPropertySource("test", properties, Order.MEDIUM.orderValue)
         val sources = DefaultPropertySources(mutableListOf(source))
 
-        val interpolator = DefaultPropertyInterpolator(secretResolver = secretResolver)
-        val resolver = PropertyResolverFactory.create(sources, interpolator)
+        val interpolator = DefaultPropertyInterpolator()
+        val resolver = PropertyResolverFactory.create(sources, interpolator, resolverLevel = ConfigLevel.APP)
 
-        val result = resolver.getPropertyAsString("secret.value")
-        assertNotNull(result)
-        // Secret should be resolved
-        assert(!result.contains("\${secret:")) { "secret reference should be resolved" }
+        assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("secret.value")
+        }
     }
 
     @Test
@@ -172,6 +215,7 @@ class PipelineDirectTest {
             PropertyResolverFactory.create(
                 propertySources = sources,
                 interpolator = null,
+                resolverLevel = ConfigLevel.APP,
             )
 
         // Without interpolator, value should be returned as-is

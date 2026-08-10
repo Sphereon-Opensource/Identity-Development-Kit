@@ -17,7 +17,7 @@ internal class FakeOid4vciIssuerConfigProvider(
         listOf(
             DisplayProperties(name = "Test Issuer"),
         ),
-    override val signingKey: ManagedIdentifierOptsOrResult? = null,
+    private val configuredSigningKey: ManagedIdentifierOptsOrResult? = null,
 ) : Oid4vciIssuerConfigProvider {
     var prepareCount: Int = 0
         private set
@@ -33,4 +33,6 @@ internal class FakeOid4vciIssuerConfigProvider(
     override suspend fun prepare() {
         prepareCount += 1
     }
+
+    override suspend fun signingKey(): ManagedIdentifierOptsOrResult? = configuredSigningKey
 }

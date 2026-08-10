@@ -33,6 +33,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.command.GetJwksCommand
 import com.sphereon.oauth2.server.authorization.command.JwksResult
+import com.sphereon.oauth2.server.authorization.signing.AsSigningKeyPublicJwkResolver
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.Inject
@@ -60,6 +61,7 @@ class GetJwksCommandImpl(
     execution: SessionExecution,
     private val signingKeyStore: SigningKeyStore,
     private val multiManagedIdentifierService: MultiManagedIdentifierService,
+    private val signingKeyPublicJwkResolver: AsSigningKeyPublicJwkResolver? = null,
 ) : TypedServiceCommandAdapter<GetJwksArgs, JwksResult, IdkError>(
         commandId = GetJwksCommand.COMMAND_ID,
         execution = execution,
@@ -111,7 +113,14 @@ class GetJwksCommandImpl(
 
         val publishedJwks = mutableListOf<Jwk>()
         for (key in publishable) {
-            val jwk = key.resolveAsPublicJwk() ?: continue
+            // A deployment resolver is authoritative. Falling back to the local provider registry
+            // after it returns null would turn a routed KMS denial into an alternate key lookup.
+            val jwk =
+                if (signingKeyPublicJwkResolver != null) {
+                    signingKeyPublicJwkResolver.resolve(key)
+                } else {
+                    key.resolveAsPublicJwk()
+                } ?: continue
             publishedJwks.add(jwk)
         }
         return Ok(JwksResult(keys = publishedJwks))

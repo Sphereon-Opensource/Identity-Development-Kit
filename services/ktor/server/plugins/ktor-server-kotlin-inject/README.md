@@ -44,13 +44,10 @@ fun Application.module() {
         // Required: Provide your AppComponent
         appComponent = MyAppComponent.create(...)
 
-        // Optional: Custom resolvers
-        tenantResolver = MyTenantResolver()
-        principalResolver = MyPrincipalResolver()
-        
-        // Optional: Configure default header-based resolvers
-        tenantHeader = "X-Tenant-ID"
-        principalHeader = "X-User-ID"
+        // Required security boundary: resolvers consume only claims from the
+        // platform's cryptographically validated JWT authentication.
+        tenantResolver = ValidatedJwtTenantResolver()
+        principalResolver = ValidatedJwtPrincipalResolver()
     }
 }
 ```
@@ -233,12 +230,14 @@ The Ktor plugin provides similar functionality to the Spring Boot support projec
 ```kotlin
 class KotlinInjectConfiguration {
     var appComponent: AppComponent? = null       // Required: The root kotlin-inject component
-    var tenantHeader: String = "X-Tenant-ID"     // Default header for tenant resolution
-    var principalHeader: String = "X-User-ID"    // Default header for principal resolution
-    var tenantResolver: TenantResolver           // Custom tenant resolver (optional)
-    var principalResolver: PrincipalResolver     // Custom principal resolver (optional)
+    var tenantResolver: TenantResolver           // Validated-JWT tenant resolver
+    var principalResolver: PrincipalResolver     // Validated-JWT principal resolver
 }
 ```
+
+Caller-controlled tenant, user, principal, service, scope, or policy headers
+must never be used as resolver inputs. The bearer JWT is the sole authenticated
+identity authority.
 
 ## Multiplatform Usage
 

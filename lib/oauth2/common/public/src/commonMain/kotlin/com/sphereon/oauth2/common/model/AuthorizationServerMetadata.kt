@@ -70,6 +70,7 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
             "revocation_endpoint_auth_methods_supported",
             "revocation_endpoint_auth_signing_alg_values_supported",
             "scopes_supported",
+            "authorization_details_types_supported",
             "response_types_supported",
             "response_modes_supported",
             "token_endpoint_auth_signing_alg_values_supported",
@@ -142,6 +143,9 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
                 value.revocationEndpointAuthMethodsSupported?.let { put("revocation_endpoint_auth_methods_supported", JsonArray(it.map { JsonPrimitive(it) })) }
                 value.revocationEndpointAuthSigningAlgValuesSupported?.let { put("revocation_endpoint_auth_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
                 value.scopesSupported?.let { put("scopes_supported", JsonArray(it.map { JsonPrimitive(it) })) }
+                value.authorizationDetailsTypesSupported?.let {
+                    put("authorization_details_types_supported", JsonArray(it.map { item -> JsonPrimitive(item) }))
+                }
                 value.responseTypesSupported?.let { put("response_types_supported", JsonArray(it.map { JsonPrimitive(it) })) }
                 value.responseModesSupported?.let { put("response_modes_supported", JsonArray(it.map { JsonPrimitive(it) })) }
                 value.tokenEndpointAuthSigningAlgValuesSupported?.let { put("token_endpoint_auth_signing_alg_values_supported", JsonArray(it.map { JsonPrimitive(it) })) }
@@ -238,6 +242,8 @@ internal object AuthorizationServerMetadataSerializer : KSerializer<Authorizatio
             revocationEndpointAuthMethodsSupported = jsonObject["revocation_endpoint_auth_methods_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             revocationEndpointAuthSigningAlgValuesSupported = jsonObject["revocation_endpoint_auth_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             scopesSupported = jsonObject["scopes_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
+            authorizationDetailsTypesSupported =
+                jsonObject["authorization_details_types_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             responseTypesSupported = jsonObject["response_types_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             responseModesSupported = jsonObject["response_modes_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
             tokenEndpointAuthSigningAlgValuesSupported = jsonObject["token_endpoint_auth_signing_alg_values_supported"]?.jsonArray?.map { it.jsonPrimitive.content },
@@ -372,6 +378,8 @@ data class AuthorizationServerMetadata(
     // RFC 8414 - Additional metadata fields
     @SerialName("scopes_supported")
     val scopesSupported: List<String>? = null,
+    @SerialName("authorization_details_types_supported")
+    val authorizationDetailsTypesSupported: List<String>? = null,
     @SerialName("response_types_supported")
     val responseTypesSupported: List<String>? = null,
     @SerialName("response_modes_supported")

@@ -477,6 +477,7 @@ class WalletIssuanceHttpE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vc-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
@@ -627,6 +628,8 @@ class WalletIssuanceHttpE2ETest {
 
             val proofResult =
                 holder.createCredentialRequestProof(
+                    walletUnitId = "wallet-issuance-http-e2e",
+                    operationBinding = "credential-proof-http-e2e",
                     issuerUrl = issuerUrl,
                     cNonce = nonce.cNonce,
                     signingKeyIds = listOf(signingKeyId),
@@ -707,6 +710,7 @@ class WalletIssuanceHttpE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
+                        instanceId = "oid4vc-integration-issuer",
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,

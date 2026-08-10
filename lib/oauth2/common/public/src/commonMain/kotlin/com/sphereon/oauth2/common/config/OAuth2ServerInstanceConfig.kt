@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.common.config
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.oauth2.common.model.GrantType
 import kotlinx.serialization.Serializable
 
 @JsExportCompat
@@ -24,6 +25,10 @@ import kotlinx.serialization.Serializable
 data class InternalClientConfig(
     val clientId: String,
     val clientSecret: String,
+    /** OAuth grants this confidential workload client may use. */
+    val grantTypes: Set<GrantType> = setOf(GrantType.CLIENT_CREDENTIALS),
+    /** Server-controlled tenant claim for this workload client, if tenant-bound. */
+    val tenantId: String? = null,
     val defaultAccessTokenAudience: String? = null,
     val allowedAccessTokenAudiences: Set<String> = emptySet(),
 )
@@ -48,6 +53,14 @@ data class OAuth2ServerInstanceConfig(
     val authorizationCodeLifetimeSeconds: Int = 600,
     val tokenFormat: TokenFormat = TokenFormat.JWT,
     val refreshTokenRotation: Boolean = true,
+    /**
+     * Grace period for retrying a refresh token that has just been rotated.
+     *
+     * FAPI 2.0 clients can lose the successful rotation response and retry the previous token.
+     * During this window the AS returns the already-created successor token instead of creating
+     * a second branch in the refresh-token chain. Reuse after the window remains `invalid_grant`.
+     */
+    val refreshTokenRetryGracePeriodSeconds: Int = 60,
     // Grant types & response types
     val grantTypesEnabled: Set<String> = setOf("authorization_code", "client_credentials", "refresh_token"),
     // OIDC Core §3 — `code` is OAuth2 Authorization Code (Basic Profile). The hybrid trio
@@ -63,6 +76,11 @@ data class OAuth2ServerInstanceConfig(
             "code id_token token",
         ),
     val scopesSupported: List<String>? = null,
+    /**
+     * RFC 9396 authorization-detail type identifiers accepted by this authorization server.
+     * OID4VCI 1.0 uses `openid_credential` when a credential configuration has no scope.
+     */
+    val authorizationDetailsTypesSupported: List<String>? = null,
     // OpenID Connect
     val oidc: FeaturePolicy = FeaturePolicy.DISABLED,
     /**
@@ -99,6 +117,14 @@ data class OAuth2ServerInstanceConfig(
     val introspection: FeaturePolicy = FeaturePolicy.SUPPORTED,
     val revocation: FeaturePolicy = FeaturePolicy.SUPPORTED,
     val par: FeaturePolicy = FeaturePolicy.SUPPORTED,
+    /**
+     * Require every pushed authorization request to carry an explicit `redirect_uri`.
+     *
+     * Baseline OAuth 2.0 permits omission when the client has exactly one registered redirect
+     * URI. FAPI 2.0 Security Profile section 5.3.2.1 deliberately tightens that rule, so HAIP
+     * deployments enable this policy through their authorization-server REST configuration.
+     */
+    val requireRedirectUriInPushedAuthorizationRequests: Boolean = false,
     val tokenExchange: FeaturePolicy = FeaturePolicy.DISABLED,
     /**
      * RFC 8628 (OAuth 2.0 Device Authorization Grant) feature policy. Gates whether the AS

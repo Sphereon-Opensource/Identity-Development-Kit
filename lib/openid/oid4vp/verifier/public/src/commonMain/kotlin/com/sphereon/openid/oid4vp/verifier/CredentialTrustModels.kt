@@ -9,6 +9,8 @@ package com.sphereon.openid.oid4vp.verifier
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Multibinds
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -61,6 +63,11 @@ data class CredentialTrustValidation(
 data class Oid4vpCredentialTrustValidationArgs(
     val verifierId: String? = null,
     val dcqlQueryId: String? = null,
+    /**
+     * Optional identifier of the verification template the authorization request was created
+     * from. Threaded through so trust-domain resolution can apply TEMPLATE-scoped defaults.
+     */
+    val templateId: String? = null,
     val credentialQueryId: String,
     val format: String,
     val presentation: String,
@@ -73,6 +80,17 @@ interface Oid4vpCredentialTrustValidator {
     suspend fun validate(args: Oid4vpCredentialTrustValidationArgs): IdkResult<CredentialTrustValidation, IdkError>
 }
 
+/**
+ * Declares the `Set<Oid4vpCredentialTrustValidator>` multibinding as allow-empty so any SessionScope
+ * graph resolves it even when no trust validator is on the classpath. Lives in this public/SPI module
+ * so every consumer can inject the set without re-declaring it - mirrors
+ * `CredentialStatusVerifierMultibinds` in lib-statuslist-public. A deployment that wants OID4VP
+ * credential-trust enforcement contributes an `Oid4vpCredentialTrustValidator` (e.g. the EDK's
+ * `Oid4vpTrustDomainCredentialTrustValidator`); otherwise the set stays empty and
+ * `ValidateAuthorizationResponseCommandImpl` disables trust checking (fail-open by design only for
+ * deployments that deliberately ship with none).
+ */
+@ContributesTo(SessionScope::class)
 interface Oid4vpCredentialTrustValidatorMultibinds {
     @Multibinds(allowEmpty = true)
     fun oid4vpCredentialTrustValidators(): Set<Oid4vpCredentialTrustValidator>

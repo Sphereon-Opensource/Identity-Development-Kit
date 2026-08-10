@@ -154,11 +154,11 @@ fun GenericHttpRequest.headerValuesIgnoreCase(name: String): List<String> =
 fun Map<String, String>.headerIgnoreCase(name: String): String? = entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 
 /**
- * Extract the tenant ID from request headers.
+ * Return the tenant established by validated authentication.
  * Returns [Err] with [ErrorCategory.UNAUTHORIZED] if tenant ID is missing.
  */
 fun GenericHttpRequest.requireTenantId(): IdkResult<String, IdkError> {
-    val tenantId = QueryParamUtils.extractTenantId(headers)
+    val tenantId = resolvedTenantId
     return if (tenantId != null) {
         Ok(tenantId)
     } else {

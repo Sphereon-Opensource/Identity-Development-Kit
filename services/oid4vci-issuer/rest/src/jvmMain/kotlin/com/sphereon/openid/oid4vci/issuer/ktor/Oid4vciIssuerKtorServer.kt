@@ -2,6 +2,8 @@ package com.sphereon.openid.oid4vci.issuer.ktor
 
 import com.sphereon.core.api.log.Log
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
+import com.sphereon.core.defaults.context.DefaultPrincipalInputString
+import com.sphereon.core.defaults.context.DefaultTenantInputString
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.app.RootScopeProvider
@@ -39,26 +41,41 @@ fun main() {
             version = "1.0.0",
         )
 
-    // Create any configured credential status lists (root `statuslists` config) before serving, so
-    // the hosted token exists even before the first credential references it. Best-effort: a
-    // misconfigured status list logs a warning rather than taking down the whole issuer.
+    // Create any configured credential status lists before serving, under the same fixed tenant
+    // used by the HTTP adapter. File-backed KMS paths are tenant-partitioned, so bootstrapping from
+    // an anonymous context would open a different keystore from requests. Provisioning is
+    // fail-closed: an issuer that advertises status-backed credentials must not start without them.
     kotlinx.coroutines.runBlocking {
-        val session =
+        val sessionManager =
             appGraph.userContextManager
-                .getAnonymous()
-                .sessionContextManager
-                .createOrGetFromId("statuslist-provisioning")
-        val provisioner = (session.graph as StatusListProvisioner.Graph).statusListProvisioner
-        val result = provisioner.provisionConfigured()
-        if (result.isErr) {
-            logger.warn("Status list provisioning failed; status lists will be unavailable: ${result.error}")
+                .createOrGetFromInputs(
+                    DefaultTenantInputString("default"),
+                    DefaultPrincipalInputString("oid4vci-issuer"),
+                ).sessionContextManager
+        val sessionId = "statuslist-provisioning"
+        val session = sessionManager.createOrGetFromId(
+            sessionId,
+            principalType = com.sphereon.di.context.PrincipalType.SERVICE,
+        )
+        try {
+            val provisioner = (session.graph as StatusListProvisioner.Graph).statusListProvisioner
+            val result = provisioner.provisionConfigured()
+            check(!result.isErr) { "Status list provisioning failed: ${result.error}" }
+        } finally {
+            sessionManager.destroyById(sessionId)
         }
     }
 
-    embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
+    embeddedServer(CIO, port = configuredServerPort(), host = "0.0.0.0") {
         configureOid4vciIssuer(appGraph)
     }.start(wait = true)
 }
+
+private fun configuredServerPort(): Int =
+    System.getenv("SERVER_PORT")
+        ?.toIntOrNull()
+        ?.also { require(it in 1..65535) { "SERVER_PORT must be between 1 and 65535" } }
+        ?: 8080
 
 /**
  * Configure the Ktor application with OID4VCI Issuer routes.

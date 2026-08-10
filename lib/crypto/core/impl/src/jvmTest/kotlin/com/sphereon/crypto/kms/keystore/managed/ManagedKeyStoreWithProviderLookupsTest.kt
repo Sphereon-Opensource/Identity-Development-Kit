@@ -77,16 +77,16 @@ class ManagedKeyStoreWithProviderLookupsTest {
 
         override fun getProviderIds() = providerMap.keys.toTypedArray()
 
-        override fun getProviderById(id: String) =
+        override suspend fun getProviderById(id: String) =
             providerMap[id]
                 ?: throw PKIException("Invalid KMS id $id provider. Valid ids are: ${getProviderIds().joinToString(",")}")
 
-        override fun getProvider(
+        override suspend fun getProvider(
             providerId: String?,
             alg: SignatureAlgorithm?,
         ) = getProviderById(providerId ?: defaultProviderId())
 
-        override fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm) =
+        override suspend fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm) =
             providerMap.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }
                 ?: throw IllegalArgumentException("No provider for algorithm: $signatureAlgorithm")
 

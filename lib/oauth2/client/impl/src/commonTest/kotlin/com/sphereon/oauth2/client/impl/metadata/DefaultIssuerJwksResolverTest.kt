@@ -58,7 +58,7 @@ interface IssuerJwksResolverCacheTestGraph {
 class DefaultIssuerJwksResolverTest {
     private val app = createOAuth2ClientTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("issuer-jwks-resolver-test")
+    private val session = context.sessionContextManager.createOrGetFromId("issuer-jwks-resolver-test", principalType = com.sphereon.di.context.PrincipalType.USER)
     private val execution = session.asCoreApiServiceGraph().serviceExecution
     private val cacheManager = (app as IssuerJwksResolverCacheTestGraph).cacheManager
 

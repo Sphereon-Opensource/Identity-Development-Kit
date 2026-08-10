@@ -57,6 +57,12 @@ data class ParseAuthorizationResponseArgs
         val source: AuthorizationResponseSource = AuthorizationResponseSource.QUERY,
         /** Raw `application/x-www-form-urlencoded` body — required when [source] is FORM_POST. */
         val formBody: String? = null,
+        /** Expected request state. A missing or different response value is rejected. */
+        val expectedState: String? = null,
+        /** Expected RFC 9207 authorization-server issuer identifier. */
+        val expectedIssuer: String? = null,
+        /** Require the RFC 9207 `iss` parameter, as mandated by FAPI 2.0. */
+        val requireIssuer: Boolean = false,
     )
 
 /**
@@ -114,10 +120,10 @@ data class CreateAuthorizationRequestUrlOptions
          * Required if the authorization server requires client authentication for PAR
          */
         val clientAuthentication: ClientAuthenticationConfig? = null,
-    /*
-     * TODO: DPoP options (Phase 3)
-     * val dpopOptions: DpopOptions? = null
-     */
+        /** Optional RFC 9449 proof for the PAR HTTP request. */
+        val dpopProofJwt: String? = null,
+        /** Additional protocol headers for PAR, for example OAuth client-attestation headers. */
+        val additionalHeaders: Map<String, String> = emptyMap(),
     )
 
 /**

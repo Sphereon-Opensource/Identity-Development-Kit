@@ -57,7 +57,7 @@ class CredentialSubjectExtractorTest {
     @Test
     fun sdJwtWithSubClaimReturnsDIDRef() {
         val raw = buildSdJwt("""{"iss":"https://issuer.example","sub":"did:example:subject123","vct":"EmployeeCredential"}""")
-        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_DC, raw)
+        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_VC, raw)
         assertEquals(1, subjects.size)
         assertEquals(IdentifierType.DID, subjects[0].type)
         assertEquals("did:example:subject123", subjects[0].value)
@@ -66,7 +66,7 @@ class CredentialSubjectExtractorTest {
     @Test
     fun sdJwtWithUriSubClaimReturnsUriRef() {
         val raw = buildSdJwt("""{"iss":"https://issuer.example","sub":"https://subject.example/users/42","vct":"SomeCredential"}""")
-        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_DC, raw)
+        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_VC, raw)
         assertEquals(1, subjects.size)
         assertEquals(IdentifierType("uri"), subjects[0].type)
         assertEquals("https://subject.example/users/42", subjects[0].value)
@@ -75,14 +75,14 @@ class CredentialSubjectExtractorTest {
     @Test
     fun sdJwtWithoutSubClaimReturnsEmpty() {
         val raw = buildSdJwt("""{"iss":"https://issuer.example","vct":"AnonCredential"}""")
-        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_DC, raw)
+        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_VC, raw)
         assertTrue(subjects.isEmpty())
     }
 
     @Test
     fun sdJwtVcFormatAlsoExtractsSub() {
         val raw = buildSdJwt("""{"iss":"https://issuer.example","sub":"did:example:holder","vct":"PID"}""")
-        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_VC, raw)
+        val subjects = extractor.extractSubjects(CredentialFormat.W3C_VC_SD_JWT, raw)
         assertEquals(1, subjects.size)
         assertEquals("did:example:holder", subjects[0].value)
     }
@@ -149,7 +149,7 @@ class CredentialSubjectExtractorTest {
 
     @Test
     fun malformedSdJwtReturnsEmpty() {
-        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_DC, "not-a-valid-sdjwt")
+        val subjects = extractor.extractSubjects(CredentialFormat.SD_JWT_VC, "not-a-valid-sdjwt")
         assertTrue(subjects.isEmpty())
     }
 

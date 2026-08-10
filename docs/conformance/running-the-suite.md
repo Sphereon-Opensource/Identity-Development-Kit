@@ -1,5 +1,12 @@
 # Running the OIDF Conformance Suite Against the IDK OID4VC Demo
 
+> **Current manual diagnostic path.** This guide documents the existing
+> operator-driven setup; it is not the repeatable CI completion gate. The
+> tunnel-free, pinned-suite replacement and the required issuer/verifier/wallet
+> matrix are defined in [`oidf-ci-strategy.md`](oidf-ci-strategy.md). A manual
+> UI result or the existing single wallet smoke cannot establish full
+> conformance.
+
 Operator-facing how-to. Covers everything from a clean checkout to a green
 test plan. Pair it with the live status in
 [`oid4vc-coverage.md`](oid4vc-coverage.md) and the gap-fix tracker at

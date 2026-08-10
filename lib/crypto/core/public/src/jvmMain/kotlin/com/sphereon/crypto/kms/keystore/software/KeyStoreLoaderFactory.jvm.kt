@@ -19,6 +19,8 @@ package com.sphereon.crypto.kms.keystore.software
 
 import com.sphereon.crypto.core.kms.KeyStoreLoaderOpts
 import com.sphereon.crypto.core.kms.model.PredefinedKeyStoreTypes
+import com.mayakapps.kache.InMemoryKache
+import com.mayakapps.kache.KacheStrategy
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
@@ -210,18 +212,38 @@ object KeyStoreLoaderFactory {
             }
         }
 
-    private fun KeyStoreLoaderOpts.Source.canonicalCacheSource(): KeyStoreLoaderOpts.Source =
-        when (this) {
-            is KeyStoreLoaderOpts.Source.File -> {
-                val resolvedFile = PathPlaceholderInterpreter.resolve(path) ?: java.io.File(path)
-                copy(path = resolvedFile.absolutePath)
-            }
-
-            else -> {
-                this
-            }
-        }
+    private fun KeyStoreLoaderOpts.Source.canonicalCacheSource(): KeyStoreLoaderOpts.Source = canonicalKeyStoreCacheSource()
 }
+
+/**
+ * Canonical identity of a keystore, shared by every cache that keys on one.
+ *
+ * File paths are placeholder-resolved and absolute so that two configurations naming the same file
+ * different ways land on the same entry. Keeping this in one place is what lets the keystore cache,
+ * the key manager cache and the resolved-key cache agree on what "the same keystore" means.
+ */
+internal fun KeyStoreLoaderOpts.Source.canonicalKeyStoreCacheSource(): KeyStoreLoaderOpts.Source =
+    when (this) {
+        is KeyStoreLoaderOpts.Source.File -> {
+            val resolvedFile = PathPlaceholderInterpreter.resolve(path) ?: java.io.File(path)
+            copy(path = resolvedFile.absolutePath)
+        }
+
+        else -> {
+            this
+        }
+    }
+
+internal fun keyStoreCacheKey(
+    type: String,
+    source: KeyStoreLoaderOpts.Source,
+    password: String?,
+): KeyStoreCacheKey =
+    KeyStoreCacheKey(
+        source = source.canonicalKeyStoreCacheSource(),
+        type = type,
+        password = password,
+    )
 
 internal fun KeyStoreCacheKey.matchesTenantSegment(tenantSegment: String): Boolean {
     val path = (source as? KeyStoreLoaderOpts.Source.File)?.path ?: return false
@@ -297,6 +319,154 @@ object KeyManagerFactoryCache {
 }
 
 internal data class KeyManagerFactoryCacheInvalidationResult(
+    val before: Int,
+    val after: Int,
+    val evicted: Int,
+)
+
+/**
+ * The per-keystore state that must outlive a single [SoftwareKeyStoreService] instance.
+ *
+ * Nothing keeps a keystore service alive between operations: `RealSoftwareKeyStoreFactory` is an
+ * `@AssistedFactory` and `KmsProviderManagerImpl` is deliberately stateless, so a provider lookup
+ * builds a new service every call. Holding this state on the instance meant the resolved-key cache
+ * always started empty and the DER->JWK and certificate-encoding conversions it exists to avoid ran
+ * again on every operation.
+ *
+ * The conversions are a pure function of the keystore entry, so sharing them is safe for the same
+ * keystore identity. Isolation comes from that identity: a tenant's keystore path is resolved by
+ * [TenantKeyStorePathResolver] before it reaches here, so two tenants never share an entry, and
+ * [SoftwareKeyStoreStateCache.invalidateTenant] evicts a tenant's shard on context invalidation.
+ */
+internal class SharedKeyStoreState {
+    private val entries = BoundedTtlStore<String, Any>(maxEntries = MAX_RESOLVED_KEYS_PER_KEYSTORE, ttlMillis = RESOLVED_KEY_TTL_MILLIS)
+
+    @Volatile
+    var isValid: Boolean = true
+
+    suspend fun resolved(alias: String): Any? = entries.get(alias)
+
+    suspend fun putResolved(
+        alias: String,
+        value: Any,
+    ) {
+        entries.put(alias, value)
+    }
+
+    suspend fun size(): Int = entries.size()
+
+    suspend fun invalidate() {
+        isValid = false
+        entries.clear()
+        isValid = true
+    }
+}
+
+/**
+ * App-level, tenant-sharded cache of [SharedKeyStoreState], keyed on the same canonical keystore
+ * identity as [KeyStoreLoaderFactory]'s keystore cache and [KeyManagerFactoryCache].
+ *
+ * Deliberately in-process and non-serialising rather than built on the general `Cache` abstraction.
+ * A resolved key carries private JWK material, and `ScopedCacheImpl` serialises values into a
+ * `CacheBackend` that may be distributed, which would write private keys out of this process. What
+ * the abstraction does give, bounded size and expiry, is provided here directly by [BoundedTtlMap].
+ *
+ * Eviction has three triggers: least-recently-used once a bound is reached, idle expiry after
+ * [RESOLVED_KEY_TTL_MILLIS] so resolved private key material does not linger indefinitely after last
+ * use, and explicit invalidation on writes, disk reloads and tenant context invalidation.
+ */
+internal object SoftwareKeyStoreStateCache {
+    private val states = BoundedTtlStore<KeyStoreCacheKey, SharedKeyStoreState>(maxEntries = MAX_KEYSTORES, ttlMillis = RESOLVED_KEY_TTL_MILLIS)
+
+    suspend fun stateFor(key: KeyStoreCacheKey): SharedKeyStoreState = states.getOrPut(key) { SharedKeyStoreState() }
+
+    suspend fun invalidateTenant(tenantId: String): SoftwareKeyStoreStateCacheInvalidationResult {
+        val tenantSegment = TenantKeyStorePathResolver.tenantPathSegment(tenantId)
+        val before = states.size()
+        val evicted = states.removeIf { it.matchesTenantSegment(tenantSegment) }
+        return SoftwareKeyStoreStateCacheInvalidationResult(before = before, after = states.size(), evicted = evicted)
+    }
+
+    internal suspend fun clear() {
+        states.clear()
+    }
+}
+
+private const val MAX_KEYSTORES = 256L
+private const val MAX_RESOLVED_KEYS_PER_KEYSTORE = 512L
+private const val RESOLVED_KEY_TTL_MILLIS = 15L * 60L * 1000L
+
+/**
+ * A bounded, expiring in-memory store built on the same Kache LRU the platform's local cache backend
+ * uses, so eviction behaviour here matches the rest of the product rather than being hand-rolled.
+ *
+ * The value is held as an object rather than serialised bytes. That is deliberate: the platform's
+ * `CacheBackend` contract stores `ByteArray`, and a resolved key carries private JWK material whose
+ * type also exposes an `Any?` field and polymorphic serializers. Encoding it would both need a
+ * serialisation design it does not have and copy private key material into a general cache buffer.
+ *
+ * Kache's LRU chain mutates even on reads and is not safe to touch concurrently, so every operation
+ * holds [mutex], exactly as `KacheCacheBackend` does.
+ */
+internal class BoundedTtlStore<K : Any, V : Any>(
+    maxEntries: Long,
+    private val ttlMillis: Long,
+) {
+    private class Entry<V>(
+        val value: V,
+        val expiresAtMillis: Long,
+    )
+
+    private val cache =
+        InMemoryKache<K, Entry<V>>(maxSize = maxEntries) {
+            strategy = KacheStrategy.LRU
+        }
+    private val mutex = Mutex()
+
+    suspend fun size(): Int = mutex.withLock { cache.getKeys().size }
+
+    suspend fun get(key: K): V? =
+        mutex.withLock {
+            val entry = cache.getIfAvailable(key) ?: return null
+            if (System.currentTimeMillis() >= entry.expiresAtMillis) {
+                cache.remove(key)
+                return null
+            }
+            entry.value
+        }
+
+    suspend fun put(
+        key: K,
+        value: V,
+    ) {
+        mutex.withLock { cache.put(key, Entry(value, System.currentTimeMillis() + ttlMillis)) }
+    }
+
+    suspend fun getOrPut(
+        key: K,
+        create: () -> V,
+    ): V =
+        mutex.withLock {
+            val existing = cache.getIfAvailable(key)
+            if (existing != null && System.currentTimeMillis() < existing.expiresAtMillis) {
+                return existing.value
+            }
+            create().also { cache.put(key, Entry(it, System.currentTimeMillis() + ttlMillis)) }
+        }
+
+    suspend fun removeIf(matches: (K) -> Boolean): Int =
+        mutex.withLock {
+            val doomed = cache.getKeys().filter(matches)
+            doomed.forEach { cache.remove(it) }
+            doomed.size
+        }
+
+    suspend fun clear() {
+        mutex.withLock { cache.clear() }
+    }
+}
+
+internal data class SoftwareKeyStoreStateCacheInvalidationResult(
     val before: Int,
     val after: Int,
     val evicted: Int,

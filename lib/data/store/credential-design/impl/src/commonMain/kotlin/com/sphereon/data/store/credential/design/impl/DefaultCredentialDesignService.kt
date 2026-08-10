@@ -177,6 +177,7 @@ class DefaultCredentialDesignService(
                 renderVariantIds = input.renderVariantIds,
                 createdAt = now,
                 updatedAt = now,
+                deferral = input.deferral,
             )
         validateCredentialDesignRecord(record)?.let { return it }
         credentialDesignRepository.create(record)
@@ -231,6 +232,7 @@ class DefaultCredentialDesignService(
                 renderVariantIds = input.renderVariantIds ?: existing.renderVariantIds,
                 hostingMode = input.hostingMode ?: existing.hostingMode,
                 updatedAt = now,
+                deferral = input.deferral ?: existing.deferral,
             )
         validateCredentialDesignRecord(updated)?.let { return it }
         credentialDesignRepository.update(updated)

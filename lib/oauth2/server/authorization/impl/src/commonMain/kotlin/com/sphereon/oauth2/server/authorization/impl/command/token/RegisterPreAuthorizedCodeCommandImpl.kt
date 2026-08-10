@@ -24,10 +24,10 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
-import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeArgs
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeCommand
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeResult
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
 import dev.zacsweers.metro.ContributesBinding
@@ -47,7 +47,7 @@ import kotlin.time.Duration.Companion.minutes
 @ContributesBinding(SessionScope::class, binding = binding<RegisterPreAuthorizedCodeCommand>())
 class RegisterPreAuthorizedCodeCommandImpl(
     execution: SessionExecution,
-    private val configProvider: OAuth2ServersConfigProvider,
+    private val clientRegistry: ClientRegistry,
     private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage,
 ) : TypedServiceCommandAdapter<RegisterPreAuthorizedCodeArgs, RegisterPreAuthorizedCodeResult, IdkError>(
         commandId = RegisterPreAuthorizedCodeCommand.COMMAND_ID,
@@ -66,10 +66,20 @@ class RegisterPreAuthorizedCodeCommandImpl(
     ): IdkResult<RegisterPreAuthorizedCodeResult, IdkError> {
         val applied = applyDuring(args)
 
-        val config = configProvider.getDefaultServer()
-        val allowedClientId = config.internalClients["issuer"]?.clientId
-        val allowedClientSecret = config.internalClients["issuer"]?.clientSecret
-        if (allowedClientId == null || applied.basicAuthClientId != allowedClientId || applied.basicAuthClientSecret != allowedClientSecret) {
+        val credentialsValid =
+            clientRegistry.verifyClientCredentials(
+                applied.basicAuthClientId,
+                applied.basicAuthClientSecret,
+            )
+        if (credentialsValid.isErr) {
+            return Err(
+                IdkError.fromString(
+                    code = "server_error",
+                    message = "Client credential verification failed",
+                ),
+            )
+        }
+        if (!credentialsValid.value) {
             return Err(
                 IdkError.fromString(
                     code = "invalid_client",

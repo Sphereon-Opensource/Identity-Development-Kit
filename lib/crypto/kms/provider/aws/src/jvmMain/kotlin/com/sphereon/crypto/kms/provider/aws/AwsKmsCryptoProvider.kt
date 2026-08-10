@@ -20,28 +20,47 @@ package com.sphereon.crypto.kms.provider.aws
 import aws.sdk.kotlin.services.kms.KmsClient
 import aws.sdk.kotlin.services.kms.model.CreateAliasRequest
 import aws.sdk.kotlin.services.kms.model.CreateKeyRequest
+import aws.sdk.kotlin.services.kms.model.DeleteAliasRequest
 import aws.sdk.kotlin.services.kms.model.DecryptRequest
 import aws.sdk.kotlin.services.kms.model.DeriveSharedSecretRequest
+import aws.sdk.kotlin.services.kms.model.DescribeKeyRequest
 import aws.sdk.kotlin.services.kms.model.EncryptRequest
 import aws.sdk.kotlin.services.kms.model.EncryptionAlgorithmSpec
 import aws.sdk.kotlin.services.kms.model.GetPublicKeyRequest
 import aws.sdk.kotlin.services.kms.model.KeyAgreementAlgorithmSpec
 import aws.sdk.kotlin.services.kms.model.KeyListEntry
+import aws.sdk.kotlin.services.kms.model.KeyManagerType
 import aws.sdk.kotlin.services.kms.model.KeySpec
 import aws.sdk.kotlin.services.kms.model.KeyState
 import aws.sdk.kotlin.services.kms.model.KeyUsageType
 import aws.sdk.kotlin.services.kms.model.KmsInvalidSignatureException
+import aws.sdk.kotlin.services.kms.model.ListKeysRequest
+import aws.sdk.kotlin.services.kms.model.ListResourceTagsRequest
 import aws.sdk.kotlin.services.kms.model.MessageType
+import aws.sdk.kotlin.services.kms.model.NotFoundException
+import aws.sdk.kotlin.services.kms.model.OriginType
 import aws.sdk.kotlin.services.kms.model.ScheduleKeyDeletionRequest
 import aws.sdk.kotlin.services.kms.model.SignRequest
 import aws.sdk.kotlin.services.kms.model.SigningAlgorithmSpec
+import aws.sdk.kotlin.services.kms.model.Tag
 import aws.sdk.kotlin.services.kms.model.VerifyRequest
+import aws.sdk.kotlin.runtime.auth.credentials.EcsCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.DefaultChainCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.ImdsCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.ProfileCredentialsProvider
+import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
+import aws.smithy.kotlin.runtime.auth.awscredentials.CredentialsProvider
+import aws.smithy.kotlin.runtime.net.url.Url
 import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.kms.model.KeyProviderSettings
+import com.sphereon.crypto.core.kms.model.AwsKmsClientConfig
+import com.sphereon.crypto.core.kms.model.CredentialMode
 import com.sphereon.crypto.core.toKeyReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyInfo
@@ -64,6 +83,10 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.interop.toDerEcdsaPublicKeyBytes
 import com.sphereon.crypto.core.kms.ConcatKdf
+import com.sphereon.crypto.core.kms.BackendKeyOperationProofProvider
+import com.sphereon.crypto.core.kms.BackendKeyProvedDecryption
+import com.sphereon.crypto.core.kms.BackendKeyProvedEncryption
+import com.sphereon.crypto.core.kms.BackendSymmetricKmsKeyLifecycle
 import com.sphereon.crypto.core.kms.CertificateOptions
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import com.sphereon.crypto.core.kms.EncryptionResult
@@ -79,18 +102,41 @@ import com.sphereon.crypto.core.kms.command.SignatureEncodingCodec
 import com.sphereon.crypto.core.x509.Certificate
 import java.math.BigInteger
 import java.security.KeyFactory
+import java.security.MessageDigest
 import java.security.interfaces.ECPublicKey
 import java.security.spec.X509EncodedKeySpec
 import com.sphereon.core.api.encodeToBase64Url
 
 actual class AwsKmsCryptoProvider actual constructor(
     settings: KeyProviderSettings
-) : BaseAwsKmsCryptoProvider(settings) {
+) : BaseAwsKmsCryptoProvider(settings),
+    BackendKeyOperationProofProvider,
+    BackendSymmetricKmsKeyLifecycle {
+
+    @Volatile
+    private var sharedClient: KmsClient? = null
+    private val clientMutex = Mutex()
 
     private suspend fun getAWSKmsClient(): KmsClient {
-        return withContext(Dispatchers.IO) {
-            KmsClient {
-                region = awsConfig.region
+        sharedClient?.let { return it }
+        return clientMutex.withLock {
+            sharedClient?.let { return@withLock it }
+            withContext(Dispatchers.IO) {
+                KmsClient {
+                    region = awsConfig.region
+                    awsConfig.endpointUrl?.let { endpointUrl = Url.parse(it) }
+                    credentialsProvider = awsKmsCredentialsProvider(awsConfig)
+                }
+            }.also { sharedClient = it }
+        }
+    }
+
+    override fun close() {
+        val client = sharedClient
+        sharedClient = null
+        if (client != null) {
+            runBlocking {
+                client.close()
             }
         }
     }
@@ -468,14 +514,16 @@ actual class AwsKmsCryptoProvider actual constructor(
     }
 
     override suspend fun getKey(keyInfo: KeyInfoType<*>): ManagedKeyInfoType<*> {
-        return getAWSKmsClient().use { client ->
-
-            client.getPublicKey(GetPublicKeyRequest { keyId = determineAwsKeyId(keyInfo) }).publicKey?.let {
+        return getAWSKmsClient().let { client ->
+            val resolvedKeyId = determineAwsKeyId(keyInfo)
+            val resolvedAlias = keyInfo.alias ?: keyInfo.kid ?: resolvedKeyId
+            val response = client.getPublicKey(GetPublicKeyRequest { keyId = resolvedKeyId })
+            response.publicKey?.let {
 
                 toManagedKeyPair(
                     it,
-                    keyInfo.kid!!,
-                    keyInfo.alias!!
+                    response.keyId ?: resolvedKeyId,
+                    resolvedAlias,
                 ).joseToManagedKeyInfo()
             }
                 ?: throw IllegalArgumentException(
@@ -489,7 +537,7 @@ actual class AwsKmsCryptoProvider actual constructor(
     }
 
     override suspend fun deleteKey(keyInfo: KeyInfoType<*>): Boolean {
-        return getAWSKmsClient().use { client ->
+        return getAWSKmsClient().let { client ->
             val keyId = if (keyInfo.kid != null) keyInfo.kid else getKey(keyInfo).kid ?: determineAwsKeyId(keyInfo)  // We fetch the key first, since deletion can only happen via kid and not an alias!
             client.scheduleKeyDeletion(ScheduleKeyDeletionRequest {
                 this.keyId = keyId
@@ -529,6 +577,7 @@ actual class AwsKmsCryptoProvider actual constructor(
         val encryptResponse = client.encrypt(EncryptRequest {
             this.keyId = determineAwsKeyId(keyInfo)
             this.plaintext = plaintext
+            this.encryptionContext = awsKmsEncryptionContext(additionalAuthenticatedData)
             // AWS KMS uses symmetric encryption by default (AES-256-GCM)
             // The algorithm parameter maps to the key's encryption algorithm
             this.encryptionAlgorithm = algorithm.toAwsEncryptionAlgorithm()
@@ -565,10 +614,186 @@ actual class AwsKmsCryptoProvider actual constructor(
         val decryptResponse = client.decrypt(DecryptRequest {
             this.keyId = determineAwsKeyId(keyInfo)
             this.ciphertextBlob = ciphertext
+            this.encryptionContext = awsKmsEncryptionContext(additionalAuthenticatedData)
             this.encryptionAlgorithm = algorithm.toAwsEncryptionAlgorithm()
         })
 
         return decryptResponse.plaintext ?: throw IllegalStateException("Decryption failed - no plaintext returned")
+    }
+
+    override suspend fun encryptWithBackendKeyProof(
+        keyInfo: KeyInfoType<*>,
+        plaintext: ByteArray,
+        algorithm: ContentEncryptionAlgorithm,
+        additionalAuthenticatedData: ByteArray?,
+    ): BackendKeyProvedEncryption {
+        val immutableIdentity = requireImmutableAwsKmsKeyArn(keyInfo)
+        val client = getAWSKmsClient()
+        val metadata = describeSymmetricNonExportableKey(client, immutableIdentity)
+        val response =
+            client.encrypt(
+                EncryptRequest {
+                    keyId = immutableIdentity
+                    this.plaintext = plaintext
+                    encryptionContext = awsKmsEncryptionContext(additionalAuthenticatedData)
+                    encryptionAlgorithm = algorithm.toAwsEncryptionAlgorithm()
+                },
+            )
+        val responseIdentity =
+            response.keyId ?: throw IllegalStateException("AWS KMS did not authenticate an encryption key identity")
+        require(responseIdentity == metadata.arn) { "AWS KMS encryption key identity mismatch" }
+        val digest = awsBackendKeyIdentityDigest(metadata.arn!!, metadata.keyId!!)
+        return BackendKeyProvedEncryption(
+            encryption =
+                EncryptionResult(
+                    ciphertext = response.ciphertextBlob
+                        ?: throw IllegalStateException("Encryption failed - no ciphertext returned"),
+                    iv = ByteArray(algorithm.ivLength),
+                    authTag = ByteArray(algorithm.tagLength),
+                ),
+            backendKeyIdentityDigest = digest,
+        )
+    }
+
+    override suspend fun decryptWithBackendKeyProof(
+        keyInfo: KeyInfoType<*>,
+        ciphertext: ByteArray,
+        algorithm: ContentEncryptionAlgorithm,
+        iv: ByteArray,
+        authTag: ByteArray,
+        additionalAuthenticatedData: ByteArray?,
+        expectedBackendKeyIdentityDigest: String,
+    ): BackendKeyProvedDecryption {
+        val immutableIdentity = requireImmutableAwsKmsKeyArn(keyInfo)
+        val client = getAWSKmsClient()
+        val metadata = describeSymmetricNonExportableKey(client, immutableIdentity)
+        val digest = awsBackendKeyIdentityDigest(metadata.arn!!, metadata.keyId!!)
+        require(digest == expectedBackendKeyIdentityDigest) { "AWS KMS backend key identity digest mismatch" }
+        val response =
+            client.decrypt(
+                DecryptRequest {
+                    keyId = immutableIdentity
+                    ciphertextBlob = ciphertext
+                    encryptionContext = awsKmsEncryptionContext(additionalAuthenticatedData)
+                    encryptionAlgorithm = algorithm.toAwsEncryptionAlgorithm()
+                },
+            )
+        val responseIdentity =
+            response.keyId ?: throw IllegalStateException("AWS KMS did not authenticate a decryption key identity")
+        require(responseIdentity == metadata.arn) { "AWS KMS decryption key identity mismatch" }
+        return BackendKeyProvedDecryption(
+            plaintext = response.plaintext ?: throw IllegalStateException("Decryption failed - no plaintext returned"),
+            backendKeyIdentityDigest = digest,
+        )
+    }
+
+    override suspend fun resolveImmutableBackendKeyIdentity(bindingAlias: String): String? {
+        val alias = requireAwsBindingAlias(bindingAlias)
+        val client = getAWSKmsClient()
+        val bindingDigest = awsBindingJournalDigest(bindingAlias)
+        val aliasMetadata =
+            try {
+                describeSymmetricNonExportableKey(client, alias)
+            } catch (_: NotFoundException) {
+                null
+            }
+        if (aliasMetadata != null) {
+            require(
+                keyHasBindingJournalTag(client, aliasMetadata.keyId!!, bindingDigest),
+            ) {
+                "AWS KMS binding alias is not owned by the secret-management lifecycle"
+            }
+            return aliasMetadata.arn
+        }
+        val taggedKeys = findActiveKeysByBindingJournalTag(client, bindingDigest)
+        return when (val plan = awsSymmetricKeyCreationReconciliationPlan(null, taggedKeys.mapNotNull { it.arn })) {
+            AwsSymmetricKeyCreationReconciliationPlan.Create -> null
+            is AwsSymmetricKeyCreationReconciliationPlan.Reuse -> plan.immutableKeyIdentity
+            is AwsSymmetricKeyCreationReconciliationPlan.Reattach -> {
+                val taggedKey =
+                    taggedKeys.singleOrNull { it.arn == plan.immutableKeyIdentity }
+                        ?: throw IllegalStateException("AWS KMS key reconciliation state is inconsistent")
+                client.createAlias(
+                    CreateAliasRequest {
+                        aliasName = alias
+                        targetKeyId = taggedKey.keyId
+                    },
+                )
+                plan.immutableKeyIdentity
+            }
+        }
+    }
+
+    override suspend fun createSymmetricNonExportableKey(bindingAlias: String): String {
+        val alias = requireAwsBindingAlias(bindingAlias)
+        resolveImmutableBackendKeyIdentity(bindingAlias)?.let { return it }
+        val client = getAWSKmsClient()
+        val bindingDigest = awsBindingJournalDigest(bindingAlias)
+        val created =
+            client.createKey(
+                CreateKeyRequest {
+                    keySpec = KeySpec.SymmetricDefault
+                    keyUsage = KeyUsageType.EncryptDecrypt
+                    description = "Sphereon isolated secret-management encryption key"
+                    tags =
+                        listOf(
+                            Tag {
+                                tagKey = AWS_BINDING_JOURNAL_TAG_KEY
+                                tagValue = bindingDigest
+                            },
+                        )
+                },
+            ).keyMetadata ?: throw IllegalStateException("AWS KMS did not return created key metadata")
+        val metadata = requireSymmetricNonExportableKeyMetadata(created)
+        try {
+            client.createAlias(
+                CreateAliasRequest {
+                    aliasName = alias
+                    targetKeyId = metadata.keyId
+                },
+            )
+        } catch (failure: Throwable) {
+            client.scheduleKeyDeletion(
+                ScheduleKeyDeletionRequest {
+                    keyId = metadata.keyId
+                    pendingWindowInDays = AWS_MINIMUM_DELETION_WINDOW_DAYS
+                },
+            )
+            throw failure
+        }
+        return metadata.arn!!
+    }
+
+    override suspend fun revokeSymmetricNonExportableKey(bindingAlias: String) {
+        val alias = requireAwsBindingAlias(bindingAlias)
+        val client = getAWSKmsClient()
+        val bindingDigest = awsBindingJournalDigest(bindingAlias)
+        val metadata =
+            try {
+                describeSymmetricKeyForRevocation(client, alias)
+            } catch (_: NotFoundException) {
+                val tagged = findRevocableKeysByBindingJournalTag(client, bindingDigest)
+                when {
+                    tagged.isEmpty() -> return
+                    tagged.size == 1 -> tagged.single()
+                    else -> throw IllegalStateException("AWS KMS binding journal is ambiguous")
+                }
+            }
+        val plan = awsSymmetricKeyRevocationPlan(metadata.keyState)
+        if (plan.scheduleDeletion) {
+            client.scheduleKeyDeletion(
+                ScheduleKeyDeletionRequest {
+                    keyId = metadata.arn
+                    pendingWindowInDays = AWS_MINIMUM_DELETION_WINDOW_DAYS
+                },
+            )
+        }
+        check(plan.deleteAlias) { "AWS KMS alias deletion cannot precede key deletion scheduling" }
+        try {
+            client.deleteAlias(DeleteAliasRequest { aliasName = alias })
+        } catch (_: NotFoundException) {
+            // A hard crash can leave only the atomically tagged key and no alias.
+        }
     }
 
     /**
@@ -753,7 +978,282 @@ actual class AwsKmsCryptoProvider actual constructor(
     }
 }
 
+internal fun awsKmsCredentialsProvider(config: AwsKmsClientConfig): CredentialsProvider =
+    when (config.credentialOpts.credentialMode) {
+        CredentialMode.DEFAULT_CHAIN -> DefaultChainCredentialsProvider(region = config.region)
+        CredentialMode.ACCESS_KEY -> {
+            val options = requireNotNull(config.credentialOpts.accessKeyCredentialOpts) {
+                "AWS ACCESS_KEY credential options are required"
+            }
+            require(options.credentialsSecretId.isNotBlank()) {
+                "AWS ACCESS_KEY credential source identity is required"
+            }
+            val accessKeyId = options.accessKeyId?.takeIf(String::isNotBlank)
+                ?: throw IllegalArgumentException("AWS ACCESS_KEY material is not staged")
+            val secretAccessKey = options.secretAccessKey?.takeIf(String::isNotBlank)
+                ?: throw IllegalArgumentException("AWS ACCESS_KEY material is not staged")
+            StaticCredentialsProvider {
+                this.accessKeyId = accessKeyId
+                this.secretAccessKey = secretAccessKey
+                this.sessionToken = options.sessionToken?.takeIf(String::isNotBlank)
+            }
+        }
+        CredentialMode.PROFILE -> {
+            val profileName = config.credentialOpts.profileCredentialOpts?.profileName?.takeIf(String::isNotBlank)
+                ?: throw IllegalArgumentException("AWS PROFILE credential options are required")
+            ProfileCredentialsProvider(profileName = profileName, region = config.region)
+        }
+        CredentialMode.CONTAINER -> EcsCredentialsProvider()
+        CredentialMode.INSTANCE -> ImdsCredentialsProvider()
+    }
+
+private suspend fun describeSymmetricNonExportableKey(
+    client: KmsClient,
+    keyReference: String,
+) =
+    client.describeKey(DescribeKeyRequest { keyId = keyReference }).keyMetadata
+        ?.let(::requireSymmetricNonExportableKeyMetadata)
+        ?: throw IllegalStateException("AWS KMS did not return key metadata")
+
+private suspend fun describeSymmetricKeyForRevocation(
+    client: KmsClient,
+    keyReference: String,
+): aws.sdk.kotlin.services.kms.model.KeyMetadata {
+    val metadata =
+        client.describeKey(DescribeKeyRequest { keyId = keyReference }).keyMetadata
+            ?: throw IllegalStateException("AWS KMS did not return key metadata")
+    return requireRevocableSymmetricKeyMetadata(metadata)
+}
+
+private fun requireRevocableSymmetricKeyMetadata(
+    metadata: aws.sdk.kotlin.services.kms.model.KeyMetadata,
+): aws.sdk.kotlin.services.kms.model.KeyMetadata {
+    require(metadata.keyState == KeyState.Enabled || metadata.keyState == KeyState.Disabled ||
+        metadata.keyState == KeyState.PendingDeletion
+    ) {
+        "AWS KMS key is not in a revocable lifecycle state"
+    }
+    require(metadata.keySpec == KeySpec.SymmetricDefault && metadata.keyUsage == KeyUsageType.EncryptDecrypt) {
+        "AWS KMS key is not a symmetric encryption key"
+    }
+    require(metadata.origin == OriginType.AwsKms && metadata.keyManager == KeyManagerType.Customer) {
+        "AWS KMS key custody is not customer-controlled hardware"
+    }
+    require(!metadata.arn.isNullOrBlank() && !metadata.keyId.isNullOrBlank()) {
+        "AWS KMS key metadata is incomplete"
+    }
+    return metadata
+}
+
+private fun requireSymmetricNonExportableKeyMetadata(
+    metadata: aws.sdk.kotlin.services.kms.model.KeyMetadata,
+): aws.sdk.kotlin.services.kms.model.KeyMetadata {
+    require(metadata.enabled == true && metadata.keyState == KeyState.Enabled) { "AWS KMS key is not enabled" }
+    require(metadata.keySpec == KeySpec.SymmetricDefault && metadata.keyUsage == KeyUsageType.EncryptDecrypt) {
+        "AWS KMS key is not a symmetric encryption key"
+    }
+    require(metadata.origin == OriginType.AwsKms && metadata.keyManager == KeyManagerType.Customer) {
+        "AWS KMS key custody is not customer-controlled hardware"
+    }
+    require(!metadata.arn.isNullOrBlank() && !metadata.keyId.isNullOrBlank()) {
+        "AWS KMS key metadata is incomplete"
+    }
+    return metadata
+}
+
+private suspend fun findActiveKeysByBindingJournalTag(
+    client: KmsClient,
+    bindingDigest: String,
+): List<aws.sdk.kotlin.services.kms.model.KeyMetadata> =
+    findKeysByBindingJournalTag(client, bindingDigest)
+        .filter { it.keyState == KeyState.Enabled }
+        .map(::requireSymmetricNonExportableKeyMetadata)
+
+private suspend fun findRevocableKeysByBindingJournalTag(
+    client: KmsClient,
+    bindingDigest: String,
+): List<aws.sdk.kotlin.services.kms.model.KeyMetadata> =
+    findKeysByBindingJournalTag(client, bindingDigest)
+        .map(::requireRevocableSymmetricKeyMetadata)
+
+private suspend fun findKeysByBindingJournalTag(
+    client: KmsClient,
+    bindingDigest: String,
+): List<aws.sdk.kotlin.services.kms.model.KeyMetadata> {
+    val matches = mutableListOf<aws.sdk.kotlin.services.kms.model.KeyMetadata>()
+    var marker: String? = null
+    var pages = 0
+    do {
+        check(++pages <= AWS_MAX_RECONCILIATION_PAGES) { "AWS KMS key reconciliation exceeded its bounded scan" }
+        val response =
+            client.listKeys(
+                ListKeysRequest {
+                    this.marker = marker
+                    limit = AWS_LIST_KEYS_PAGE_SIZE
+                },
+            )
+        response.keys.orEmpty().forEach { entry ->
+            val keyId = entry.keyId ?: return@forEach
+            if (keyHasBindingJournalTag(client, keyId, bindingDigest)) {
+                val metadata =
+                    try {
+                        describeSymmetricKeyForRevocation(client, keyId)
+                    } catch (_: NotFoundException) {
+                        null
+                    }
+                if (metadata != null) matches += metadata
+            }
+        }
+        marker =
+            if (response.truncated) {
+                response.nextMarker
+                    ?: throw IllegalStateException("AWS KMS key reconciliation pagination is invalid")
+            } else {
+                null
+            }
+    } while (marker != null)
+    return matches.distinctBy { it.arn }
+}
+
+private suspend fun keyHasBindingJournalTag(
+    client: KmsClient,
+    keyId: String,
+    expectedBindingDigest: String,
+): Boolean {
+    var marker: String? = null
+    var pages = 0
+    do {
+        check(++pages <= AWS_MAX_TAG_PAGES) { "AWS KMS tag reconciliation exceeded its bounded scan" }
+        val response =
+            client.listResourceTags(
+                ListResourceTagsRequest {
+                    this.keyId = keyId
+                    this.marker = marker
+                    limit = AWS_LIST_TAGS_PAGE_SIZE
+                },
+            )
+        if (
+            response.tags.orEmpty().any {
+                it.tagKey == AWS_BINDING_JOURNAL_TAG_KEY &&
+                    MessageDigest.isEqual(it.tagValue.encodeToByteArray(), expectedBindingDigest.encodeToByteArray())
+            }
+        ) {
+            return true
+        }
+        marker =
+            if (response.truncated) {
+                response.nextMarker
+                    ?: throw IllegalStateException("AWS KMS tag reconciliation pagination is invalid")
+            } else {
+                null
+            }
+    } while (marker != null)
+    return false
+}
+
+private fun awsBindingJournalDigest(bindingAlias: String): String =
+    canonicalBackendKeyIdentityDigest(
+        "secret-management:aws-kms-binding-journal:v1\u0000$bindingAlias",
+    )
+
+private fun requireImmutableAwsKmsKeyArn(keyInfo: KeyInfoType<*>): String {
+    val kid = keyInfo.kid ?: throw IllegalArgumentException("An immutable AWS KMS key ARN is required")
+    require(keyInfo.alias == null || keyInfo.alias == kid) { "AWS KMS aliases are not accepted for attested operations" }
+    require(AWS_KMS_KEY_ARN.matches(kid)) { "An immutable AWS KMS key ARN is required" }
+    return kid
+}
+
+private fun requireAwsBindingAlias(bindingAlias: String): String {
+    require(AWS_KMS_BINDING_ALIAS.matches(bindingAlias)) { "AWS KMS binding alias is invalid" }
+    return "alias/$bindingAlias"
+}
+
+private fun awsBackendKeyIdentityDigest(
+    arn: String,
+    keyId: String,
+): String =
+    canonicalBackendKeyIdentityDigest(
+        "aws-kms\u0000$arn\u0000$keyId",
+    )
+
+private fun canonicalBackendKeyIdentityDigest(value: String): String =
+    "sha256:" +
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.encodeToByteArray())
+            .joinToString(separator = "") { "%02x".format(it) }
+
+internal data class AwsSymmetricKeyRevocationPlan(
+    val scheduleDeletion: Boolean,
+    val deleteAlias: Boolean,
+)
+
+internal fun awsSymmetricKeyRevocationPlan(state: KeyState?): AwsSymmetricKeyRevocationPlan =
+    when (state) {
+        KeyState.Enabled,
+        KeyState.Disabled,
+        -> AwsSymmetricKeyRevocationPlan(scheduleDeletion = true, deleteAlias = true)
+
+        KeyState.PendingDeletion -> AwsSymmetricKeyRevocationPlan(scheduleDeletion = false, deleteAlias = true)
+        else -> throw IllegalStateException("AWS KMS key is not in a revocable lifecycle state")
+    }
+
+internal sealed interface AwsSymmetricKeyCreationReconciliationPlan {
+    data object Create : AwsSymmetricKeyCreationReconciliationPlan
+
+    data class Reuse(
+        val immutableKeyIdentity: String,
+    ) : AwsSymmetricKeyCreationReconciliationPlan
+
+    data class Reattach(
+        val immutableKeyIdentity: String,
+    ) : AwsSymmetricKeyCreationReconciliationPlan
+}
+
+internal fun awsSymmetricKeyCreationReconciliationPlan(
+    aliasIdentity: String?,
+    taggedKeyIdentities: List<String>,
+): AwsSymmetricKeyCreationReconciliationPlan {
+    val uniqueTaggedIdentities = taggedKeyIdentities.toSet()
+    if (aliasIdentity != null) {
+        require(aliasIdentity in uniqueTaggedIdentities) {
+            "AWS KMS binding alias is not owned by the secret-management lifecycle"
+        }
+        return AwsSymmetricKeyCreationReconciliationPlan.Reuse(aliasIdentity)
+    }
+    return when (uniqueTaggedIdentities.size) {
+        0 -> AwsSymmetricKeyCreationReconciliationPlan.Create
+        1 -> AwsSymmetricKeyCreationReconciliationPlan.Reattach(uniqueTaggedIdentities.single())
+        else -> throw IllegalStateException("AWS KMS binding journal is ambiguous")
+    }
+}
+
 fun determineAwsKeyId(keyInfo: KeyInfoType<*>): String {
     val keyIdArg = keyInfo.alias ?: keyInfo.kid ?: throw IllegalArgumentException("KMS key reference is required")
     return if (keyInfo.alias == keyInfo.kid || keyInfo.alias == null || keyIdArg.startsWith("alias/")) keyIdArg else "alias/$keyIdArg"
 }
+
+/**
+ * Binds the caller's opaque AAD to AWS KMS ciphertext without disclosing the AAD itself in
+ * CloudTrail or provider diagnostics. AWS authenticates the complete encryption-context map and
+ * rejects decrypt requests whose digest differs.
+ */
+internal fun awsKmsEncryptionContext(additionalAuthenticatedData: ByteArray?): Map<String, String>? {
+    if (additionalAuthenticatedData == null) return null
+    val digest = MessageDigest.getInstance("SHA-256").digest(additionalAuthenticatedData)
+    return try {
+        mapOf(AWS_KMS_AAD_CONTEXT_KEY to "sha256:${digest.encodeToBase64Url()}")
+    } finally {
+        digest.fill(0)
+    }
+}
+
+private const val AWS_KMS_AAD_CONTEXT_KEY: String = "sphereon-aad-digest"
+private const val AWS_BINDING_JOURNAL_TAG_KEY: String = "sphereon-secret-management-binding"
+private const val AWS_MINIMUM_DELETION_WINDOW_DAYS: Int = 7
+private const val AWS_LIST_KEYS_PAGE_SIZE: Int = 1_000
+private const val AWS_LIST_TAGS_PAGE_SIZE: Int = 50
+private const val AWS_MAX_RECONCILIATION_PAGES: Int = 1_000
+private const val AWS_MAX_TAG_PAGES: Int = 100
+private val AWS_KMS_KEY_ARN =
+    Regex("^arn:aws(?:-[a-z0-9-]+)?:kms:[a-z0-9-]+:[0-9]{12}:key/[0-9a-fA-F-]{36}$")
+private val AWS_KMS_BINDING_ALIAS = Regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")

@@ -1,0 +1,10 @@
+-- Public verification material moves next to the key reference.
+--
+-- Resolving a public key previously meant opening the provider's key store, which needs the store
+-- credential, which drags a read through permit issuance and credential redemption. A public key
+-- is not a secret, so it is held here and served directly.
+--
+-- Nullable on purpose: rows written before this column existed keep NULL until the first read
+-- resolves and stores the value. No migration backfills them, and nothing overwrites a known
+-- value with NULL.
+ALTER TABLE key_reference ADD COLUMN public_key_jwk TEXT;

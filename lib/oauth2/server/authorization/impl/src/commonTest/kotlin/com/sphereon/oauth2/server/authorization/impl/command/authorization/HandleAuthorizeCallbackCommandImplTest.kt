@@ -43,8 +43,11 @@ import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvi
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.provider.UserInfo
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
+import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession
 import com.sphereon.oauth2.server.authorization.storage.PendingAuthorizationSessionStore
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -221,6 +224,70 @@ class HandleAuthorizeCallbackCommandImplTest {
             assertEquals(session.sessionId, captured.session.sessionId)
             assertEquals("user-1", captured.userId)
             assertEquals(1, store.removeCalls)
+        }
+
+    @Test
+    fun firstPartyLoginSessionClaimsReachAuthorizationCode() =
+        runTest {
+            var seenCodeArgs: CreateAuthorizationCodeArgs? = null
+            val service =
+                service(
+                    codeStub =
+                        stubCreateAuthorizationCode { args ->
+                            seenCodeArgs = args
+                            Ok(StringResult(value = "AC-FIRST-PARTY"))
+                        },
+                    responseStub =
+                        stubCreateAuthorizationResponse { args ->
+                            Ok(
+                                AuthorizationResponseData(
+                                    redirectUri = "${args.redirectUri}?code=${args.code}",
+                                    code = args.code,
+                                    state = args.state,
+                                    responseMode = args.responseMode,
+                                ),
+                            )
+                        },
+                )
+            val pending = session("pending-first-party")
+            val pendingStore = FakePendingAuthorizationSessionStore(mapOf(pending.sessionId to pending))
+            val loginSessionIdProvider = DefaultOidcLoginSessionIdProvider()
+            loginSessionIdProvider.setCurrentLoginSessionId("login-first-party")
+            val loginSessionStore = InMemoryOidcLoginSessionStore(Clock.System)
+            val now = Clock.System.now()
+            loginSessionStore.create(
+                OidcLoginSession(
+                    sessionId = "login-first-party",
+                    sub = "tenant-owner-1",
+                    authTime = now,
+                    authMethod = AuthenticationMethod.PASSWORD,
+                    claims =
+                        mapOf(
+                            "roles" to JsonArray(listOf(JsonPrimitive("tenant-admin"))),
+                        ),
+                    createdAt = now,
+                    absoluteExpiresAt = now + 10.minutes,
+                    idleExpiresAt = now + 10.minutes,
+                ),
+            )
+            val command =
+                HandleAuthorizeCallbackCommandImpl(
+                    ctx.execution,
+                    service,
+                    pendingStore,
+                    FakeUserAuthenticationProvider(),
+                    loginSessionIdProvider,
+                    loginSessionStore,
+                )
+
+            val result = command.execute(HandleAuthorizeCallbackArgs(sessionId = pending.sessionId))
+
+            assertTrue(result.isOk)
+            assertEquals(
+                JsonArray(listOf(JsonPrimitive("tenant-admin"))),
+                seenCodeArgs?.userClaims?.get("roles"),
+                "server-authenticated first-party session roles must survive the callback path",
+            )
         }
 
     @Test

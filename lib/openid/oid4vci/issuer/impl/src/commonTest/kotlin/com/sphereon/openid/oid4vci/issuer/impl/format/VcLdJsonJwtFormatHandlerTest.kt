@@ -139,6 +139,7 @@ class VcLdJsonJwtFormatHandlerTest {
             ),
         holderBindingKey = null,
         attributes = attributes,
+        signingKeyAlias = "issuer-signing-untp",
     )
 
     @Test

@@ -55,7 +55,7 @@ class CnfAndDidIdentifierResolutionE2ETest {
         val app = createDidResolverTestAppGraph(testInstance = this)
 
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("cnf-did-resolution-test")
+        val session = userContext.sessionContextManager.createOrGetFromId("cnf-did-resolution-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
         val sessionGraph = session.graph
 
@@ -64,7 +64,7 @@ class CnfAndDidIdentifierResolutionE2ETest {
         didResolver = (sessionGraph as DidExternalIdentifierResolutionServiceImpl.Graph).didExternalIdentifierResolutionService
         didResolverImpl = didResolver as DidExternalIdentifierResolutionServiceImpl
 
-        val forgedSession = userContext.sessionContextManager.createOrGetFromId("cnf-did-resolution-test-forged")
+        val forgedSession = userContext.sessionContextManager.createOrGetFromId("cnf-did-resolution-test-forged", principalType = com.sphereon.di.context.PrincipalType.USER)
         val forgedSessionGraph = forgedSession.graph
         didResolverImplForgedSession =
             (forgedSessionGraph as DidExternalIdentifierResolutionServiceImpl.Graph).didExternalIdentifierResolutionService
@@ -366,6 +366,21 @@ class CnfAndDidIdentifierResolutionE2ETest {
             assertNotNull(didResult.didDocument)
             assertNotNull(didResult.didParsed)
             assertEquals("jwk", didResult.didParsed!!.method)
+        }
+
+    @Test
+    fun testDidJwkFragmentResolvesBaseDocumentAndExactMethod() =
+        runTest {
+            val did = "did:jwk:eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI1NTE5IiwieCI6IlFfX0xNZXVFUjZNMjRUNFREYkdBSTZoTFlnbXFKSlB2Y1RfODdyNFlXcXMifQ"
+            val didUrl = "$did#0"
+
+            val result = didResolver.resolve(ExternalIdentifierDidOpts(identifier = didUrl))
+
+            assertTrue(result.isOk, "did:jwk verification-method URL should resolve")
+            val didResult = result.getOrThrow()
+            assertEquals(didUrl, didResult.did)
+            assertEquals(did, didResult.didDocument?.id)
+            assertEquals(didUrl, didResult.keyInfo.kid)
         }
 
     @Test

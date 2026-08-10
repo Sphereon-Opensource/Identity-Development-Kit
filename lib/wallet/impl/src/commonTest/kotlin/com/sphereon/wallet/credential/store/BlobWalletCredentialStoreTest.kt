@@ -61,6 +61,7 @@ import com.sphereon.wallet.credential.KeyRef
 import com.sphereon.wallet.credential.LocalWalletCredentialStore
 import com.sphereon.wallet.credential.LocalWalletIssuanceSessionStore
 import com.sphereon.wallet.credential.RecordSyncState
+import com.sphereon.wallet.credential.ReplayWalletOperationsArgs
 import com.sphereon.wallet.credential.RefreshPolicy
 import com.sphereon.wallet.credential.RefreshState
 import com.sphereon.wallet.credential.RemoteWalletCredentialStore
@@ -75,6 +76,8 @@ import com.sphereon.wallet.credential.WalletDeferredAccessTokenRemoteMirrorReque
 import com.sphereon.wallet.credential.WalletUnitProfile
 import com.sphereon.wallet.credential.WalletProfilePurpose
 import com.sphereon.wallet.credential.WalletOperation
+import com.sphereon.wallet.credential.WalletOperationReplayResult
+import com.sphereon.wallet.credential.WalletOperationSyncService
 import com.sphereon.wallet.credential.WalletOperationType
 import com.sphereon.wallet.credential.WalletStorageMode
 import com.sphereon.wallet.credential.WalletStorageProfileResolver
@@ -123,8 +126,19 @@ private class TestSessionExecution : com.sphereon.core.api.context.SessionExecut
     override val sessionContextManager: com.sphereon.di.session.SessionContextManager
         get() = throw NotImplementedError("Not needed for unit tests")
     override val log: com.sphereon.core.api.log.SessionLogService = NoOpSessionLogService(sessionContext)
-    override val conf: com.sphereon.core.api.context.ContextConfig
+    override val conf: com.sphereon.core.api.context.ContextConfig = TestContextConfig()
+}
+
+private class TestContextConfig : com.sphereon.core.api.context.ContextConfig {
+    override val app: com.sphereon.core.api.conf.AppConfigService
         get() = throw NotImplementedError("Not needed for unit tests")
+    override val tenant: com.sphereon.core.api.conf.TenantConfigService
+        get() = throw NotImplementedError("Not needed for unit tests")
+    override val principal: com.sphereon.core.api.conf.PrincipalConfigService
+        get() = throw NotImplementedError("Not needed for unit tests")
+
+    override fun conf(level: com.sphereon.core.api.conf.ConfigLevel): com.sphereon.core.api.conf.ConfigService =
+        throw NotImplementedError("Not needed for unit tests")
 }
 
 private class NoOpSessionLogService(
@@ -235,7 +249,7 @@ private fun createTrackingStore(): Pair<BodyReadTrackingBlobService, BlobWalletC
 
 private fun typeRef(value: String = "https://credentials.example.com/employee") =
     CredentialTypeRef(
-        format = CredentialFormat.SD_JWT_DC,
+        format = CredentialFormat.SD_JWT_VC,
         kind = CredentialTypeRefKind.SD_JWT_VCT,
         value = value,
         source = CredentialTypeRefSource.CREDENTIAL_PAYLOAD,
@@ -250,7 +264,7 @@ private fun makeRecord(
     id = id,
     walletUnitId = walletUnitId,
     issuerRef = IdentifierRef(type = IdentifierType.DID, value = "did:example:issuer"),
-    format = CredentialFormat.SD_JWT_DC,
+    format = CredentialFormat.SD_JWT_VC,
     credentialTypeRefs = setOf(ref),
     instances =
         listOf(
@@ -258,7 +272,7 @@ private fun makeRecord(
                 id = "$id-instance",
                 walletUnitId = walletUnitId,
                 credentialRecordId = id,
-                format = CredentialFormat.SD_JWT_DC,
+                format = CredentialFormat.SD_JWT_VC,
                 raw = "raw-$id",
                 bodyStorageRef =
                     BodyStorageRef(
@@ -743,6 +757,63 @@ class BlobWalletCredentialStoreTest {
             val localRecord = localStore.getCredential(WALLET_A, "record-replay").value
             assertEquals(emptyList(), localRecord?.syncState?.pendingOperationIds)
             assertNotNull(localRecord?.syncState?.remoteRevision)
+        }
+
+    @Test
+    fun hybridSyncServiceReplaysMetadataAndPresentationBindingUpdates() =
+        runTest {
+            val localBlobService = createTestBlobService()
+            val remoteBlobService = createTestBlobService()
+            val localStore = BlobWalletCredentialStore(localBlobService, TestWalletCredentialBodyProtector)
+            val remoteStore = BlobWalletCredentialStore(remoteBlobService, TestWalletCredentialBodyProtector)
+            val queue = BlobWalletOperationQueue(localBlobService)
+            val operationTypes =
+                listOf(
+                    WalletOperationType.UPDATE_METADATA,
+                    WalletOperationType.APPEND_PRESENTATION_BINDING,
+                )
+
+            operationTypes.forEachIndexed { index, operationType ->
+                val recordId = "record-replay-update-$index"
+                val operationId = "operation-replay-update-$index"
+                val record =
+                    makeRecord(recordId).copy(
+                        syncState = RecordSyncState(pendingOperationIds = listOf(operationId)),
+                    )
+                val operation =
+                    WalletOperation(
+                        id = operationId,
+                        walletUnitId = WALLET_A,
+                        credentialRecordId = recordId,
+                        operationType = operationType,
+                        baseRemoteRevision = null,
+                        createdByDeviceId = "device-1",
+                        createdAt = NOW,
+                    )
+                assertTrue(localStore.putCredential(WALLET_A, record).isOk)
+                assertTrue(queue.enqueue(WALLET_A, operation).isOk)
+            }
+
+            val replay = HybridWalletOperationSyncService(localStore, remoteStore, queue).replayPending(WALLET_A)
+
+            assertTrue(replay.isOk)
+            assertEquals(2, replay.value.attempted)
+            assertEquals(2, replay.value.applied)
+            assertEquals(emptyList(), replay.value.conflicts)
+            assertEquals(emptyList(), replay.value.failures)
+            assertEquals(emptyList(), queue.listPending(WALLET_A).value)
+            operationTypes.indices.forEach { index ->
+                val recordId = "record-replay-update-$index"
+                val operationId = "operation-replay-update-$index"
+                assertEquals(
+                    "device-1:$operationId",
+                    remoteStore.getCredential(WALLET_A, recordId).value?.syncState?.remoteRevision,
+                )
+                assertEquals(
+                    emptyList(),
+                    localStore.getCredential(WALLET_A, recordId).value?.syncState?.pendingOperationIds,
+                )
+            }
         }
 
     @Test
@@ -1234,8 +1305,35 @@ class BlobWalletCredentialStoreTest {
         operationType = WalletOperationType.PUT_CREDENTIAL,
         baseRemoteRevision = null,
         createdByDeviceId = "device-1",
-        createdAt = createdAt,
-    )
+            createdAt = createdAt,
+        )
+
+    @Test
+    fun replayWalletOperationsCommandDelegatesThroughTypedCommandBoundary() =
+        runTest {
+            var replayedWalletUnitId: String? = null
+            val expected =
+                WalletOperationReplayResult(
+                    attempted = 2,
+                    applied = 2,
+                    conflicts = emptyList(),
+                    failures = emptyList(),
+                )
+            val service =
+                object : WalletOperationSyncService {
+                    override suspend fun replayPending(walletUnitId: String): IdkResult<WalletOperationReplayResult, IdkError> {
+                        replayedWalletUnitId = walletUnitId
+                        return Ok(expected)
+                    }
+                }
+            val command = ReplayWalletOperationsCommandImpl(TestSessionExecution(), service)
+
+            val result = command.execute(ReplayWalletOperationsArgs(WALLET_A))
+
+            assertTrue(result.isOk)
+            assertEquals(WALLET_A, replayedWalletUnitId)
+            assertEquals(expected, result.value)
+        }
 
     private fun storageProfile(
         walletUnitId: String,

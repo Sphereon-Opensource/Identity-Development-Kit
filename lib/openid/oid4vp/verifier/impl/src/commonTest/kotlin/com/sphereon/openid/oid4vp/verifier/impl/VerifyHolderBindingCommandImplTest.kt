@@ -35,6 +35,7 @@ import com.sphereon.crypto.jose.jws.JwsValidationResult
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
 import com.sphereon.mdoc.data.DeviceAuthValidation
+import com.sphereon.mdoc.data.MdocVerification
 import com.sphereon.mdoc.data.MdocValidations
 import com.sphereon.mdoc.data.MdocVerificationTypes
 import com.sphereon.mdoc.data.device.DeviceResponse
@@ -44,10 +45,10 @@ import com.sphereon.mdoc.data.mso.MobileSecurityObject
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
+import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.sdjwt.SdJwtVerificationResult
 import com.sphereon.sdjwt.VerifySdJwtArgs
 import com.sphereon.sdjwt.command.VerifySdJwtCommand
-import com.sphereon.trust.x509.X509TrustAnchorLoader
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -65,6 +66,20 @@ class VerifyHolderBindingCommandImplTest {
     private val testContext = Oid4vpVerifierTestContext("verify-holder-binding-test", this)
     private val command = createTestCommand(verificationShouldSucceed = true)
     private val failingCommand = createTestCommand(verificationShouldSucceed = false)
+
+    @Test
+    fun `mdoc holder binding excludes certificate trust but retains crypto and content checks`() {
+        assertFalse(MdocVerification.CERTIFICATE_CHAIN in OID4VP_MDOC_HOLDER_BINDING_VALIDATIONS)
+        assertEquals(
+            setOf(
+                MdocVerification.ISSUER_AUTH_SIGNATURE,
+                MdocVerification.DIGEST_VALUES,
+                MdocVerification.DOC_TYPE,
+                MdocVerification.VALIDITY,
+            ),
+            OID4VP_MDOC_HOLDER_BINDING_VALIDATIONS,
+        )
+    }
 
     // ============================================================================
     // SD-JWT (KB-JWT) Tests
@@ -125,7 +140,7 @@ class VerifyHolderBindingCommandImplTest {
         }
 
     @Test
-    fun `test SD-JWT with format variant vc+sd-jwt`() =
+    fun `test W3C VC secured with SD-JWT dispatches to SD-JWT holder binding`() =
         runTest {
             val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~disc1~eyJhbGciOiJFUzI1NiJ9.kb.sig"
 
@@ -141,6 +156,56 @@ class VerifyHolderBindingCommandImplTest {
 
             assertIs<Ok<*>>(result)
             assertEquals("kb-jwt", result.value.bindingMethod)
+        }
+
+    @Test
+    fun `SD-JWT without KB is accepted only when Credential Query disables holder binding`() =
+        runTest {
+            val sdJwtWithoutKb =
+                "eyJhbGciOiJFUzI1NiJ9." +
+                    "eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIn0.signature~"
+            val parsed = SdJwtCodec.parse(sdJwtWithoutKb).getOrElse { error(it.message.defaultMessage) }
+            val verifier =
+                createTestCommand(
+                    FixedVerifySdJwtCommand(
+                        SdJwtVerificationResult(
+                            sdJwt = parsed,
+                            signatureValid = true,
+                            disclosuresValid = true,
+                            keyBindingValid = true,
+                        ),
+                    ),
+                )
+
+            val optionalResult =
+                verifier.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = sdJwtWithoutKb,
+                        format = "dc+sd-jwt",
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                        requireCryptographicHolderBinding = false,
+                    ),
+                )
+            val requiredResult =
+                verifier.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = sdJwtWithoutKb,
+                        format = "dc+sd-jwt",
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                    ),
+                )
+
+            assertIs<Ok<*>>(optionalResult)
+            assertTrue(optionalResult.value.verified)
+            assertEquals(null, optionalResult.value.bindingMethod)
+            assertTrue(optionalResult.value.nonceValid)
+            assertTrue(optionalResult.value.audienceValid)
+
+            assertIs<Ok<*>>(requiredResult)
+            assertFalse(requiredResult.value.verified)
+            assertTrue(requiredResult.value.errors.any { it.contains("no Key Binding JWT") })
         }
 
     // ============================================================================
@@ -356,22 +421,34 @@ class VerifyHolderBindingCommandImplTest {
      *                                   If false, they return failure.
      */
     private fun createTestCommand(verificationShouldSucceed: Boolean = true): VerifyHolderBindingCommandImpl {
-        val mockSdJwtCommand = MockVerifySdJwtCommand(verificationShouldSucceed)
+        return createTestCommand(MockVerifySdJwtCommand(verificationShouldSucceed), verificationShouldSucceed)
+    }
+
+    private fun createTestCommand(
+        verifySdJwtCommand: VerifySdJwtCommand,
+        verificationShouldSucceed: Boolean = true,
+    ): VerifyHolderBindingCommandImpl {
         val mockJwsCommand = MockVerifyJwsCommand(verificationShouldSucceed)
 
         return VerifyHolderBindingCommandImpl(
             execution = testContext.execution,
-            verifySdJwtCommand = mockSdJwtCommand,
+            verifySdJwtCommand = verifySdJwtCommand,
             verifyJwsCommand = mockJwsCommand,
             mdocValidations = AlwaysFailMdocValidations,
             deviceAuthValidation = AlwaysFailDeviceAuthValidation,
             deviceResponseCborCodec = AlwaysFailDeviceResponseCborCodec,
-            x509TrustAnchorLoader = NoTrustAnchorsLoader,
         )
     }
 
-    private object NoTrustAnchorsLoader : X509TrustAnchorLoader {
-        override suspend fun loadTrustedCerts(): List<String> = emptyList()
+    private class FixedVerifySdJwtCommand(
+        private val result: SdJwtVerificationResult,
+    ) : VerifySdJwtCommand {
+        override val id: String = "fixed-verify-sdjwt"
+        override val isEnabled: Boolean = true
+        override val inputTypeToken: TypeToken<VerifySdJwtArgs> = typeToken<VerifySdJwtArgs>()
+        override val outputTypeToken: TypeToken<SdJwtVerificationResult> = typeToken<SdJwtVerificationResult>()
+
+        override suspend fun execute(args: VerifySdJwtArgs): IdkResult<SdJwtVerificationResult, IdkError> = Ok(result)
     }
 
     /**

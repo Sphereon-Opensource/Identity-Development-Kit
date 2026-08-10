@@ -42,6 +42,7 @@ kotlin {
                 implementation(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)
                 api(sphereonlib.software.amazon.app.platform.metro.impl)
+                implementation(sphereonlib.org.jetbrains.kotlinx.atomicfu)
             }
         }
         val commonTest by getting {

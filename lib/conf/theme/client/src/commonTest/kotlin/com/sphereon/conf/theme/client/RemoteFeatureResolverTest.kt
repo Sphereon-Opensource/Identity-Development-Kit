@@ -16,10 +16,10 @@
 
 package com.sphereon.conf.theme.client
 
+import com.sphereon.conf.theme.core.model.AssetElementValue
 import com.sphereon.conf.theme.core.model.ElementOrigin
 import com.sphereon.conf.theme.core.model.ProductType
-import com.sphereon.conf.theme.core.model.ResolvedElement
-import com.sphereon.conf.theme.core.model.ResolvedFeature
+import com.sphereon.conf.theme.core.model.TextElementValue
 import com.sphereon.conf.theme.core.model.ThemeVariant
 import com.sphereon.conf.theme.core.model.ThemeAssetReference
 import io.ktor.client.engine.mock.MockEngine
@@ -30,7 +30,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -39,26 +38,25 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RemoteFeatureResolverTest {
-    private val json = Json { ignoreUnknownKeys = true }
-
     private val jsonHeaders = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
 
-    private fun loginFeature(applicationId: String? = null): ResolvedFeature =
-        ResolvedFeature(
-            productType = ProductType.AUTHORIZATION_SERVER,
-            featureId = "login",
-            tenantId = "acme",
-            applicationId = applicationId,
-            elements =
-                mapOf(
-                    "logo" to
-                        ResolvedElement(
-                            asset = ThemeAssetReference(uri = "/public/assets/acme/brand/logo.svg"),
-                            origin = ElementOrigin.TENANT,
-                        ),
-                    "tagline" to ResolvedElement(text = "Sign in to Acme", origin = ElementOrigin.ELEMENT_DEFAULT),
-                ),
-        )
+    /**
+     * The representation the theme service actually serves, written out literally rather than
+     * re-encoded here. `ElementValue` is a sealed hierarchy and the theme API pins its
+     * discriminator on `kind`; a fixture produced by a `Json` this test configures itself would
+     * agree with the client by construction and could never catch the client reading a
+     * different key than the server writes.
+     */
+    private fun loginFeatureWireFormat(applicationId: String? = null): String {
+        val application = applicationId?.let { """"applicationId":"$it",""" } ?: ""
+        return """
+            {"productType":"AUTHORIZATION_SERVER","featureId":"login","tenantId":"acme",$application
+             "elements":{
+               "logo":{"value":{"kind":"asset","asset":{"uri":"/public/assets/acme/brand/logo.svg"}},"origin":"TENANT"},
+               "tagline":{"value":{"kind":"text","text":"Sign in to Acme"},"origin":"ELEMENT_DEFAULT"}
+             }}
+        """.trimIndent()
+    }
 
     private fun resolver(
         engine: MockEngine,
@@ -79,7 +77,7 @@ class RemoteFeatureResolverTest {
                     assertEquals("/api/theme/v1/acme/applications/app-1/features/login/resolved", request.url.encodedPath)
                     assertNull(request.url.parameters["variant"])
                     respond(
-                        json.encodeToString(ResolvedFeature.serializer(), loginFeature(applicationId = "app-1")),
+                        loginFeatureWireFormat(applicationId = "app-1"),
                         headers = jsonHeaders,
                     )
                 }
@@ -95,8 +93,11 @@ class RemoteFeatureResolverTest {
             assertNotNull(resolved)
             assertEquals("login", resolved.featureId)
             assertEquals("app-1", resolved.applicationId)
-            assertEquals("/public/assets/acme/brand/logo.svg", resolved.elements["logo"]?.asset?.uri)
-            assertEquals("Sign in to Acme", resolved.elements["tagline"]?.text)
+            assertEquals(
+                AssetElementValue(ThemeAssetReference(uri = "/public/assets/acme/brand/logo.svg")),
+                resolved.elements["logo"]?.value,
+            )
+            assertEquals(TextElementValue("Sign in to Acme"), resolved.elements["tagline"]?.value)
             assertEquals(ElementOrigin.TENANT, resolved.elements["logo"]?.origin)
         }
 
@@ -110,7 +111,7 @@ class RemoteFeatureResolverTest {
                         request.url.encodedPath,
                     )
                     assertEquals("DARK", request.url.parameters["variant"])
-                    respond(json.encodeToString(ResolvedFeature.serializer(), loginFeature()), headers = jsonHeaders)
+                    respond(loginFeatureWireFormat(), headers = jsonHeaders)
                 }
 
             val resolved =

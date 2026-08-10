@@ -74,7 +74,7 @@ class WebvhLogReplayerNegativeTest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("webvh-replayer-negative")
+                .createOrGetFromId("webvh-replayer-negative", principalType = com.sphereon.di.context.PrincipalType.USER)
         val sessionGraph = session.graph
         registry = (sessionGraph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
         keyManager = (sessionGraph as KeyManagerServiceGraph).keyManagerService

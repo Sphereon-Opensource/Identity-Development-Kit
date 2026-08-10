@@ -8,6 +8,7 @@ package com.sphereon.wallet.interaction.protocol.oid4vp
 
 import com.sphereon.wallet.interaction.WalletInteractionContext
 import com.sphereon.wallet.interaction.WalletInteractionState
+import kotlinx.serialization.json.JsonObject
 
 interface Oid4vpPresentationExecutor {
     suspend fun submitPresentation(
@@ -42,6 +43,10 @@ sealed class Oid4vpPresentationExecutionResult {
 
     data class RedirectRequired(
         val redirectUri: String,
+    ) : Oid4vpPresentationExecutionResult()
+
+    data class DigitalCredentialResponse(
+        val data: JsonObject,
     ) : Oid4vpPresentationExecutionResult()
 
     data class Failed(

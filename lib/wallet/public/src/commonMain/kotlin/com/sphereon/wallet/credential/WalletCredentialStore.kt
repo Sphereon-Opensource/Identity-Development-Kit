@@ -18,6 +18,8 @@ package com.sphereon.wallet.credential
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.wallet.credential.store.WalletCredentialProtectedDocumentRole
+import kotlinx.serialization.Serializable
 
 /**
  * Wallet credential persistence rooted in the platform blob/vault architecture.
@@ -66,6 +68,50 @@ interface LocalWalletCredentialStore : WalletCredentialStore
  * Remote credential-store delegate backed by the platform vault abstraction.
  */
 interface RemoteWalletCredentialStore : WalletCredentialStore
+
+/**
+ * Opaque, already unit-protected credential material produced by a wallet app or
+ * a dedicated WSCD-confined ingress. The remote store can validate bindings and
+ * persist these bytes without ever receiving a credential record in plaintext.
+ */
+@Serializable
+data class ProtectedWalletCredentialDocument(
+    val credentialInstanceId: String,
+    val documentRole: WalletCredentialProtectedDocumentRole,
+    val protectedBody: ByteArray,
+) {
+    init {
+        require(credentialInstanceId.isNotBlank() && protectedBody.isNotEmpty()) {
+            "protected_wallet_credential_document_invalid"
+        }
+    }
+}
+
+@Serializable
+data class ProtectedWalletCredentialIngestion(
+    val walletUnitId: String,
+    val credentialRecordId: String,
+    val protectedRecordEnvelope: ByteArray,
+    val protectedInstanceBodies: List<ProtectedWalletCredentialDocument>,
+) {
+    init {
+        require(walletUnitId.isNotBlank() && credentialRecordId.isNotBlank() && protectedRecordEnvelope.isNotEmpty()) {
+            "protected_wallet_credential_ingestion_invalid"
+        }
+        require(protectedInstanceBodies.map { it.credentialInstanceId }.toSet().size == protectedInstanceBodies.size) {
+            "protected_wallet_credential_instance_duplicate"
+        }
+        require(protectedInstanceBodies.all { it.documentRole == WalletCredentialProtectedDocumentRole.CREDENTIAL_INSTANCE_BODY }) {
+            "protected_wallet_credential_document_role_invalid"
+        }
+    }
+}
+
+interface ProtectedRemoteWalletCredentialStore {
+    suspend fun putProtectedCredential(
+        ingestion: ProtectedWalletCredentialIngestion,
+    ): IdkResult<Unit, IdkError>
+}
 
 /**
  * Hybrid credential-store delegate that composes local blob and remote vault delegates.

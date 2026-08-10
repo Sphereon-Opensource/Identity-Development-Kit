@@ -20,6 +20,16 @@ import dev.zacsweers.metro.Provides
 interface WalletInteractionCommandSerializerModule {
     @Provides
     @IntoSet
+    fun provideEnsureWalletClientRegistrationKeyArgsSerializerEntry(): CommandSerializerEntry =
+        CommandSerializerEntry(EnsureWalletClientRegistrationKeyArgs::class, EnsureWalletClientRegistrationKeyArgs.serializer())
+
+    @Provides
+    @IntoSet
+    fun provideWalletClientRegistrationKeySerializerEntry(): CommandSerializerEntry =
+        CommandSerializerEntry(WalletClientRegistrationKey::class, WalletClientRegistrationKey.serializer())
+
+    @Provides
+    @IntoSet
     fun provideWalletInteractionInputSerializerEntry(): CommandSerializerEntry = CommandSerializerEntry(WalletInteractionInput::class, WalletInteractionInput.serializer())
 
     @Provides
@@ -63,4 +73,36 @@ interface WalletInteractionCommandSerializerModule {
     @Provides
     @IntoSet
     fun provideWalletInteractionStateEventSerializerEntry(): CommandSerializerEntry = CommandSerializerEntry(WalletInteractionStateEvent::class, WalletInteractionStateEvent.serializer())
+
+    @Provides
+    @IntoSet
+    fun provideRegisterWalletInteractionSensitiveInputArgsSerializerEntry(): CommandSerializerEntry =
+        CommandSerializerEntry(
+            RegisterWalletInteractionSensitiveInputArgs::class,
+            RegisterWalletInteractionSensitiveInputArgs.serializer(),
+        )
+
+    @Provides
+    @IntoSet
+    fun provideRegisterWalletInteractionSensitiveInputResultSerializerEntry(): CommandSerializerEntry =
+        CommandSerializerEntry(
+            RegisterWalletInteractionSensitiveInputResult::class,
+            RegisterWalletInteractionSensitiveInputResult.serializer(),
+        )
+
+    @Provides
+    @IntoSet
+    fun provideConsumeWalletInteractionHandoffArgsSerializerEntry(): CommandSerializerEntry =
+        CommandSerializerEntry(
+            ConsumeWalletInteractionHandoffArgs::class,
+            ConsumeWalletInteractionHandoffArgs.serializer(),
+        )
+
+    @Provides
+    @IntoSet
+    fun provideConsumeWalletInteractionHandoffResultSerializerEntry(): CommandSerializerEntry =
+        CommandSerializerEntry(
+            ConsumeWalletInteractionHandoffResult::class,
+            ConsumeWalletInteractionHandoffResult.serializer(),
+        )
 }

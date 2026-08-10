@@ -32,7 +32,7 @@ import dev.whyoleg.cryptography.algorithms.ECDSA
  * must not require a tenant KMS provider: KMS/WSCD selects and protects private wallet keys, while
  * an X.509/JWKS/DID trust resolver supplies the verifier's public key directly.
  */
-internal fun KeyInfoType<*>.hasResolvedPublicJwkVerificationMaterial(): Boolean {
+fun KeyInfoType<*>.hasResolvedPublicJwkVerificationMaterial(): Boolean {
     val key = key as? Jwk ?: return false
     return when (key.kty) {
         JwaKeyType.OKP -> key.x != null
@@ -42,7 +42,7 @@ internal fun KeyInfoType<*>.hasResolvedPublicJwkVerificationMaterial(): Boolean 
     }
 }
 
-internal suspend fun verifyResolvedPublicJwkSignature(
+suspend fun verifyResolvedPublicJwkSignature(
     keyInfo: KeyInfoType<*>,
     headerAlg: String?,
     input: ByteArray,

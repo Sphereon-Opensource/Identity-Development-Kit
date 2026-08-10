@@ -88,7 +88,12 @@ class GenerateKeyCommandImpl(
                     appliedArgs.alg,
                 )
             log.debug("Key generated successfully: ${keyPair.kid ?: keyPair.alias ?: "unknown"}")
-            indexGeneratedKey(keyPair)
+            // A provider that wrote the authoritative index row itself is not indexed again here.
+            // Repeating the write under the provider id the returned key reports is what produced a
+            // second row for one key whenever that provider answers to more than one id.
+            if (!provider.maintainsKeyReferenceIndex) {
+                indexGeneratedKey(keyPair)
+            }
             GenerateKeyResult(keyPair).asOkResult()
         } catch (expected: Exception) {
             log.warn("Key generation failed: ${expected.message}")

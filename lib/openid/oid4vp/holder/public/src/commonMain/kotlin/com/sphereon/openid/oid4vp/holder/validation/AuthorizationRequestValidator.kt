@@ -51,10 +51,15 @@ val validateOid4vpAuthorizationRequest =
         run {
             constrain("redirect_uri or response_uri is required") { req ->
                 val responseMode = req.responseMode
-                val isDirectPost = responseMode == "direct_post" || responseMode == "direct_post.jwt"
+                val isResponseUriOrBrowserMode =
+                    responseMode == "direct_post" ||
+                        responseMode == "direct_post.jwt" ||
+                        responseMode == "dc_api" ||
+                        responseMode == "dc_api.jwt"
                 val hasResponseUri = req.additionalParameters?.containsKey("response_uri") == true
                 // redirect_uri is required unless we're in direct_post mode with a response_uri
-                !req.redirectUri.isNullOrBlank() || (isDirectPost && hasResponseUri)
+                !req.redirectUri.isNullOrBlank() ||
+                    (isResponseUriOrBrowserMode && (hasResponseUri || responseMode?.startsWith("dc_api") == true))
             }
         }
 
@@ -89,8 +94,8 @@ val validateOid4vpAuthorizationRequest =
 
         // Validate response_mode if present (should be direct_post, direct_post.jwt for OID4VP)
         AuthorizationRequest::responseMode ifPresent {
-            pattern("direct_post(\\.jwt)?|fragment|query".toRegex()) hint
-                "response_mode must be 'direct_post', 'direct_post.jwt', 'fragment', or 'query'"
+            pattern("direct_post(\\.jwt)?|dc_api(\\.jwt)?|fragment|query".toRegex()) hint
+                "response_mode must be 'direct_post', 'direct_post.jwt', 'dc_api', 'dc_api.jwt', 'fragment', or 'query'"
         }
 
         // Validate client_id_scheme if present

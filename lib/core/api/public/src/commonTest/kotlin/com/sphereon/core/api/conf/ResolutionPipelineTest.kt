@@ -65,7 +65,6 @@ class ResolutionOptionsTest {
         val options = ResolutionOptions()
         assertTrue(options.useCache)
         assertTrue(options.interpolate)
-        assertTrue(options.resolveSecrets)
         assertTrue(options.includeMetadata)
         assertEquals(10, options.maxInterpolationDepth)
     }
@@ -76,13 +75,11 @@ class ResolutionOptionsTest {
             ResolutionOptions(
                 useCache = false,
                 interpolate = false,
-                resolveSecrets = false,
                 includeMetadata = false,
                 maxInterpolationDepth = 5,
             )
         assertFalse(options.useCache)
         assertFalse(options.interpolate)
-        assertFalse(options.resolveSecrets)
         assertFalse(options.includeMetadata)
         assertEquals(5, options.maxInterpolationDepth)
     }
@@ -133,7 +130,15 @@ class ResolvedValueTest {
 class DefaultConfigResolutionPipelineTest {
     private fun createPipeline(vararg sources: PropertySource<*>): DefaultConfigResolutionPipeline {
         val propertySources = DefaultPropertySources()
-        sources.forEach { propertySources.add(it) }
+        sources.forEach { source ->
+            propertySources.add(
+                if (source is ScopedPropertySource<*>) {
+                    source
+                } else {
+                    ScopedPropertySourceWrapper(source, ConfigLevel.APP)
+                },
+            )
+        }
         return DefaultConfigResolutionPipeline(propertySources)
     }
 
@@ -263,7 +268,7 @@ class DefaultConfigResolutionPipelineTest {
             val source = MutableMapPropertySource("test-source", order = Order.HIGH.orderValue)
             source.addProperty("test.key", "test-value")
 
-            val pipeline = createPipeline(source)
+            val pipeline = createPipeline(ScopedPropertySourceWrapper(source, ConfigLevel.TENANT))
             val context = ResolutionContext.tenant("tenant-123")
 
             val result = pipeline.resolve("test.key", String::class, context)
@@ -276,26 +281,124 @@ class DefaultConfigResolutionPipelineTest {
             assertEquals("test.key", metadata.normalizedKey)
             assertEquals(Order.HIGH.orderValue, metadata.order)
         }
+
+    @Test
+    fun fixedTenantPipelineRejectsAppContextAuthorityEscalationBeforeAnyRead() =
+        runTest {
+            val app =
+                ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                    addProperty("protected.service.token", "server-owned")
+                    addProperty("service.public", "visible")
+                }
+            val unscopedTenant =
+                MutableMapPropertySource("persisted-tenant").apply {
+                    addProperty("tenant.path", "\${env:PATH:tenant-fallback}")
+                }
+            val pipeline =
+                DefaultConfigResolutionPipeline(
+                    propertySources =
+                        DefaultPropertySources(
+                            mutableListOf(
+                                StaticProtectedEnvPropertySourceObject,
+                                app,
+                                unscopedTenant,
+                            ),
+                        ),
+                    interpolator = DefaultPropertyInterpolator(),
+                    resolverLevel = ConfigLevel.TENANT,
+                )
+            val escalated = ResolutionContext.app()
+
+            val directEnvironment = pipeline.resolve("PATH", String::class, escalated)
+            val protectedApp = pipeline.resolve("service.token", String::class, escalated)
+            val unscopedEnvironment = pipeline.resolve("tenant.path", String::class, escalated)
+            val serviceBulk = pipeline.resolveAll("service", escalated)
+            val tenantBulk = pipeline.resolveAll("tenant", escalated)
+            val stringBulk = pipeline.resolveAllAsString("", escalated)
+
+            assertTrue(directEnvironment.isErr)
+            assertTrue(protectedApp.isErr)
+            assertTrue(unscopedEnvironment.isErr)
+            assertTrue(serviceBulk.isErr)
+            assertTrue(tenantBulk.isErr)
+            assertTrue(stringBulk.isErr)
+            assertFalse(pipeline.containsProperty("PATH", escalated))
+            assertFalse(pipeline.containsProperty("service.token", escalated))
+            assertFalse(pipeline.containsProperty("tenant.path", escalated))
+
+            val denialMessages =
+                listOf(
+                    directEnvironment.error.message.defaultMessage,
+                    protectedApp.error.message.defaultMessage,
+                    unscopedEnvironment.error.message.defaultMessage,
+                    serviceBulk.error.message.defaultMessage,
+                    tenantBulk.error.message.defaultMessage,
+                    stringBulk.error.message.defaultMessage,
+                )
+            assertEquals(1, denialMessages.distinct().size)
+            val combinedDenial = denialMessages.joinToString()
+            listOf("PATH", "service.token", "server-owned", "tenant.path", "tenant-fallback").forEach {
+                assertFalse(combinedDenial.contains(it))
+            }
+
+            assertTrue(pipeline.resolve("service.public", String::class, ResolutionContext.tenant("tenant-a")).isOk)
+            assertTrue(pipeline.resolve("service.public", String::class, ResolutionContext.principal("tenant-a", "principal-a")).isOk)
+        }
+
+    @Test
+    fun unscopedRootCannotInterpolateProtectedAppValueDirectlyOrInBulk() =
+        runTest {
+            val unscoped =
+                MutableMapPropertySource("unscoped").apply {
+                    addProperty("leak.value", "\${app:internal.credential}")
+                }
+            val app =
+                ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                    addProperty("protected.internal.credential", "server-owned")
+                }
+            val pipeline =
+                DefaultConfigResolutionPipeline(
+                    propertySources = DefaultPropertySources(mutableListOf(unscoped, app)),
+                    interpolator = DefaultPropertyInterpolator(),
+                )
+            val context = ResolutionContext.app()
+
+            val direct = pipeline.resolve("leak.value", String::class, context)
+            val bulk = pipeline.resolveAll("leak", context)
+
+            assertTrue(direct.isErr)
+            assertTrue(bulk.isErr)
+            assertFalse(pipeline.containsProperty("leak.value", context))
+            val denialMessages =
+                listOf(
+                    direct.error.message.defaultMessage,
+                    bulk.error.message.defaultMessage,
+                )
+            listOf("internal.credential", "server-owned").forEach { forbidden ->
+                assertFalse(denialMessages.any { it.contains(forbidden) })
+            }
+        }
 }
 
 class ConfigResolutionPipelineWithInterpolationTest {
-    private fun createPipelineWithInterpolation(
-        vararg sources: PropertySource<*>,
-        secretMaps: Map<String, Map<String, String>> = emptyMap(),
-    ): DefaultConfigResolutionPipeline {
+    private fun createPipelineWithInterpolation(vararg sources: PropertySource<*>): DefaultConfigResolutionPipeline {
         val propertySources = DefaultPropertySources()
         sources.forEach { propertySources.add(it) }
 
-        val secretResolver = BasicSecretResolver(secretMaps)
-        val interpolator = DefaultPropertyInterpolator(secretResolver = secretResolver)
+        val interpolator = DefaultPropertyInterpolator()
 
-        return DefaultConfigResolutionPipeline(propertySources, interpolator)
+        return DefaultConfigResolutionPipeline(
+            propertySources = propertySources,
+            interpolator = interpolator,
+            interpolationPolicyProvider =
+                FixedInterpolationPolicyProvider(InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+        )
     }
 
     @Test
     fun interpolatesSimplePlaceholder() =
         runTest {
-            val source = MutableMapPropertySource("test-source")
+            val source = ProtectedMutableMapPropertySource("test-source", ConfigLevel.APP)
             source.addProperty("base.url", "https://api.example.com")
             source.addProperty("endpoint", "\${base.url}/v1")
 
@@ -312,7 +415,7 @@ class ConfigResolutionPipelineWithInterpolationTest {
     @Test
     fun interpolatesPlaceholderWithDefault() =
         runTest {
-            val source = MutableMapPropertySource("test-source")
+            val source = ProtectedMutableMapPropertySource("test-source", ConfigLevel.APP)
             source.addProperty("app.port", "\${PORT:8080}")
 
             val pipeline = createPipelineWithInterpolation(source)
@@ -327,7 +430,7 @@ class ConfigResolutionPipelineWithInterpolationTest {
     @Test
     fun interpolatesNestedPlaceholders() =
         runTest {
-            val source = MutableMapPropertySource("test-source")
+            val source = ProtectedMutableMapPropertySource("test-source", ConfigLevel.APP)
             source.addProperty("env", "prod")
             source.addProperty("db.prod", "prod-db.example.com")
             source.addProperty("db.host", "\${db.\${env}}")
@@ -342,28 +445,145 @@ class ConfigResolutionPipelineWithInterpolationTest {
         }
 
     @Test
-    fun interpolatesMapSecretReference() =
+    fun appEnvironmentInterpolationRequiresAndUsesAppDeclaration() =
+        runTest {
+            val source =
+                ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                    addProperty("deployment.path", "\${env:PATH}")
+                }
+            val pipeline =
+                DefaultConfigResolutionPipeline(
+                    propertySources = DefaultPropertySources(mutableListOf(source)),
+                    interpolator = DefaultPropertyInterpolator(),
+                    interpolationPolicyProvider =
+                        DefaultInterpolationPolicyProvider(
+                            mapOf("deployment.path" to InterpolationPolicy.APP_ENVIRONMENT),
+                        ),
+                )
+
+            val result = pipeline.resolve("deployment.path", String::class, ResolutionContext.app())
+
+            assertTrue(result.isOk)
+            assertTrue(result.value.value.isNotEmpty())
+            assertFalse(result.value.value.contains("\${"))
+        }
+
+    @Test
+    fun tenantEnvironmentInterpolationIsDeniedForDirectRecursiveAndBulkResolution() =
+        runTest {
+            val source =
+                MutableMapPropertySource("persisted-tenant").apply {
+                    addProperty("service.direct", "\${env:PATH:fallback}")
+                    addProperty("service.placeholder", "env:PATH")
+                    addProperty("service.recursive", "\${\${service.placeholder}}")
+                    addProperty("service.safe", "safe")
+                }
+            val pipeline = createPipelineWithInterpolation(source)
+            val tenant = ResolutionContext.tenant("tenant-a")
+
+            val direct = pipeline.resolve("service.direct", String::class, tenant)
+            val recursive = pipeline.resolve("service.recursive", String::class, tenant)
+            val bulk = pipeline.resolveAll("service", tenant)
+
+            assertTrue(direct.isErr)
+            assertTrue(recursive.isErr)
+            assertFalse(
+                direct.error.message.defaultMessage
+                    .contains("PATH"),
+            )
+            assertTrue(bulk.isErr)
+            assertFalse(
+                bulk.error.message.defaultMessage
+                    .contains("PATH"),
+            )
+        }
+
+    @Test
+    fun tenantPipelineHidesDirectEnvironmentAndProtectedAppValues() =
+        runTest {
+            val app =
+                ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                    addProtectedProperty("service.token", "server-owned", PropertyProtection.PROTECTED)
+                    addProperty("service.public", "visible")
+                }
+            val pipeline =
+                createPipelineWithInterpolation(
+                    StaticProtectedEnvPropertySourceObject,
+                    app,
+                )
+            val tenant = ResolutionContext.tenant("tenant-a")
+
+            val environment = pipeline.resolve("PATH", String::class, tenant)
+            val protected = pipeline.resolve("service.token", String::class, tenant)
+            val service = pipeline.resolveAll("service", tenant)
+
+            assertTrue(environment.isErr)
+            assertEquals("NOT_FOUND_ERROR", environment.error.code)
+            assertFalse(pipeline.containsProperty("PATH", tenant))
+            assertTrue(protected.isErr)
+            assertEquals("NOT_FOUND_ERROR", protected.error.code)
+            assertFalse(pipeline.containsProperty("service.token", tenant))
+            assertTrue(service.isOk)
+            assertFalse(service.value.containsKey("service.token"))
+            assertEquals("visible", service.value["service.public"]?.value)
+        }
+
+    @Test
+    fun tenantPipelineUsesWinningAppScopeForExplicitEnvironmentButDeniesSimpleEnvironmentSource() =
+        runTest {
+            val app =
+                ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                    addProperty("deployment.explicit", "\${env:PATH}")
+                    addProperty("deployment.simple", "\${PATH}")
+                }
+            val pipeline =
+                DefaultConfigResolutionPipeline(
+                    propertySources =
+                        DefaultPropertySources(
+                            mutableListOf(
+                                StaticProtectedEnvPropertySourceObject,
+                                app,
+                            ),
+                        ),
+                    interpolator = DefaultPropertyInterpolator(),
+                    interpolationPolicyProvider =
+                        DefaultInterpolationPolicyProvider(
+                            mapOf("deployment.explicit" to InterpolationPolicy.APP_ENVIRONMENT),
+                        ),
+                )
+            val tenant = ResolutionContext.tenant("tenant-a")
+
+            val explicit = pipeline.resolve("deployment.explicit", String::class, tenant)
+            val simple = pipeline.resolve("deployment.simple", String::class, tenant)
+
+            assertTrue(explicit.isOk)
+            assertTrue(explicit.value.value.isNotEmpty())
+            assertFalse(explicit.value.value.contains("\${"))
+            assertTrue(simple.isErr)
+            assertFalse(
+                simple.error.message.defaultMessage
+                    .contains("PATH"),
+                simple.error.message.defaultMessage,
+            )
+        }
+
+    @Test
+    fun rejectsMapSecretReferenceInPropertyInterpolation() =
         runTest {
             val source = MutableMapPropertySource("test-source")
             source.addProperty("db.password", "\${secret:@map:credentials:db-password}")
 
-            val secretMaps =
-                mapOf(
-                    "credentials" to mapOf("db-password" to "super-secret"),
-                )
-
-            val pipeline = createPipelineWithInterpolation(source, secretMaps = secretMaps)
+            val pipeline = createPipelineWithInterpolation(source)
             val context = ResolutionContext.app()
 
             val result = pipeline.resolve("db.password", String::class, context)
 
-            assertTrue(result.isOk)
-            assertEquals("super-secret", result.value.value)
-            assertTrue(result.value.metadata.isSecret)
+            assertTrue(result.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
         }
 
     @Test
-    fun detectsSecretReferences() =
+    fun rejectsSecretReferencesEvenWhenInterpolationIsDisabled() =
         runTest {
             val source = MutableMapPropertySource("test-source")
             source.addProperty("api.key", "\${secret:@env:API_KEY}")
@@ -378,9 +598,8 @@ class ConfigResolutionPipelineWithInterpolationTest {
 
             val result = pipeline.resolve("api.key", String::class, context)
 
-            assertTrue(result.isOk)
-            // Without interpolation, the value is returned as-is but marked as secret
-            assertTrue(result.value.metadata.isSecret)
+            assertTrue(result.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
         }
 }
 
@@ -413,14 +632,6 @@ class ConfigErrorsTest {
         val error = ConfigErrors.maxDepthExceeded("deep.key", 10)
         assertEquals("ILLEGAL_ARGUMENT_ERROR", error.code)
         assertTrue(error.message.defaultMessage.contains("10"))
-    }
-
-    @Test
-    fun secretResolutionFailedIncludesProvider() {
-        val error = ConfigErrors.secretResolutionFailed("db.password", "vault", "connection refused")
-        assertEquals("ILLEGAL_ARGUMENT_ERROR", error.code)
-        assertTrue(error.message.defaultMessage.contains("vault"))
-        assertTrue(error.message.defaultMessage.contains("connection refused"))
     }
 
     @Test
@@ -527,13 +738,6 @@ class ResolutionOptionsDataClassTest {
     fun equalsReturnsFalseForDifferentInterpolate() {
         val options1 = ResolutionOptions(interpolate = true)
         val options2 = ResolutionOptions(interpolate = false)
-        assertFalse(options1 == options2)
-    }
-
-    @Test
-    fun equalsReturnsFalseForDifferentResolveSecrets() {
-        val options1 = ResolutionOptions(resolveSecrets = true)
-        val options2 = ResolutionOptions(resolveSecrets = false)
         assertFalse(options1 == options2)
     }
 

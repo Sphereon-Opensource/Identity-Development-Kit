@@ -160,14 +160,15 @@ class IssuerDidWebHostingProvider(
         const val CACHE_MAX_AGE_SECONDS = 300L
 
         fun hostOf(url: String): String? {
+            val trimmed = url.trim()
+            if (trimmed.isBlank()) return null
             val authority =
-                url
-                    .substringAfter("://", "")
+                (if (trimmed.contains("://")) trimmed.substringAfter("://") else trimmed)
                     .substringBefore('/')
                     .substringBefore('?')
                     .substringBefore('#')
-            val host = authority.substringBefore('@').substringBefore(':')
-            return host.takeIf { it.isNotBlank() }
+            if ('@' in authority) return null
+            return authority.takeIf { it.isNotBlank() }
         }
     }
 }

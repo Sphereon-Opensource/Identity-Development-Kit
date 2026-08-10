@@ -70,7 +70,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertNotNull(session)
             assertNotNull(session.graph)
@@ -85,7 +85,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Access SessionExecution via asCoreApiServiceGraph()
             val coreApiGraph = session.asCoreApiServiceGraph()
@@ -104,7 +104,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Access SessionLogManager via asCoreApiServiceGraph()
             val coreApiGraph = session.asCoreApiServiceGraph()
@@ -122,7 +122,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Access logger via asCoreApiServiceGraph()
             val coreApiGraph = session.asCoreApiServiceGraph()
@@ -140,7 +140,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Access logger with custom tag via asCoreApiServiceGraph()
             val coreApiGraph = session.asCoreApiServiceGraph()
@@ -158,8 +158,8 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session1 = userContext.sessionContextManager.createOrGetFromId("session-1")
-            val session2 = userContext.sessionContextManager.createOrGetFromId("session-2")
+            val session1 = userContext.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session2 = userContext.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertNotNull(session1)
             assertNotNull(session2)
@@ -175,8 +175,8 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session1 = userContext.sessionContextManager.createOrGetFromId("same-session")
-            val session2 = userContext.sessionContextManager.createOrGetFromId("same-session")
+            val session1 = userContext.sessionContextManager.createOrGetFromId("same-session", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session2 = userContext.sessionContextManager.createOrGetFromId("same-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             assertTrue(session1 === session2, "Same session ID should return same session instance")
 
@@ -190,7 +190,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("my-session-id")
+            val session = userContext.sessionContextManager.createOrGetFromId("my-session-id", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiGraph = session.asCoreApiServiceGraph()
             val sessionContext = coreApiGraph.sessionContext
@@ -315,7 +315,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("active-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("active-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertTrue(userContext.sessionContextManager.hasActive())
 
             app.destroy()
@@ -328,7 +328,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            userContext.sessionContextManager.createOrGetFromId("active-session")
+            userContext.sessionContextManager.createOrGetFromId("active-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val active = userContext.sessionContextManager.getActive()
             assertNotNull(active)
 
@@ -342,7 +342,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            userContext.sessionContextManager.createOrGetFromId("session-abc")
+            userContext.sessionContextManager.createOrGetFromId("session-abc", principalType = com.sphereon.di.context.PrincipalType.USER)
             val session = userContext.sessionContextManager.getById("session-abc")
             assertNotNull(session)
 
@@ -356,7 +356,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            userContext.sessionContextManager.createOrGetFromId("session-xyz")
+            userContext.sessionContextManager.createOrGetFromId("session-xyz", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertTrue(userContext.sessionContextManager.hasById("session-xyz"))
 
             app.destroy()
@@ -369,8 +369,8 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            userContext.sessionContextManager.createOrGetFromId("session-1")
-            userContext.sessionContextManager.createOrGetFromId("session-2")
+            userContext.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            userContext.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
             val ids = userContext.sessionContextManager.listIds()
             assertTrue(ids.size >= 2)
 
@@ -384,7 +384,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            userContext.sessionContextManager.createOrGetFromId("session-to-activate")
+            userContext.sessionContextManager.createOrGetFromId("session-to-activate", principalType = com.sphereon.di.context.PrincipalType.USER)
             val activated = userContext.sessionContextManager.activateById("session-to-activate")
             assertTrue(activated)
 
@@ -437,7 +437,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            userContext.sessionContextManager.createOrGetFromId("flow-session")
+            userContext.sessionContextManager.createOrGetFromId("flow-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val activeFlow = userContext.sessionContextManager.activeInstance
             assertNotNull(activeFlow)
 
@@ -453,7 +453,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("instance-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("instance-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertTrue(session.sessionId.contains("instance-session"))
 
             app.destroy()
@@ -466,7 +466,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("ctx-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("ctx-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertNotNull(session.sessionContext)
 
             app.destroy()
@@ -479,7 +479,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("exec-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("exec-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertNotNull(session.sessionExecution)
 
             app.destroy()
@@ -492,7 +492,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("comp-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("comp-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertNotNull(session.graph)
 
             app.destroy()
@@ -505,7 +505,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("scope-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("scope-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertNotNull(session.scope)
 
             app.destroy()
@@ -518,7 +518,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("active-check-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("active-check-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             assertTrue(session.isCurrentlyActive())
 
             app.destroy()
@@ -531,8 +531,8 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session1 = userContext.sessionContextManager.createOrGetFromId("session-make-active-1")
-            val session2 = userContext.sessionContextManager.createOrGetFromId("session-make-active-2", makeActive = false)
+            val session1 = userContext.sessionContextManager.createOrGetFromId("session-make-active-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            val session2 = userContext.sessionContextManager.createOrGetFromId("session-make-active-2", makeActive = false, principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // session1 should be active
             assertTrue(session1.isCurrentlyActive())
@@ -824,7 +824,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("session-to-destroy")
+            val session = userContext.sessionContextManager.createOrGetFromId("session-to-destroy", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Destroy the session
             userContext.sessionContextManager.destroyById(session.sessionId)
@@ -842,8 +842,8 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            userContext.sessionContextManager.createOrGetFromId("session-1")
-            userContext.sessionContextManager.createOrGetFromId("session-2")
+            userContext.sessionContextManager.createOrGetFromId("session-1", principalType = com.sphereon.di.context.PrincipalType.USER)
+            userContext.sessionContextManager.createOrGetFromId("session-2", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Destroy all should not throw
             userContext.sessionContextManager.destroyAll()
@@ -858,7 +858,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("session-to-destroy-via-instance")
+            val session = userContext.sessionContextManager.createOrGetFromId("session-to-destroy-via-instance", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Destroy via instance method
             session.destroy()
@@ -1063,7 +1063,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("sure-graph-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("sure-graph-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiSession = session.asCoreApiServiceGraph()
 
@@ -1081,7 +1081,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("graph-cast-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("graph-cast-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Test SessionGraph.asCoreApiServiceGraph() extension function
             val sessionGraph: SessionGraph = session.graph
@@ -1102,7 +1102,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("logger-default-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("logger-default-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiSession = session.asCoreApiServiceGraph()
 
@@ -1120,7 +1120,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("logger-tag-default-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("logger-tag-default-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiSession = session.asCoreApiServiceGraph()
 
@@ -1138,7 +1138,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("service-execution-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("service-execution-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiSession = session.asCoreApiServiceGraph()
             val serviceExecution = coreApiSession.serviceExecution
@@ -1157,7 +1157,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("context-match-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("context-match-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             val coreApiSession = session.asCoreApiServiceGraph()
             val sessionContext = coreApiSession.sessionContext
@@ -1176,7 +1176,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("get-service-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("get-service-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // First add a service using the addService method
             val testServiceValue = "test-service-value"
@@ -1197,7 +1197,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("get-service-classname-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("get-service-classname-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Add a service with class simple name
             val testList = listOf("a", "b", "c")
@@ -1220,7 +1220,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("scoped-instances-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("scoped-instances-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Access sessionScopedInstances — may be empty when no Scoped instances are contributed
             val scopedInstances: Set<Scoped> = session.graph.sessionScopedInstances
@@ -1236,7 +1236,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("coroutine-scope-session")
+            val session = userContext.sessionContextManager.createOrGetFromId("coroutine-scope-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Access the sessionScopeCoroutineScopeScoped which triggers provideSessionScopeCoroutineScopeScoped
             val coroutineScopeScoped = session.graph.sessionScopeCoroutineScopeScoped
@@ -1258,7 +1258,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userInstance = app.userContextManager.getAnonymous()
-            val session = userInstance.sessionContextManager.createOrGetFromId("ctx-injection-test")
+            val session = userInstance.sessionContextManager.createOrGetFromId("ctx-injection-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // SessionContext should have the UserContext from the parent UserScope
             val sessionContext = session.graph.sessionContext
@@ -1275,7 +1275,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userInstance = app.userContextManager.getAnonymous()
-            val session = userInstance.sessionContextManager.createOrGetFromId("ctx-match-test")
+            val session = userInstance.sessionContextManager.createOrGetFromId("ctx-match-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // The UserContext in SessionScope should be the same instance provided to UserScope
             val userContextFromGraph = userInstance.graph.userContext
@@ -1292,7 +1292,7 @@ class CoreApiDiIntegrationTest {
             val app = createCoreApiTestAppGraph(testScope)
 
             val userInstance = app.userContextManager.getAnonymous()
-            val session = userInstance.sessionContextManager.createOrGetFromId("my-session-id")
+            val session = userInstance.sessionContextManager.createOrGetFromId("my-session-id", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // The sessionId should be the one passed to the factory
             assertEquals("my-session-id", session.graph.sessionContext.sessionId)
@@ -1317,7 +1317,7 @@ class CoreApiDiIntegrationTest {
                     tenantData = tenantData,
                     principalValue = "test-principal-456",
                 )
-            val session = userInstance.sessionContextManager.createOrGetFromId("tenant-session")
+            val session = userInstance.sessionContextManager.createOrGetFromId("tenant-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
             // Verify the tenant flows through to the session
             val sessionContext = session.graph.sessionContext

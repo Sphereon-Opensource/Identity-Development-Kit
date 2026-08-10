@@ -41,13 +41,13 @@ object WalletInteractionApiConstants {
     }
 
     object EndpointCommands {
-        const val START: String = "wallet.interaction.rest.start"
-        const val RESUME: String = "wallet.interaction.rest.resume"
-        const val DISPATCH_ACTION: String = "wallet.interaction.rest.submit-action"
-        const val CANCEL: String = "wallet.interaction.rest.cancel"
-        const val GET_STATE: String = "wallet.interaction.rest.get-state"
-        const val GET_EVENTS: String = "wallet.interaction.rest.get-events"
-        const val FRAME: String = "wallet.interaction.rest.frame"
+        const val START: String = "wallet.interaction-http.start"
+        const val RESUME: String = "wallet.interaction-http.resume"
+        const val DISPATCH_ACTION: String = "wallet.interaction-http.submit-action"
+        const val CANCEL: String = "wallet.interaction-http.cancel"
+        const val GET_STATE: String = "wallet.interaction-http.get-state"
+        const val GET_EVENTS: String = "wallet.interaction-http.get-events"
+        const val FRAME: String = "wallet.interaction-http.frame"
     }
 
     object Sse {

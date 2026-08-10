@@ -92,10 +92,10 @@ interface Oid4vpJarmOptionsProvider {
 class Oid4vpHolderPresentationExecutor(
     private val holder: Oid4vpHolderService,
     private val selectedCredentialResolver: Oid4vpSelectedCredentialResolver,
+    private val sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider,
     private val walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
     private val jarmOptionsProvider: Oid4vpJarmOptionsProvider = Oid4vpJarmOptionsProvider.none,
     private val responseMode: ResponseMode? = null,
-    private val sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider = Oid4vpSdJwtHolderBindingProvider.passthrough,
 ) : Oid4vpPresentationExecutor {
     override suspend fun submitPresentation(
         context: WalletInteractionContext,
@@ -210,6 +210,11 @@ class Oid4vpHolderPresentationExecutor(
             is SubmissionResult.Redirect -> {
                 recordPresentationSubmitted()
                     ?: Oid4vpPresentationExecutionResult.RedirectRequired(result.redirectUri)
+            }
+
+            is SubmissionResult.DigitalCredential -> {
+                recordPresentationSubmitted()
+                    ?: Oid4vpPresentationExecutionResult.DigitalCredentialResponse(result.data)
             }
 
             is SubmissionResult.Error -> {

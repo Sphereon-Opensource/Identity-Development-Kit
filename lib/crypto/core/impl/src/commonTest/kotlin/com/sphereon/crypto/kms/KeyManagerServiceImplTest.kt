@@ -56,7 +56,7 @@ class KeyManagerServiceImplTest {
 
     val app = createCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("kms-impl-test")
+    val session = context.sessionContextManager.createOrGetFromId("kms-impl-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {
@@ -76,28 +76,31 @@ class KeyManagerServiceImplTest {
     // =========== Provider Management Tests ===========
 
     @Test
-    fun getProviderByIdShouldThrowForInvalidId() {
-        assertFailsWith<PKIException> {
-            keyManagerService.getProviderById("non-existent-provider")
+    fun getProviderByIdShouldThrowForInvalidId() =
+        runTest {
+            assertFailsWith<PKIException> {
+                keyManagerService.getProviderById("non-existent-provider")
+            }
         }
-    }
 
     @Test
-    fun getKmsBySignatureAlgorithmShouldFindProvider() {
-        val provider = keyManagerService.getKmsBySignatureAlgorithm(SignatureAlgorithm.ECDSA_SHA256)
-        assertNotNull(provider)
-        assertTrue(provider.supportedSignatureAlgorithms().contains(SignatureAlgorithm.ECDSA_SHA256))
-    }
+    fun getKmsBySignatureAlgorithmShouldFindProvider() =
+        runTest {
+            val provider = keyManagerService.getKmsBySignatureAlgorithm(SignatureAlgorithm.ECDSA_SHA256)
+            assertNotNull(provider)
+            assertTrue(provider.supportedSignatureAlgorithms().contains(SignatureAlgorithm.ECDSA_SHA256))
+        }
 
     @Test
-    fun getKmsBySignatureAlgorithmShouldSupportMultipleAlgorithms() {
-        // Test that multiple common algorithms are supported
-        val sha384Provider = keyManagerService.getKmsBySignatureAlgorithm(SignatureAlgorithm.ECDSA_SHA384)
-        assertNotNull(sha384Provider)
+    fun getKmsBySignatureAlgorithmShouldSupportMultipleAlgorithms() =
+        runTest {
+            // Test that multiple common algorithms are supported
+            val sha384Provider = keyManagerService.getKmsBySignatureAlgorithm(SignatureAlgorithm.ECDSA_SHA384)
+            assertNotNull(sha384Provider)
 
-        val sha512Provider = keyManagerService.getKmsBySignatureAlgorithm(SignatureAlgorithm.ECDSA_SHA512)
-        assertNotNull(sha512Provider)
-    }
+            val sha512Provider = keyManagerService.getKmsBySignatureAlgorithm(SignatureAlgorithm.ECDSA_SHA512)
+            assertNotNull(sha512Provider)
+        }
 
     @Test
     fun registerProviderShouldAddProvider() {
@@ -133,25 +136,28 @@ class KeyManagerServiceImplTest {
     // =========== getProvider() Branch Tests ===========
 
     @Test
-    fun getProviderWithNullProviderIdAndAlgShouldUseAlgorithm() {
-        val provider = keyManagerService.getProvider(null, SignatureAlgorithm.ECDSA_SHA256)
-        assertNotNull(provider)
-        assertTrue(provider.supportedSignatureAlgorithms().contains(SignatureAlgorithm.ECDSA_SHA256))
-    }
+    fun getProviderWithNullProviderIdAndAlgShouldUseAlgorithm() =
+        runTest {
+            val provider = keyManagerService.getProvider(null, SignatureAlgorithm.ECDSA_SHA256)
+            assertNotNull(provider)
+            assertTrue(provider.supportedSignatureAlgorithms().contains(SignatureAlgorithm.ECDSA_SHA256))
+        }
 
     @Test
-    fun getProviderWithProviderIdShouldUseProviderId() {
-        val provider = keyManagerService.getProvider("test-software-provider", null)
-        assertNotNull(provider)
-        assertEquals("test-software-provider", provider.id)
-    }
+    fun getProviderWithProviderIdShouldUseProviderId() =
+        runTest {
+            val provider = keyManagerService.getProvider("test-software-provider", null)
+            assertNotNull(provider)
+            assertEquals("test-software-provider", provider.id)
+        }
 
     @Test
-    fun getProviderWithBothNullShouldUseDefault() {
-        val provider = keyManagerService.getProvider(null, null)
-        assertNotNull(provider)
-        assertEquals(keyManagerService.defaultProviderId(), provider.id)
-    }
+    fun getProviderWithBothNullShouldUseDefault() =
+        runTest {
+            val provider = keyManagerService.getProvider(null, null)
+            assertNotNull(provider)
+            assertEquals(keyManagerService.defaultProviderId(), provider.id)
+        }
 
     // =========== Resolver Tests ===========
 

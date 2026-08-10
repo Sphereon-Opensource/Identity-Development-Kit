@@ -11,6 +11,7 @@ import com.sphereon.wallet.interaction.WalletDisplayMessage
 import com.sphereon.wallet.interaction.WalletEntryPoint
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActionType
+import com.sphereon.wallet.interaction.WalletInteractionActivityProjection
 import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.WalletInteractionContext
 import com.sphereon.wallet.interaction.WalletInteractionEngine
@@ -44,15 +45,15 @@ class LocalWalletInteractionClient(
 class DefaultWalletInteractionEngine(
     adapters: List<WalletInteractionProtocolAdapter> = emptyList(),
     private val sessionIdGenerator: WalletInteractionSessionIdGenerator = RandomWalletInteractionSessionIdGenerator(),
-    private val protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
+    private val protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
     private val counterpartyEncounterRegistry: com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry =
         com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry.none,
     private val trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
     private val trustPolicy: WalletTrustPolicy = WalletTrustPolicy.warn,
     private val securityGate: WalletSecurityGate = WalletSecurityGate.deny,
     private val sensitiveInputAuthority: com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority,
-    private val privateSessionStore: WalletInteractionPrivateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
-    private val sessionStore: WalletInteractionSessionStore = InMemoryWalletInteractionSessionStore(),
+    private val privateSessionStore: WalletInteractionPrivateSessionStore,
+    private val sessionStore: WalletInteractionSessionStore,
 ) : WalletInteractionEngine,
     WalletInteractionStateEventSource {
     private val registry = WalletInteractionProtocolRegistry(adapters)
@@ -62,6 +63,13 @@ class DefaultWalletInteractionEngine(
         registry.register(adapter)
         return this
     }
+
+    suspend fun listActivity(
+        walletUnitId: String,
+        afterSequence: Long? = null,
+        limit: Int = 100,
+    ): List<WalletInteractionActivityProjection> =
+        sessionStore.listActivity(walletUnitId, afterSequence, limit)
 
     override suspend fun start(input: WalletInteractionInput): WalletInteractionSession {
         val sessionId = sessionIdGenerator.next()
@@ -200,8 +208,8 @@ class DefaultWalletInteractionEngine(
         WalletInteractionContext(
             sessionId = sessionId,
             walletUnitId = input.walletUnitId,
-            executionMode = input.executionMode,
-            protocolExecutor = protocolExecutor.withExecutionMode(input.executionMode),
+            executionOwner = input.executionOwner,
+            protocolExecutor = protocolExecutor.withExecutionOwner(input.executionOwner),
             counterpartyEncounterRegistry = counterpartyEncounterRegistry,
             trustResolver = trustResolver,
             trustPolicy = trustPolicy,
@@ -212,7 +220,7 @@ class DefaultWalletInteractionEngine(
         )
 
     private suspend fun cleanupPrivateSessionIfTerminal(state: WalletInteractionState) {
-        if (state.terminal) {
+        if (state.terminal && state.completionHandoffRef == null) {
             sensitiveInputAuthority.clear(state.sessionId)
             privateSessionStore.removeSession(state.sessionId)
         }
@@ -284,6 +292,13 @@ class DefaultWalletInteractionEngine(
             ?.get(LAUNCH_INPUT_KEY)
             ?.let { encoded -> runCatching { engineJson.decodeFromString(WalletInteractionInput.serializer(), encoded) }.getOrNull() }
             ?: fallback
+
+    internal suspend fun storedSession(sessionId: WalletInteractionSessionId): WalletInteractionStoredSession? =
+        sessionStore.load(sessionId)
+
+    internal suspend fun saveVerifiedWalletAppOutcome(session: WalletInteractionStoredSession) {
+        sessionStore.save(session)
+    }
 }
 
 private fun WalletInteractionInput.redactedForReplay(): WalletInteractionInput = copy(entryPoint = entryPoint.redactedForReplay())

@@ -43,11 +43,14 @@ import com.sphereon.crypto.core.interop.derPrivateKeyToJwk
 import com.sphereon.crypto.core.interop.derPublicKeyToJwk
 import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
 import com.sphereon.crypto.core.interop.toEcdsaPrivateKey
+import com.sphereon.crypto.core.interop.toRsaPkcs1PrivateKey
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyStoreConfig
 import com.sphereon.crypto.core.kms.KeyStoreLoaderOpts
+import com.sphereon.crypto.core.kms.PublicKeyAliasResolver
+import com.sphereon.crypto.core.kms.X509CertificateExtensionSpec
 import com.sphereon.crypto.core.kms.model.KeyProviderSettings
 import com.sphereon.crypto.core.kms.model.KeyStoreAccessMode
 import com.sphereon.crypto.core.kms.model.PredefinedKeyStoreTypes
@@ -92,7 +95,8 @@ import com.sphereon.crypto.core.kms.KeyStore as KeyStoreService
 @AssistedInject
 actual class SoftwareKeyStoreService actual constructor(
     @Assisted config: KeyStoreConfig,
-) : KeyStoreService {
+) : KeyStoreService,
+    PublicKeyAliasResolver {
     private val config: SoftwareKeyStoreConfig = config as SoftwareKeyStoreConfig
     actual override val id = config.id
     actual override val keyStoreType = config.keyStoreType
@@ -124,13 +128,16 @@ actual class SoftwareKeyStoreService actual constructor(
     // Performance: Reuse password protection object to avoid repeated allocation
     private val passwordProtection by lazy { KeyStore.PasswordProtection(password) }
 
-    // Performance: Cache resolved key info to avoid expensive repeated conversions (DER->JWK, cert encoding)
-    // Cache is invalidated on write operations (store, delete)
-    private val resolvedKeyCache = ConcurrentHashMap<String, ResolvedKeyInfoType<*>>()
+    // Performance: Cache resolved key info to avoid expensive repeated conversions (DER->JWK, cert encoding).
+    // The state is held app-level and sharded per keystore identity rather than on this instance,
+    // because a provider lookup builds a new service every call and an instance-local cache could
+    // never survive one. See [SoftwareKeyStoreStateCache]. Invalidated on write operations.
+    private suspend fun sharedState(): SharedKeyStoreState =
+        SoftwareKeyStoreStateCache.stateFor(keyStoreCacheKey(config.keyStoreType, source, String(password)))
 
-    // Performance: Track cache validity - set to false on any write operation
-    @Volatile
-    private var isCacheValid = true
+    private suspend fun isCacheValid(): Boolean = sharedState().isValid
+
+    private suspend fun cachedResolvedKey(alias: String): ResolvedKeyInfoType<*>? = sharedState().resolved(alias) as? ResolvedKeyInfoType<*>
 
     // Background scope for async I/O operations
     private val backgroundScope = CoroutineScope(Dispatchers.IO)
@@ -370,6 +377,58 @@ actual class SoftwareKeyStoreService actual constructor(
     }
 
     /**
+     * Resolves an asymmetric key's public material directly from its certificate chain.
+     *
+     * This path deliberately does not open the private-key entry and therefore does not require
+     * its password. Symmetric entries and aliases without a certificate chain are rejected.
+     */
+    override suspend fun resolvePublicKeyByAlias(alias: String): ManagedKeyInfoType<*> {
+        require(config.accessMode != KeyStoreAccessMode.WRITE.accessMode) { "Cannot get keys in WRITE mode" }
+        require(alias.isNotBlank()) { "Need to provide an alias" }
+
+        awaitPendingPersistence()
+        maybeReloadFromDisk()
+
+        val ks = currentKeyStore()
+        if (!ks.containsAlias(alias) || !ks.isKeyEntry(alias)) {
+            throw NotFoundException(
+                resource = "key:$alias",
+                message = "Could not find key entry for alias $alias",
+            )
+        }
+
+        val certificateChain =
+            ks.getCertificateChain(alias)
+                ?.takeIf { it.isNotEmpty() }
+                ?: throw PKIException("Key entry for alias $alias has no public certificate chain")
+        val storageWrapper = isStorageWrapperChain(certificateChain)
+        val leaf =
+            certificateChain.firstOrNull() as? X509Certificate
+                ?: throw PKIException("Key entry for alias $alias has no X.509 leaf certificate")
+        val x5c = certificateChain.takeUnless { storageWrapper }?.map { certificateJwkEncode(it.encoded) }?.toTypedArray()
+        val publicJwk = derPublicKeyToJwk(leaf.publicKey.encoded).copy(x5c = x5c)
+        if (publicJwk.kty == JwaKeyType.oct) {
+            throw PKIException("Symmetric key entry for alias $alias has no public verification material")
+        }
+        val jwaAlgorithm = JwaAlgorithm.fromValue(leaf.sigAlgName)
+        val resolvedKeyInfo =
+            ResolvedKeyInfo(
+                key = publicJwk,
+                alias = alias,
+                providerId = config.id,
+                keyVisibility = KeyVisibility.PUBLIC,
+                keyType = publicJwk.getKeyType(),
+            x5c = x5c,
+                signatureAlgorithm = jwaAlgorithm?.let { SignatureAlgorithm.fromJose(it) },
+            )
+        return ManagedKeyInfo(
+            alias = alias,
+            providerId = config.id,
+            resolvedKeyInfo = resolvedKeyInfo,
+        )
+    }
+
+    /**
      * Retrieves a managed private key from the keystore based on the given key info.
      *
      * Performance optimizations:
@@ -414,8 +473,8 @@ actual class SoftwareKeyStoreService actual constructor(
 
         // Performance: Try cache first before expensive keystore access
         val cachedResolvedKeyInfo =
-            if (isCacheValid) {
-                resolvedKeyCache[alias]
+            if (isCacheValid()) {
+                cachedResolvedKey(alias)
             } else {
                 null
             }
@@ -573,9 +632,14 @@ actual class SoftwareKeyStoreService actual constructor(
     actual override suspend fun deleteKey(keyInfo: KeyInfoType<*>): Boolean {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot delete keys in READ mode" }
 
-        val storedKeyInfo = getKey(keyInfo)
-
-        return deleteEntry(storedKeyInfo.alias)
+        // A PKCS12/JKS private-key entry must retain a physical certificate. After logical
+        // certificate-chain deletion that physical entry is our marked storage wrapper, which
+        // intentionally cannot be resolved as public key material. Deletion needs only the
+        // authenticated metadata address, not a DER/JWK reconstruction, so resolve the alias
+        // directly and remove the physical key entry.
+        val matched = matchKey(keyInfo)
+        val alias = matched.alias ?: throw PKIException("Could not resolve key alias for deletion")
+        return deleteEntry(alias)
     }
 
     /**
@@ -719,7 +783,9 @@ actual class SoftwareKeyStoreService actual constructor(
                     false
                 } else {
                     // Performance: Reuse password protection object
-                    ks.getEntry(alias, passwordProtection) is KeyStore.PrivateKeyEntry
+                    (ks.getEntry(alias, passwordProtection) as? KeyStore.PrivateKeyEntry)
+                        ?.let { entry -> !isStorageWrapperChain(entry.certificateChain) }
+                        ?: false
                 }
             }.toTypedArray()
     }
@@ -746,6 +812,9 @@ actual class SoftwareKeyStoreService actual constructor(
         if (certChain === null) {
             throw NotFoundException("Could not find certificate chain for alias $alias")
         }
+        if (isStorageWrapperChain(certChain)) {
+            throw NotFoundException("Could not find certificate chain for alias $alias")
+        }
 
         return certChain.map { cert -> certificateFromDer(cert.encoded) }.toTypedArray()
     }
@@ -760,7 +829,19 @@ actual class SoftwareKeyStoreService actual constructor(
      */
     actual override suspend fun deleteCertificateChain(alias: String): Boolean {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot delete certificate chains in READ mode" }
-        return deleteKey(KeyInfo<Jwk>(alias = alias))
+        maybeReloadFromDisk()
+        val ks = currentKeyStore()
+        val entry = ks.getEntry(alias, passwordProtection) as? KeyStore.PrivateKeyEntry ?: return false
+        if (isStorageWrapperChain(entry.certificateChain)) return false
+
+        // JKS and PKCS12 cannot hold a private-key entry without a certificate chain. Replacing
+        // the logical chain with a marked storage wrapper preserves the private key while making
+        // the chain absent through the public CertificateStoreService contract.
+        val wrapper = selfSignedWrapperCertificate(resolvedKeyInfoFrom(alias, entry), alias)
+        ks.setKeyEntry(alias, entry.privateKey, password, arrayOf(javaX509CertificateFromDer(wrapper.der)))
+        invalidateCache()
+        persistDurably()
+        return true
     }
 
     /**
@@ -783,7 +864,16 @@ actual class SoftwareKeyStoreService actual constructor(
             .aliases()
             .toList()
             .filter { alias ->
-                ks.isCertificateEntry(alias) || (ks.isKeyEntry(alias) && ks.getCertificateChain(alias).isNotEmpty())
+                if (ks.isCertificateEntry(alias)) {
+                    true
+                } else if (ks.isKeyEntry(alias)) {
+                    // Secret-key entries and key-only wrapper entries legitimately have no
+                    // certificate chain. java.security.KeyStore returns null in that case.
+                    val chain = ks.getCertificateChain(alias)
+                    !chain.isNullOrEmpty() && !isStorageWrapperChain(chain)
+                } else {
+                    false
+                }
             }.toTypedArray()
     }
 
@@ -1156,6 +1246,7 @@ actual class SoftwareKeyStoreService actual constructor(
                 kid = alias,
             )
         return ResolvedKeyInfo(
+            kid = alias,
             key = jwk,
             alias = alias,
             providerId = config.id,
@@ -1172,7 +1263,13 @@ actual class SoftwareKeyStoreService actual constructor(
         var jwk = derPrivateKeyToJwk(entry.privateKey.encoded)
         val sigAlgName = getSignatureAlgorithm(entry)
         val jwaAlgorithm = JwaAlgorithm.fromValue(sigAlgName)
-        val certChain = entry.certificateChain.map { cert -> certificateJwkEncode(cert.encoded) }.toTypedArray()
+        val storageWrapper = isStorageWrapperChain(entry.certificateChain)
+        val certChain =
+            entry.certificateChain
+                .takeUnless { storageWrapper }
+                ?.map { cert -> certificateJwkEncode(cert.encoded) }
+                ?.toTypedArray()
+                ?: emptyArray()
         val certChainOrNull = certChain.takeIf { it.isNotEmpty() }
 
         // EC keys from PKCS#8 may lack the optional public key component.
@@ -1214,7 +1311,7 @@ actual class SoftwareKeyStoreService actual constructor(
             // whenever a key is reloaded from disk (cold keystore cache). `jwk.kty` is the
             // same value already used above to repair EC public coordinates, so it is reliable.
             keyType = KeyTypeMapping.tryFromJose(jwk.kty).let { if (it.isOk) it.value else KeyTypeMapping.fromValue(entry.privateKey.algorithm) },
-            x5c = certChain,
+            x5c = certChainOrNull,
             signatureAlgorithm = jwaAlgorithm?.let { SignatureAlgorithm.fromJose(it) },
         )
     }
@@ -1227,13 +1324,13 @@ actual class SoftwareKeyStoreService actual constructor(
      * @param entry The private key entry from the keystore
      * @return The resolved key info, either from cache or freshly resolved
      */
-    private fun getCachedOrResolveKeyInfo(
+    private suspend fun getCachedOrResolveKeyInfo(
         alias: String,
         entry: KeyStore.PrivateKeyEntry,
     ): ResolvedKeyInfoType<*> {
         // Check cache first (only if cache is valid)
-        if (isCacheValid) {
-            val cached = resolvedKeyCache[alias]
+        if (isCacheValid()) {
+            val cached = cachedResolvedKey(alias)
             if (cached != null) {
                 return cached
             }
@@ -1241,7 +1338,7 @@ actual class SoftwareKeyStoreService actual constructor(
 
         // Cache miss or invalid - resolve and cache
         val resolved = resolvedKeyInfoFrom(alias, entry)
-        resolvedKeyCache[alias] = resolved
+        sharedState().putResolved(alias, resolved)
         return resolved
     }
 
@@ -1249,11 +1346,8 @@ actual class SoftwareKeyStoreService actual constructor(
      * Performance helper: Invalidates the resolved key info cache.
      * Called on any write operation (store, delete) to ensure cache consistency.
      */
-    private fun invalidateCache() {
-        isCacheValid = false
-        resolvedKeyCache.clear()
-        // Reset cache validity for future operations
-        isCacheValid = true
+    private suspend fun invalidateCache() {
+        sharedState().invalidate()
     }
 
     /**
@@ -1264,19 +1358,19 @@ actual class SoftwareKeyStoreService actual constructor(
      * keystore accepts the entry. The certificate plays no role in trust — it exists solely to satisfy
      * the keystore-storage constraint, and the original key material is preserved byte-for-byte.
      *
-     * Only EC keys are wrapped here (the license recipient enc key is EC); other key types without a
-     * certificate still surface the original storage error, which is the safe, explicit behaviour for
-     * key shapes this path was not designed for.
+     * EC and RSA private keys can be wrapped. Other key types retain the explicit storage error.
      */
     private suspend fun selfSignedWrapperCertificate(
         keyInfo: ResolvedKeyInfoType<*>,
         alias: String,
     ): Certificate {
         val jwk =
-            (keyInfo.key as? Jwk)?.takeIf { it.kty == JwaKeyType.EC }
+            (keyInfo.key as? Jwk)?.takeIf { it.kty == JwaKeyType.EC || it.kty == JwaKeyType.RSA }
                 ?: throw IllegalArgumentException(
                     "Either certChain or keyInfo.x5c must be present and contain at least one certificate (no self-signed wrapper available for key type ${keyInfo.keyType})",
                 )
+        if (jwk.kty == JwaKeyType.RSA) return selfSignedRsaWrapperCertificate(keyInfo, jwk, alias)
+
         val curve =
             jwk.crv?.let { Curve.fromJose(it) }
                 ?: throw IllegalArgumentException("EC key for alias $alias is missing 'crv'; cannot mint a self-signed wrapper certificate")
@@ -1318,11 +1412,61 @@ actual class SoftwareKeyStoreService actual constructor(
                 subjectKeyInfo = signingKeyInfo,
                 subject = subject,
                 serialNumber = 1,
+                extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = STORAGE_WRAPPER_EXTENSION_VALUE)),
                 notBefore = notBefore,
                 notAfter = notAfter,
                 signatureFunction = { tbs -> signer.generateSignature(tbs) },
             )
         return result.certificate
+    }
+
+    private suspend fun selfSignedRsaWrapperCertificate(
+        keyInfo: ResolvedKeyInfoType<*>,
+        jwk: Jwk,
+        alias: String,
+    ): Certificate {
+        val signingKeyInfo =
+            ResolvedKeyInfo(
+                key = jwk,
+                keyVisibility = KeyVisibility.PRIVATE,
+                keyType = KeyTypeMapping.RSA,
+                alias = alias,
+                providerId = config.id,
+                kid = keyInfo.kid ?: alias,
+                signatureAlgorithm = SignatureAlgorithm.RSA_SHA256,
+            )
+        val signer = jwk.toRsaPkcs1PrivateKey(provider = CryptographyProvider.Default, digest = SHA256).signatureGenerator()
+        val subject = X509DistinguishedNameElements(commonName = alias)
+        val notBefore = LocalDateTimeKMP.now()
+        val notAfter =
+            LocalDateTimeKMP(
+                year = notBefore.year + 10,
+                month = notBefore.month,
+                day = notBefore.day,
+                hour = notBefore.hour,
+                minute = notBefore.minute,
+                second = notBefore.second,
+            )
+        return CertificateCreationUtils.createCertificate(
+            issuerKeyInfo = signingKeyInfo,
+            issuer = subject,
+            subjectKeyInfo = signingKeyInfo,
+            subject = subject,
+            serialNumber = 1,
+            extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = STORAGE_WRAPPER_EXTENSION_VALUE)),
+            notBefore = notBefore,
+            notAfter = notAfter,
+            signatureFunction = { tbs -> signer.generateSignature(tbs) },
+        ).certificate
+    }
+
+    private fun isStorageWrapperChain(chain: Array<java.security.cert.Certificate>): Boolean =
+        chain.size == 1 && (chain.singleOrNull() as? X509Certificate)?.getExtensionValue(STORAGE_WRAPPER_EXTENSION_OID) != null
+
+    private companion object {
+        /** Private extension marking a keystore-only wrapper, never a tenant certificate. */
+        const val STORAGE_WRAPPER_EXTENSION_OID = "1.3.6.1.4.1.61026.1.1"
+        val STORAGE_WRAPPER_EXTENSION_VALUE = byteArrayOf(0x05, 0x00)
     }
 
     /**

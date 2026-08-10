@@ -57,7 +57,7 @@ class CertificateServiceImplTest {
 
     val app = createCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("certificate-test")
+    val session = context.sessionContextManager.createOrGetFromId("certificate-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

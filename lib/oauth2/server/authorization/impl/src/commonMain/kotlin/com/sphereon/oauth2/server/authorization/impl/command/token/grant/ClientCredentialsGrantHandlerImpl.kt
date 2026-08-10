@@ -25,9 +25,11 @@ import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.impl.command.token.executeWithTrustedClientAuthorization
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -50,6 +52,18 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
     override suspend fun handle(
         params: GrantParameters,
         context: GrantContext,
+    ): IdkResult<TokenResponse, IdkError> = handleInternal(params, context, null)
+
+    internal suspend fun handleTrusted(
+        params: GrantParameters,
+        context: GrantContext,
+        clientAuthorization: VerifiedClientAuthorization?,
+    ): IdkResult<TokenResponse, IdkError> = handleInternal(params, context, clientAuthorization)
+
+    private suspend fun handleInternal(
+        params: GrantParameters,
+        context: GrantContext,
+        clientAuthorization: VerifiedClientAuthorization?,
     ): IdkResult<TokenResponse, IdkError> {
         val ccParams = params as GrantParameters.ClientCredentials
         val tokenRequest = context.tokenRequest
@@ -60,12 +74,13 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
 
         val verified =
             commands.verifyClientCredentialsGrant
-                .execute(
+                .executeWithTrustedClientAuthorization(
                     VerifyClientCredentialsGrantArgs(
                         clientId = tokenRequest.clientId,
                         requestedScope = ccParams.scope,
                         requestedAudience = ccParams.audiences,
                     ),
+                    clientAuthorization,
                 ).getOrElse { error -> return Err(error) }
 
         // RFC 9449 section 10.1: client_credentials carries no prior commitment, so the
@@ -83,6 +98,7 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
                         dpopJkt = proofJkt,
                         certificateThumbprintS256 = certThumbprint,
                         baseUrlOverride = applied.baseUrlOverride,
+                        additionalClaims = verified.additionalClaims,
                     ),
                 ).getOrElse { error -> return Err(error) }
 

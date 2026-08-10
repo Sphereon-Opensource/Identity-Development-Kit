@@ -63,6 +63,6 @@ class DidHostingHttpAdapter(
         )
 
     companion object {
-        const val ID = "did-hosting"
+        const val ID = "did.hosting.http"
     }
 }

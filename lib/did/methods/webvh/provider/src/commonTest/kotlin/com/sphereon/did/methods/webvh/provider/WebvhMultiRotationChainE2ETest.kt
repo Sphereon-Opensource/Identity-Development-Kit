@@ -80,7 +80,7 @@ class WebvhMultiRotationChainE2ETest {
             app.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("webvh-multi-rotation-chain")
+                .createOrGetFromId("webvh-multi-rotation-chain", principalType = com.sphereon.di.context.PrincipalType.USER)
         val sessionGraph = session.graph
         registry = (sessionGraph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
         keyManager = (sessionGraph as KeyManagerServiceGraph).keyManagerService

@@ -10,6 +10,7 @@ import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.core.api.error.IdkError
@@ -26,6 +27,7 @@ import com.sphereon.wallet.interaction.WalletCredentialSetRequirement
 import com.sphereon.wallet.interaction.WalletDisclosureSummary
 import com.sphereon.wallet.interaction.WalletDisplayMessage
 import com.sphereon.wallet.interaction.WalletEntryPoint
+import com.sphereon.wallet.interaction.WalletEntryPointKind
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActionType
 import com.sphereon.wallet.interaction.WalletInteractionActivitySummary
@@ -50,14 +52,19 @@ import com.sphereon.wallet.interaction.validateFor
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.time.Clock
 
 class Oid4vpWalletInteractionProtocolAdapter(
+    private val presentationExecutor: Oid4vpPresentationExecutor,
     private val holder: Oid4vpHolderService? = null,
-    private val presentationExecutor: Oid4vpPresentationExecutor = Oid4vpPresentationExecutor.notConfigured,
     private val candidateResolver: Oid4vpCredentialCandidateResolver = Oid4vpCredentialCandidateResolver.none,
     private val securityContextResolver: Oid4vpPresentationSecurityContextResolver = Oid4vpPresentationSecurityContextResolver.none,
     private val walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
@@ -73,6 +80,12 @@ class Oid4vpWalletInteractionProtocolAdapter(
         )
 
     override suspend fun canHandle(entryPoint: WalletEntryPoint): WalletProtocolMatch {
+        if (
+            entryPoint.kind == WalletEntryPointKind.PARSED_OBJECT &&
+            entryPoint.parsedType in DIGITAL_CREDENTIAL_PROTOCOLS
+        ) {
+            return WalletProtocolMatch.strong(capability.priority, "oid4vp.match.digital_credentials_api")
+        }
         val raw = entryPoint.raw ?: return WalletProtocolMatch.none
         val lower = raw.lowercase()
         return when {
@@ -90,6 +103,20 @@ class Oid4vpWalletInteractionProtocolAdapter(
         context: WalletInteractionContext,
         entryPoint: WalletEntryPoint,
     ): WalletInteractionSession {
+        val digitalCredentialsRequest =
+            if (
+                entryPoint.kind == WalletEntryPointKind.PARSED_OBJECT &&
+                entryPoint.parsedType in DIGITAL_CREDENTIAL_PROTOCOLS
+            ) {
+                DigitalCredentialsAuthorizationRequest(
+                    protocol = requireNotNull(entryPoint.parsedType),
+                    data = entryPoint.parsed as? JsonObject ?: JsonObject(emptyMap()),
+                    origin = context.attributes[DIGITAL_CREDENTIAL_ORIGIN_METADATA_KEY].orEmpty(),
+                )
+            } else {
+                null
+            }
+        val rawRequest = entryPoint.raw ?: digitalCredentialsRequest?.data?.toString()
         val launchState =
             context.baseState(
                 status = WalletInteractionStatus.ResolvingEntryPoint,
@@ -99,12 +126,24 @@ class Oid4vpWalletInteractionProtocolAdapter(
                 entryPoint = entryPoint,
             )
         context.storePrivate(
-            mapOf(
-                "entry_point.raw" to entryPoint.raw.orEmpty(),
-                "entry_point.fingerprint" to entryPoint.summary().fingerprint.orEmpty(),
-            ),
+            buildMap {
+                put("entry_point.raw", rawRequest.orEmpty())
+                put("entry_point.fingerprint", entryPoint.summary().fingerprint.orEmpty())
+                entryPoint.parsedType
+                    ?.takeIf { it in DIGITAL_CREDENTIAL_PROTOCOLS }
+                    ?.let { put(DIGITAL_CREDENTIAL_PROTOCOL_PRIVATE_KEY, it) }
+            },
         )
-        val parsed = entryPoint.raw?.let { holder?.parseAuthorizationRequest(it, walletConfigProvider.walletConfig(context, launchState)) }
+        val parsed =
+            when {
+                digitalCredentialsRequest != null ->
+                    holder?.parseDigitalCredentialsAuthorizationRequest(
+                        digitalCredentialsRequest,
+                        walletConfigProvider.walletConfig(context, launchState),
+                    )
+                rawRequest != null -> holder?.parseAuthorizationRequest(rawRequest, walletConfigProvider.walletConfig(context, launchState))
+                else -> null
+            }
         if (parsed != null && parsed.isErr) {
             val state =
                 context
@@ -542,7 +581,7 @@ class Oid4vpWalletInteractionProtocolAdapter(
                 val handoffRef =
                     sensitiveInputAuthority.register(
                         sessionId = sessionState.sessionId,
-                        purpose = WalletInteractionSensitiveInputPurpose.PROTOCOL_REDIRECT_HANDOFF,
+                        purpose = WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
                         value = result.redirectUri,
                     )
                 sessionState.copy(
@@ -553,6 +592,46 @@ class Oid4vpWalletInteractionProtocolAdapter(
                     error = null,
                     terminal = true,
                 )
+            }
+
+            is Oid4vpPresentationExecutionResult.DigitalCredentialResponse -> {
+                val privateValues =
+                    privateSessionStore
+                        .get(sessionState.sessionId, ADAPTER_ID)
+                        ?.values
+                        .orEmpty()
+                val protocol = privateValues[DIGITAL_CREDENTIAL_PROTOCOL_PRIVATE_KEY]
+                if (protocol == null) {
+                    sessionState.next(
+                        status = WalletInteractionStatus.Failed,
+                        terminal = true,
+                        error =
+                            WalletInteractionError(
+                                code = "oid4vp.digital_credential_protocol_missing",
+                                messageKey = "wallet.interaction.error.oid4vp_digital_credential_protocol_missing",
+                            ),
+                    )
+                } else {
+                    val response =
+                        buildJsonObject {
+                            put("protocol", JsonPrimitive(protocol))
+                            put("data", result.data)
+                        }
+                    val handoffRef =
+                        sensitiveInputAuthority.register(
+                            sessionId = sessionState.sessionId,
+                            purpose = WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
+                            value = response.toString(),
+                        )
+                    sessionState.copy(
+                        status = WalletInteractionStatus.Completed,
+                        revision = sessionState.revision + 1,
+                        completionHandoffRef = handoffRef,
+                        message = WalletDisplayMessage(titleKey = "wallet.interaction.oid4vp.shared"),
+                        error = null,
+                        terminal = true,
+                    )
+                }
             }
 
             is Oid4vpPresentationExecutionResult.Failed -> {
@@ -638,6 +717,13 @@ class Oid4vpWalletInteractionProtocolAdapter(
     companion object {
         const val ADAPTER_ID: String = "oid4vp"
         const val SECURITY_OPERATION_BINDING_PRIVATE_KEY: String = "security_operation_binding"
+        const val DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED: String = "openid4vp-v1-unsigned"
+        const val DIGITAL_CREDENTIAL_PROTOCOL_SIGNED: String = "openid4vp-v1-signed"
+        const val DIGITAL_CREDENTIAL_PROTOCOL_MULTI_SIGNED: String = "openid4vp-v1-multisigned"
+        const val DIGITAL_CREDENTIAL_ORIGIN_METADATA_KEY: String = "digital_credentials.origin"
+        internal const val DIGITAL_CREDENTIAL_PROTOCOL_PRIVATE_KEY: String = "digital_credential.protocol"
+        internal val DIGITAL_CREDENTIAL_PROTOCOLS: Set<String> =
+            setOf(DIGITAL_CREDENTIAL_PROTOCOL_UNSIGNED, DIGITAL_CREDENTIAL_PROTOCOL_SIGNED, DIGITAL_CREDENTIAL_PROTOCOL_MULTI_SIGNED)
         internal val json: Json =
             Json {
                 ignoreUnknownKeys = true
@@ -647,11 +733,11 @@ class Oid4vpWalletInteractionProtocolAdapter(
         fun walletStoreBacked(
             holder: Oid4vpHolderService,
             credentialStore: WalletCredentialStore,
+            sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider,
             walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
             jarmOptionsProvider: Oid4vpJarmOptionsProvider = Oid4vpJarmOptionsProvider.none,
             responseMode: ResponseMode? = null,
             priority: Int = 90,
-            sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider = Oid4vpSdJwtHolderBindingProvider.passthrough,
         ): Oid4vpWalletInteractionProtocolAdapter {
             val resolver = WalletStoreOid4vpCredentialResolver(credentialStore)
             return Oid4vpWalletInteractionProtocolAdapter(
@@ -711,12 +797,12 @@ interface Oid4vpCredentialCandidateResolver {
 
 fun DcqlQuery.toCredentialSelectionRequest(candidateCredentialIds: Map<String, List<String>>): WalletCredentialSelectionRequest {
     val requirements =
-        credentials.orEmpty().map { credential ->
+        credentials.map { credential ->
             WalletCredentialRequirement(
                 id = credential.id,
                 format = credential.format,
                 multipleAllowed = credential.multiple,
-                requiredClaimPaths = credential.claims.orEmpty().map { it.path },
+                requiredClaimPaths = credential.claims.orEmpty().map { it.path.components },
                 candidateCredentialIds = candidateCredentialIds[credential.id].orEmpty(),
             )
         }
@@ -728,8 +814,8 @@ fun DcqlQuery.toCredentialSelectionRequest(candidateCredentialIds: Map<String, L
                 options =
                     set.options.map { option ->
                         WalletCredentialSetOption(
-                            requirementIds = option.credential_ids,
-                            satisfiable = option.credential_ids.all { id -> candidateCredentialIds[id].orEmpty().isNotEmpty() },
+                            requirementIds = option,
+                            satisfiable = option.all { id -> candidateCredentialIds[id].orEmpty().isNotEmpty() },
                         )
                     },
             )
@@ -737,7 +823,7 @@ fun DcqlQuery.toCredentialSelectionRequest(candidateCredentialIds: Map<String, L
     val credentialIdsInSets =
         credential_sets
             .orEmpty()
-            .flatMap { set -> set.options.flatMap { option -> option.credential_ids } }
+            .flatMap { set -> set.options.flatten() }
             .toSet()
     val standaloneRequirementIds = requirements.map { it.id }.filter { it !in credentialIdsInSets }
     val standaloneRequirementsSatisfied = standaloneRequirementIds.all { id -> candidateCredentialIds[id].orEmpty().isNotEmpty() }

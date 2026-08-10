@@ -16,6 +16,9 @@
 
 package com.sphereon.core.api.cache
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -112,6 +115,27 @@ class KacheCacheBackendTest {
 
             assertEquals("value1", backend.get("key1")?.decodeToString())
             assertEquals("value2", backend.get("key2")?.decodeToString())
+        }
+
+    @Test
+    fun concurrentReadsAndWritesDoNotCorruptLruState() =
+        runTest {
+            val backend = createBackend(maxSize = 64)
+
+            coroutineScope {
+                repeat(24) { worker ->
+                    launch(Dispatchers.Default) {
+                        repeat(500) { iteration ->
+                            val key = "key-${(worker + iteration) % 96}"
+                            backend.set(key, "$worker-$iteration".encodeToByteArray())
+                            backend.get(key)
+                            backend.exists("key-${iteration % 96}")
+                        }
+                    }
+                }
+            }
+
+            assertTrue(backend.size() <= 64)
         }
 
     @Test

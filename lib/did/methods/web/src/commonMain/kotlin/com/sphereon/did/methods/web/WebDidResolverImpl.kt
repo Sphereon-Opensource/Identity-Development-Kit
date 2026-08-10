@@ -44,8 +44,10 @@ import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 
@@ -124,9 +126,18 @@ class WebDidResolverImpl(
             }
 
         // Fetch the DID document
+        val publicFetch = fetchDidDocument(url)
         val documentJson =
-            fetchDidDocument(url).getOrElse {
-                return Err(it)
+            if (publicFetch.isOk) {
+                publicFetch.value
+            } else {
+                val internalUrl = internalDidResolutionUrl(url, internalDidBaseUrl())
+                if (internalUrl == null) {
+                    return Err(publicFetch.error)
+                }
+                fetchDidDocument(internalUrl, requestHost = webAuthorityOf(url)).getOrElse {
+                    return Err(publicFetch.error)
+                }
             }
 
         // Parse the DID document
@@ -215,6 +226,18 @@ class WebDidResolverImpl(
             defaultValue = true,
         ) ?: true
 
+    /**
+     * Optional east-west DID hosting route. Public resolution remains the primary path. The
+     * internal route is used only when the public fetch fails, and the normal document-id check
+     * below still requires the returned document to identify the exact requested DID.
+     */
+    private fun internalDidBaseUrl(): String? =
+        configService.getProperty(
+            key = CONFIG_KEY_INTERNAL_DID_BASE_URL,
+            targetType = String::class,
+            defaultValue = null,
+        )
+
     override suspend fun dereference(
         didUrl: String,
         options: DidDereferenceOptions,
@@ -301,11 +324,17 @@ class WebDidResolverImpl(
     /**
      * Fetches a DID document from the given URL.
      */
-    private suspend fun fetchDidDocument(url: String): IdkResult<String, IdkError> {
+    private suspend fun fetchDidDocument(
+        url: String,
+        requestHost: String? = null,
+    ): IdkResult<String, IdkError> {
         val client = httpClientFactory.createClient(HttpClientOptions())
 
         return try {
-            val response: HttpResponse = client.get(url)
+            val response: HttpResponse =
+                client.get(url) {
+                    requestHost?.let { header(HttpHeaders.Host, it) }
+                }
 
             if (!response.status.isSuccess()) {
                 return Err(
@@ -344,7 +373,42 @@ class WebDidResolverImpl(
 
     companion object {
         const val CONFIG_KEY_UPGRADE_TO_WEBVH: String = "did.web.upgrade-to-webvh.enabled"
+        const val CONFIG_KEY_INTERNAL_DID_BASE_URL: String = "east-west.tenant-did.base-url"
         private const val DID_WEBVH_PREFIX: String = "did:webvh:"
         private const val WEBVH_METHOD: String = "webvh"
     }
+}
+
+/**
+ * Re-targets a did:web document path to an operator-configured east-west DID service without
+ * copying the attacker-controlled public authority. Returns null for malformed base URLs.
+ */
+internal fun internalDidResolutionUrl(
+    publicUrl: String,
+    internalBaseUrl: String?,
+): String? {
+    if (internalBaseUrl.isNullOrBlank()) return null
+    val base = internalBaseUrl.trim().trimEnd('/')
+    val schemeSeparator = base.indexOf("://")
+    if (schemeSeparator <= 0) return null
+    val scheme = base.substring(0, schemeSeparator).lowercase()
+    if (scheme != "http" && scheme != "https") return null
+    val baseRemainder = base.substring(schemeSeparator + 3)
+    val authority = baseRemainder.substringBefore('/')
+    if (authority.isBlank() || '@' in authority || '?' in baseRemainder || '#' in baseRemainder) return null
+
+    val publicSchemeSeparator = publicUrl.indexOf("://")
+    if (publicSchemeSeparator <= 0) return null
+    val publicRemainder = publicUrl.substring(publicSchemeSeparator + 3)
+    val path = publicRemainder.substringAfter('/', "")
+    if (path.isBlank() || '?' in path || '#' in path) return null
+    return "$base/$path"
+}
+
+internal fun webAuthorityOf(url: String): String? {
+    val schemeSeparator = url.indexOf("://")
+    if (schemeSeparator <= 0) return null
+    val authority = url.substring(schemeSeparator + 3).substringBefore('/')
+    if (authority.isBlank() || '@' in authority || '?' in authority || '#' in authority) return null
+    return authority
 }

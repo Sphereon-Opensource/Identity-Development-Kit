@@ -66,7 +66,7 @@ class X5cExternalIdentifierResolutionTest {
 
     val app = createJvmCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("x5c-resolution-test")
+    val session = context.sessionContextManager.createOrGetFromId("x5c-resolution-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     // Test certificate in base64 DER format (generated once for testing)
     private var testCertificateBase64: String = ""
@@ -205,6 +205,27 @@ class X5cExternalIdentifierResolutionTest {
             assertTrue(value.jwks.isNotEmpty(), "JWKS should contain at least one key")
             assertNotNull(value.certificates, "Should have certificates")
             assertTrue(value.certificates.isNotEmpty(), "Should have at least one certificate")
+            assertTrue(value.verificationResult.error)
+            assertTrue(value.verificationResult.critical)
+            assertEquals("No trusted certificates have been provided.", value.verificationResult.message)
+        }
+
+    @Test
+    fun x5cResolutionWithVerificationDisabledShouldExtractKeyWithoutTrustAnchors() =
+        runTest {
+            val result =
+                x5cResolutionService.resolve(
+                    ExternalIdentifierX5cOpts(
+                        identifier = listOf(testCertificateBase64),
+                        verify = false,
+                    ),
+                )
+
+            assertTrue(result.isOk, "X5C key extraction should succeed without trust anchors")
+            assertFalse(result.value.verificationResult.error)
+            assertFalse(result.value.verificationResult.critical)
+            assertNotNull(result.value.verificationResult.publicKey)
+            assertEquals("X509 verification has been disabled", result.value.verificationResult.message)
         }
 
     @Test

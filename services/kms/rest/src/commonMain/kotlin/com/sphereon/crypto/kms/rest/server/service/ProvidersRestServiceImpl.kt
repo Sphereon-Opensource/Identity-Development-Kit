@@ -99,7 +99,7 @@ class ProvidersRestServiceImpl(
         return kms.generateKey(
             providerId = providerId,
             alias = alias,
-            use = use,
+            use = use ?: JwkUse.sig,
             keyOperations = keyOperations,
             alg = alg,
         )

@@ -24,15 +24,14 @@ import kotlin.time.Instant
 /**
  * A stored design element value at tenant scope ([applicationId] null, the default for every
  * application of the product) or application scope ([applicationId] set), optionally per variant.
- * Exactly one of [asset] or [text] is set, matching the element kind.
+ * The [value] variant always matches the declaring element's own variant.
  *
  * @property productType Product type the feature belongs to
  * @property featureId Identifier of the feature declaring the element
  * @property elementId Identifier of the design element
  * @property variant Variant the binding applies to; null = all variants
+ * @property value The bound value for the declaring element
  * @property applicationId Application the binding applies to; null = tenant default for the product
- * @property asset Bound asset value for ASSET elements
- * @property text Bound text value for TEXT elements
  * @property updatedAt When this binding was last updated
  */
 @JsExportCompat
@@ -44,15 +43,14 @@ data class ElementBinding
         val featureId: String,
         val elementId: String,
         val variant: ThemeVariant? = null,
+        val value: ElementValue,
         val applicationId: String? = null,
-        val asset: ThemeAssetReference? = null,
-        val text: String? = null,
         val updatedAt: Instant? = null,
     )
 
 /**
- * Value to bind to a design element. Exactly one of [asset] or [text] is set, matching the
- * element kind. [variant] and [applicationId] select the binding slot.
+ * Value to bind to a design element. The [value] variant always matches the declaring element's
+ * own variant. [variant] and [applicationId] select the binding slot.
  */
 @JsExportCompat
 @Serializable
@@ -61,6 +59,5 @@ data class ElementBindingInput
     constructor(
         val variant: ThemeVariant? = null,
         val applicationId: String? = null,
-        val asset: ThemeAssetReference? = null,
-        val text: String? = null,
+        val value: ElementValue,
     )

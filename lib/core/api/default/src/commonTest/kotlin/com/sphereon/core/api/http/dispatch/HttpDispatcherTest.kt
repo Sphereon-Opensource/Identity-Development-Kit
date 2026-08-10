@@ -28,7 +28,6 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.TenantPathMode
-import com.sphereon.core.api.http.describe.TenantResolutionPriority
 import com.sphereon.core.api.testutil.createCoreApiTestAppGraph
 import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.core.defaults.context.DefaultTenantInputString
@@ -308,7 +307,7 @@ class HttpDispatcherTest {
                     DefaultTenantInputString("test-tenant"),
                     DefaultPrincipalInputString("test-user"),
                 )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
             val dispatcher = (sessionInstance.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
             assertEquals(Order.MEDIUM.orderValue, dispatcher.getOrder())
         } finally {
@@ -326,7 +325,7 @@ class HttpDispatcherTest {
                         DefaultTenantInputString("test-tenant"),
                         DefaultPrincipalInputString("test-user"),
                     )
-                val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session")
+                val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
                 val dispatcher = (sessionInstance.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
 
                 val request =
@@ -355,21 +354,6 @@ class HttpDispatcherTest {
                     adapterBasePath = "/items",
                 )
             assertEquals(TenantPathMode.OFF, mount.tenantPathMode)
-        } finally {
-            appGraph.destroy()
-        }
-    }
-
-    @Test
-    fun httpAdapterMountDefaultTenantResolutionPriority() {
-        val appGraph = createAppGraph()
-        try {
-            val mount =
-                HttpAdapterMount(
-                    serverPrefix = "/api",
-                    adapterBasePath = "/items",
-                )
-            assertEquals(TenantResolutionPriority.HEADER_THEN_PATH, mount.tenantResolutionPriority)
         } finally {
             appGraph.destroy()
         }
@@ -418,22 +402,6 @@ class HttpDispatcherTest {
                     tenantPathMode = TenantPathMode.BOTH,
                 )
             assertEquals(TenantPathMode.BOTH, mount.tenantPathMode)
-        } finally {
-            appGraph.destroy()
-        }
-    }
-
-    @Test
-    fun httpAdapterMountWithPathThenHeader() {
-        val appGraph = createAppGraph()
-        try {
-            val mount =
-                HttpAdapterMount(
-                    serverPrefix = "/api",
-                    adapterBasePath = "/items",
-                    tenantResolutionPriority = TenantResolutionPriority.PATH_THEN_HEADER,
-                )
-            assertEquals(TenantResolutionPriority.PATH_THEN_HEADER, mount.tenantResolutionPriority)
         } finally {
             appGraph.destroy()
         }

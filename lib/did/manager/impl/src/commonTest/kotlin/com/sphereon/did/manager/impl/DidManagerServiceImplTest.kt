@@ -73,7 +73,7 @@ class DidManagerServiceImplTest {
         app.userContextManager.destroyAll()
 
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId("did-manager-impl-test")
+        val session = userContext.sessionContextManager.createOrGetFromId("did-manager-impl-test", principalType = com.sphereon.di.context.PrincipalType.USER)
         val sessionGraph = session.graph
 
         dslProcessor = (sessionGraph as DidCreationDslProcessorImpl.Graph).didCreationDslProcessor

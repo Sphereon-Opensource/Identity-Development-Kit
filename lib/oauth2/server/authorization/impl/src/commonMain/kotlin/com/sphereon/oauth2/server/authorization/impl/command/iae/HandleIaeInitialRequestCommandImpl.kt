@@ -424,7 +424,7 @@ class HandleIaeInitialRequestCommandImpl(
      * @param dcqlQueryId Optional DCQL query ID resolved from per-credential policy.
      *   When non-null and a [verifierService] is available, the query ID is used as the credential
      *   query ID so the verifier can look up a named query definition.
-     *   When null, a minimal "accept any credential" query is built inline.
+     *   When null, a minimal SD-JWT VC query is built inline.
      * @return A pair of the serialized request [JsonObject] and the verifier session ID, or
      *   `null` if the verifier service returns an error.
      */
@@ -444,7 +444,17 @@ class HandleIaeInitialRequestCommandImpl(
             DcqlQuery(
                 credentials =
                     listOf(
-                        DcqlCredentialQuery(id = dcqlQueryId ?: "iae_credential"),
+                        DcqlCredentialQuery(
+                            id = dcqlQueryId ?: "iae_credential",
+                            format = "dc+sd-jwt",
+                            meta = JsonObject(
+                                mapOf(
+                                    "vct_values" to JsonArray(
+                                        listOf(JsonPrimitive(dcqlQueryId ?: "urn:sphereon:iae:credential")),
+                                    ),
+                                ),
+                            ),
+                        ),
                     ),
             )
 

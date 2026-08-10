@@ -32,7 +32,7 @@ class DefaultWalletEntryPointRouterTest {
         runTest {
             val oid4vciAdapter = SchemeMatchingWalletInteractionProtocolAdapter.oid4vci()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(oid4vciAdapter, SchemeMatchingWalletInteractionProtocolAdapter.oid4vp()),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                 )
@@ -50,7 +50,7 @@ class DefaultWalletEntryPointRouterTest {
         runTest {
             val oid4vpAdapter = SchemeMatchingWalletInteractionProtocolAdapter.oid4vp()
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters = listOf(SchemeMatchingWalletInteractionProtocolAdapter.oid4vci(), oid4vpAdapter),
                     sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
                 )
@@ -67,7 +67,7 @@ class DefaultWalletEntryPointRouterTest {
     fun rejectsUriWithNoMatchingAdapter() =
         runTest {
             val engine =
-                DefaultWalletInteractionEngine(
+                testWalletInteractionEngine(
                     adapters =
                         listOf(
                             SchemeMatchingWalletInteractionProtocolAdapter.oid4vci(),

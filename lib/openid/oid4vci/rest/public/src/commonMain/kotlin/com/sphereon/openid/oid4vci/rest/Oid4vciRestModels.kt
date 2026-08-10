@@ -108,6 +108,13 @@ data class CreateCredentialOfferInput(
      */
     @SerialName("rate_limit")
     val rateLimit: OfferRateLimit? = null,
+    /**
+     * Internal attribution for offers created by an issuance template. This is deliberately not
+     * part of the public JSON request contract: the template execution adapter sets it after
+     * decoding so callers cannot forge another template's session-history association.
+     */
+    @kotlinx.serialization.Transient
+    val templateId: String? = null,
 )
 
 /**
@@ -215,10 +222,16 @@ data class IssuanceCallbackConfig(
 @Serializable
 data class CreateCredentialOfferOutput(
     /**
-     * Session/correlation identifier.
+     * Business/caller correlation identifier for status polling and callbacks. Distinct from the
+     * protocol session id.
      */
     @SerialName("correlation_id")
     val correlationId: String,
+    /**
+     * Immutable protocol-session identifier for the durable session APIs.
+     */
+    @SerialName("session_id")
+    val sessionId: String,
     /**
      * Credential offer URI (e.g., openid-credential-offer://...).
      */

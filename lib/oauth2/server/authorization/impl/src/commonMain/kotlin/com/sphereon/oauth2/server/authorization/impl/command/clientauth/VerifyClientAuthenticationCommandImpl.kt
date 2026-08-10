@@ -28,6 +28,7 @@ import com.sphereon.crypto.core.interop.toJwk
 import com.sphereon.crypto.core.interop.x509CertificateFromDer
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkSet
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.crypto.jose.jws.JwtService
@@ -52,12 +53,16 @@ import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.storage.ClientAssertionJtiStore
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.resolveInternalRequestView
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlin.experimental.ExperimentalObjCName
@@ -138,6 +143,21 @@ class VerifyClientAuthenticationCommandImpl(
 
     private suspend fun executeInternal(args: VerifyClientAuthenticationArgs): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
         val auth = args.clientAuthentication
+        val credentialClientId =
+            when (auth) {
+                is ClientAuthenticationConfig.Basic -> auth.credentials.clientId
+                is ClientAuthenticationConfig.Post -> auth.credentials.clientId
+                else -> null
+            }
+        if (credentialClientId != null && credentialClientId != args.clientId) {
+            return Err(AuthorizationServerError.InvalidClient(details = "Client credentials do not match requested client"))
+        }
+        val requestView =
+            if (auth !is ClientAuthenticationConfig.Anonymous) {
+                clientRegistry.resolveInternalRequestView().getOrElse { return Err(it) }
+            } else {
+                null
+            }
 
         // Anonymous has no identity to enforce; every other variant must match the registered
         // token_endpoint_auth_method up front per RFC 7591 §2 + OIDF Basic-OP conformance.
@@ -145,7 +165,7 @@ class VerifyClientAuthenticationCommandImpl(
         val client =
             if (auth !is ClientAuthenticationConfig.Anonymous) {
                 val resolved =
-                    clientRegistry
+                    requestView!!
                         .getClient(args.clientId)
                         .getOrElse { return Err(it) }
                         // Public clients (token_endpoint_auth_method = none) that aren't pre-registered
@@ -163,37 +183,55 @@ class VerifyClientAuthenticationCommandImpl(
                 null
             }
 
-        return when (auth) {
-            is ClientAuthenticationConfig.Basic -> {
-                verifyClientSecret(auth.credentials, ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-            }
+        val verified =
+            when (auth) {
+                is ClientAuthenticationConfig.Basic -> {
+                    verifyClientSecret(
+                        credentials = auth.credentials,
+                        method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                        clientRegistryView = requestView!!,
+                    )
+                }
 
-            is ClientAuthenticationConfig.Post -> {
-                verifyClientSecret(auth.credentials, ClientAuthenticationMethod.CLIENT_SECRET_POST)
-            }
+                is ClientAuthenticationConfig.Post -> {
+                    verifyClientSecret(
+                        credentials = auth.credentials,
+                        method = ClientAuthenticationMethod.CLIENT_SECRET_POST,
+                        clientRegistryView = requestView!!,
+                    )
+                }
 
-            is ClientAuthenticationConfig.SecretJwt -> {
-                verifyJwtAssertion(auth, args.clientId, args.tokenEndpointUrl, client!!)
-            }
+                is ClientAuthenticationConfig.SecretJwt -> {
+                    verifyJwtAssertion(auth, args.clientId, args.tokenEndpointUrl, client!!)
+                }
 
-            is ClientAuthenticationConfig.PrivateKeyJwt -> {
-                verifyJwtAssertion(auth, args.clientId, args.tokenEndpointUrl, client!!)
-            }
+                is ClientAuthenticationConfig.PrivateKeyJwt -> {
+                    verifyJwtAssertion(auth, args.clientId, args.tokenEndpointUrl, client!!)
+                }
 
-            is ClientAuthenticationConfig.AttestationJwt -> {
-                error("AttestationJwt is handled in doExecute and never reaches executeInternal")
-            }
+                is ClientAuthenticationConfig.AttestationJwt -> {
+                    error("AttestationJwt is handled in doExecute and never reaches executeInternal")
+                }
 
-            is ClientAuthenticationConfig.None -> {
-                Ok(VerifiedClientAuthentication(clientId = args.clientId, method = ClientAuthenticationMethod.NONE))
-            }
+                is ClientAuthenticationConfig.None -> {
+                    Ok(VerifiedClientAuthentication(clientId = args.clientId, method = ClientAuthenticationMethod.NONE))
+                }
 
-            ClientAuthenticationConfig.Anonymous -> {
-                Ok(VerifiedClientAuthentication(clientId = args.clientId, method = ClientAuthenticationMethod.NONE))
-            }
+                ClientAuthenticationConfig.Anonymous -> {
+                    Ok(VerifiedClientAuthentication(clientId = args.clientId, method = ClientAuthenticationMethod.NONE))
+                }
 
-            is ClientAuthenticationConfig.MutualTls -> {
-                verifyMutualTlsAuth(auth, args.clientId, client!!)
+                is ClientAuthenticationConfig.MutualTls -> {
+                    verifyMutualTlsAuth(auth, args.clientId, client!!)
+                }
+            }
+        return verified.flatMap { result ->
+            if (client == null) {
+                Ok(result)
+            } else if (result.clientId != client.clientId) {
+                Err(AuthorizationServerError.InvalidClient(details = "Authenticated client does not match resolved client"))
+            } else {
+                Ok(result.copy(clientAuthorization = client.toVerifiedClientAuthorization()))
             }
         }
     }
@@ -269,9 +307,10 @@ class VerifyClientAuthenticationCommandImpl(
     private suspend fun verifyClientSecret(
         credentials: ClientCredentials,
         method: ClientAuthenticationMethod,
+        clientRegistryView: ClientRegistry,
     ): IdkResult<VerifiedClientAuthentication, AuthorizationServerError> {
         val valid =
-            clientRegistry
+            clientRegistryView
                 .verifyClientCredentials(credentials.clientId, credentials.clientSecret)
                 .getOrElse { return Err(it) }
 
@@ -337,8 +376,12 @@ class VerifyClientAuthenticationCommandImpl(
             )
         }
 
-        // For private_key_jwt, require the kid to resolve inside the client's registered JWKS.
-        if (auth is ClientAuthenticationConfig.PrivateKeyJwt) {
+        // For private_key_jwt, require the kid to resolve inside the client's registered JWKS and
+        // pin signature verification to that registered public key. Passing only the compact JWS
+        // would make the generic verifier treat the header kid as a managed-KMS identifier, which
+        // is the wrong trust domain for an external OAuth client.
+        val trustedClientJwks =
+            if (auth is ClientAuthenticationConfig.PrivateKeyJwt) {
             val kid =
                 header["kid"]?.jsonPrimitive?.content
                     ?: return Err(AuthorizationServerError.InvalidClient(details = "private_key_jwt assertion header missing 'kid'"))
@@ -351,12 +394,15 @@ class VerifyClientAuthenticationCommandImpl(
                     ),
                 )
             }
-        }
+                Json.encodeToJsonElement(JwkSet.serializer(), JwkSet(keys = arrayOf(matched))).jsonObject
+            } else {
+                null
+            }
 
         // Verify JWT signature
         val verifyResult =
             jwtService
-                .verifyJws(VerifyJwsArgs(jws = JwsCompact(assertion.assertion)))
+                .verifyJws(VerifyJwsArgs(jws = JwsCompact(assertion.assertion), trustedJwks = trustedClientJwks))
                 .getOrElse {
                     return Err(
                         AuthorizationServerError.InvalidClient(

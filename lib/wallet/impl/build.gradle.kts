@@ -79,10 +79,6 @@ kotlin {
                 api(projects.libCoreEventsImpl)
                 // HTTP client factory + URI command bindings needed by OID4VCI/OID4VP holder impls
                 api(projects.libDataLinkHttpClientImpl)
-                // In-memory KV store for blob metadata index (BlobWalletCredentialStore)
-                api(projects.libDataStoreKvImplMemory)
-                // In-memory blob backing store (BlobWalletCredentialStore)
-                api(projects.libDataStoreBlobImplMemory)
                 // OAuth2 common impl (CreateJarmResponseCommandImpl, VerifyJarmResponseCommandImpl):
                 // pulled in transitively at runtime via libOauth2ClientImpl but NOT on compile
                 // classpath; Metro @MergeComponent scanning misses it without an explicit dep.
@@ -96,7 +92,6 @@ kotlin {
                 api(projects.libDidManagerImpl)
                 api(projects.libDidResolverImpl)
                 api(projects.libDidMethodsJwk)
-                api(projects.libDidPersistenceMemory)
             }
         }
         val jvmTest by getting {

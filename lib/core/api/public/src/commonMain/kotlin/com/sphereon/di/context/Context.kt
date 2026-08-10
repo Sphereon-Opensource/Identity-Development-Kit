@@ -55,6 +55,15 @@ interface SecuredTenantContextDetails {
     val jwt: String
 }
 
+/**
+ * A bearer whose downstream service audiences were obtained from a cryptographically validated
+ * token. Implementations may only be created after normal signature, issuer, lifetime, tenant,
+ * and current-receiver audience validation has succeeded.
+ */
+interface PreauthorizedServiceBearer {
+    fun authorizesServiceAudience(audience: String): Boolean
+}
+
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("UserSecuredContext", exact = true)
 interface UserSecuredContext : UserContext {

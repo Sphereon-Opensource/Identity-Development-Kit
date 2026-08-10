@@ -50,6 +50,10 @@ data class RefreshTokenData(
     val resource: List<String> = emptyList(),
     /** Exact AS-client default audience preserved through this refresh-token chain. */
     val defaultAccessTokenAudience: String? = null,
+    /** OID4VCI credential configurations authorized for the entire refresh-token chain. */
+    val credentialConfigurationIds: List<String> = emptyList(),
+    /** Opaque server-side OID4VCI offer/session correlation. */
+    val oid4vciIssuerState: String? = null,
     /**
      * When the token was issued
      */
@@ -68,6 +72,12 @@ data class RefreshTokenData(
      * Some deployments use one-time refresh tokens (rotate on use)
      */
     val used: Boolean = false,
+    /** RFC 7638 thumbprint of the attested client-instance key bound to this token chain. */
+    val clientInstanceKeyJkt: String? = null,
+    /** Time at which rotation consumed this token; null until the first successful rotation. */
+    val rotatedAt: Instant? = null,
+    /** Successor returned for lost-response retries during the configured grace period. */
+    val replacementRefreshToken: String? = null,
     /**
      * DPoP JWK thumbprint (if DPoP-bound)
      * RFC 9449: Refresh tokens can also be DPoP-bound

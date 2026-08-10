@@ -36,6 +36,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+                implementation(sphereonlib.io.ktor.client.mock)
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)
             }
         }

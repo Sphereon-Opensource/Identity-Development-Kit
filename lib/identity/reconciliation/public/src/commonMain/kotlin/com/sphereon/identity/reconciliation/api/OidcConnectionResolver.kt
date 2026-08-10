@@ -41,8 +41,8 @@ data class ResolvedOidcConnection
 /**
  * Resolves OIDC client config references into usable connection details.
  *
- * Implementations are responsible for resolving [ConfigReference] and [SecretReference]
- * from the [OidcClientConfig] model into actual client ID/secret strings.
+ * Implementations resolve the config-backed client ID and the opaque client-secret ID from the
+ * OIDC client model through their authenticated server-side runtime.
  */
 interface OidcConnectionResolver {
     suspend fun resolve(oidcClientId: String): ResolvedOidcConnection?

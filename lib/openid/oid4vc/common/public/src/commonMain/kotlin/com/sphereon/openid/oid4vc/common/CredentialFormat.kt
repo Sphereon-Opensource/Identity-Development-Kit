@@ -25,11 +25,11 @@ import kotlin.jvm.JvmStatic
  * Credential Format shared across OpenID4VC protocols (OID4VP, OID4VCI).
  *
  * Supported formats:
- * - dc+sd-jwt: SD-JWT Digital Credentials (recommended for new deployments)
+ * - dc+sd-jwt: IETF SD-JWT VC
+ * - vc+sd-jwt: W3C Verifiable Credential secured using SD-JWT
  * - mso_mdoc: ISO 18013-5 mobile driving license format
  * - jwt_vc_json: JWT Verifiable Credential
  * - jwt_vp_json: JWT Verifiable Presentation
- * - vc+sd-jwt: SD-JWT Verifiable Credential (older format identifier)
  */
 @JsExportCompat
 @Serializable
@@ -39,20 +39,20 @@ enum class CredentialFormat(
     /**
      * SD-JWT Digital Credential format
      *
-     * The recommended format for new deployments per OpenID4VP 1.0.
+     * The IETF SD-JWT VC format profiled by OpenID4VP 1.0.
      * Structure: issuer-signed-jwt~disclosure1~disclosure2~...~kb-jwt
      */
     @SerialName("dc+sd-jwt")
-    SD_JWT_DC("dc+sd-jwt"),
+    SD_JWT_VC("dc+sd-jwt"),
 
     /**
-     * SD-JWT Verifiable Credential format (older identifier)
+     * W3C Verifiable Credential secured using SD-JWT
      *
-     * Older format identifier that may still be encountered.
-     * Structure is the same as dc+sd-jwt.
+     * The payload conforms to the W3C Verifiable Credentials Data Model and is
+     * secured using the `application/vc+sd-jwt` representation defined by VC JOSE/COSE.
      */
     @SerialName("vc+sd-jwt")
-    SD_JWT_VC("vc+sd-jwt"),
+    W3C_VC_SD_JWT("vc+sd-jwt"),
 
     /**
      * ISO mDoc (ISO 18013-5) format
@@ -99,7 +99,7 @@ enum class CredentialFormat(
      * Check if this format is an SD-JWT variant
      */
     val isSdJwt: Boolean
-        get() = this == SD_JWT_DC || this == SD_JWT_VC
+        get() = this == SD_JWT_VC || this == W3C_VC_SD_JWT
 
     /**
      * Check if this format is a JWT variant (but not SD-JWT)
@@ -124,9 +124,10 @@ enum class CredentialFormat(
         fun fromValue(value: String): CredentialFormat? = entries.find { it.value == value }
 
         /**
-         * Parse credential format from string, checking for partial matches
+         * Parse a credential format from a wire identifier or its media type.
          *
-         * Useful when the format string may contain variations like "sd-jwt" instead of "dc+sd-jwt"
+         * SD-JWT identifiers remain exact because `dc+sd-jwt` and `vc+sd-jwt` have
+         * different credential data models and must never collapse into one another.
          *
          * @param value String value that may contain format identifier
          * @return CredentialFormat enum value, or null if not recognized
@@ -136,10 +137,10 @@ enum class CredentialFormat(
             // First try exact match
             fromValue(value)?.let { return it }
 
-            // Try partial matches
             val lowerValue = value.lowercase()
             return when {
-                lowerValue.contains("sd-jwt") || lowerValue.contains("sd_jwt") -> SD_JWT_DC
+                lowerValue == "application/dc+sd-jwt" -> SD_JWT_VC
+                lowerValue == "application/vc+sd-jwt" -> W3C_VC_SD_JWT
                 lowerValue == "mso_mdoc" || lowerValue.contains("mdoc") -> MSO_MDOC
                 lowerValue.contains("jwt_vc") || lowerValue == "jwt_vc_json" -> JWT_VC_JSON
                 lowerValue.contains("jwt_vp") || lowerValue == "jwt_vp_json" -> JWT_VP_JSON
@@ -162,7 +163,7 @@ enum class CredentialFormat(
         fun detectFormat(presentation: String): CredentialFormat? =
             when {
                 // SD-JWT: Contains disclosure separators (~)
-                presentation.contains("~") -> SD_JWT_DC
+                presentation.contains("~") -> SD_JWT_VC
 
                 // JWT: Three base64url parts separated by dots
                 presentation.matches(JWT_PATTERN) -> JWT_VC_JSON
@@ -196,5 +197,5 @@ fun String.detectCredentialFormat(): CredentialFormat? = CredentialFormat.detect
  */
 fun String.matchesCredentialFormat(format: CredentialFormat): Boolean {
     val detected = CredentialFormat.fromValueLenient(this)
-    return detected == format || (detected?.isSdJwt == true && format.isSdJwt)
+    return detected == format
 }

@@ -52,7 +52,7 @@ class SdJwtEdgeCasesTest {
 
     val app = createSdJwtTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("sdjwt-edge-test")
+    val session = context.sessionContextManager.createOrGetFromId("sdjwt-edge-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

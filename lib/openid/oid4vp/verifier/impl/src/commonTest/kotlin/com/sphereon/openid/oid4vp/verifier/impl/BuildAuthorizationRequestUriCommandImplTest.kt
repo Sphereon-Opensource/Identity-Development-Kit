@@ -22,6 +22,7 @@ import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationRequest
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.BuildAuthorizationRequestUriArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpUriScheme
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
@@ -51,7 +52,7 @@ class BuildAuthorizationRequestUriCommandImplTest {
             val dcqlJson =
                 Json.encodeToJsonElement(
                     DcqlQuery.serializer(),
-                    DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "test_cred"))),
+                    DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "test_cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
                 ) as JsonObject
 
             val request =
@@ -141,7 +142,7 @@ class BuildAuthorizationRequestUriCommandImplTest {
                     DcqlQuery(
                         credentials =
                             listOf(
-                                DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt"),
+                                DcqlCredentialQuery(id = "identity_credential", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:identity")),
                             ),
                     ),
                 ) as JsonObject
@@ -213,6 +214,8 @@ class BuildAuthorizationRequestUriCommandImplTest {
                     redirectUri = "https://verifier.example.com/callback",
                 ) {
                     nonce("nonce12345678")
+                    state("state12345678")
+                    requestUriMethod("get")
                 }
 
             val args =
@@ -232,9 +235,11 @@ class BuildAuthorizationRequestUriCommandImplTest {
             assertTrue(uri.startsWith("openid4vp://?"))
             assertTrue(uri.contains("client_id="))
             assertTrue(uri.contains("request_uri="))
+            assertTrue(uri.contains("request_uri_method=get"))
             // Should NOT contain full parameters
             assertFalse(uri.contains("nonce="))
             assertFalse(uri.contains("dcql_query="))
+            assertFalse(uri.contains("state="))
         }
 
     @Test

@@ -38,8 +38,8 @@ import com.sphereon.wallet.interaction.WalletTrustPolicyAction
 import kotlin.time.Clock
 
 class Iso18013WalletInteractionProtocolAdapter(
+    private val disclosureExecutor: Iso18013DisclosureExecutor,
     private val engagementManager: MdocEngagementManager? = null,
-    private val disclosureExecutor: Iso18013DisclosureExecutor = Iso18013DisclosureExecutor.notConfigured,
     priority: Int = 80,
 ) : WalletInteractionProtocolAdapter {
     override val capability: WalletProtocolCapability =
@@ -284,7 +284,7 @@ class Iso18013WalletInteractionProtocolAdapter(
                 val handoffRef =
                     sensitiveInputAuthority.register(
                         sessionId = sessionState.sessionId,
-                        purpose = WalletInteractionSensitiveInputPurpose.PROTOCOL_REDIRECT_HANDOFF,
+                        purpose = WalletInteractionSensitiveInputPurpose.PROTOCOL_COMPLETION_HANDOFF,
                         value = result.redirectUri,
                     )
                 sessionState.copy(

@@ -230,7 +230,7 @@ class TenantPathPolicyDispatcherTest {
         private val slugLookup: RoutableSlugLookup,
         override val endpointCommands: List<HttpEndpointCommand>,
     ) : CommandBackedHttpAdapter(
-            id = "test-adapter",
+            id = "test.routing.adapter",
             execution = TestSessionExecution(),
             mount = mount,
             tenantPathPolicy = policy,

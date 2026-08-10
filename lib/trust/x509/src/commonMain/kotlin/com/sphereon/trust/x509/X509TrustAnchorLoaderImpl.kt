@@ -46,8 +46,10 @@ class X509TrustAnchorLoaderImpl(
         )
     }
 
-    override suspend fun loadTrustedCerts(): List<String> {
-        val configuredCerts = loadConfiguredTrustedCerts()
+    override suspend fun loadTrustedCerts(): List<String> = loadTrustedCerts(emptyList())
+
+    override suspend fun loadTrustedCerts(additionalCaBundlePaths: List<String>): List<String> {
+        val configuredCerts = loadConfiguredTrustedCerts(additionalCaBundlePaths)
         if (additionalSources.isEmpty()) {
             return configuredCerts
         }
@@ -65,22 +67,33 @@ class X509TrustAnchorLoaderImpl(
         return (configuredCerts + additionalCerts).distinct()
     }
 
-    private suspend fun loadConfiguredTrustedCerts(): List<String> {
-        val cached = trustedCertsCache.getApp("configured-trusted-certs")
+    private suspend fun loadConfiguredTrustedCerts(additionalCaBundlePaths: List<String>): List<String> {
+        val x509Config = trustConfigProvider.getTrustConfig().anchors.x509
+        val caBundlePaths =
+            ((if (x509Config.enabled) x509Config.caBundlePaths else emptyList()) + additionalCaBundlePaths)
+                .filter(String::isNotBlank)
+                .distinct()
+        val caBundleUrls = if (x509Config.enabled) x509Config.caBundleUrls else emptyList()
+        if (caBundlePaths.isEmpty() && caBundleUrls.isEmpty()) {
+            return emptyList()
+        }
+        val cacheKey =
+            buildString {
+                append("configured-trusted-certs:")
+                append(caBundlePaths.joinToString("\u001f"))
+                append('\u001e')
+                append(caBundleUrls.joinToString("\u001f"))
+            }
+        val cached = trustedCertsCache.getTenant(execution.tenantId, cacheKey)
         if (cached != null) {
             return kotlinx.serialization.json.Json
                 .decodeFromString<List<String>>(cached)
         }
 
-        val x509Config = trustConfigProvider.getTrustConfig().anchors.x509
-        if (!x509Config.enabled) {
-            return emptyList()
-        }
-
         val certs = mutableListOf<String>()
         val failedSources = mutableListOf<String>()
 
-        for (path in x509Config.caBundlePaths) {
+        for (path in caBundlePaths) {
             try {
                 val pemContent = readFileContent(path)
                 if (pemContent != null) {
@@ -97,7 +110,7 @@ class X509TrustAnchorLoaderImpl(
             }
         }
 
-        for (url in x509Config.caBundleUrls) {
+        for (url in caBundleUrls) {
             try {
                 val response = httpClient.get(url)
                 if (response.status.isSuccess()) {
@@ -122,8 +135,9 @@ class X509TrustAnchorLoaderImpl(
         }
 
         if (certs.isNotEmpty()) {
-            trustedCertsCache.putApp(
-                "configured-trusted-certs",
+            trustedCertsCache.putTenant(
+                execution.tenantId,
+                cacheKey,
                 kotlinx.serialization.json.Json
                     .encodeToString(certs),
             )

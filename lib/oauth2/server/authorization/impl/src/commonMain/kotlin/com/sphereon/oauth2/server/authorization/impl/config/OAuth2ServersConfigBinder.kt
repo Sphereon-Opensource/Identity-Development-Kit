@@ -30,6 +30,8 @@ import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.PublicClientConfig
 import com.sphereon.oauth2.common.config.SessionConfig
 import com.sphereon.oauth2.common.config.TokenFormat
+import com.sphereon.oauth2.common.config.WebAuthnLoginConfig
+import com.sphereon.oauth2.common.model.GrantType
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -183,6 +185,8 @@ class OAuth2ServersConfigBinder(
         const val NORMALIZED_DEFAULT_SERVER_KEY = "default.server"
         const val CLIENT_ID_SUFFIX = ".client.id"
         const val CLIENT_SECRET_SUFFIX = ".client.secret"
+        const val GRANT_TYPES_SUFFIX = ".grant.types"
+        const val TENANT_ID_SUFFIX = ".tenant.id"
         const val DEFAULT_ACCESS_TOKEN_AUDIENCE_SUFFIX = ".default.access.token.audience"
         const val ALLOWED_ACCESS_TOKEN_AUDIENCES_SUFFIX = ".allowed.access.token.audiences"
         val DEFAULT_SERVER_PROBE_KEYS =
@@ -256,6 +260,12 @@ class OAuth2ServersConfigBinder(
                     Boolean::class,
                     defaults.refreshTokenRotation,
                 ) ?: defaults.refreshTokenRotation,
+            refreshTokenRetryGracePeriodSeconds =
+                configService.getProperty(
+                    "$serverPrefix.refresh-token-retry-grace-period-seconds",
+                    Int::class,
+                    defaults.refreshTokenRetryGracePeriodSeconds,
+                ) ?: defaults.refreshTokenRetryGracePeriodSeconds,
             grantTypesEnabled =
                 configService
                     .getPropertyAsString("$serverPrefix.grant-types-enabled", null)
@@ -274,9 +284,21 @@ class OAuth2ServersConfigBinder(
                 configService
                     .getPropertyAsString("$serverPrefix.scopes-supported", null)
                     ?.split(",")
-                    ?.map { it.trim() },
+                    ?.mapNotNull { it.trim().takeIf { value -> value.isNotEmpty() } },
+            authorizationDetailsTypesSupported =
+                configService
+                    .getPropertyAsString("$serverPrefix.authorization-details-types-supported", null)
+                    ?.split(",")
+                    ?.mapNotNull { it.trim().takeIf { value -> value.isNotEmpty() } }
+                    ?.takeIf { it.isNotEmpty() },
             // OpenID Connect
             oidc = readFeaturePolicy("$serverPrefix.oidc", defaults.oidc),
+            requireRedirectUriInPushedAuthorizationRequests =
+                configService.getProperty(
+                    "$serverPrefix.require-redirect-uri-in-pushed-authorization-requests",
+                    Boolean::class,
+                    defaults.requireRedirectUriInPushedAuthorizationRequests,
+                ) ?: defaults.requireRedirectUriInPushedAuthorizationRequests,
             // OIDC RP-Initiated Logout 1.0 + Front-Channel Logout 1.0 + Back-Channel Logout 1.0
             logout = readFeaturePolicy("$serverPrefix.logout", defaults.logout),
             idTokenLifetimeSeconds =
@@ -505,6 +527,7 @@ class OAuth2ServersConfigBinder(
                     defaults.requireRequestUriRegistration,
                 ) ?: defaults.requireRequestUriRegistration,
             session = loadSessionConfig(serverPrefix),
+            webAuthn = loadWebAuthnConfig(serverPrefix),
             // Optional plain-text login-page notice (demo test-account hint, maintenance banner).
             // Unset in production → null → the renderer emits no notice markup.
             loginNotice = configService.getPropertyAsString("$serverPrefix.login-notice", null),
@@ -529,6 +552,57 @@ class OAuth2ServersConfigBinder(
         )
     }
 
+    private fun loadWebAuthnConfig(serverPrefix: String): WebAuthnLoginConfig {
+        val defaults = WebAuthnLoginConfig()
+        val webAuthnPrefix = "$serverPrefix.webauthn"
+        return WebAuthnLoginConfig(
+            enabled =
+                configService.getProperty(
+                    "$webAuthnPrefix.enabled",
+                    Boolean::class,
+                    defaults.enabled,
+                ) ?: defaults.enabled,
+            rpId = configService.getPropertyAsString("$webAuthnPrefix.rp-id", null),
+            allowedOrigins =
+                configService
+                    .getPropertyAsString("$webAuthnPrefix.allowed-origins", null)
+                    ?.split(",")
+                    ?.map(String::trim)
+                    ?.filter(String::isNotEmpty)
+                    ?.toSet()
+                    ?: defaults.allowedOrigins,
+            attestationPolicy =
+                configService.getPropertyAsString("$webAuthnPrefix.attestation-policy", null)
+                    ?: defaults.attestationPolicy,
+            userVerification =
+                configService.getPropertyAsString("$webAuthnPrefix.user-verification", null)
+                    ?: defaults.userVerification,
+            allowedTransports =
+                configService
+                    .getPropertyAsString("$webAuthnPrefix.allowed-transports", null)
+                    ?.split(",")
+                    ?.map(String::trim)
+                    ?.filter(String::isNotEmpty)
+                    ?.toSet()
+                    ?: defaults.allowedTransports,
+            backupStatePolicy =
+                configService.getPropertyAsString("$webAuthnPrefix.backup-state-policy", null)
+                    ?: defaults.backupStatePolicy,
+            challengeTtlSeconds =
+                configService.getProperty(
+                    "$webAuthnPrefix.challenge-ttl-seconds",
+                    Long::class,
+                    defaults.challengeTtlSeconds,
+                ) ?: defaults.challengeTtlSeconds,
+            level3PrfEnabled =
+                configService.getProperty(
+                    "$webAuthnPrefix.level3-prf-enabled",
+                    Boolean::class,
+                    defaults.level3PrfEnabled,
+                ) ?: defaults.level3PrfEnabled,
+        )
+    }
+
     private fun loadInternalClients(serverPrefix: String): Map<String, InternalClientConfig> {
         val clients = mutableMapOf<String, InternalClientConfig>()
         val internalClientsPrefix = "$serverPrefix.internal-clients"
@@ -542,6 +616,8 @@ class OAuth2ServersConfigBinder(
                     when {
                         key.endsWith(CLIENT_ID_SUFFIX) -> key.removeSuffix(CLIENT_ID_SUFFIX)
                         key.endsWith(CLIENT_SECRET_SUFFIX) -> key.removeSuffix(CLIENT_SECRET_SUFFIX)
+                        key.endsWith(GRANT_TYPES_SUFFIX) -> key.removeSuffix(GRANT_TYPES_SUFFIX)
+                        key.endsWith(TENANT_ID_SUFFIX) -> key.removeSuffix(TENANT_ID_SUFFIX)
                         key.endsWith(DEFAULT_ACCESS_TOKEN_AUDIENCE_SUFFIX) -> key.removeSuffix(DEFAULT_ACCESS_TOKEN_AUDIENCE_SUFFIX)
                         key.endsWith(ALLOWED_ACCESS_TOKEN_AUDIENCES_SUFFIX) -> key.removeSuffix(ALLOWED_ACCESS_TOKEN_AUDIENCES_SUFFIX)
                         else -> null
@@ -556,6 +632,21 @@ class OAuth2ServersConfigBinder(
                     InternalClientConfig(
                         clientId = clientId,
                         clientSecret = clientSecret,
+                        grantTypes =
+                            configService
+                                .getPropertyAsString("$internalClientsPrefix.$roleKey.grant-types", null)
+                                ?.split(",")
+                                ?.map(String::trim)
+                                ?.filter(String::isNotEmpty)
+                                ?.mapNotNull { configured -> GrantType.entries.firstOrNull { it.value == configured } }
+                                ?.toSet()
+                                ?.takeIf { it.isNotEmpty() }
+                                ?: setOf(GrantType.CLIENT_CREDENTIALS),
+                        tenantId =
+                            configService
+                                .getPropertyAsString("$internalClientsPrefix.$roleKey.tenant-id", null)
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() },
                         defaultAccessTokenAudience =
                             configService
                                 .getPropertyAsString("$internalClientsPrefix.$roleKey.default-access-token-audience", null)

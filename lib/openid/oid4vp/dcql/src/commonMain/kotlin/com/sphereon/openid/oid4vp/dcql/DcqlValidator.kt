@@ -17,38 +17,45 @@
 package com.sphereon.openid.oid4vp.dcql
 
 import io.konform.validation.Validation
+import io.konform.validation.Valid
 import io.konform.validation.constraints.minLength
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.longOrNull
 
-/**
- * Known credential formats per OpenID4VP 1.0
- */
-private val KNOWN_FORMATS =
-    setOf(
-        "dc+sd-jwt", // SD-JWT VC
-        "mso_mdoc", // ISO mDoc
-        "jwt_vc_json", // W3C VC JWT
-        "ldp_vc", // W3C VC LDP
-        "jwt_vp", // JWT VP
-        "ldp_vp", // LDP VP
-    )
+private val DCQL_ID = Regex("^[A-Za-z0-9_-]+$")
 
 /**
  * Validates DCQL Query
  *
  * OpenID4VP 1.0 Section 6:
- * - At least one of `credentials` or `credential_sets` MUST be present
- * - If present, arrays MUST be non-empty
+ * - `credentials` MUST be present and non-empty
+ * - `credential_sets`, if present, MUST be non-empty and reference Credential Query IDs
  */
 val validateDcqlQuery =
     Validation<DcqlQuery> {
-        // At least one must be present (enforced by data class init)
-
-        DcqlQuery::credentials ifPresent {
+        DcqlQuery::credentials {
             constrain("must contain at least one credential query") { it.isNotEmpty() }
+            constrain("credential query IDs must be unique") { credentials ->
+                credentials.map { it.id }.distinct().size == credentials.size
+            }
+            constrain("contains an invalid Credential Query") { credentials ->
+                credentials.all { validateDcqlCredentialQuery(it) is Valid }
+            }
         }
 
         DcqlQuery::credential_sets ifPresent {
             constrain("must contain at least one credential set") { it.isNotEmpty() }
+            constrain("contains an invalid Credential Set Query") { credentialSets ->
+                credentialSets.all { validateDcqlCredentialSetQuery(it) is Valid }
+            }
+        }
+
+        run {
+            constrain("credential set options must reference Credential Query IDs") { query ->
+                val ids = query.credentials.map { it.id }.toSet()
+                query.credential_sets.orEmpty().flatMap { it.options }.flatten().all { it in ids }
+            }
         }
     }
 
@@ -57,7 +64,7 @@ val validateDcqlQuery =
  *
  * OpenID4VP 1.0 Section 6.1:
  * - `id` MUST be a non-empty string
- * - `format` if present MUST be a known format identifier
+ * - `format` MUST be a non-empty Credential Format Identifier
  * - `claims` if present MUST be a non-empty array
  * - `claim_sets` if present MUST be a non-empty array
  * - `trusted_authorities` if present MUST be a non-empty array
@@ -66,29 +73,62 @@ val validateDcqlCredentialQuery =
     Validation<DcqlCredentialQuery> {
         DcqlCredentialQuery::id {
             minLength(1) hint "Credential ID cannot be empty"
+            constrain("must contain only alphanumeric, underscore, or hyphen characters") { it.matches(DCQL_ID) }
         }
 
-        DcqlCredentialQuery::format ifPresent {
-            constrain("must be a known credential format: ${KNOWN_FORMATS.joinToString()}") { it in KNOWN_FORMATS }
+        DcqlCredentialQuery::format {
+            minLength(1) hint "Credential format cannot be empty"
         }
 
         DcqlCredentialQuery::claims ifPresent {
             constrain("must contain at least one claim") { it.isNotEmpty() }
+            constrain("contains an invalid Claims Query") { claims ->
+                claims.all { validateDcqlClaimQuery(it) is Valid }
+            }
         }
 
         DcqlCredentialQuery::claim_sets ifPresent {
             constrain("must contain at least one claim set") { it.isNotEmpty() }
+            constrain("claim set options must be non-empty") { sets -> sets.all { it.isNotEmpty() } }
         }
 
         DcqlCredentialQuery::trusted_authorities ifPresent {
             constrain("must contain at least one trusted authority") { it.isNotEmpty() }
+            constrain("contains an invalid Trusted Authorities Query") { authorities ->
+                authorities.all { validateDcqlTrustedAuthority(it) is Valid }
+            }
+        }
+
+        run {
+            constrain("claim_sets requires claims and every claim to have a unique valid id") { query ->
+                if (query.claim_sets == null) {
+                    true
+                } else {
+                    val ids = query.claims.orEmpty().mapNotNull { it.id }
+                    query.claims != null &&
+                        ids.size == query.claims.size &&
+                        ids.distinct().size == ids.size &&
+                        ids.all { it.matches(DCQL_ID) }
+                }
+            }
+            constrain("claim_sets must reference claim ids from the same Credential Query") { query ->
+                val ids = query.claims.orEmpty().mapNotNull { it.id }.toSet()
+                query.claim_sets.orEmpty().flatten().all { it in ids }
+            }
+            constrain("mso_mdoc claim paths must contain exactly two strings") { query ->
+                query.format != "mso_mdoc" ||
+                    query.claims.orEmpty().all { claim ->
+                        claim.path.components.size == 2 &&
+                            claim.path.components.all { it is JsonPrimitive && it.isString }
+                    }
+            }
         }
     }
 
 /**
  * Validates DCQL Claim Query
  *
- * OpenID4VP 1.0 Section 6.2:
+ * OpenID4VP 1.0 Final Sections 6.3 and 7:
  * - `path` MUST be a non-empty array
  * - `path` elements MUST be non-empty strings
  * - `values` if present MUST be non-empty
@@ -96,32 +136,21 @@ val validateDcqlCredentialQuery =
 val validateDcqlClaimQuery =
     Validation<DcqlClaimQuery> {
         DcqlClaimQuery::path {
-            constrain("path cannot be empty") { it.isNotEmpty() }
-            constrain("path elements cannot be empty strings") { it.all { s -> s.isNotEmpty() } }
+            constrain("path cannot be empty") { it.components.isNotEmpty() }
+        }
+
+        DcqlClaimQuery::id ifPresent {
+            constrain("must contain only alphanumeric, underscore, or hyphen characters") { it.matches(DCQL_ID) }
         }
 
         DcqlClaimQuery::values ifPresent {
             constrain("values array cannot be empty") { it.isNotEmpty() }
-        }
-    }
-
-/**
- * Validates DCQL Claim Set
- *
- * OpenID4VP 1.0 Section 6.3:
- * - `id` MUST be a non-empty string
- * - `claims` MUST be a non-empty array
- * - `claims` elements MUST be non-empty strings
- */
-val validateDcqlClaimSet =
-    Validation<DcqlClaimSet> {
-        DcqlClaimSet::id {
-            minLength(1) hint "Claim set ID cannot be empty"
-        }
-
-        DcqlClaimSet::claims {
-            constrain("must contain at least one claim") { it.isNotEmpty() }
-            constrain("claim identifiers cannot be empty strings") { it.all { s -> s.isNotEmpty() } }
+            constrain("values must contain only strings, integers, or booleans") { values ->
+                values.all { value ->
+                    value is JsonPrimitive &&
+                        (value.isString || value.longOrNull != null || value.booleanOrNull != null)
+                }
+            }
         }
     }
 
@@ -135,121 +164,55 @@ val validateDcqlCredentialSetQuery =
     Validation<DcqlCredentialSetQuery> {
         DcqlCredentialSetQuery::options {
             constrain("must contain at least one option") { it.isNotEmpty() }
-        }
-    }
-
-/**
- * Validates DCQL Credential Set Option
- *
- * OpenID4VP 1.0 Section 6.4:
- * - `credential_ids` MUST be a non-empty array
- * - `credential_ids` elements MUST be non-empty strings
- */
-val validateDcqlCredentialSetOption =
-    Validation<DcqlCredentialSetOption> {
-        DcqlCredentialSetOption::credential_ids {
-            constrain("must reference at least one credential") { it.isNotEmpty() }
-            constrain("credential IDs cannot be empty strings") { it.all { s -> s.isNotEmpty() } }
-        }
-    }
-
-/**
- * Validates DCQL Response
- *
- * OpenID4VP 1.0 Section 6.5:
- * - At least one of `credential_matches` or `credential_set_matches` SHOULD be present
- * - If present, arrays MUST be non-empty
- */
-val validateDcqlResponse =
-    Validation<DcqlResponse> {
-        DcqlResponse::credential_matches ifPresent {
-            constrain("cannot be empty if present") { it.isNotEmpty() }
-        }
-
-        DcqlResponse::credential_set_matches ifPresent {
-            constrain("cannot be empty if present") { it.isNotEmpty() }
-        }
-    }
-
-/**
- * Validates DCQL Credential Match
- *
- * OpenID4VP 1.0 Section 6.5.1:
- * - `credential_id` MUST be a non-empty string
- * - `claims_satisfied` if present MUST be non-empty
- */
-val validateDcqlCredentialMatch =
-    Validation<DcqlCredentialMatch> {
-        DcqlCredentialMatch::credential_id {
-            minLength(1) hint "Credential ID cannot be empty"
-        }
-
-        DcqlCredentialMatch::claims_satisfied ifPresent {
-            constrain("cannot be empty if present") { it.isNotEmpty() }
-            constrain("claim paths cannot be empty strings") { it.all { s -> s.isNotEmpty() } }
-        }
-    }
-
-/**
- * Validates DCQL Credential Set Match
- *
- * OpenID4VP 1.0 Section 6.5.2:
- * - `credential_set_id` MUST be a non-empty string
- * - `credential_id` MUST be a non-empty string
- */
-val validateDcqlCredentialSetMatch =
-    Validation<DcqlCredentialSetMatch> {
-        DcqlCredentialSetMatch::credential_set_id {
-            minLength(1) hint "Credential set ID cannot be empty"
-        }
-
-        DcqlCredentialSetMatch::credential_id {
-            minLength(1) hint "Credential ID cannot be empty"
+            constrain("each option must reference at least one Credential Query") { options ->
+                options.all { it.isNotEmpty() }
+            }
+            constrain("credential query IDs cannot be empty or malformed") { options ->
+                options.flatten().all { it.matches(DCQL_ID) }
+            }
         }
     }
 
 /**
  * Validates SD-JWT VC format metadata
  *
- * OpenID4VP 1.0 Appendix A.1:
- * - `vct_values` if present MUST be non-empty and contain valid URIs
- * - `sd_jwt_alg_values` if present MUST be non-empty
- * - `kb_jwt_alg_values` if present MUST be non-empty
+ * OpenID4VP 1.0 Final Appendix B.3.5:
+ * - `vct_values` is the only defined DCQL meta property for `dc+sd-jwt`
+ * - `vct_values` is REQUIRED, non-empty, and contains non-empty type identifiers
  */
 val validateSdJwtVcMeta =
     Validation<SdJwtVcMeta> {
-        SdJwtVcMeta::vct_values ifPresent {
-            constrain("cannot be empty if present") { it.isNotEmpty() }
+        SdJwtVcMeta::vct_values {
+            constrain("cannot be empty") { it.isNotEmpty() }
             constrain("VCT values cannot be empty strings") { it.all { s -> s.isNotEmpty() } }
-        }
-
-        SdJwtVcMeta::sd_jwt_alg_values ifPresent {
-            constrain("cannot be empty if present") { it.isNotEmpty() }
-            constrain("algorithm values cannot be empty strings") { it.all { s -> s.isNotEmpty() } }
-        }
-
-        SdJwtVcMeta::kb_jwt_alg_values ifPresent {
-            constrain("cannot be empty if present") { it.isNotEmpty() }
-            constrain("algorithm values cannot be empty strings") { it.all { s -> s.isNotEmpty() } }
         }
     }
 
 /**
  * Validates ISO mDoc format metadata
  *
- * OpenID4VP 1.0 Appendix A.2:
- * - `doctype_value` if present MUST be non-empty
- * - `namespace_values` if present MUST be non-empty
+ * OpenID4VP 1.0 Final Appendix B.2.3:
+ * - `doctype_value` is the only defined DCQL meta property for `mso_mdoc`
+ * - `doctype_value` is REQUIRED and non-empty
  */
 val validateMdocMeta =
     Validation<MdocMeta> {
-        MdocMeta::doctype_value ifPresent {
-            minLength(1) hint "doctype_value cannot be empty if present"
+        MdocMeta::doctype_value {
+            minLength(1) hint "doctype_value cannot be empty"
         }
+    }
 
-        MdocMeta::namespace_values ifPresent {
-            constrain("cannot be empty if present") { it.isNotEmpty() }
-            constrain("namespace values cannot be empty strings") { it.all { s -> s.isNotEmpty() } }
+/** Validates OpenID4VP 1.0 Final Appendix B.1.1 W3C VC `type_values`. */
+val validateW3cVcMeta =
+    Validation<W3cVcMeta> {
+        W3cVcMeta::type_values {
+            constrain("cannot be empty") { it.isNotEmpty() }
+            constrain("each type_values alternative must be non-empty") { alternatives ->
+                alternatives.all { it.isNotEmpty() }
+            }
+            constrain("type values cannot be empty strings") { alternatives ->
+                alternatives.flatten().all { it.isNotEmpty() }
+            }
         }
     }
 
@@ -280,7 +243,7 @@ val validateDcqlTrustedAuthority =
         // Type-specific validation
         run {
             constrain("ETSI Trusted List values must be HTTPS URLs") { authority ->
-                if (authority.type == DcqlTrustedAuthority.TYPE_ETSI_TRUSTED_LIST) {
+                if (authority.type == DcqlTrustedAuthority.TYPE_ETSI_TL) {
                     authority.values.all { it.startsWith("https://", ignoreCase = true) }
                 } else {
                     true

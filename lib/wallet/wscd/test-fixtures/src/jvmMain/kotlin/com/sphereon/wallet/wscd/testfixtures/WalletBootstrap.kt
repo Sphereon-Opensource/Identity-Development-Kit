@@ -45,7 +45,7 @@ class WalletBootstrap private constructor(
      */
     fun wsca(sessionId: String = "wallet-session"): Wsca {
         val userContext = app.userContextManager.getAnonymous()
-        val session = userContext.sessionContextManager.createOrGetFromId(sessionId)
+        val session = userContext.sessionContextManager.createOrGetFromId(sessionId, principalType = com.sphereon.di.context.PrincipalType.USER)
         return (session.graph as WscaGraph).wsca
     }
 

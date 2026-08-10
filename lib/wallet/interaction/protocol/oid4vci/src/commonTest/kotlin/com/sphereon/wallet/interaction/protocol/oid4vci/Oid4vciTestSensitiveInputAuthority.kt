@@ -9,7 +9,7 @@ import com.sphereon.wallet.interaction.WalletCounterpartyTrustResolver
 import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionContext as CoreWalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionExecutionMode
+import com.sphereon.wallet.interaction.ProtocolExecutionOwner
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
@@ -68,8 +68,8 @@ internal object Oid4vciTestSensitiveInputAuthority : WalletInteractionSensitiveI
 internal fun WalletInteractionContext(
     sessionId: WalletInteractionSessionId,
     walletUnitId: String,
-    executionMode: WalletInteractionExecutionMode,
-    protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.local,
+    executionOwner: ProtocolExecutionOwner,
+    protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
     counterpartyEncounterRegistry: WalletCounterpartyEncounterRegistry = WalletCounterpartyEncounterRegistry.none,
     trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
     trustPolicy: WalletTrustPolicy = WalletTrustPolicy.allow,
@@ -80,7 +80,7 @@ internal fun WalletInteractionContext(
     CoreWalletInteractionContext(
         sessionId = sessionId,
         walletUnitId = walletUnitId,
-        executionMode = executionMode,
+        executionOwner = executionOwner,
         protocolExecutor = protocolExecutor,
         counterpartyEncounterRegistry = counterpartyEncounterRegistry,
         trustResolver = trustResolver,

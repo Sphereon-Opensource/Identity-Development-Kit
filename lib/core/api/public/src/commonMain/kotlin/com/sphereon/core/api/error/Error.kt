@@ -235,7 +235,9 @@ open class IdkError(
             causes: List<IdkErrorType> = emptyList<IdkErrorType>(),
             command: BaseCommand<*, *, *>? = null,
             arg: Any? = null,
-            message: String = "The command ${(command as? Command)?.id ?: "<unknown>"} does not support the argument${arg?.let { ": $it" } ?: ""}",
+            message: String =
+                "The command ${(command as? Command)?.id ?: "<unknown>"} does not support the argument" +
+                    (arg?.let { " type ${it::class.simpleName ?: "<unknown>"}" } ?: ""),
             throwable: Throwable? = null,
         ) = IdkError(
             code = "COMMAND_ARG_NOT_SUPPORTED_ERROR",

@@ -25,25 +25,36 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.JwsUtils
+import com.sphereon.crypto.jose.jws.JwsValidationResult
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.model.ActorClaim
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenTypeIdentifier
 import com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.clientauth.toVerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.policy.TokenExchangePolicy
 import com.sphereon.oauth2.server.authorization.policy.TokenExchangePolicyRequest
+import com.sphereon.oauth2.server.authorization.signing.AsSigningKeyPublicJwkResolver
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
+import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -71,6 +82,8 @@ class VerifyTokenExchangeGrantCommandImpl(
     private val clientRegistry: ClientRegistry,
     private val tokenExchangePolicy: TokenExchangePolicy,
     private val jwtService: JwtService,
+    private val signingKeyStore: SigningKeyStore,
+    private val signingKeyPublicJwkResolver: AsSigningKeyPublicJwkResolver? = null,
 ) : TypedServiceCommandAdapter<VerifyTokenExchangeGrantArgs, VerifiedTokenExchangeGrant, IdkError>(
         commandId = VerifyTokenExchangeGrantCommand.COMMAND_ID,
         execution = execution,
@@ -87,10 +100,19 @@ class VerifyTokenExchangeGrantCommandImpl(
         applyDuring: (VerifyTokenExchangeGrantArgs) -> VerifyTokenExchangeGrantArgs,
     ): IdkResult<VerifiedTokenExchangeGrant, IdkError> {
         val applied = applyDuring(args)
-        return executeInternal(applied).mapError { IdkError.fromDTO(it) }
+        return executeInternal(applied, null).mapError { IdkError.fromDTO(it) }
     }
 
-    private suspend fun executeInternal(args: VerifyTokenExchangeGrantArgs): IdkResult<VerifiedTokenExchangeGrant, AuthorizationServerError> {
+    internal suspend fun verifyWithTrustedClientAuthorization(
+        args: VerifyTokenExchangeGrantArgs,
+        clientAuthorization: VerifiedClientAuthorization,
+    ): IdkResult<VerifiedTokenExchangeGrant, IdkError> =
+        executeInternal(args, clientAuthorization).mapError { IdkError.fromDTO(it) }
+
+    private suspend fun executeInternal(
+        args: VerifyTokenExchangeGrantArgs,
+        clientAuthorization: VerifiedClientAuthorization?,
+    ): IdkResult<VerifiedTokenExchangeGrant, AuthorizationServerError> {
         // 1. Validate required fields
         if (args.subjectToken.isBlank()) {
             return Err(
@@ -117,14 +139,20 @@ class VerifyTokenExchangeGrantCommandImpl(
         }
 
         // 3. Verify client is authorized for TOKEN_EXCHANGE grant
+        if (clientAuthorization != null && clientAuthorization.clientId != args.clientId) {
+            return Err(AuthorizationServerError.InvalidClient(details = "Authenticated client does not match requested client"))
+        }
         val client =
-            clientRegistry.getClient(args.clientId).getOrElse { error ->
-                return Err(
-                    AuthorizationServerError.ServerError(
-                        details = "Failed to retrieve client registration: $error",
-                    ),
-                )
-            }
+            clientAuthorization
+                ?: clientRegistry
+                    .getClient(args.clientId)
+                    .getOrElse { error ->
+                        return Err(
+                            AuthorizationServerError.ServerError(
+                                details = "Failed to retrieve client registration: $error",
+                            ),
+                        )
+                    }?.toVerifiedClientAuthorization()
 
         if (client == null) {
             return Err(
@@ -212,6 +240,9 @@ class VerifyTokenExchangeGrantCommandImpl(
                 isDelegation = policyDecision.isDelegation,
                 actorSubject = actorSubject,
                 actorClaim = actorClaim,
+                authTime = (subjectResult.claims["auth_time"] as? Number)?.toLong(),
+                acr = subjectResult.claims["acr"] as? String,
+                amr = (subjectResult.claims["amr"] as? List<*>)?.filterIsInstance<String>(),
                 additionalClaims = policyDecision.additionalClaims,
                 subjectCnfJkt = subjectCnfJkt,
             ),
@@ -310,10 +341,12 @@ class VerifyTokenExchangeGrantCommandImpl(
             )
         }
 
-        // Attempt JWS signature verification using JwtService (key resolved from JWT header: kid, x5c, jwk).
+        // Attempt JWS signature verification. A locally-issued token is pinned to the public
+        // material that the AS publishes for its registered signing key; external tokens retain
+        // the normal JwtService header-resolution path.
         // Verification status is passed to the TokenExchangePolicy which decides whether
         // to accept unverified tokens (e.g. external IdP tokens without local signing keys).
-        val verifyResult = jwtService.verifyJws(VerifyJwsArgs(jws = JwsCompact(token)))
+        val verifyResult = verifySelfIssuedTokenIfKnown(token) ?: jwtService.verifyJws(VerifyJwsArgs(jws = JwsCompact(token)))
         val verified = verifyResult.isOk && verifyResult.value.isValid
 
         // Decode payload claims using JwsUtils (uses com.sphereon.core.api.Encoding internally)
@@ -333,6 +366,49 @@ class VerifyTokenExchangeGrantCommandImpl(
 
         return Ok(TokenValidationResult(claims = claims, verified = verified))
     }
+
+    /**
+     * Verify an inbound token against the AS's registered public signing material when its
+     * header `kid` belongs to this tenant. Tenant AS deployments keep the corresponding private
+     * key in the tenant KMS and expose public material through [AsSigningKeyPublicJwkResolver];
+     * resolving that `kid` through the AS process's local provider is therefore both incorrect
+     * and unavailable after satellite redeployment.
+     *
+     * A matching disabled key produces an empty pinned set, so it cannot fall through to an
+     * unscoped provider lookup. Unknown `kid` values remain on the existing external-token path.
+     */
+    private suspend fun verifySelfIssuedTokenIfKnown(token: String): IdkResult<JwsValidationResult, IdkError>? {
+        val resolver = signingKeyPublicJwkResolver ?: return null
+        val kid = jwtHeaderKid(token) ?: return null
+        val signingKey = signingKeyStore.findByKid(execution.tenantId, kid).getOrNull() ?: return null
+        val publicJwk =
+            if (signingKey.state == OAuth2SigningKeyState.DISABLED) {
+                null
+            } else {
+                resolver.resolve(signingKey)
+            }
+        val trustedJwks =
+            buildJsonObject {
+                put(
+                    "keys",
+                    JsonArray(
+                        publicJwk
+                            ?.let { listOf(Json.encodeToJsonElement(Jwk.serializer(), it)) }
+                            .orEmpty(),
+                    ),
+                )
+            }
+        return jwtService.verifyJws(VerifyJwsArgs(jws = JwsCompact(token), trustedJwks = trustedJwks))
+    }
+
+    private fun jwtHeaderKid(token: String): String? =
+        runCatching {
+            val compactHeader = token.substringBefore('.', missingDelimiterValue = "")
+            JwsUtils.decodeBase64UrlToJson(compactHeader)["kid"]
+                ?.jsonPrimitive
+                ?.content
+                ?.takeIf { it.isNotBlank() }
+        }.getOrNull()
 
     private fun jsonElementToAny(element: JsonElement): Any =
         when (element) {

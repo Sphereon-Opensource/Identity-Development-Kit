@@ -38,6 +38,8 @@ data class CreateCredentialDesignInput
         val claims: List<ClaimPresentation> = emptyList(),
         val renderVariantIds: List<Uuid> = emptyList(),
         val credentialType: CredentialTypeDescriptor? = null,
+        /** Config-level default deferred-issuance policy. See [CredentialDesignRecord.deferral]. */
+        val deferral: CredentialDesignDeferralPolicy? = null,
     )
 
 @JsExportCompat
@@ -54,6 +56,8 @@ data class UpdateCredentialDesignInput
         val renderVariantIds: List<Uuid>? = null,
         val hostingMode: DesignHostingMode? = null,
         val credentialType: CredentialTypeDescriptor? = null,
+        /** Config-level default deferred-issuance policy. See [CredentialDesignRecord.deferral]. */
+        val deferral: CredentialDesignDeferralPolicy? = null,
     )
 
 @JsExportCompat

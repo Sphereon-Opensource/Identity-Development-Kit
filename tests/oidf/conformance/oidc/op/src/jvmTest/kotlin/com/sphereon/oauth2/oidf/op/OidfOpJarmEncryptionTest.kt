@@ -196,7 +196,7 @@ class OidfOpJarmEncryptionTest {
                 fixture.graph.userContextManager
                     .getAnonymous()
                     .sessionContextManager
-                    .createOrGetFromId("jarm-enc-test-decrypt-correct")
+                    .createOrGetFromId("jarm-enc-test-decrypt-correct", principalType = com.sphereon.di.context.PrincipalType.USER)
             val correctJweService = (correctSession.graph as JweServiceImpl.Graph).jweService
             val correctResult =
                 correctJweService.decryptJwe(
@@ -224,7 +224,7 @@ class OidfOpJarmEncryptionTest {
                 fixture.graph.userContextManager
                     .getAnonymous()
                     .sessionContextManager
-                    .createOrGetFromId("jarm-enc-test-decrypt-wrong")
+                    .createOrGetFromId("jarm-enc-test-decrypt-wrong", principalType = com.sphereon.di.context.PrincipalType.USER)
             val wrongJweService = (wrongSession.graph as JweServiceImpl.Graph).jweService
             val wrongResult =
                 wrongJweService.decryptJwe(
@@ -394,7 +394,7 @@ class OidfOpJarmEncryptionTest {
             fixture.graph.userContextManager
                 .getAnonymous()
                 .sessionContextManager
-                .createOrGetFromId("jarm-enc-test-decrypt")
+                .createOrGetFromId("jarm-enc-test-decrypt", principalType = com.sphereon.di.context.PrincipalType.USER)
         val jweService = (session.graph as JweServiceImpl.Graph).jweService
 
         val parsed = JweCompact.parse(jwe)

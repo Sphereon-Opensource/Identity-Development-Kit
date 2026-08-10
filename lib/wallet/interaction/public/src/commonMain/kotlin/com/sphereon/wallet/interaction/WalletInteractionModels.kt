@@ -31,11 +31,98 @@ value class WalletInteractionSessionId(
     }
 }
 
+/**
+ * The wallet component that is the first semantic interpreter of captured interaction input and
+ * owns the complete protocol exchange. Secure-component placement and credential storage are
+ * deliberately independent from this decision.
+ */
 @Serializable
-enum class WalletInteractionExecutionMode {
-    LOCAL,
-    BACKEND,
-    SPLIT,
+enum class ProtocolExecutionOwner {
+    WALLET_APP,
+    WALLET_BACKEND,
+}
+
+@Serializable
+enum class WalletInteractionCaptureSource {
+    MOBILE_QR,
+    MOBILE_DEEPLINK,
+    WEB_UI,
+    API,
+}
+
+/**
+ * Opaque handoff used when protocol ownership is resolved before any parsing or dereferencing.
+ * The raw bytes are intentionally separate from [WalletEntryPoint], whose kind is already a
+ * semantic classification made by a wallet protocol host.
+ */
+@Serializable
+data class CapturedInteractionInput(
+    val source: WalletInteractionCaptureSource,
+    val walletProfileRef: String,
+    val appRegistrationRef: String,
+    val rawPayload: ByteArray,
+    val payloadDigest: String,
+    val captureBinding: String,
+    val expectedPolicyRevision: Long,
+    val idempotencyKey: String,
+) {
+    init {
+        require(walletProfileRef.isNotBlank()) { "wallet_interaction_profile_ref_blank" }
+        require(appRegistrationRef.isNotBlank()) { "wallet_interaction_app_registration_ref_blank" }
+        require(rawPayload.isNotEmpty()) { "wallet_interaction_capture_payload_empty" }
+        require(payloadDigest.isNotBlank()) { "wallet_interaction_capture_digest_blank" }
+        require(captureBinding.isNotBlank()) { "wallet_interaction_capture_binding_blank" }
+        require(expectedPolicyRevision > 0) { "wallet_interaction_policy_revision_invalid" }
+        require(idempotencyKey.isNotBlank()) { "wallet_interaction_idempotency_key_blank" }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is CapturedInteractionInput) return false
+        return source == other.source &&
+            walletProfileRef == other.walletProfileRef &&
+            appRegistrationRef == other.appRegistrationRef &&
+            rawPayload.contentEquals(other.rawPayload) &&
+            payloadDigest == other.payloadDigest &&
+            captureBinding == other.captureBinding &&
+            expectedPolicyRevision == other.expectedPolicyRevision &&
+            idempotencyKey == other.idempotencyKey
+    }
+
+    override fun hashCode(): Int {
+        var result = source.hashCode()
+        result = 31 * result + walletProfileRef.hashCode()
+        result = 31 * result + appRegistrationRef.hashCode()
+        result = 31 * result + rawPayload.contentHashCode()
+        result = 31 * result + payloadDigest.hashCode()
+        result = 31 * result + captureBinding.hashCode()
+        result = 31 * result + expectedPolicyRevision.hashCode()
+        result = 31 * result + idempotencyKey.hashCode()
+        return result
+    }
+}
+
+/**
+ * Policy result created without interpreting captured protocol bytes. The owner and policy
+ * revision are immutable inputs to the later semantic interaction.
+ */
+@Serializable
+data class LockedCapturedInteractionRuntimePlan(
+    val walletUnitId: String,
+    val executionOwner: ProtocolExecutionOwner,
+    val policyRevision: Long,
+    val permittedFlowKinds: Set<WalletInteractionFlowKind>,
+    val providerRefs: Set<String>,
+    val evidence: Map<String, String> = emptyMap(),
+) {
+    init {
+        require(walletUnitId.isNotBlank()) { "wallet_interaction_locked_unit_id_blank" }
+        require(policyRevision > 0) { "wallet_interaction_locked_policy_revision_invalid" }
+        require(permittedFlowKinds.isNotEmpty()) { "wallet_interaction_locked_flow_kinds_empty" }
+        require(providerRefs.isNotEmpty() && providerRefs.none(String::isBlank)) {
+            "wallet_interaction_locked_provider_refs_empty"
+        }
+    }
 }
 
 @Serializable
@@ -69,7 +156,7 @@ enum class WalletEntryPointKind {
 data class WalletInteractionInput(
     val walletUnitId: String,
     val entryPoint: WalletEntryPoint,
-    val executionMode: WalletInteractionExecutionMode = WalletInteractionExecutionMode.LOCAL,
+    val executionOwner: ProtocolExecutionOwner = ProtocolExecutionOwner.WALLET_APP,
     val requestedFlowKinds: List<WalletInteractionFlowKind> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
 ) {
@@ -198,6 +285,8 @@ data class WalletInteractionState(
     val sessionId: WalletInteractionSessionId,
     val walletUnitId: String,
     val status: WalletInteractionStatus,
+    /** Locked before semantic interpretation and immutable for the lifetime of the interaction. */
+    val executionOwner: ProtocolExecutionOwner = ProtocolExecutionOwner.WALLET_APP,
     val revision: Long = 0,
     val flowKind: WalletInteractionFlowKind? = null,
     val activity: WalletInteractionActivitySummary? = null,
@@ -246,6 +335,7 @@ data class WalletInteractionState(
                 sessionId = sessionId,
                 walletUnitId = input.walletUnitId,
                 status = WalletInteractionStatus.ResolvingEntryPoint,
+                executionOwner = input.executionOwner,
                 entryPoint = input.entryPoint.summary(),
             )
     }
@@ -418,7 +508,7 @@ data class WalletCredentialRequirement(
     val id: String,
     val format: String? = null,
     val multipleAllowed: Boolean = false,
-    val requiredClaimPaths: List<List<String>> = emptyList(),
+    val requiredClaimPaths: List<List<JsonElement>> = emptyList(),
     val candidateCredentialIds: List<String> = emptyList(),
 )
 
@@ -450,7 +540,7 @@ data class WalletDisclosureSummary(
 
 @Serializable
 data class WalletClaimDescriptor(
-    val path: List<String>,
+    val path: List<JsonElement>,
     val labelKey: String? = null,
     val intentToRetain: Boolean? = null,
     val valueAvailable: Boolean = false,

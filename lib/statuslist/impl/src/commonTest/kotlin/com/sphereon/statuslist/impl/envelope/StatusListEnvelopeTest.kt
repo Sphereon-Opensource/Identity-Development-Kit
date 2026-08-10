@@ -36,7 +36,7 @@ class StatusListEnvelopeTest {
         proofFormat = proofFormat,
         issuer = "did:example:issuer",
         statusListUri = "https://issuer.example/statuslists/1",
-        signingKeyAlias = "key-1",
+        signingKeyName = "key-1",
         bitsPerStatus = 1,
         length = 256,
         purposes = listOf(StatusPurpose.REVOCATION),

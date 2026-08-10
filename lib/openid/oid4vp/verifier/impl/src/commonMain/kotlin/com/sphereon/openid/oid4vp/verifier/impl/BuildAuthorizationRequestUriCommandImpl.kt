@@ -142,20 +142,10 @@ class BuildAuthorizationRequestUriCommandImpl(
             append("&request_uri=")
             append(requestUri.encodeUrlGraph())
 
-            // Outer URI carries only parameters the wallet needs BEFORE fetching the JAR,
-            // plus OAuth2 plumbing that lives outside the Request Object:
-            //   - `state`  — OAuth2 (RFC 6749 §4.1.1); preserved in the outer URI per
-            //                 RFC 9101 and echoed by the wallet in the response.
-            //   - `request_uri_method` — tells the wallet GET vs POST for the JAR fetch.
-            //
-            // Everything else (client_metadata, client_metadata_uri, nonce, dcql_query,
-            // response_mode, response_uri, …) lives in the Request Object per OID4VP §5.
-            // Duplicating them in the outer URI is redundant and bloats the QR.
-            request.state?.let {
-                append("&state=")
-                append(it.encodeUrlGraph())
-            }
-
+            // The outer URI carries only parameters the wallet needs before fetching the
+            // signed Request Object. All authorization parameters, including `state`, live
+            // exclusively in that Request Object. `request_uri_method` remains outside so
+            // the wallet knows whether to use GET or POST for the JAR fetch.
             val additional = request.additionalParameters
             additional["request_uri_method"]?.let { method ->
                 val methodString = (method as? kotlinx.serialization.json.JsonPrimitive)?.content

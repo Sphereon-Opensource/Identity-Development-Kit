@@ -43,8 +43,9 @@ import kotlin.native.ObjCName
 @Serializable
 enum class DidRole {
     /**
-     * DID is managed by this system (created and controlled locally).
-     * Keys are stored in the local KMS with signing capability.
+     * The DID and document lifecycle are managed by this system. Individual verification
+     * methods may be KMS-bound or may carry public-only material; signing requires a KMS
+     * binding for the selected verification method.
      */
     MANAGED,
 

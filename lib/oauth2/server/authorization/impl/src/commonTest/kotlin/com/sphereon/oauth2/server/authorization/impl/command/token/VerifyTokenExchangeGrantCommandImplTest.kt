@@ -16,29 +16,58 @@
 
 package com.sphereon.oauth2.server.authorization.impl.command.token
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.jose.jws.JwsJsonFlattened
+import com.sphereon.crypto.jose.jws.JwsJsonGeneral
+import com.sphereon.crypto.jose.jws.JwsJsonGeneralWithIdentifiers
+import com.sphereon.crypto.jose.jws.JwsValidationResult
+import com.sphereon.crypto.jose.jws.JwtCompactResult
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.JwtServiceImpl
+import com.sphereon.crypto.jose.jws.PreparedJwsObject
+import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
+import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
+import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenTypeIdentifier
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.TestFixtures
 import com.sphereon.oauth2.server.authorization.impl.policy.DefaultTokenExchangePolicy
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryClientRegistryImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySigningKeyStore
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.policy.TokenExchangePolicy
 import com.sphereon.oauth2.server.authorization.policy.TokenExchangePolicyDecision
 import com.sphereon.oauth2.server.authorization.policy.TokenExchangePolicyRequest
+import com.sphereon.oauth2.server.authorization.signing.AsSigningKeyPublicJwkResolver
+import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
+import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
+import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 
 /**
  * Unit tests for VerifyTokenExchangeGrantCommandImpl (RFC 8693)
@@ -74,8 +103,18 @@ class VerifyTokenExchangeGrantCommandImplTest {
      * Create a test JWT with the given claims payload.
      * The header and signature are minimal but structurally valid (3 dot-separated base64url parts).
      */
-    private fun createTestJwt(claims: Map<String, Any>): String {
-        val header = encodeBase64Url("""{"alg":"RS256","typ":"JWT"}""")
+    private fun createTestJwt(
+        claims: Map<String, Any>,
+        kid: String? = null,
+    ): String {
+        val header =
+            encodeBase64Url(
+                if (kid == null) {
+                    """{"alg":"RS256","typ":"JWT"}"""
+                } else {
+                    """{"alg":"RS256","typ":"JWT","kid":"$kid"}"""
+                },
+            )
         val payloadJson =
             buildString {
                 append("{")
@@ -166,12 +205,17 @@ class VerifyTokenExchangeGrantCommandImplTest {
     private fun createCommand(
         clientRegistry: InMemoryClientRegistryImpl,
         policy: TokenExchangePolicy = testPolicy,
+        jwtService: JwtService = this.jwtService,
+        signingKeyStore: SigningKeyStore = InMemorySigningKeyStore(),
+        signingKeyPublicJwkResolver: AsSigningKeyPublicJwkResolver? = null,
     ): VerifyTokenExchangeGrantCommandImpl =
         VerifyTokenExchangeGrantCommandImpl(
             execution = execution,
             clientRegistry = clientRegistry,
             tokenExchangePolicy = policy,
             jwtService = jwtService,
+            signingKeyStore = signingKeyStore,
+            signingKeyPublicJwkResolver = signingKeyPublicJwkResolver,
         )
 
     private suspend fun setupClientRegistry(vararg clients: ClientRegistration): InMemoryClientRegistryImpl {
@@ -184,12 +228,124 @@ class VerifyTokenExchangeGrantCommandImplTest {
         return registry
     }
 
+    @Test
+    fun locallyRegisteredKidUsesTypedResolverAndPinnedJwks() =
+        runTest {
+            val kid = "oauth2-as-token-exchange-test"
+            val store = InMemorySigningKeyStore()
+            assertTrue(store.register(signingKey(kid)).isOk)
+            var resolverCalls = 0
+            val resolver =
+                object : AsSigningKeyPublicJwkResolver {
+                    override suspend fun resolve(signingKey: OAuth2SigningKey): Jwk? =
+                        publicJwk(signingKey.kid).also { resolverCalls++ }
+                }
+            val recordingJwtService = RecordingJwtService()
+            val command =
+                createCommand(
+                    clientRegistry = setupClientRegistry(tokenExchangeClient),
+                    policy = DefaultTokenExchangePolicy(),
+                    jwtService = recordingJwtService,
+                    signingKeyStore = store,
+                    signingKeyPublicJwkResolver = resolver,
+                )
+
+            val result =
+                command.execute(
+                    VerifyTokenExchangeGrantArgs(
+                        subjectToken = createTestJwt(mapOf("sub" to "user123"), kid = kid),
+                        subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+                        actorToken = null,
+                        actorTokenType = null,
+                        resources = emptyList(),
+                        audiences = emptyList(),
+                        scope = null,
+                        requestedTokenType = null,
+                        clientId = tokenExchangeClient.clientId,
+                    ),
+                )
+
+            assertTrue(result.isOk, "A locally-issued token must verify through its typed public resolver")
+            assertEquals(1, resolverCalls)
+            val trustedJwks = assertNotNull(recordingJwtService.verifyArgs.single().trustedJwks)
+            val trustedKeys = assertNotNull(trustedJwks["keys"]).jsonArray
+            assertEquals(1, trustedKeys.size)
+            assertEquals(kid, trustedKeys.single().jsonObject["kid"]?.jsonPrimitive?.content)
+        }
+
+    @Test
+    fun unknownKidRetainsGenericJwtVerificationFallback() =
+        runTest {
+            val store = InMemorySigningKeyStore()
+            var resolverCalls = 0
+            val resolver =
+                object : AsSigningKeyPublicJwkResolver {
+                    override suspend fun resolve(signingKey: OAuth2SigningKey): Jwk? =
+                        publicJwk(signingKey.kid).also { resolverCalls++ }
+                }
+            val recordingJwtService = RecordingJwtService()
+            val command =
+                createCommand(
+                    clientRegistry = setupClientRegistry(tokenExchangeClient),
+                    policy = DefaultTokenExchangePolicy(),
+                    jwtService = recordingJwtService,
+                    signingKeyStore = store,
+                    signingKeyPublicJwkResolver = resolver,
+                )
+
+            val result =
+                command.execute(
+                    VerifyTokenExchangeGrantArgs(
+                        subjectToken = createTestJwt(mapOf("sub" to "external-user"), kid = "external-idp-key"),
+                        subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+                        actorToken = null,
+                        actorTokenType = null,
+                        resources = emptyList(),
+                        audiences = emptyList(),
+                        scope = null,
+                        requestedTokenType = null,
+                        clientId = tokenExchangeClient.clientId,
+                    ),
+                )
+
+            assertTrue(result.isOk, "Unknown external kids keep the existing JWT verification path")
+            assertEquals(0, resolverCalls)
+            assertNull(recordingJwtService.verifyArgs.single().trustedJwks, "External tokens must not be pinned to tenant AS keys")
+        }
+
+    private fun signingKey(kid: String): OAuth2SigningKey {
+        val now = Clock.System.now()
+        return OAuth2SigningKey(
+            tenantId = execution.tenantId,
+            keyInfo =
+                KeyInfo<KeyType>(
+                    kid = kid,
+                    alias = kid,
+                    providerId = "tenant-kms",
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                ),
+            state = OAuth2SigningKeyState.ACTIVE,
+            priority = 1,
+            createdAt = now,
+            notBefore = now,
+        )
+    }
+
+    private fun publicJwk(kid: String): Jwk =
+        Jwk(
+            kty = JwaKeyType.EC,
+            crv = JwaCurve.P_256,
+            x = "x-coordinate",
+            y = "y-coordinate",
+            kid = kid,
+        )
+
     // --- Impersonation flow tests ---
 
     @Test
     fun testImpersonationFlowWithJwtSubjectToken() =
         runTest {
-            val registry = setupClientRegistry(tokenExchangeClient)
+            val registry = setupClientRegistry()
             val command = createCommand(registry)
 
             val subjectJwt =
@@ -202,7 +358,7 @@ class VerifyTokenExchangeGrantCommandImplTest {
                 )
 
             val result =
-                command.execute(
+                command.verifyWithTrustedClientAuthorization(
                     VerifyTokenExchangeGrantArgs(
                         subjectToken = subjectJwt,
                         subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
@@ -213,6 +369,10 @@ class VerifyTokenExchangeGrantCommandImplTest {
                         scope = "read",
                         requestedTokenType = null,
                         clientId = tokenExchangeClient.clientId,
+                    ),
+                    VerifiedClientAuthorization(
+                        clientId = tokenExchangeClient.clientId,
+                        grantTypes = tokenExchangeClient.grantTypes,
                     ),
                 )
 
@@ -626,10 +786,13 @@ class VerifyTokenExchangeGrantCommandImplTest {
                 )
 
             assertTrue(result.isOk, "Should succeed")
+            assertEquals("urn:nist:sp:800-63:aal2", result.value.acr)
+            assertEquals(listOf("pwd", "mfa"), result.value.amr)
+            assertEquals(1782930000L, result.value.authTime)
             val additionalClaims = result.value.additionalClaims
-            assertEquals("urn:nist:sp:800-63:aal2", additionalClaims["acr"])
-            assertEquals(listOf("pwd", "mfa"), additionalClaims["amr"])
-            assertEquals(1782930000L, additionalClaims["auth_time"])
+            assertFalse("acr" in additionalClaims, "Reserved acr must not be carried as an additional claim")
+            assertFalse("amr" in additionalClaims, "Reserved amr must not be carried as an additional claim")
+            assertFalse("auth_time" in additionalClaims, "Reserved auth_time must not be carried as an additional claim")
             assertTrue("email" !in additionalClaims, "Token exchange must not broad-copy identity claims")
         }
 
@@ -698,4 +861,52 @@ class VerifyTokenExchangeGrantCommandImplTest {
 
             assertTrue(result.isErr, "Default policy should reject unverified subject tokens")
         }
+
+    /** Captures whether token exchange selected the pinned-JWKS or generic JwtService branch. */
+    private class RecordingJwtService : JwtService {
+        val verifyArgs = mutableListOf<VerifyJwsArgs>()
+
+        private val notImplemented =
+            IdkError(
+                code = "not_implemented",
+                message = IdkError.Message(i18nKey = "", defaultMessage = "Not implemented"),
+            )
+
+        override suspend fun prepareJws(args: CreateJwsJsonArgs): IdkResult<PreparedJwsObject, IdkError> = Err(notImplemented)
+
+        override suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError> = Err(notImplemented)
+
+        override suspend fun createJwsJsonFlattened(args: CreateJwsJsonArgs): IdkResult<JwsJsonFlattened, IdkError> = Err(notImplemented)
+
+        override suspend fun createJwsJsonGeneral(args: CreateJwsJsonArgs): IdkResult<JwsJsonGeneral, IdkError> = Err(notImplemented)
+
+        override suspend fun verifyJws(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> {
+            verifyArgs += args
+            return Ok(
+                JwsValidationResult(
+                    jws = JwsJsonGeneralWithIdentifiers(payload = "", signatures = emptyList()),
+                    isValid = true,
+                    parsedPayload = JsonObject(emptyMap()),
+                ),
+            )
+        }
+
+        override fun assembleJwsGeneral(
+            prepared: PreparedJwsObject,
+            signatureBytes: ByteArray,
+        ): JwsJsonGeneral = throw NotImplementedError()
+
+        override fun assembleJwsFlattened(
+            prepared: PreparedJwsObject,
+            signatureBytes: ByteArray,
+        ): JwsJsonFlattened = throw NotImplementedError()
+
+        override fun assembleJwsCompact(
+            prepared: PreparedJwsObject,
+            signatureBytes: ByteArray,
+        ): JwtCompactResult = throw NotImplementedError()
+
+        override val commands: JwtService.Commands
+            get() = throw NotImplementedError()
+    }
 }

@@ -22,9 +22,158 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
+
+private val FORBIDDEN_EXTERNAL_PLACEHOLDER =
+    Regex("""\$\{\s*secret(?:\s*[:.]|//|\s*\})""", RegexOption.IGNORE_CASE)
+private val FORBIDDEN_EXTERNAL_URI =
+    Regex("""\bsecret://""", RegexOption.IGNORE_CASE)
+private val ENVIRONMENT_PLACEHOLDER =
+    Regex("""\$\{\s*env:([A-Za-z_][A-Za-z0-9_]*)""")
+
+internal fun forbiddenExternalReferenceError(value: String): IdkError? =
+    if (FORBIDDEN_EXTERNAL_PLACEHOLDER.containsMatchIn(value) || FORBIDDEN_EXTERNAL_URI.containsMatchIn(value)) {
+        ConfigErrors.interpolationError(
+            key = "external-source",
+            reason = "secret-provider references are forbidden",
+        )
+    } else {
+        null
+    }
+
+/**
+ * Returns the process-environment names explicitly declared by `${env:NAME...}` placeholders.
+ *
+ * This deliberately recognizes only direct declarations. A placeholder assembled through
+ * recursive interpolation is not an allowlist declaration and is rejected when it reaches the
+ * environment-resolution step.
+ */
+internal fun declaredEnvironmentReferences(value: String): Set<String> =
+    ENVIRONMENT_PLACEHOLDER
+        .findAll(value)
+        .map { it.groupValues[1] }
+        .toSet()
+
+/**
+ * Enforces the recursive write-time configuration-reference policy.
+ *
+ * Deferred external secret-provider references are rejected for every scope before persistence.
+ * APP configuration may retain legitimate environment placeholders and is validated again
+ * against its declaration-bound allowlist at resolution time. TENANT and PRINCIPAL configuration
+ * may never persist a direct environment placeholder.
+ */
+fun validateEnvironmentReferencesForWrite(
+    value: Any?,
+    scope: ConfigLevel,
+) {
+    var visitedNodes = 0
+
+    fun validateNested(
+        nestedValue: Any?,
+        depth: Int,
+    ) {
+        visitedNodes += 1
+        if (depth > MAX_CONFIGURATION_VALUE_DEPTH || visitedNodes > MAX_CONFIGURATION_VALUE_NODES) {
+            throw IllegalArgumentException("Configuration value exceeds the permitted validation bounds")
+        }
+
+        when (nestedValue) {
+            is String -> {
+                if (forbiddenExternalReferenceError(nestedValue) != null) {
+                    throw IllegalArgumentException("Configuration value is not permitted")
+                }
+                if (scope != ConfigLevel.APP && declaredEnvironmentReferences(nestedValue).isNotEmpty()) {
+                    throw IllegalArgumentException("Environment references are not permitted in this configuration scope")
+                }
+            }
+
+            is Map<*, *> -> {
+                nestedValue.forEach { (key, mapValue) ->
+                    validateNested(key, depth + 1)
+                    validateNested(mapValue, depth + 1)
+                }
+            }
+
+            is Iterable<*> -> {
+                nestedValue.forEach { validateNested(it, depth + 1) }
+            }
+
+            is Array<*> -> {
+                nestedValue.forEach { validateNested(it, depth + 1) }
+            }
+        }
+    }
+
+    validateNested(value, 0)
+}
+
+private const val MAX_CONFIGURATION_VALUE_DEPTH = 32
+private const val MAX_CONFIGURATION_VALUE_NODES = 10_000
+
+fun validateConfigurationValueForRead(
+    value: Any?,
+    sourceScope: ConfigLevel,
+) {
+    var visitedNodes = 0
+
+    fun validateNested(
+        nestedValue: Any?,
+        depth: Int,
+    ) {
+        visitedNodes += 1
+        if (depth > MAX_CONFIGURATION_VALUE_DEPTH || visitedNodes > MAX_CONFIGURATION_VALUE_NODES) {
+            throw IllegalStateException("Configuration value exceeds the permitted validation bounds")
+        }
+
+        when (nestedValue) {
+            is String -> {
+                if (forbiddenExternalReferenceError(nestedValue) != null) {
+                    throw IllegalStateException("Configuration value is not permitted")
+                }
+            }
+
+            is Map<*, *> -> {
+                nestedValue.forEach { (key, mapValue) ->
+                    validateNested(key, depth + 1)
+                    validateNested(mapValue, depth + 1)
+                }
+            }
+
+            is Iterable<*> -> {
+                nestedValue.forEach { validateNested(it, depth + 1) }
+            }
+
+            is Array<*> -> {
+                nestedValue.forEach { validateNested(it, depth + 1) }
+            }
+        }
+    }
+
+    try {
+        validateEnvironmentReferencesForWrite(value, sourceScope)
+        validateNested(value, 0)
+    } catch (_: IllegalArgumentException) {
+        throw IllegalStateException("Configuration value is not permitted")
+    }
+}
+
+internal fun validatePropertySourceEnvironmentReferencesForWrite(source: PropertySource<*>) {
+    val scope = (source as? ScopedPropertySource<*>)?.configLevel ?: return
+    if (scope == ConfigLevel.APP || !source.isPlatformSupported) {
+        return
+    }
+    source.getAllPropertyNames().forEach { key ->
+        validateEnvironmentReferencesForWrite(
+            value =
+                runCatching { source.getProperty(key, Any::class) }.getOrNull()
+                    ?: runCatching { source.getPropertyAsString(key) }.getOrNull(),
+            scope = scope,
+        )
+    }
+}
 
 /**
  * Interface for interpolating property values containing placeholders.
@@ -32,20 +181,15 @@ import kotlin.native.ObjCName
  * Supported patterns:
  * - `${VAR}` - Simple substitution
  * - `${VAR:default}` - With default value
- * - `${env:VAR}` - Explicit env source (convenience alias for `${secret:@env:VAR}`)
+ * - `${env:VAR}` - Deployment environment configuration, optionally with a default
  * - `${scope:key}` - Explicit scope prefix (app, tenant, principal)
- * - `${secret:<logical.key>[:<key>]}` - Cascade secret reference: resolves via the
- *   tenant-selected provider, then the app-selected provider, then env.
- * - `${secret:@<provider>:<logical.key>[:<key>]}` - Pinned secret reference targeting a
- *   specific provider (e.g. `@env`, `@vault`, `@azure`, `@aws`, `@kubernetes-mount`).
  * - `${db.${env}}` - Recursive (max depth configurable)
  *
- * The `<logical.key>` of a secret reference is passed through verbatim here; the
- * [SecretAddressResolver] normalizes it during resolution so dotted, `UPPER_SNAKE_CASE`, hyphen,
- * slash, and space forms all address the same logical secret (e.g. `example.secret.ref.value` ==
- * `EXAMPLE_SECRET_REF_VALUE` == `example/secret/ref/value`) and then renders the backend-native,
- * tenant-sharded physical address. Centralizing normalization there keeps the env floor and every
- * provider consistent.
+ * Provider-backed secret sources are intentionally absent from this public grammar. Runtime
+ * consumers resolve server-generated opaque IDs directly through [OpaqueSecretResolver].
+ * Environment interpolation remains supported only for explicitly declared, operator-owned APP
+ * configuration because deployment configuration and persisted upgrade state use `${env:...}`
+ * references; those are distinct from `${secret:...}` addresses.
  *
  * Protection-aware interpolation:
  * When using a [ProtectedPropertyResolver], scope-prefixed interpolations (e.g., `${app:db.password}`)
@@ -64,7 +208,7 @@ interface PropertyInterpolator {
      */
     suspend fun interpolate(
         value: String,
-        resolver: PropertyResolver,
+        resolver: ProtectedPropertyResolver,
     ): IdkResult<String, IdkError>
 
     /**
@@ -83,52 +227,37 @@ interface PropertyInterpolator {
      */
     suspend fun interpolate(
         value: String,
-        resolver: PropertyResolver,
+        resolver: ProtectedPropertyResolver,
         requestingScope: ConfigLevel,
     ): IdkResult<String, IdkError>
 
     /**
-     * Interpolate placeholders with full control over resolution options.
+     * Interpolate placeholders with an explicit recursion limit.
      *
-     * @param value The value containing placeholders
-     * @param resolver Property resolver for looking up referenced values
-     * @param requestingScope The scope level requesting the interpolation
-     * @param maxDepth Maximum recursion depth for nested interpolations (overrides default)
-     * @param resolveSecrets Whether to resolve ${secret:...} references
-     * @return The interpolated string, or error if resolution fails
+     * External secret references are always rejected. There is deliberately no option that can
+     * enable secret resolution through the property pipeline.
      */
     suspend fun interpolate(
         value: String,
-        resolver: PropertyResolver,
+        resolver: ProtectedPropertyResolver,
         requestingScope: ConfigLevel,
         maxDepth: Int?,
-        resolveSecrets: Boolean,
-    ): IdkResult<String, IdkError> = interpolate(value, resolver, requestingScope) // Default delegates
+    ): IdkResult<String, IdkError> = interpolate(value, resolver, requestingScope)
 
     /**
-     * Interpolate placeholders with full control over resolution options AND scope identity.
+     * Interpolate while retaining security provenance for the complete recursive resolution.
      *
-     * The [scopeIdentifier] (tenantId for [ConfigLevel.TENANT], principalId for
-     * [ConfigLevel.PRINCIPAL]) is threaded through to secret resolution so that cascade
-     * (`${secret:<key>}`) references can select the tenant/principal-scoped provider.
-     * Without it, cascade resolution can only fall back to the app/env floor.
-     *
-     * @param value The value containing placeholders
-     * @param resolver Property resolver for looking up referenced values
-     * @param requestingScope The scope level requesting the interpolation
-     * @param maxDepth Maximum recursion depth for nested interpolations (overrides default)
-     * @param resolveSecrets Whether to resolve ${secret:...} references
-     * @param scopeIdentifier The tenant or principal ID for scope-specific secret resolution
-     * @return The interpolated string, or error if resolution fails
+     * Production pipelines, caches, and policy-aware resolvers must use this method rather than
+     * reconstructing provenance from the final materialized string.
      */
-    suspend fun interpolate(
+    suspend fun interpolateWithProvenance(
         value: String,
-        resolver: PropertyResolver,
+        resolver: ProtectedPropertyResolver,
         requestingScope: ConfigLevel,
         maxDepth: Int?,
-        resolveSecrets: Boolean,
-        scopeIdentifier: String?,
-    ): IdkResult<String, IdkError> = interpolate(value, resolver, requestingScope, maxDepth, resolveSecrets) // Default delegates
+        policy: InterpolationPolicy,
+        sourceProvenance: ResolutionProvenance,
+    ): IdkResult<InterpolatedPropertyValue, IdkError>
 
     /**
      * Check if a value contains placeholders that need interpolation.
@@ -137,14 +266,6 @@ interface PropertyInterpolator {
      * @return True if the value contains `${...}` patterns
      */
     fun containsPlaceholders(value: String): Boolean
-
-    /**
-     * Check if a value contains a secret reference.
-     *
-     * @param value The value to check
-     * @return True if the value contains `${secret:...}` pattern
-     */
-    fun isSecretReference(value: String): Boolean
 
     /**
      * Parse placeholders from a value string.
@@ -156,6 +277,19 @@ interface PropertyInterpolator {
 }
 
 /**
+ * A materialized interpolation result whose provenance survives the interpolation boundary.
+ */
+@JsExportCompat
+@Serializable
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("InterpolatedPropertyValue", exact = true)
+@CoverageExcludedDataClass
+data class InterpolatedPropertyValue(
+    val value: String,
+    val provenance: ResolutionProvenance,
+)
+
+/**
  * Represents a parsed placeholder token.
  */
 @JsExportCompat
@@ -165,10 +299,11 @@ interface PropertyInterpolator {
 data class PlaceholderToken(
     val fullMatch: String,
     val type: PlaceholderType,
+    /** Stable token identity used for lookups and circular-reference detection. */
     val key: String,
     val defaultValue: String?,
-    val provider: String?,
-    val path: String?,
+    /** Explicit configuration scope for [PlaceholderType.SCOPE]; absent for other token types. */
+    val scope: ConfigLevel? = null,
 ) {
     companion object {
         @JvmStatic
@@ -181,8 +316,6 @@ data class PlaceholderToken(
             type = PlaceholderType.SIMPLE,
             key = key,
             defaultValue = defaultValue,
-            provider = null,
-            path = null,
         )
 
         @JvmStatic
@@ -195,14 +328,12 @@ data class PlaceholderToken(
             type = PlaceholderType.ENV,
             key = key,
             defaultValue = defaultValue,
-            provider = null,
-            path = null,
         )
 
         @JvmStatic
         fun scope(
             match: String,
-            scope: String,
+            scope: ConfigLevel,
             key: String,
             defaultValue: String? = null,
         ) = PlaceholderToken(
@@ -210,30 +341,17 @@ data class PlaceholderToken(
             type = PlaceholderType.SCOPE,
             key = key,
             defaultValue = defaultValue,
-            provider = scope,
-            path = null,
+            scope = scope,
         )
 
-        /**
-         * Build a secret token. The [provider] is nullable: `null` means a cascade
-         * reference (`${secret:<key>}`) that resolves through the tenant-selected
-         * provider, then the app-selected provider, then env. A non-null [provider]
-         * pins resolution to that exact provider (`${secret:@<provider>:<key>}`).
-         */
         @JvmStatic
-        fun secret(
-            match: String,
-            provider: String?,
-            path: String,
-            key: String? = null,
-        ) = PlaceholderToken(
-            fullMatch = match,
-            type = PlaceholderType.SECRET,
-            key = key ?: path,
-            defaultValue = null,
-            provider = provider,
-            path = path,
-        )
+        fun forbiddenExternalSource(match: String) =
+            PlaceholderToken(
+                fullMatch = match,
+                type = PlaceholderType.FORBIDDEN_EXTERNAL_SOURCE,
+                key = "external-source",
+                defaultValue = null,
+            )
     }
 }
 
@@ -247,18 +365,14 @@ enum class PlaceholderType {
     /** Simple `${key}` or `${key:default}` */
     SIMPLE,
 
-    /** Explicit `${env:KEY}` */
+    /** Explicit deployment configuration `${env:KEY}`. */
     ENV,
 
     /** Explicit `${scope:key}` where scope is app/tenant/principal */
     SCOPE,
 
-    /**
-     * Secret reference. Cascade form `${secret:<key>}` / `${secret:<key>:<subkey>}`
-     * (provider omitted) or pinned form `${secret:@<provider>:<key>}` /
-     * `${secret:@<provider>:<key>:<subkey>}`.
-     */
-    SECRET,
+    /** Environment/provider-backed sources are forbidden in regular configuration. */
+    FORBIDDEN_EXTERNAL_SOURCE,
 }
 
 /**
@@ -272,99 +386,163 @@ enum class PlaceholderType {
 @ObjCName("DefaultPropertyInterpolator", exact = true)
 class DefaultPropertyInterpolator(
     private val maxDepth: Int = 10,
-    private val secretResolver: SecretResolver? = null,
 ) : PropertyInterpolator {
     // Simple pattern for non-nested placeholders (no nested ${} inside)
     // Note: closing brace must be escaped for JS/wasmJs regex Unicode mode compatibility
     private val simplePlaceholderPattern = Regex("""\$\{([^{}]+)\}""")
     private val envPattern = Regex("""^env:(.+)$""")
     private val scopePattern = Regex("""^(app|tenant|principal):(.+)$""")
-
-    // Secret grammar. The `secret:` prefix is always present.
-    //   group1 = optional pinned provider id (only when a leading `@` is present); null = cascade
-    //   group2 = logical key (path)
-    //   group3 = optional sub-key
-    private val secretPattern = Regex("""^secret:(?:@([^:]+):)?([^:]+)(?::(.+))?$""")
-    private val defaultValuePattern = Regex("""^([^:]+):(.*)$""")
+    private val forbiddenExternalSourcePattern = Regex("""^secret(?:[:.]|//|$).*""", RegexOption.IGNORE_CASE)
 
     override suspend fun interpolate(
         value: String,
-        resolver: PropertyResolver,
-    ): IdkResult<String, IdkError> = interpolateRecursive(value, resolver, null, null, null, mutableSetOf(), 0, maxDepth, true)
-
-    override suspend fun interpolate(
-        value: String,
-        resolver: PropertyResolver,
-        requestingScope: ConfigLevel,
+        resolver: ProtectedPropertyResolver,
     ): IdkResult<String, IdkError> {
-        val protectedResolver = resolver as? ProtectedPropertyResolver
-        return interpolateRecursive(value, resolver, protectedResolver, requestingScope, null, mutableSetOf(), 0, maxDepth, true)
+        val result =
+            interpolateWithProvenance(
+                value = value,
+                resolver = resolver,
+                requestingScope = resolver.resolverLevel,
+                maxDepth = maxDepth,
+                policy = legacyPolicy(),
+                sourceProvenance = ResolutionProvenance.known(resolver.resolverLevel),
+            )
+        return result.toLegacyStringResult()
     }
 
     override suspend fun interpolate(
         value: String,
-        resolver: PropertyResolver,
+        resolver: ProtectedPropertyResolver,
         requestingScope: ConfigLevel,
-        maxDepth: Int?,
-        resolveSecrets: Boolean,
-    ): IdkResult<String, IdkError> = interpolate(value, resolver, requestingScope, maxDepth, resolveSecrets, null)
+    ): IdkResult<String, IdkError> {
+        val result =
+            interpolateWithProvenance(
+                value = value,
+                resolver = resolver,
+                requestingScope = requestingScope,
+                maxDepth = maxDepth,
+                policy = legacyPolicy(),
+                sourceProvenance = ResolutionProvenance.known(requestingScope),
+            )
+        return result.toLegacyStringResult()
+    }
 
     override suspend fun interpolate(
         value: String,
-        resolver: PropertyResolver,
+        resolver: ProtectedPropertyResolver,
         requestingScope: ConfigLevel,
         maxDepth: Int?,
-        resolveSecrets: Boolean,
-        scopeIdentifier: String?,
     ): IdkResult<String, IdkError> {
-        val protectedResolver = resolver as? ProtectedPropertyResolver
-        val effectiveMaxDepth = maxDepth ?: this.maxDepth
+        val result =
+            interpolateWithProvenance(
+                value = value,
+                resolver = resolver,
+                requestingScope = requestingScope,
+                maxDepth = maxDepth,
+                policy = legacyPolicy(),
+                sourceProvenance = ResolutionProvenance.known(requestingScope),
+            )
+        return result.toLegacyStringResult()
+    }
+
+    override suspend fun interpolateWithProvenance(
+        value: String,
+        resolver: ProtectedPropertyResolver,
+        requestingScope: ConfigLevel,
+        maxDepth: Int?,
+        policy: InterpolationPolicy,
+        sourceProvenance: ResolutionProvenance,
+    ): IdkResult<InterpolatedPropertyValue, IdkError> {
+        if (isAuthorityEscalation(requestingScope, resolver)) {
+            return Err(propertyReferenceDenied())
+        }
+        forbiddenExternalReferenceError(value)?.let { return Err(it) }
+        if (containsPlaceholders(value) && policy == InterpolationPolicy.DENY) {
+            return Err(interpolationPolicyDenied())
+        }
         return interpolateRecursive(
-            value,
-            resolver,
-            protectedResolver,
-            requestingScope,
-            scopeIdentifier,
-            mutableSetOf(),
-            0,
-            effectiveMaxDepth,
-            resolveSecrets,
+            value = value,
+            resolver = resolver,
+            requestingScope = requestingScope,
+            authorizedEnvironmentNames = declaredEnvironmentReferences(value),
+            visited = mutableSetOf(),
+            depth = 0,
+            effectiveMaxDepth = maxDepth ?: this.maxDepth,
+            policy = policy,
+            sourceProvenance = sourceProvenance,
         )
     }
 
+    private fun isAuthorityEscalation(
+        requestingScope: ConfigLevel,
+        resolver: ProtectedPropertyResolver,
+    ): Boolean = requestingScope.level < resolver.resolverLevel.level
+
+    private data class ResolvedInterpolationPart(
+        val value: String,
+        val sourceScope: ConfigLevel,
+        val isAuthoritativePropertyValue: Boolean,
+        val provenance: ResolutionProvenance,
+    )
+
+    /**
+     * Compatibility boundary for the original String API. All production resolution paths use
+     * [interpolateWithProvenance] and retain the accompanying metadata.
+     */
+    private fun IdkResult<InterpolatedPropertyValue, IdkError>.toLegacyStringResult(): IdkResult<String, IdkError> =
+        if (isErr) {
+            Err(error)
+        } else {
+            Ok(value.value)
+        }
+
+    /**
+     * The keyless compatibility API cannot consult an exact field policy, so it may never read
+     * process environment. Callers that need approved APP environment interpolation must use
+     * [interpolateWithProvenance] with an exact-key policy decision.
+     */
+    private fun legacyPolicy(): InterpolationPolicy = InterpolationPolicy.PROPERTY_REFERENCES_ONLY
+
     private suspend fun interpolateRecursive(
         value: String,
-        resolver: PropertyResolver,
-        protectedResolver: ProtectedPropertyResolver?,
-        requestingScope: ConfigLevel?,
-        scopeIdentifier: String?,
+        resolver: ProtectedPropertyResolver,
+        requestingScope: ConfigLevel,
+        authorizedEnvironmentNames: Set<String>,
         visited: MutableSet<String>,
         depth: Int,
         effectiveMaxDepth: Int = maxDepth,
-        resolveSecrets: Boolean = true,
-    ): IdkResult<String, IdkError> {
+        policy: InterpolationPolicy,
+        sourceProvenance: ResolutionProvenance,
+    ): IdkResult<InterpolatedPropertyValue, IdkError> {
+        forbiddenExternalReferenceError(value)?.let { return Err(it) }
+
         if (depth > effectiveMaxDepth) {
-            return Err(ConfigErrors.maxDepthExceeded(value, effectiveMaxDepth))
+            return Err(ConfigErrors.maxDepthExceeded("property", effectiveMaxDepth))
         }
 
         if (!containsPlaceholders(value)) {
-            return Ok(value)
+            return Ok(InterpolatedPropertyValue(value, sourceProvenance))
         }
 
         var result = value
+        var effectiveScope = requestingScope
+        var provenance = sourceProvenance.withTaint(ResolutionTaint.INTERPOLATED)
 
         // Keep resolving innermost placeholders until no more
         while (containsPlaceholders(result)) {
             // Parse only simple (non-nested) placeholders - innermost ones
-            val tokens = parseSimplePlaceholders(result)
+            val tokens = parseSimplePlaceholders(result).ifEmpty { parseBalancedPlaceholders(result) }
             if (tokens.isEmpty()) {
-                // No simple placeholders found but containsPlaceholders is true
-                // This means malformed placeholders - break to avoid infinite loop
+                // No balanced placeholders found but containsPlaceholders is true.
+                // This means malformed placeholders - break to avoid infinite loop.
                 break
             }
 
             var madeProgress = false
             for (token in tokens) {
+                if (!policy.permits(token.type, effectiveScope)) {
+                    return Err(interpolationPolicyDenied())
+                }
                 // Track the token key for circular reference detection
                 if (visited.contains(token.key)) {
                     return Err(ConfigErrors.circularReference(token.key, visited.toList() + token.key))
@@ -372,85 +550,113 @@ class DefaultPropertyInterpolator(
 
                 visited.add(token.key)
 
-                // Check protection BEFORE resolving for scope-prefixed references
-                if (protectedResolver != null && requestingScope != null && token.type == PlaceholderType.SCOPE) {
-                    val canInterpolate = protectedResolver.canInterpolateProperty(token.key, requestingScope)
+                // Check protection BEFORE resolving any property reference. Normalize denials at
+                // this boundary so interpolation cannot reveal whether a protected key exists.
+                if (token.type == PlaceholderType.SIMPLE || token.type == PlaceholderType.SCOPE) {
+                    val canInterpolate = resolver.canInterpolateProperty(token.key, effectiveScope)
                     if (canInterpolate.isErr) {
-                        // Protection denied - do not expose value
+                        if (token.defaultValue != null) {
+                            result = result.replace(token.fullMatch, token.defaultValue)
+                            provenance = provenance.withTaint(ResolutionTaint.INTERPOLATED)
+                            madeProgress = true
+                            visited.remove(token.key)
+                            continue
+                        }
                         visited.remove(token.key)
-                        return Err(canInterpolate.error)
+                        return Err(propertyReferenceDenied())
                     }
                 }
 
                 val resolvedValue =
                     when (token.type) {
                         PlaceholderType.SIMPLE -> {
-                            resolveSimple(token, resolver, protectedResolver, requestingScope)
+                            resolveSimple(token, resolver, effectiveScope)
                         }
 
                         PlaceholderType.ENV -> {
-                            resolveEnv(token, resolver)
+                            val environmentResult =
+                                resolveEnv(
+                                    token,
+                                    resolver,
+                                    effectiveScope,
+                                    authorizedEnvironmentNames,
+                                )
+                            if (environmentResult.isErr) {
+                                visited.remove(token.key)
+                                return Err(environmentResult.error)
+                            }
+                            environmentResult
                         }
 
                         PlaceholderType.SCOPE -> {
-                            resolveScope(token, resolver, protectedResolver, requestingScope)
+                            resolveScope(token, resolver, effectiveScope)
                         }
 
-                        PlaceholderType.SECRET -> {
-                            // Skip secret resolution if resolveSecrets is false
-                            if (!resolveSecrets) {
-                                // Keep the original placeholder unresolved
-                                visited.remove(token.key)
-                                result = result // No change
-                                continue
-                            }
-                            resolveSecret(token, requestingScope, scopeIdentifier, resolver)
+                        PlaceholderType.FORBIDDEN_EXTERNAL_SOURCE -> {
+                            Err(
+                                ConfigErrors.interpolationError(
+                                    "external-source",
+                                    "secret-provider references are forbidden",
+                                ),
+                            )
                         }
-                    }
+                }
 
                 if (resolvedValue.isErr) {
-                    // Check if this is a protection error - those should never fall through to defaults
-                    // as that would reveal information about protected property existence
-                    val isProtectionError =
-                        resolvedValue.error.code == "ILLEGAL_ARGUMENT_ERROR" &&
-                            (
-                                resolvedValue.error.message.defaultMessage
-                                    .contains("PROTECTED") ||
-                                    resolvedValue.error.message.defaultMessage
-                                        .contains("FINAL")
-                            )
-
-                    if (isProtectionError) {
-                        visited.remove(token.key)
-                        return Err(resolvedValue.error)
-                    }
-
                     if (token.defaultValue != null) {
-                        result = result.replace(token.fullMatch, token.defaultValue)
-                        madeProgress = true
-                    } else {
+                            result = result.replace(token.fullMatch, token.defaultValue)
+                            provenance =
+                                provenance.merge(
+                                    defaultProvenance(
+                                        token = token,
+                                        requestingScope = effectiveScope,
+                                    ),
+                                )
+                            madeProgress = true
                         visited.remove(token.key)
-                        return Err(resolvedValue.error)
+                        continue
                     }
+
+                    if (token.type == PlaceholderType.SIMPLE || token.type == PlaceholderType.SCOPE) {
+                        visited.remove(token.key)
+                        return Err(propertyReferenceDenied())
+                    }
+
+                    visited.remove(token.key)
+                    return Err(resolvedValue.error)
                 } else {
                     // Recursively interpolate the resolved value (for chained references)
+                    val childAuthorizedEnvironmentNames =
+                        if (effectiveScope == ConfigLevel.APP &&
+                            resolvedValue.value.sourceScope == ConfigLevel.APP &&
+                            resolvedValue.value.isAuthoritativePropertyValue
+                        ) {
+                            authorizedEnvironmentNames + declaredEnvironmentReferences(resolvedValue.value.value)
+                        } else {
+                            authorizedEnvironmentNames
+                        }
                     val recursiveResult =
                         interpolateRecursive(
-                            resolvedValue.value,
+                            resolvedValue.value.value,
                             resolver,
-                            protectedResolver,
-                            requestingScope,
-                            scopeIdentifier,
+                            lessPrivilegedScope(effectiveScope, resolvedValue.value.sourceScope),
+                            childAuthorizedEnvironmentNames,
                             visited.toMutableSet(),
                             depth + 1,
                             effectiveMaxDepth,
-                            resolveSecrets,
+                            policy,
+                            resolvedValue.value.provenance,
                         )
                     if (recursiveResult.isErr) {
                         visited.remove(token.key)
                         return recursiveResult
                     }
-                    result = result.replace(token.fullMatch, recursiveResult.value)
+                    result = result.replace(token.fullMatch, recursiveResult.value.value)
+                    provenance = provenance.merge(recursiveResult.value.provenance)
+                    effectiveScope =
+                        recursiveResult.value.provenance.sourceScope?.let {
+                            lessPrivilegedScope(effectiveScope, it)
+                        } ?: effectiveScope
                     madeProgress = true
                 }
 
@@ -462,8 +668,14 @@ class DefaultPropertyInterpolator(
             }
         }
 
-        return Ok(result)
+        forbiddenExternalReferenceError(result)?.let { return Err(it) }
+        return Ok(InterpolatedPropertyValue(result, provenance))
     }
+
+    private fun lessPrivilegedScope(
+        first: ConfigLevel,
+        second: ConfigLevel,
+    ): ConfigLevel = if (first.level >= second.level) first else second
 
     /**
      * Parse only simple (non-nested) placeholders.
@@ -479,115 +691,156 @@ class DefaultPropertyInterpolator(
 
     private fun resolveSimple(
         token: PlaceholderToken,
-        resolver: PropertyResolver,
-        protectedResolver: ProtectedPropertyResolver?,
-        requestingScope: ConfigLevel?,
-    ): IdkResult<String, IdkError> {
-        // For simple references, check protection if protection checking is enabled
-        if (protectedResolver != null && requestingScope != null) {
-            val canInterpolate = protectedResolver.canInterpolateProperty(token.key, requestingScope)
-            if (canInterpolate.isErr) {
-                return Err(canInterpolate.error)
-            }
+        resolver: ProtectedPropertyResolver,
+        requestingScope: ConfigLevel,
+    ): IdkResult<ResolvedInterpolationPart, IdkError> {
+        val canInterpolate = resolver.canInterpolateProperty(token.key, requestingScope)
+        if (canInterpolate.isErr) {
+            return Err(canInterpolate.error)
         }
 
-        val value = resolver.getPropertyAsString(token.key)
-        return if (value != null) {
-            Ok(value)
+        val resolved = resolver.resolvePropertyWithScope(token.key, requiredScope = null)
+        return if (resolved != null) {
+            Ok(
+                ResolvedInterpolationPart(
+                    value = resolved.value,
+                    sourceScope = resolved.sourceScope,
+                    isAuthoritativePropertyValue = true,
+                    provenance = resolved.provenance,
+                ),
+            )
         } else if (token.defaultValue != null) {
-            Ok(token.defaultValue)
+            Ok(
+                ResolvedInterpolationPart(
+                    token.defaultValue,
+                    requestingScope,
+                    isAuthoritativePropertyValue = false,
+                    provenance = defaultProvenance(token, requestingScope),
+                ),
+            )
         } else {
-            Err(ConfigErrors.propertyNotFound(token.key))
-        }
-    }
-
-    private fun resolveEnv(
-        token: PlaceholderToken,
-        resolver: PropertyResolver,
-    ): IdkResult<String, IdkError> {
-        val envValue = Env.get(token.key)
-        return if (envValue != null) {
-            Ok(envValue)
-        } else if (token.defaultValue != null) {
-            Ok(token.defaultValue)
-        } else {
-            Err(ConfigErrors.propertyNotFound("env:${token.key}"))
+            Err(propertyReferenceDenied())
         }
     }
 
     private fun resolveScope(
         token: PlaceholderToken,
-        resolver: PropertyResolver,
-        protectedResolver: ProtectedPropertyResolver?,
-        requestingScope: ConfigLevel?,
-    ): IdkResult<String, IdkError> {
-        val scopePrefix = token.provider ?: return Err(ConfigErrors.propertyNotFound(token.key))
+        resolver: ProtectedPropertyResolver,
+        requestingScope: ConfigLevel,
+    ): IdkResult<ResolvedInterpolationPart, IdkError> {
+        val scopeLevel = token.scope ?: return Err(ConfigErrors.propertyNotFound(token.key))
 
         // Check protection BEFORE accessing the value
         // The protection check was already done in interpolateRecursive for SCOPE tokens,
         // but we double-check here for safety
-        if (protectedResolver != null && requestingScope != null) {
-            val canInterpolate = protectedResolver.canInterpolateProperty(token.key, requestingScope)
-            if (canInterpolate.isErr) {
-                return Err(canInterpolate.error)
-            }
+        val canInterpolate = resolver.canInterpolateProperty(token.key, requestingScope)
+        if (canInterpolate.isErr) {
+            return Err(canInterpolate.error)
         }
 
-        val scopeLevel =
-            when (scopePrefix.lowercase()) {
-                "app" -> ConfigLevel.APP
-                "tenant" -> ConfigLevel.TENANT
-                "principal" -> ConfigLevel.PRINCIPAL
-                else -> return Err(ConfigErrors.propertyNotFound(token.key))
-            }
-
-        val value =
-            if (resolver is ScopeAwarePropertyResolver) {
-                resolver.getPropertyAsStringAtScope(token.key, scopeLevel)
-            } else {
-                // Fallback to legacy prefix-based lookup when scope-aware resolver is not available
-                resolver.getPropertyAsString("$scopePrefix.${token.key}")
-            }
-        return if (value != null) {
-            Ok(value)
+        val resolved = resolver.resolvePropertyWithScope(token.key, requiredScope = scopeLevel)
+        return if (resolved != null) {
+            Ok(
+                ResolvedInterpolationPart(
+                    value = resolved.value,
+                    sourceScope = resolved.sourceScope,
+                    isAuthoritativePropertyValue = true,
+                    provenance = resolved.provenance,
+                ),
+            )
         } else if (token.defaultValue != null) {
-            Ok(token.defaultValue)
+            Ok(
+                ResolvedInterpolationPart(
+                    token.defaultValue,
+                    requestingScope,
+                    isAuthoritativePropertyValue = false,
+                    provenance = defaultProvenance(token, requestingScope),
+                ),
+            )
         } else {
-            val keyForError =
-                if (resolver is ScopeAwarePropertyResolver) {
-                    "$scopePrefix.${token.key}"
-                } else {
-                    "$scopePrefix.${token.key}"
-                }
-            Err(ConfigErrors.propertyNotFound(keyForError))
+            Err(propertyReferenceDenied())
         }
     }
 
-    private suspend fun resolveSecret(
+    private fun resolveEnv(
         token: PlaceholderToken,
-        requestingScope: ConfigLevel?,
-        scopeIdentifier: String?,
-        callingResolver: PropertyResolver? = null,
-    ): IdkResult<String, IdkError> {
-        // provider may be null: that is the cascade form (`${secret:<key>}`), where the
-        // resolver selects the tenant -> app -> env provider chain itself.
-        val provider = token.provider
-        val path =
-            token.path
-                ?: return Err(ConfigErrors.secretResolutionFailed(token.key, provider ?: "cascade", "No path specified"))
+        resolver: ProtectedPropertyResolver,
+        requestingScope: ConfigLevel,
+        authorizedEnvironmentNames: Set<String>,
+    ): IdkResult<ResolvedInterpolationPart, IdkError> {
+        if (token.key !in authorizedEnvironmentNames) {
+            return Err(propertyReferenceDenied())
+        }
+        val canInterpolate = resolver.canInterpolateEnvironment(token.key, requestingScope)
+        if (canInterpolate.isErr) {
+            return Err(canInterpolate.error)
+        }
+        val envValue = Env.get(token.key)
+        return if (envValue != null) {
+            Ok(
+                ResolvedInterpolationPart(
+                    envValue,
+                    requestingScope,
+                    isAuthoritativePropertyValue = false,
+                    provenance =
+                        ResolutionProvenance
+                            .known(requestingScope)
+                            .withTaint(ResolutionTaint.ENVIRONMENT),
+                ),
+            )
+        } else if (token.defaultValue != null) {
+            Ok(
+                ResolvedInterpolationPart(
+                    token.defaultValue,
+                    requestingScope,
+                    isAuthoritativePropertyValue = false,
+                    provenance = defaultProvenance(token, requestingScope),
+                ),
+            )
+        } else {
+            Err(ConfigErrors.propertyNotFound("env:${token.key}"))
+        }
+    }
 
-        if (secretResolver == null) {
-            return Err(ConfigErrors.secretResolutionFailed(token.key, provider ?: "cascade", "No secret resolver configured"))
+    private fun defaultProvenance(
+        token: PlaceholderToken,
+        requestingScope: ConfigLevel,
+    ): ResolutionProvenance =
+        ResolutionProvenance
+            .known(requestingScope)
+            .withTaint(ResolutionTaint.INTERPOLATED)
+            .let { provenance ->
+                if (token.type == PlaceholderType.ENV) {
+                    provenance.withTaint(ResolutionTaint.ENVIRONMENT)
+                } else {
+                    provenance
+                }
+            }
+
+    private fun InterpolationPolicy.permits(
+        placeholderType: PlaceholderType,
+        requestingScope: ConfigLevel,
+    ): Boolean =
+        when (this) {
+            InterpolationPolicy.DENY -> false
+            InterpolationPolicy.PROPERTY_REFERENCES_ONLY ->
+                placeholderType == PlaceholderType.SIMPLE || placeholderType == PlaceholderType.SCOPE
+            InterpolationPolicy.APP_ENVIRONMENT ->
+                (placeholderType == PlaceholderType.SIMPLE || placeholderType == PlaceholderType.SCOPE) ||
+                    (placeholderType == PlaceholderType.ENV && requestingScope == ConfigLevel.APP)
         }
 
-        // NOTE: Per-scope isolation (which provider a tenant/principal may reach, and how a
-        // tenant's secrets are sharded away from other tenants') is enforced downstream by the
-        // SecretAddressResolver / per-scope provider selection (Phase 2). The interpolator no
-        // longer hard-codes an APP-only path gate here, because that pre-empted legitimate
-        // tenant-scoped cascade resolution. The scopeIdentifier is threaded through so the
-        // resolver can scope/shard correctly.
-        return secretResolver.resolve(provider, path, token.key, requestingScope, scopeIdentifier, callingResolver)
-    }
+    private fun propertyReferenceDenied(): IdkError =
+        ConfigErrors.interpolationError(
+            key = "property",
+            reason = "property reference is not permitted",
+        )
+
+    private fun interpolationPolicyDenied(): IdkError =
+        ConfigErrors.interpolationError(
+            key = "policy",
+            reason = "interpolation is not permitted for this configuration field",
+        )
 
     override fun containsPlaceholders(value: String): Boolean {
         // Check if there's any complete ${...} pattern (with matching closing brace)
@@ -631,8 +884,6 @@ class DefaultPropertyInterpolator(
         }
         return false
     }
-
-    override fun isSecretReference(value: String): Boolean = value.contains("\${secret:")
 
     override fun parsePlaceholders(value: String): List<PlaceholderToken> {
         // For public API, parse all balanced placeholders including nested ones
@@ -680,31 +931,18 @@ class DefaultPropertyInterpolator(
         fullMatch: String,
         content: String,
     ): PlaceholderToken {
-        // Check for secret pattern:
-        //   cascade: ${secret:<key>} / ${secret:<key>:<subkey>}        (provider omitted)
-        //   pinned : ${secret:@<provider>:<key>} / ${secret:@<provider>:<key>:<subkey>}
-        secretPattern.matchEntire(content)?.let { secretMatch ->
-            // group1 is empty string when no leading @<provider>: was present -> cascade
-            val provider = secretMatch.groupValues[SECRET_PROVIDER_GROUP_INDEX].takeIf { it.isNotEmpty() }
-            // The logical key is passed through verbatim; normalization (so dotted == UPPER_SNAKE ==
-            // hyphen == slash forms collapse to one canonical address) is owned solely by the
-            // SecretAddressResolver during resolution, so it happens once and consistently for the
-            // env floor and every provider.
-            val path = secretMatch.groupValues[SECRET_PATH_GROUP_INDEX]
-            val key = secretMatch.groupValues.getOrNull(SECRET_KEY_GROUP_INDEX)?.takeIf { it.isNotEmpty() }
-            return PlaceholderToken.secret(fullMatch, provider, path, key)
+        envPattern.matchEntire(content)?.let { envMatch ->
+            val (key, defaultValue) = parseDefaultValue(envMatch.groupValues[1])
+            return PlaceholderToken.env(fullMatch, key, defaultValue)
         }
 
-        // Check for env pattern: ${env:KEY}
-        envPattern.matchEntire(content)?.let { envMatch ->
-            val key = envMatch.groupValues[1]
-            val (actualKey, defaultValue) = parseDefaultValue(key)
-            return PlaceholderToken.env(fullMatch, actualKey, defaultValue)
+        forbiddenExternalSourcePattern.matchEntire(content)?.let {
+            return PlaceholderToken.forbiddenExternalSource(fullMatch)
         }
 
         // Check for scope pattern: ${app:key}, ${tenant:key}, ${principal:key}
         scopePattern.matchEntire(content)?.let { scopeMatch ->
-            val scope = scopeMatch.groupValues[1]
+            val scope = ConfigLevel.valueOf(scopeMatch.groupValues[1].uppercase())
             val key = scopeMatch.groupValues[2]
             val (actualKey, defaultValue) = parseDefaultValue(key)
             return PlaceholderToken.scope(fullMatch, scope, actualKey, defaultValue)
@@ -725,133 +963,5 @@ class DefaultPropertyInterpolator(
         } else {
             content to null
         }
-    }
-
-    companion object {
-        private const val SECRET_PROVIDER_GROUP_INDEX = 1
-        private const val SECRET_PATH_GROUP_INDEX = 2
-        private const val SECRET_KEY_GROUP_INDEX = 3
-    }
-}
-
-/**
- * Interface for resolving secrets from various providers.
- * This is the IDK-level interface; EDK provides implementations for Vault, Azure KV, etc.
- */
-@OptIn(ExperimentalObjCName::class)
-@ObjCName("SecretResolver", exact = true)
-interface SecretResolver {
-    /**
-     * Resolve a secret value.
-     *
-     * @param provider The secret provider identifier (e.g., "env", "vault", "azure"), or
-     *   `null` for cascade resolution (tenant-selected -> app-selected -> env).
-     * @param path The (normalized) secret logical key / path
-     * @param key Optional key within the secret (for structured secrets)
-     * @return The resolved secret value, or error if resolution fails
-     */
-    suspend fun resolve(
-        provider: String?,
-        path: String,
-        key: String?,
-    ): IdkResult<String, IdkError>
-
-    /**
-     * Resolve a secret value with scope context for tenant/principal isolation.
-     *
-     * @param provider The secret provider identifier, or `null` for cascade resolution.
-     * @param path The (normalized) secret logical key / path
-     * @param key Optional key within the secret (for structured secrets)
-     * @param scope The configuration scope level for access control
-     * @param scopeIdentifier The tenant or principal ID for scope-specific secrets
-     * @return The resolved secret value, or error if resolution fails
-     */
-    suspend fun resolve(
-        provider: String?,
-        path: String,
-        key: String?,
-        scope: ConfigLevel?,
-        scopeIdentifier: String?,
-    ): IdkResult<String, IdkError> = resolve(provider, path, key) // Default delegates to simple version
-
-    /**
-     * Resolve a secret value with scope context and the calling scope's property resolver.
-     *
-     * The [resolver] provides access to scope-specific configuration, enabling cloud providers
-     * to resolve tenant-specific connection details (e.g., different vault URLs per tenant).
-     *
-     * @param provider The secret provider identifier, or `null` for cascade resolution.
-     * @param path The (normalized) secret logical key / path
-     * @param key Optional key within the secret (for structured secrets)
-     * @param scope The configuration scope level for access control
-     * @param scopeIdentifier The tenant or principal ID for scope-specific secrets
-     * @param resolver The PropertyResolver from the calling scope (tenant/principal config)
-     * @return The resolved secret value, or error if resolution fails
-     */
-    suspend fun resolve(
-        provider: String?,
-        path: String,
-        key: String?,
-        scope: ConfigLevel?,
-        scopeIdentifier: String?,
-        resolver: PropertyResolver?,
-    ): IdkResult<String, IdkError> = resolve(provider, path, key, scope, scopeIdentifier)
-}
-
-/**
- * Simple secret resolver that supports env and map providers.
- * This is the default IDK implementation; EDK extends with cloud providers.
- */
-@OptIn(ExperimentalObjCName::class)
-@ObjCName("BasicSecretResolver", exact = true)
-class BasicSecretResolver(
-    private val secretMaps: Map<String, Map<String, String>> = emptyMap(),
-) : SecretResolver {
-    override suspend fun resolve(
-        provider: String?,
-        path: String,
-        key: String?,
-    ): IdkResult<String, IdkError> = resolve(provider, path, key, null, null)
-
-    override suspend fun resolve(
-        provider: String?,
-        path: String,
-        key: String?,
-        scope: ConfigLevel?,
-        scopeIdentifier: String?,
-    ): IdkResult<String, IdkError> {
-        // Basic resolver doesn't enforce scope restrictions - delegated to caller.
-        // A null provider is the cascade form; the IDK floor for cascade is env.
-        return when (provider) {
-            null, "env" -> resolveEnvSecret(path)
-            "map" -> resolveMapSecret(path, key)
-            else -> Err(ConfigErrors.secretResolutionFailed(key ?: path, provider, "Unknown provider: $provider"))
-        }
-    }
-
-    private fun resolveEnvSecret(envVar: String): IdkResult<String, IdkError> {
-        val value = Env.get(envVar)
-        return if (value != null) {
-            Ok(value)
-        } else {
-            Err(ConfigErrors.secretResolutionFailed(envVar, "env", "Environment variable not found"))
-        }
-    }
-
-    private fun resolveMapSecret(
-        mapName: String,
-        key: String?,
-    ): IdkResult<String, IdkError> {
-        val secretMap =
-            secretMaps[mapName]
-                ?: return Err(ConfigErrors.secretResolutionFailed(mapName, "map", "Secret map not found"))
-
-        val secretKey = key ?: return Err(ConfigErrors.secretResolutionFailed(mapName, "map", "No key specified for map secret"))
-
-        val value =
-            secretMap[secretKey]
-                ?: return Err(ConfigErrors.secretResolutionFailed(secretKey, "map", "Key not found in secret map"))
-
-        return Ok(value)
     }
 }

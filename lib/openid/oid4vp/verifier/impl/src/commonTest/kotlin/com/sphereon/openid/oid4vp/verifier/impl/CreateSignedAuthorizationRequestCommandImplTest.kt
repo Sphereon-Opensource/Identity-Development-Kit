@@ -28,8 +28,13 @@ import com.sphereon.oauth2.client.command.CreateSignedJarArgs
 import com.sphereon.oauth2.client.command.CreateSignedJarCommand
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
+import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.dcql.mdocMeta
+import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.CreateSignedAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
@@ -83,10 +88,11 @@ class CreateSignedAuthorizationRequestCommandImplTest {
                     DcqlCredentialQuery(
                         id = "identity_credential",
                         format = "dc+sd-jwt",
+                        meta = sdJwtVcMeta("urn:test:identity"),
                         claims =
                             listOf(
-                                DcqlClaimQuery(path = listOf("given_name")),
-                                DcqlClaimQuery(path = listOf("family_name")),
+                                DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("given_name")))),
+                                DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("family_name")))),
                             ),
                     ),
                 ),
@@ -171,9 +177,10 @@ class CreateSignedAuthorizationRequestCommandImplTest {
                             DcqlCredentialQuery(
                                 id = "mdoc_credential",
                                 format = "mso_mdoc",
+                                meta = mdocMeta("org.iso.18013.5.1.mDL"),
                                 claims =
                                     listOf(
-                                        DcqlClaimQuery(path = listOf("org.iso.18013.5.1", "given_name")),
+                                        DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("org.iso.18013.5.1"), JsonPrimitive("given_name")))),
                                     ),
                             ),
                         ),

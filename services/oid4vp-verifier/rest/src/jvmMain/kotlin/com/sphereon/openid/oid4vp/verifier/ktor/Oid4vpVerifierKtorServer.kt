@@ -37,10 +37,16 @@ fun main() {
             version = "1.0.0",
         )
 
-    embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
+    embeddedServer(CIO, port = configuredServerPort(), host = "0.0.0.0") {
         configureOid4vpVerifier(appGraph)
     }.start(wait = true)
 }
+
+private fun configuredServerPort(): Int =
+    System.getenv("SERVER_PORT")
+        ?.toIntOrNull()
+        ?.also { require(it in 1..65535) { "SERVER_PORT must be between 1 and 65535" } }
+        ?: 8080
 
 /**
  * Configure the Ktor application with OID4VP Verifier + Universal routes.

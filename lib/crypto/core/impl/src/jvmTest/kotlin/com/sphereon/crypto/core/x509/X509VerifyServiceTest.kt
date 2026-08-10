@@ -51,7 +51,7 @@ class X509VerifyServiceTest {
 
     val app = createJvmCryptoTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("x509-verify-test")
+    val session = context.sessionContextManager.createOrGetFromId("x509-verify-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     private val testCertificate =
         Certificate(

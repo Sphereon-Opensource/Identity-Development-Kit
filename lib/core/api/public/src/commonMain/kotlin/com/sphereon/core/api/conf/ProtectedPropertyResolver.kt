@@ -34,6 +34,19 @@ import kotlin.reflect.KClass
  */
 @JsExportCompat
 @OptIn(ExperimentalObjCName::class)
+@ObjCName("ResolvedPropertyWithScope", exact = true)
+data class ResolvedPropertyWithScope(
+    val value: String,
+    val sourceScope: ConfigLevel,
+    val provenance: ResolutionProvenance = ResolutionProvenance.known(sourceScope),
+    val sourceName: String? = null,
+    val sourceOrder: Int? = null,
+    /** The same atomically resolved value before string rendering, preserving its runtime type. */
+    val rawValue: Any = value,
+)
+
+@JsExportCompat
+@OptIn(ExperimentalObjCName::class)
 @ObjCName("ProtectedPropertyResolver", exact = true)
 interface ProtectedPropertyResolver : PropertyResolver {
     /**
@@ -74,6 +87,39 @@ interface ProtectedPropertyResolver : PropertyResolver {
     ): IdkResult<Unit, IdkError>
 
     /**
+     * Check whether a property is directly visible to the given scope.
+     *
+     * Protected values and direct environment property sources are absent to lower scopes.
+     */
+    fun canReadProperty(
+        key: String,
+        fromScope: ConfigLevel,
+    ): IdkResult<Unit, IdkError>
+
+    /**
+     * Check whether a process-environment name may be interpolated.
+     *
+     * Only names explicitly declared by an operator-owned APP property source are eligible.
+     * TENANT and PRINCIPAL requests are always denied before the environment is read.
+     */
+    fun canInterpolateEnvironment(
+        name: String,
+        fromScope: ConfigLevel,
+    ): IdkResult<Unit, IdkError>
+
+    /**
+     * Resolve a string value and its authoritative source scope in one traversal.
+     *
+     * An unscoped winning source is not authoritative and must return null. When
+     * [requiredScope] is non-null, only a source explicitly bound to that scope
+     * may satisfy the lookup.
+     */
+    fun resolvePropertyWithScope(
+        key: String,
+        requiredScope: ConfigLevel?,
+    ): ResolvedPropertyWithScope?
+
+    /**
      * Get protection metadata for a key.
      *
      * @param key The property key
@@ -102,9 +148,9 @@ class ProtectedPropertySourcesResolver(
     private val propertySources: PropertySources,
     override val resolverLevel: ConfigLevel,
     redactionPolicy: SecretRedactionPolicy = DefaultSecretRedactionPolicy(),
-) : ProtectedPropertyResolver,
+) : AbstractPropertyResolver(redactionPolicy),
+    ProtectedPropertyResolver,
     ScopeAwarePropertyResolver {
-    private val delegate = PropertySourcesPropertyResolver(propertySources, redactionPolicy)
     private val keyNormalizerInstance: PropertyKeyNormalizer = PropertyKeyNormalizerImpl.Default
 
     override fun getProtection(key: String): PropertyProtection? {
@@ -122,6 +168,133 @@ class ProtectedPropertySourcesResolver(
             }
         }
         return null
+    }
+
+    override fun resolvePropertyWithScope(
+        key: String,
+        requiredScope: ConfigLevel?,
+    ): ResolvedPropertyWithScope? =
+        resolveCanonicalPropertyInternal(key, requiredScope)?.toResolvedPropertyWithScope()
+
+    /**
+     * Internal built-in resolver hook that keeps a typed value and its canonical metadata
+     * together from the single winning-source read.
+     */
+    internal fun resolveCanonicalPropertyInternal(
+        key: String,
+        requiredScope: ConfigLevel?,
+    ): ResolvedValue<Any>? {
+        val normalizedKey = keyNormalizerInstance.normalize(key)
+        if (canReadProperty(normalizedKey, resolverLevel).isErr) {
+            return null
+        }
+        for (source in directSources()) {
+            val sourceScope = (source as? ScopedPropertySource<*>)?.configLevel
+            if (requiredScope != null && sourceScope != requiredScope) {
+                continue
+            }
+            val validationScope = sourceScope ?: resolverLevel
+            val rawValue =
+                runCatching { source.getProperty(normalizedKey, Any::class) }
+                    .getOrElse { return null }
+                    ?: continue
+            validateCanonicalValueForRead(rawValue, validationScope)
+            return canonicalResolvedValue(
+                key = normalizedKey,
+                value = rawValue,
+                source = source,
+                sourceScope = sourceScope,
+            )
+        }
+        return null
+    }
+
+    internal fun resolveCanonicalPropertiesInternal(prefixes: Set<String>?): Map<String, ResolvedValue<Any>> {
+        val normalizedPrefixes = prefixes?.map(keyNormalizerInstance::normalize)?.toSet()
+        val result = linkedMapOf<String, ResolvedValue<Any>>()
+        for (source in directSources()) {
+            val sourceScope = (source as? ScopedPropertySource<*>)?.configLevel
+            val validationScope = sourceScope ?: resolverLevel
+            val propertyNames =
+                runCatching { source.getAllPropertyNames() }
+                    .getOrElse { throw IllegalStateException("Configuration source enumeration failed") }
+            for (propertyName in propertyNames) {
+                val normalizedKey = keyNormalizerInstance.normalize(propertyName)
+                val matches =
+                    normalizedPrefixes.isNullOrEmpty() ||
+                        normalizedPrefixes.any { prefix ->
+                            normalizedKey == prefix || normalizedKey.startsWith("$prefix.")
+                        }
+                if (!matches || result.containsKey(normalizedKey)) {
+                    continue
+                }
+                if (canReadProperty(normalizedKey, resolverLevel).isErr) {
+                    continue
+                }
+                val rawValue =
+                    runCatching { source.getProperty(normalizedKey, Any::class) }
+                        .getOrElse { throw IllegalStateException("Configuration source value read failed") }
+                        ?: continue
+                validateCanonicalValueForRead(rawValue, validationScope)
+                result[normalizedKey] =
+                    canonicalResolvedValue(
+                        key = normalizedKey,
+                        value = rawValue,
+                        source = source,
+                        sourceScope = sourceScope,
+                    )
+            }
+        }
+        return result
+    }
+
+    private fun canonicalResolvedValue(
+        key: String,
+        value: Any,
+        source: PropertySource<*>,
+        sourceScope: ConfigLevel?,
+    ): ResolvedValue<Any> {
+        val effectiveScope = sourceScope ?: resolverLevel
+        val sensitive =
+            redactionPolicy.isSensitiveKey(key, effectiveScope) ||
+                getProtection(key)?.isInterpolationProtected == true
+        val provenance =
+            if (sourceScope == null) {
+                ResolutionProvenance.unknown().let { unknown ->
+                    if (sensitive) unknown.withTaint(ResolutionTaint.SENSITIVE) else unknown
+                }
+            } else {
+                ResolutionProvenance.known(sourceScope, sensitive)
+            }
+        return ResolvedValue(
+            value = value,
+            metadata =
+                ResolutionMetadata(
+                    source = source.getName(),
+                    scope = effectiveScope,
+                    originalKey = key,
+                    normalizedKey = key,
+                    order = source.getOrder(),
+                    isSecret = sensitive,
+                    isInterpolated = false,
+                    resolvedAt = kotlin.time.Clock.System.now(),
+                    ttl = null,
+                    provenance = provenance,
+                ),
+        )
+    }
+
+    private fun validateCanonicalValueForRead(
+        value: Any,
+        sourceScope: ConfigLevel,
+    ) {
+        try {
+            validateConfigurationValueForRead(value, sourceScope)
+        } catch (_: IllegalStateException) {
+            // Invalid configuration content is a server-side denial, not an absent property.
+            // Do not attach the original exception because it may contain source material.
+            throw IllegalStateException("Configuration value is not permitted")
+        }
     }
 
     override fun canSetProperty(key: String): IdkResult<Unit, IdkError> {
@@ -147,6 +320,43 @@ class ProtectedPropertySourcesResolver(
         fromScope: ConfigLevel,
     ): IdkResult<Unit, IdkError> {
         val normalizedKey = keyNormalizerInstance.normalize(key)
+        var winningSource: PropertySource<*>? = null
+        for (source in orderedSourcesByScope(propertySources)) {
+            if (!source.isPlatformSupported) {
+                continue
+            }
+            val sourceLookupKey =
+                if (source.isDirectEnvironmentPropertySource()) {
+                    keyNormalizerInstance.normalize(key.lowercase())
+                } else {
+                    normalizedKey
+                }
+            val hasProperty =
+                try {
+                    source
+                        .getAllPropertyNames()
+                        .any { propertyName -> keyNormalizerInstance.normalize(propertyName) == sourceLookupKey } ||
+                        source.hasProperty(sourceLookupKey)
+                } catch (_: IllegalStateException) {
+                    return deniedPropertyRead()
+                }
+            if (hasProperty) {
+                winningSource = source
+                break
+            }
+        }
+        if (winningSource?.isDirectEnvironmentPropertySource() == true) {
+            return deniedPropertyRead()
+        }
+
+        return canReadProperty(normalizedKey, fromScope)
+    }
+
+    override fun canReadProperty(
+        key: String,
+        fromScope: ConfigLevel,
+    ): IdkResult<Unit, IdkError> {
+        val normalizedKey = keyNormalizerInstance.normalize(key)
 
         for (source in orderedSourcesByScope(propertySources)) {
             if (!source.isPlatformSupported) {
@@ -163,15 +373,83 @@ class ProtectedPropertySourcesResolver(
         return Ok(Unit)
     }
 
+    override fun canInterpolateEnvironment(
+        name: String,
+        fromScope: ConfigLevel,
+    ): IdkResult<Unit, IdkError> {
+        val allowed =
+            fromScope == ConfigLevel.APP &&
+                propertySources
+                    .asSequence()
+                    .filter { it.isPlatformSupported }
+                    .filterIsInstance<ScopedPropertySource<*>>()
+                    .filter { it.configLevel == ConfigLevel.APP }
+                    .filterNot { it.isDirectEnvironmentPropertySource() }
+                    .flatMap { source ->
+                        source.getAllPropertyNames().asSequence().flatMap { key ->
+                            runCatching { source.getPropertyAsString(key) }
+                                .getOrNull()
+                                ?.let(::declaredEnvironmentReferences)
+                                .orEmpty()
+                                .asSequence()
+                        }
+                    }.any { it == name }
+
+        return if (allowed) {
+            Ok(Unit)
+        } else {
+            Err(
+                ConfigErrors.interpolationError(
+                    key = "environment",
+                    reason = "environment reference is not permitted",
+                ),
+            )
+        }
+    }
+
     // PropertyResolver delegation
 
-    override fun containsProperty(key: String): Boolean = delegate.containsProperty(key)
+    override fun containsProperty(key: String): Boolean {
+        val normalizedKey = keyNormalizerInstance.normalize(key)
+        if (canReadProperty(normalizedKey, resolverLevel).isErr) {
+            return false
+        }
+        for (source in directSources()) {
+            val hasProperty =
+                try {
+                    source.hasProperty(normalizedKey)
+                } catch (_: IllegalStateException) {
+                    return false
+                }
+            if (!hasProperty) {
+                continue
+            }
+            val value = runCatching { source.getProperty(normalizedKey, Any::class) }.getOrNull()
+            return runCatching {
+                validateConfigurationValueForRead(value, source.effectiveSourceScope(resolverLevel))
+            }.isSuccess
+        }
+        return false
+    }
 
     override fun <T : Any> getProperty(
         key: String,
         targetType: KClass<T>,
         defaultValue: T?,
-    ): T? = delegate.getProperty(key, targetType, defaultValue)
+    ): T? {
+        val normalizedKey = keyNormalizerInstance.normalize(key)
+        if (canReadProperty(normalizedKey, resolverLevel).isErr) {
+            return defaultValue
+        }
+        for (source in directSources()) {
+            val prop = source.getProperty(normalizedKey, targetType)
+            if (prop != null) {
+                validateConfigurationValueForRead(prop, source.effectiveSourceScope(resolverLevel))
+                return prop
+            }
+        }
+        return defaultValue
+    }
 
     override fun <T : Any> getPropertyAtScope(
         key: String,
@@ -179,12 +457,16 @@ class ProtectedPropertySourcesResolver(
         scope: ConfigLevel,
     ): T? {
         val normalizedKey = keyNormalizerInstance.normalize(key)
+        if (canReadProperty(normalizedKey, resolverLevel).isErr) {
+            return null
+        }
         for (source in sourcesForScope(propertySources, scope)) {
-            if (!source.isPlatformSupported) {
+            if (!source.isPlatformSupported || !source.isDirectlyVisibleAt(resolverLevel)) {
                 continue
             }
             val prop = source.getProperty(normalizedKey, targetType)
             if (prop != null) {
+                validateConfigurationValueForRead(prop, source.effectiveSourceScope(resolverLevel))
                 return prop
             }
         }
@@ -196,37 +478,80 @@ class ProtectedPropertySourcesResolver(
         scope: ConfigLevel,
     ): String? = getPropertyAtScope(key, String::class, scope)
 
-    override fun <T : Any> getRequiredProperty(
-        key: String,
-        targetType: KClass<T>,
-        defaultValue: T?,
-    ): T = delegate.getRequiredProperty(key, targetType, defaultValue)
-
-    override fun getPropertyAsString(
-        key: String,
-        defaultValue: String?,
-    ): String? = delegate.getPropertyAsString(key, defaultValue)
-
-    override fun getRequiredPropertyAsString(
-        key: String,
-        defaultValue: String?,
-    ): String = delegate.getRequiredPropertyAsString(key, defaultValue)
-
-    override fun getAllProperties(): Map<String, Any> = delegate.getAllProperties()
-
-    override fun getAllPropertiesAsString(redact: Boolean): Map<String, String> = delegate.getAllPropertiesAsString(redact)
+    override fun getAllProperties(): Map<String, Any> = getProperties()
 
     override fun getSubProperties(
         prefixes: Set<String>,
         stripPrefix: Boolean,
-    ): Map<String, Any> = delegate.getSubProperties(prefixes, stripPrefix)
+    ): Map<String, Any> = getProperties(prefixes, stripPrefix)
 
-    override fun getSubPropertiesAsString(
-        prefixes: Set<String>,
-        stripPrefix: Boolean,
-        redact: Boolean,
-    ): Map<String, String> = delegate.getSubPropertiesAsString(prefixes, stripPrefix, redact)
+    private fun directSources(): List<PropertySource<*>> =
+        orderedSourcesByScope(propertySources)
+            .filter { source -> source.isPlatformSupported && source.isDirectlyVisibleAt(resolverLevel) }
+
+    private fun getProperties(
+        prefixes: Set<String>? = null,
+        stripPrefix: Boolean = true,
+    ): Map<String, Any> {
+        val normalizedPrefixes = prefixes?.map(keyNormalizerInstance::normalize)?.toSet()
+        return resolveCanonicalPropertiesInternal(normalizedPrefixes)
+            .mapKeys { (propertyName, _) ->
+                val matchingPrefix =
+                    normalizedPrefixes
+                        ?.firstOrNull { prefix ->
+                            propertyName == prefix || propertyName.startsWith("$prefix.")
+                        }
+                if (stripPrefix && matchingPrefix != null) {
+                    propertyName.removePrefix(matchingPrefix).removePrefix(".")
+                } else {
+                    propertyName
+                }
+            }.mapValues { (_, resolved) -> resolved.value }
+    }
+
+    private fun deniedPropertyRead(): IdkResult<Unit, IdkError> =
+        Err(
+            ConfigErrors.interpolationError(
+                key = "property",
+                reason = "property reference is not permitted",
+            ),
+        )
 }
+
+internal fun ResolvedValue<Any>.toResolvedPropertyWithScope(): ResolvedPropertyWithScope =
+    ResolvedPropertyWithScope(
+        value = value.toString(),
+        sourceScope = metadata.scope,
+        provenance = metadata.provenance,
+        sourceName = metadata.source,
+        sourceOrder = metadata.order,
+        rawValue = value,
+    )
+
+/**
+ * Internal dispatch for the built-in protected resolver chain. Keeping this out of the
+ * public supertypes avoids exposing the canonical cache/interpolation protocol as API.
+ */
+internal fun ProtectedPropertyResolver.resolveCanonicalPropertyInternal(
+    key: String,
+    requiredScope: ConfigLevel? = null,
+): ResolvedValue<Any>? =
+    when (this) {
+        is ProtectedPropertySourcesResolver -> resolveCanonicalPropertyInternal(key, requiredScope)
+        is InterpolatingPropertySourcesPropertyResolver -> resolveCanonicalPropertyInternal(key, requiredScope)
+        is CachingPropertySourcesPropertyResolver -> resolveCanonicalPropertyInternal(key, requiredScope)
+        else -> error("Property resolver does not provide canonical resolution")
+    }
+
+internal fun ProtectedPropertyResolver.resolveCanonicalPropertiesInternal(
+    prefixes: Set<String>? = null,
+): Map<String, ResolvedValue<Any>> =
+    when (this) {
+        is ProtectedPropertySourcesResolver -> resolveCanonicalPropertiesInternal(prefixes)
+        is InterpolatingPropertySourcesPropertyResolver -> resolveCanonicalPropertiesInternal(prefixes)
+        is CachingPropertySourcesPropertyResolver -> resolveCanonicalPropertiesInternal(prefixes)
+        else -> error("Property resolver does not provide canonical resolution")
+    }
 
 /**
  * Factory for creating protection-aware property resolvers.

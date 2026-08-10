@@ -24,7 +24,6 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.response.ResponseBuilder
 import com.sphereon.di.context.IdentityConstants
@@ -43,8 +42,8 @@ import dev.zacsweers.metro.binding
 /**
  * Serves the hosted `did.json` for the request's host + path.
  *
- * - The host comes from the `Host` header (already validated/punycode'd at the edge); the tenant from
- *   the internal base-tenant header the tenant-resolution layer stamped (null in single-tenant IDK).
+ * - The host comes from the `Host` header (already validated/punycode'd at the edge); the tenant is
+ *   attached as typed in-process state by the tenant-resolution layer (null in single-tenant IDK).
  * - The path segments come from the matched depth pattern's `s1..sN` params (empty for `.well-known`).
  * - These compose a [WebLocation], resolved by the method-agnostic [DidHostingRegistry].
  *
@@ -76,7 +75,7 @@ class GetDidJsonEndpointCommandImpl(
         val (host, port) = parseHostPort(hostHeader)
 
         val tenantId =
-            request.headers[CommandBackedHttpAdapter.INTERNAL_BASE_TENANT_HEADER]
+            request.resolvedTenantId
                 ?.takeIf { it.isNotBlank() && it != IdentityConstants.ANONYMOUS_TENANT_ID }
                 ?: hostingConfig.publicFallbackTenantId
         val pathSegments = DidHostingApiConstants.PATH_SEGMENT_PARAMS.mapNotNull { request.pathParameters[it] }

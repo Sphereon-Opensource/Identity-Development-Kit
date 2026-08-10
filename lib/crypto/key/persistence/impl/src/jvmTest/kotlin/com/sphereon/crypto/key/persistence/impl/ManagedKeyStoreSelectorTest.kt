@@ -184,6 +184,7 @@ class ManagedKeyStoreSelectorTest {
             val keyInfo = mockk<ResolvedKeyInfoType<*>>()
             val managedKeyInfo = mockk<ManagedKeyInfoType<*>>()
             coEvery { iteratingStore.storeKey(keyInfo, "provider-1", "alias-1", null) } returns managedKeyInfo
+            coEvery { iteratingStore.maintainsKeyReferenceIndex("provider-1") } returns false
             coEvery { registrar.indexManagedKey(managedKeyInfo) } returns Ok(null)
 
             val result = selector.storeKey(keyInfo, "provider-1", "alias-1", null)
@@ -191,6 +192,25 @@ class ManagedKeyStoreSelectorTest {
             assertEquals(managedKeyInfo, result)
             coVerify(exactly = 1) { iteratingStore.storeKey(keyInfo, "provider-1", "alias-1", null) }
             coVerify(exactly = 1) { registrar.indexManagedKey(managedKeyInfo) }
+        }
+
+    /**
+     * A provider that wrote the authoritative index row itself must not have it written again. The
+     * repeat would land under the provider id the returned key reports, and a provider reachable
+     * under more than one id then ends up with two index rows for one key.
+     */
+    @Test
+    fun storeKeyDoesNotIndexAgainWhenTheProviderMaintainsTheIndexItself() =
+        runTest {
+            val keyInfo = mockk<ResolvedKeyInfoType<*>>()
+            val managedKeyInfo = mockk<ManagedKeyInfoType<*>>()
+            coEvery { iteratingStore.storeKey(keyInfo, "provider-1", "alias-1", null) } returns managedKeyInfo
+            coEvery { iteratingStore.maintainsKeyReferenceIndex("provider-1") } returns true
+
+            val result = selector.storeKey(keyInfo, "provider-1", "alias-1", null)
+
+            assertEquals(managedKeyInfo, result)
+            coVerify(exactly = 0) { registrar.indexManagedKey(any()) }
         }
 
     @Test

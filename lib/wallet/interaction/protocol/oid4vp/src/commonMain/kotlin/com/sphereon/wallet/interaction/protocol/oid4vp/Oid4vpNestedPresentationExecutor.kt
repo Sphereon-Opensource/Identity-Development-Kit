@@ -33,8 +33,8 @@ import kotlinx.serialization.json.decodeFromJsonElement
 class Oid4vpNestedPresentationExecutor(
     private val holder: Oid4vpHolderService,
     private val selectedCredentialResolver: Oid4vpSelectedCredentialResolver,
+    private val sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider,
     private val walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
-    private val sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider = Oid4vpSdJwtHolderBindingProvider.passthrough,
 ) : WalletNestedPresentationExecutor {
     override suspend fun preparePresentation(
         context: WalletInteractionContext,

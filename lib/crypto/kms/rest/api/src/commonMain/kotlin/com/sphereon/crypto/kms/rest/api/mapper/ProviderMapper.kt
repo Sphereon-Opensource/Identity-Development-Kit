@@ -18,13 +18,34 @@ package com.sphereon.crypto.kms.rest.api.mapper
 
 import com.sphereon.crypto.core.kms.KmsProvider
 import com.sphereon.crypto.kms.rest.api.generated.models.KeyProvider
+import com.sphereon.crypto.kms.rest.api.generated.models.KeyProviderOwnership
 import com.sphereon.crypto.kms.rest.api.generated.models.KeyProviderType
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeyProvidersResponse
 
-fun KmsProvider.toRest(): KeyProvider =
+/**
+ * What the management plane knows about a provider that the KMS engine itself does not.
+ *
+ * A resource-backed provider has no directly constructible engine type: the engine only knows it
+ * runs under a permit-bound lease. Its real technology, human-readable name, and owner live in the
+ * resource record, so a caller that can resolve the record supplies them here. Absent metadata
+ * means the provider is engine-native and describes itself.
+ */
+data class KeyProviderPresentation(
+    val type: KeyProviderType,
+    val displayName: String?,
+    val ownership: KeyProviderOwnership,
+    val sharedFromPlatform: Boolean,
+    val isDefault: Boolean,
+)
+
+fun KmsProvider.toRest(presentation: KeyProviderPresentation? = null): KeyProvider =
     KeyProvider(
         providerId = this.id,
-        type = KeyProviderType.valueOf(this.kmsProviderType.uppercase()),
+        type = presentation?.type ?: KeyProviderType.valueOf(this.kmsProviderType.uppercase()),
+        displayName = presentation?.displayName,
+        ownership = presentation?.ownership,
+        sharedFromPlatform = presentation?.sharedFromPlatform,
+        isDefault = presentation?.isDefault,
     )
 
 fun Array<KeyProvider>.toRestResponse(): ListKeyProvidersResponse =

@@ -39,6 +39,9 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.time.Clock
 
 /**
@@ -100,7 +103,7 @@ class HandleAuthorizeCallbackCommandImpl(
         // `POST /login`, sets the `oidc_login_sid` cookie, and writes the user into
         // [OidcLoginSessionStore]; the federation provider has nothing to return for that
         // session id, so we fall back to the cookie-keyed login session.
-        val authenticatedUser =
+        val resolvedAuthenticatedUser =
             resolveAuthenticatedUser(sessionId)
                 ?: return Err(
                     IdkError.fromString(
@@ -108,12 +111,31 @@ class HandleAuthorizeCallbackCommandImpl(
                         message = "User not authenticated after login",
                     ),
                 )
+        val authenticatedUser = resolvedAuthenticatedUser.user
 
         // Pull user claims so the issued code can carry them downstream. A claims-fetch failure
-        // is non-fatal: we proceed with whatever the provider returned.
-        val userClaims =
+        // is non-fatal: first-party credentials were already authenticated by the identity-owning
+        // runtime and their authorization claims are frozen into the cookie-bound login session.
+        // Provider claims, when available, win over those session claims.
+        val providerClaims =
             userAuthProvider.getUserInfo(authenticatedUser.userId).let { result ->
                 if (result.isOk) result.value.toClaimsMap() else emptyMap()
+            }
+        val userClaims =
+            buildMap<String, Any> {
+                putAll(resolvedAuthenticatedUser.sessionClaims)
+                if (authenticatedUser.roles.isNotEmpty()) {
+                    put(
+                        "roles",
+                        JsonArray(
+                            authenticatedUser.roles
+                                .distinct()
+                                .sorted()
+                                .map(::JsonPrimitive),
+                        ),
+                    )
+                }
+                putAll(providerClaims)
             }
 
         val consent =
@@ -178,21 +200,38 @@ class HandleAuthorizeCallbackCommandImpl(
      * [OidcLoginSessionStore] (AS first-party `/login` flow). Returns null when neither source
      * carries a usable identity, leaving the caller to surface a `server_error`.
      */
-    private suspend fun resolveAuthenticatedUser(pendingSessionId: String): AuthenticatedUser? {
+    private suspend fun resolveAuthenticatedUser(pendingSessionId: String): ResolvedAuthenticatedUser? {
         val providerResult = userAuthProvider.getAuthenticatedUser(pendingSessionId)
         if (providerResult.isOk) {
-            providerResult.value?.let { return it }
+            providerResult.value?.let { return ResolvedAuthenticatedUser(user = it) }
         }
         val loginSessionId = loginSessionIdProvider.currentLoginSessionId() ?: return null
         val sessionResult = loginSessionStore.findById(loginSessionId)
         if (!sessionResult.isOk) return null
         val session = sessionResult.value ?: return null
-        return AuthenticatedUser(
-            userId = session.sub,
-            authenticatedAt = session.authTime,
-            authenticationMethod = session.authMethod,
-            acr = session.acr,
-            amr = session.amr,
+        val roles =
+            (session.claims["roles"] as? JsonArray)
+                ?.mapNotNull { element ->
+                    (element as? JsonPrimitive)
+                        ?.takeIf(JsonPrimitive::isString)
+                        ?.content
+                }.orEmpty()
+        return ResolvedAuthenticatedUser(
+            user =
+                AuthenticatedUser(
+                    userId = session.sub,
+                    authenticatedAt = session.authTime,
+                    authenticationMethod = session.authMethod,
+                    acr = session.acr,
+                    amr = session.amr,
+                    roles = roles,
+                ),
+            sessionClaims = session.claims,
         )
     }
+
+    private data class ResolvedAuthenticatedUser(
+        val user: AuthenticatedUser,
+        val sessionClaims: Map<String, JsonElement> = emptyMap(),
+    )
 }

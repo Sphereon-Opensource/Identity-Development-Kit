@@ -213,7 +213,6 @@ class DefaultConfigBinder(
         val entry: String,
         val path: String,
         val expectedType: String,
-        val receivedValue: String,
         val reason: String,
     )
 
@@ -253,9 +252,8 @@ class DefaultConfigBinder(
                 ConfigErrors.bindError(
                     prefix = prefix,
                     expectedType = expectedType,
-                    reason = e.message ?: "unknown deserialization error",
+                    reason = "configuration value could not be deserialized",
                     path = prefix,
-                    receivedValue = properties.toString(),
                 ),
             )
         } catch (expected: Exception) {
@@ -263,9 +261,8 @@ class DefaultConfigBinder(
                 ConfigErrors.bindError(
                     prefix = prefix,
                     expectedType = expectedType,
-                    reason = "unexpected error: ${expected.message ?: "unknown"}",
+                    reason = "configuration binding failed",
                     path = prefix,
-                    receivedValue = properties.toString(),
                 ),
             )
         }
@@ -318,8 +315,7 @@ class DefaultConfigBinder(
                             entry = index.toString(),
                             path = "$prefix.$index",
                             expectedType = expectedType,
-                            receivedValue = groupProperties.toString(),
-                            reason = expected.message ?: "unknown deserialization error",
+                            reason = "configuration value could not be deserialized",
                         )
                 }
             }
@@ -385,8 +381,7 @@ class DefaultConfigBinder(
                             entry = mapKey,
                             path = "$prefix.$mapKey",
                             expectedType = expectedType,
-                            receivedValue = groupProperties.toString(),
-                            reason = expected.message ?: "unknown deserialization error",
+                            reason = "configuration value could not be deserialized",
                         )
                 }
             }
@@ -754,7 +749,6 @@ class DefaultConfigBinder(
                     "entry" to failure.entry,
                     "path" to failure.path,
                     "expectedType" to failure.expectedType,
-                    "receivedValue" to failure.receivedValue,
                     "reason" to failure.reason,
                 )
             }
@@ -791,7 +785,7 @@ fun PropertyResolver.toConfigBinder(
  * @param mergeStrategy Strategy for merging nested JSON objects
  * @param interpolate Whether to enable property interpolation (${...} placeholders).
  *                    When true, uses PropertyResolverFactory with an interpolator.
- *                    When false, uses plain PropertySourcesPropertyResolver (faster, no interpolation).
+ *                    When false, interpolation is disabled while scope authorization remains enforced.
  * @param interpolator Optional custom interpolator. If not provided and interpolate is true,
  *                     a DefaultPropertyInterpolator will be used.
  */
@@ -804,8 +798,10 @@ fun ConfigEnvironment.toConfigBinder(
     mergeStrategy: JsonMergeStrategy = JsonMergeStrategy.DEEP_MERGE_REPLACE_ARRAYS,
     interpolate: Boolean = true,
     interpolator: PropertyInterpolator? = null,
+    interpolationPolicyProvider: InterpolationPolicyProvider? = null,
 ): ConfigBinder {
     val sources = getPropertySources(includeParents = true)
+    val effectivePolicyProvider = interpolationPolicyProvider ?: this.interpolationPolicyProvider
     val resolver =
         PropertyResolverFactory.create(
             propertySources = sources,
@@ -815,6 +811,8 @@ fun ConfigEnvironment.toConfigBinder(
                 } else {
                     null
                 },
+            resolverLevel = level,
+            interpolationPolicyProvider = effectivePolicyProvider,
         )
     return DefaultConfigBinder(resolver, json, mergeStrategy)
 }
@@ -838,7 +836,11 @@ class HierarchicalConfigBinder(
 ) : ConfigBinder {
     private val delegate =
         DefaultConfigBinder(
-            PropertySourcesPropertyResolver(environment.getPropertySources(includeParents = true)),
+            PropertyResolverFactory.create(
+                propertySources = environment.getPropertySources(includeParents = true),
+                interpolator = null,
+                resolverLevel = environment.level,
+            ),
             json,
             mergeStrategy,
         )

@@ -76,12 +76,12 @@ class MultiTenantSigningKeyIsolationTest {
         ctx.app.userContextManager
             .getAnonymous()
             .sessionContextManager
-            .createOrGetFromId("acme-session")
+            .createOrGetFromId("acme-session", principalType = com.sphereon.di.context.PrincipalType.USER)
     private val betaSession =
         ctx.app.userContextManager
             .getAnonymous()
             .sessionContextManager
-            .createOrGetFromId("beta-session")
+            .createOrGetFromId("beta-session", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     // Each session has its own SessionScope-bound KeyManagerService. Register the same
     // SoftwareKmsProvider instance on each so they share the AppScope-bound KeyStoreManager

@@ -26,6 +26,7 @@ import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySigningKeyStore
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TenantOverrideSessionExecution
+import com.sphereon.oauth2.server.authorization.signing.AsSigningKeyPublicJwkResolver
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
@@ -112,6 +113,36 @@ class GetJwksCommandImplTest {
             assertTrue(result.isOk)
             val publishedKids = result.value.keys.map { it.kid }
             assertEquals(listOf("kid-active"), publishedKids, "DISABLED keys must NOT appear in JWKS")
+        }
+
+    @Test
+    fun deploymentResolverDenialDoesNotFallBackToLocalProviderRegistry() =
+        runTest {
+            val store: SigningKeyStore = InMemorySigningKeyStore()
+            generateAndRegister(store, kid = "kid-routed-denial", state = OAuth2SigningKeyState.ACTIVE, priority = 10)
+            var resolverCalls = 0
+            val routedResolver =
+                object : AsSigningKeyPublicJwkResolver {
+                    override suspend fun resolve(signingKey: OAuth2SigningKey) =
+                        null.also { resolverCalls++ }
+                }
+            val command =
+                GetJwksCommandImpl(
+                    execution = TenantOverrideSessionExecution(ctx.execution, tenant),
+                    signingKeyStore = store,
+                    multiManagedIdentifierService = ctx.identifierService,
+                    signingKeyPublicJwkResolver = routedResolver,
+                )
+
+            val result = command.execute(GetJwksArgs())
+
+            assertTrue(result.isOk)
+            assertEquals(1, resolverCalls)
+            assertEquals(
+                emptyList(),
+                result.value.keys,
+                "A routed resolver denial must not retry through the locally resolvable test key",
+            )
         }
 
     @Test

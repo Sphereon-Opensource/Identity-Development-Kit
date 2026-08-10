@@ -59,9 +59,8 @@ class HttpClientFactoryJvmImpl(
 ) : HttpClientFactory {
     val keyStores: MutableSet<com.sphereon.crypto.core.kms.KeyStore> = mutableSetOf()
 
-    init {
-        getAllKeystores()
-    }
+    private var configuredKeyStoresLoaded = false
+    private var providerKeyStoresLoaded = false
 
     private val log = execution.log.logManager.withTag("HttpClientFactory")
 
@@ -181,6 +180,10 @@ class HttpClientFactoryJvmImpl(
         }
 
         // Otherwise, we’re building a custom or combined trust store
+        if (caOpts.additionalCAs.isNotEmpty()) {
+            addConfiguredKeystores()
+            addProviderKeystores()
+        }
         val trustStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null) }
 
         // merge system defaults first if enabled
@@ -215,8 +218,16 @@ class HttpClientFactoryJvmImpl(
         sslConfig: SslConfig,
         trustManagers: Set<X509TrustManager>? = null,
     ): SSLContext {
+        val clientKeyStoreIds = sslConfig.client.allKeyStoreIds()
+        // The overwhelmingly common case uses the platform trust store without mTLS. Do not
+        // enter the KMS graph for that case: infrastructure clients such as workload-token minting
+        // may need this HTTP client in order to authenticate the very KMS lookup this used to make.
+        if (clientKeyStoreIds.isNotEmpty()) {
+            addConfiguredKeystores()
+            addProviderKeystores()
+        }
         val keyManagers = mutableSetOf<X509KeyManager>()
-        for (id in sslConfig.client.allKeyStoreIds()) {
+        for (id in clientKeyStoreIds) {
             val keyStore = getSupportedKeyStore(id)
             keyManagers.addAll(keyStore.platformKeyManagerFactory.keyManagers.filterIsInstance<X509KeyManager>())
         }
@@ -249,10 +260,21 @@ class HttpClientFactoryJvmImpl(
             httpClientEngine
         }
 
-    private fun getAllKeystores() {
+    private fun addConfiguredKeystores() {
+        if (configuredKeyStoresLoaded) return
+        configuredKeyStoresLoaded = true
         keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.conf(ConfigLevel.APP)))
         keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.conf(ConfigLevel.TENANT)))
         keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.conf(ConfigLevel.PRINCIPAL)))
+    }
+
+    /**
+     * Adds the keystores that KMS providers own. Resolving a provider suspends, so this cannot run
+     * from the constructor and instead runs on the first path that needs a keystore by id.
+     */
+    private suspend fun addProviderKeystores() {
+        if (providerKeyStoresLoaded) return
+        providerKeyStoresLoaded = true
         for (providerId in kms.getProviderIds()) {
             val provider = kms.getProviderById(providerId)
             if (provider is HasKeyStoreService && provider.keyStore is SoftwareKeyStoreService) {

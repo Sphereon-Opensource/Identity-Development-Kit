@@ -151,7 +151,7 @@ class CertificatesRestServiceImpl(
         providerId: String?
     ): Boolean = certificateStore(providerId).deleteCertificateChain(alias)
 
-    private fun certificateStore(providerId: String?): CertificateStoreService {
+    private suspend fun certificateStore(providerId: String?): CertificateStoreService {
         val target: Any =
             if (providerId == null) {
                 kms.keyStore

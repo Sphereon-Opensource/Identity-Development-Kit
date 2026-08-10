@@ -48,7 +48,7 @@ interface CommandRequest
  * ```kotlin
  * class HealthCheckCommand(execution: SessionExecution) :
  *     TypedServiceCommandAdapter<EmptyRequest, HealthStatus, IdkError>(
- *         commandId = "health.check",
+ *         commandId = "system.health.check",
  *         execution = execution,
  *         inputTypeToken = typeToken<EmptyRequest>(),
  *         outputTypeToken = typeToken<HealthStatus>()

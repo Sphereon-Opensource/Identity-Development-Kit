@@ -37,6 +37,8 @@ import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.jose.JwtHeader
+import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
+import com.sphereon.crypto.core.kms.command.CreateRawSignatureResult
 import com.sphereon.crypto.core.sign.SignatureService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsCompactCommandImpl
@@ -237,7 +239,7 @@ class JwsMockedErrorPathsTest {
         runTest {
             val mockExecution = mockk<SessionExecution>(relaxed = true)
             val mockPrepareCommand = mockk<PrepareJwsCommand>()
-            val mockSignatureService = mockk<SignatureService>()
+            val mockSignatureCommand = mockk<CreateRawSignatureCommand>()
 
             // Mock prepare command to return error
             coEvery { mockPrepareCommand.execute(any()) } returns
@@ -247,7 +249,7 @@ class JwsMockedErrorPathsTest {
                 CreateJwsJsonGeneralCommandImpl(
                     execution = mockExecution,
                     prepareJwsCommand = mockPrepareCommand,
-                    signatureService = mockSignatureService,
+                    createRawSignatureCommand = mockSignatureCommand,
                 )
 
             val args =
@@ -271,7 +273,7 @@ class JwsMockedErrorPathsTest {
         runTest {
             val mockExecution = mockk<SessionExecution>(relaxed = true)
             val mockPrepareCommand = mockk<PrepareJwsCommand>()
-            val mockSignatureService = mockk<SignatureService>()
+            val mockSignatureCommand = mockk<CreateRawSignatureCommand>()
 
             // Create a proper ManagedIdentifierKeyResult
             val ecJwk = Jwk(kty = JwaKeyType.EC, crv = JwaCurve.P_256, x = "test-x", y = "test-y")
@@ -321,15 +323,15 @@ class JwsMockedErrorPathsTest {
             coEvery { mockPrepareCommand.execute(any()) } returns
                 IdkResult.ok(mockPreparedObject)
 
-            // Mock signature service to throw exception
-            coEvery { mockSignatureService.createRawSignature(any(), any(), any()) } throws
+            // Mock routed signature command to throw exception
+            coEvery { mockSignatureCommand.execute(any()) } throws
                 RuntimeException("Signature creation failed")
 
             val command =
                 CreateJwsJsonGeneralCommandImpl(
                     execution = mockExecution,
                     prepareJwsCommand = mockPrepareCommand,
-                    signatureService = mockSignatureService,
+                    createRawSignatureCommand = mockSignatureCommand,
                 )
 
             val args =
@@ -353,7 +355,7 @@ class JwsMockedErrorPathsTest {
         runTest {
             val mockExecution = mockk<SessionExecution>(relaxed = true)
             val mockPrepareCommand = mockk<PrepareJwsCommand>()
-            val mockSignatureService = mockk<SignatureService>()
+            val mockSignatureCommand = mockk<CreateRawSignatureCommand>()
 
             // Create existing signature
             val existingSignature =
@@ -411,15 +413,15 @@ class JwsMockedErrorPathsTest {
             coEvery { mockPrepareCommand.execute(any()) } returns
                 IdkResult.ok(mockPreparedObject)
 
-            // Mock signature service to return valid signature bytes
-            coEvery { mockSignatureService.createRawSignature(any(), any(), any()) } returns
-                ByteArray(64) { it.toByte() }
+            // Mock routed signature command to return valid signature bytes
+            coEvery { mockSignatureCommand.execute(any()) } returns
+                IdkResult.ok(CreateRawSignatureResult(ByteArray(64) { it.toByte() }))
 
             val command =
                 CreateJwsJsonGeneralCommandImpl(
                     execution = mockExecution,
                     prepareJwsCommand = mockPrepareCommand,
-                    signatureService = mockSignatureService,
+                    createRawSignatureCommand = mockSignatureCommand,
                 )
 
             val args =
@@ -2247,6 +2249,13 @@ class JwsMockedErrorPathsTest {
 
             assertTrue(result.isOk, "Should succeed with x5c resolution")
             assertTrue(result.value.isValid, "Should be valid")
+            coVerify(exactly = 1) {
+                mockIdentifierService.resolve(
+                    match<com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts> {
+                        it.identifier == listOf("cert1", "cert2") && it.verify == false
+                    },
+                )
+            }
         }
 
     @Test

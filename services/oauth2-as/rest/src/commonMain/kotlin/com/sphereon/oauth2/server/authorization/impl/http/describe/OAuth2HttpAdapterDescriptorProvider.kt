@@ -341,13 +341,6 @@ class OAuth2InternalHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvide
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "registerPreAuthCode",
                     ),
-                    HttpEndpointDescriptor(
-                        method = HttpMethod.POST,
-                        pathPattern = "/internal/provision/signing-key",
-                        consumes = setOf(MediaType.ApplicationJson),
-                        produces = setOf(MediaType.ApplicationJson),
-                        operationId = "provisionSigningKey",
-                    ),
                 ),
         )
 }

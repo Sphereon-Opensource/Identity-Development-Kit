@@ -43,7 +43,7 @@ class SoftwareKeyStoreTest {
 
     val app = createNativeSoftwareProviderTestAppGraph(this)
     val context = app.userContextManager.getAnonymous()
-    val session = context.sessionContextManager.createOrGetFromId("test")
+    val session = context.sessionContextManager.createOrGetFromId("test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     private val storeConfig =
         KeyStoreConfigImpl(

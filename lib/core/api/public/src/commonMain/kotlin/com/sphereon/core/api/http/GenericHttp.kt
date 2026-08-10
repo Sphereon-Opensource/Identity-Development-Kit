@@ -75,6 +75,8 @@ data class GenericHttpRequest(
     val pathParameters: Map<String, String> = emptyMap(),
     val queryParameters: Map<String, String?> = emptyMap(),
     val headers: Map<String, String> = emptyMap(),
+    /** Tenant established by validated authentication, never from request data. */
+    val resolvedTenantId: String? = null,
     /**
      * Raw multi-value header view, preserving each `name → List<value>` arrival shape from the
      * underlying transport. RFC 9110 §5.3 allows multiple field lines with the same name; the
@@ -209,6 +211,7 @@ data class GenericHttpRequest(
         pathParameters: Map<String, String> = this.pathParameters,
         queryParameters: Map<String, String?> = this.queryParameters,
         headers: Map<String, String> = this.headers,
+        resolvedTenantId: String? = this.resolvedTenantId,
         multiValueHeaders: Map<String, List<String>> = this.multiValueHeaders,
         clientCertificateChain: List<ByteArray>? = this.clientCertificateChain,
     ): GenericHttpRequest =
@@ -218,6 +221,7 @@ data class GenericHttpRequest(
             pathParameters = pathParameters,
             queryParameters = queryParameters,
             headers = headers,
+            resolvedTenantId = resolvedTenantId,
             multiValueHeaders = multiValueHeaders,
             bodySupplier = bodySupplier,
             bodyContent = bodyContent,
@@ -357,6 +361,8 @@ data class GenericHttpResponse(
  * Pattern syntax:
  * - Literal segment: `/keys` matches the segment `keys` exactly.
  * - Single-segment placeholder: `/keys/{id}` matches one segment and captures it as `id`.
+ * - Suffixed placeholder: `/keys/{id}:validate` captures `id` while requiring the literal
+ *   `:validate` suffix in the same segment.
  * - Tail wildcard: `/login/assets/{path...}` matches zero or more remaining segments and captures
  *   them joined by `/` (no leading slash). The wildcard token MUST be the last token in the
  *   pattern; placing it mid-path is rejected at compile time.
@@ -375,6 +381,7 @@ class CompiledPathPattern private constructor(
 
         data class Parameter(
             val name: String,
+            val suffix: String = "",
         ) : Segment()
 
         /**
@@ -391,11 +398,19 @@ class CompiledPathPattern private constructor(
     private val hasTailWildcard: Boolean = tailWildcardIndex >= 0
 
     /**
-     * Specificity score: number of literal segments.
-     * Higher means more specific (e.g., "/default" beats "/{id}").
+     * Specificity score: literal segments have weight 2 and suffixed parameters have weight 1.
+     * Higher means more specific, so a literal beats a suffixed parameter, which in turn beats a
+     * plain parameter.
      * Use this to resolve ambiguity when multiple patterns match the same path.
      */
-    val specificity: Int = segments.count { it is Segment.Literal }
+    val specificity: Int =
+        segments.sumOf { segment ->
+            when (segment) {
+                is Segment.Literal -> 2
+                is Segment.Parameter -> if (segment.suffix.isNotEmpty()) 1 else 0
+                is Segment.TailWildcard -> 0
+            }
+        }
 
     /**
      * Check if a path matches this compiled pattern.
@@ -409,7 +424,7 @@ class CompiledPathPattern private constructor(
             }
             return pathSegments.zip(segments).all { (pathSeg, patternSeg) ->
                 when (patternSeg) {
-                    is Segment.Parameter -> true
+                    is Segment.Parameter -> patternSeg.matches(pathSeg)
                     is Segment.Literal -> pathSeg == patternSeg.value
                     is Segment.TailWildcard -> true
                 }
@@ -426,7 +441,7 @@ class CompiledPathPattern private constructor(
             val pathSeg = pathSegments[i]
             val ok =
                 when (patternSeg) {
-                    is Segment.Parameter -> true
+                    is Segment.Parameter -> patternSeg.matches(pathSeg)
                     is Segment.Literal -> pathSeg == patternSeg.value
                     is Segment.TailWildcard -> true // unreachable: tailWildcardIndex bounds us
                 }
@@ -448,14 +463,14 @@ class CompiledPathPattern private constructor(
         val pathSegments = splitPath(path)
 
         if (!hasTailWildcard) {
-            if (pathSegments.size != segments.size) {
+            if (!matches(path)) {
                 return emptyMap()
             }
             return pathSegments
                 .zip(segments)
                 .mapNotNull { (pathSeg, patternSeg) ->
                     when (patternSeg) {
-                        is Segment.Parameter -> patternSeg.name to pathSeg.percentDecode()
+                        is Segment.Parameter -> patternSeg.name to patternSeg.capture(pathSeg).percentDecode()
                         is Segment.Literal -> null
                         is Segment.TailWildcard -> null
                     }
@@ -471,7 +486,14 @@ class CompiledPathPattern private constructor(
         // captured parameter values.
         for (i in 0 until tailWildcardIndex) {
             val patternSeg = segments[i]
-            if (patternSeg is Segment.Literal && pathSegments[i] != patternSeg.value) {
+            val pathSeg = pathSegments[i]
+            val matches =
+                when (patternSeg) {
+                    is Segment.Literal -> pathSeg == patternSeg.value
+                    is Segment.Parameter -> patternSeg.matches(pathSeg)
+                    is Segment.TailWildcard -> true
+                }
+            if (!matches) {
                 return emptyMap()
             }
         }
@@ -479,7 +501,7 @@ class CompiledPathPattern private constructor(
         for (i in 0 until tailWildcardIndex) {
             val patternSeg = segments[i]
             if (patternSeg is Segment.Parameter) {
-                params[patternSeg.name] = pathSegments[i].percentDecode()
+                params[patternSeg.name] = patternSeg.capture(pathSegments[i]).percentDecode()
             }
         }
         val tail = segments[tailWildcardIndex] as Segment.TailWildcard
@@ -506,9 +528,14 @@ class CompiledPathPattern private constructor(
                 val rawSegments = splitPath(pattern)
                 val segments =
                     rawSegments.mapIndexed { index, segment ->
-                        if (segment.startsWith("{") && segment.endsWith("}")) {
-                            val inner = segment.removeSurrounding("{", "}")
+                        if (segment.startsWith("{") && segment.contains("}")) {
+                            val closingBraceIndex = segment.indexOf('}')
+                            val inner = segment.substring(1, closingBraceIndex)
+                            val suffix = segment.substring(closingBraceIndex + 1)
                             if (inner.endsWith("...")) {
+                                if (suffix.isNotEmpty()) {
+                                    return@mapIndexed Segment.Literal(segment)
+                                }
                                 require(index == rawSegments.lastIndex) {
                                     "Tail-wildcard token '$segment' must be the last segment in pattern '$pattern'"
                                 }
@@ -518,7 +545,7 @@ class CompiledPathPattern private constructor(
                                 }
                                 Segment.TailWildcard(name)
                             } else {
-                                Segment.Parameter(inner)
+                                Segment.Parameter(inner, suffix)
                             }
                         } else {
                             Segment.Literal(segment)
@@ -527,6 +554,12 @@ class CompiledPathPattern private constructor(
                 CompiledPathPattern(pattern, segments)
             }
     }
+
+    private fun Segment.Parameter.matches(pathSegment: String): Boolean =
+        suffix.isEmpty() || (pathSegment.length > suffix.length && pathSegment.endsWith(suffix))
+
+    private fun Segment.Parameter.capture(pathSegment: String): String =
+        if (suffix.isEmpty()) pathSegment else pathSegment.dropLast(suffix.length)
 }
 
 /**

@@ -361,13 +361,14 @@ class ParsePushedAuthorizationRequestCommandImpl(
         // Extract additional parameters for extensibility (use first value of each)
         val additionalParameters = requestBody.mapValues { (_, values) -> values.first() }
 
-        // Build authorization request data
-        // Note: redirectUri is required in AuthorizationRequestData but optional in PAR
-        // We use empty string as placeholder if not provided, to be validated later
+        // Build authorization request data. Preserve omission as null: redirect_uri is optional
+        // when the client has exactly one registered URI, and the verifier resolves that URI.
+        // Collapsing omission to an empty string loses the distinction and can later produce a
+        // relative `?code=...` redirect against the AS /authorize endpoint.
         return Ok(
             AuthorizationRequestData(
                 clientId = clientId,
-                redirectUri = redirectUri ?: "",
+                redirectUri = redirectUri,
                 responseType = responseType,
                 scope = scope,
                 state = state,

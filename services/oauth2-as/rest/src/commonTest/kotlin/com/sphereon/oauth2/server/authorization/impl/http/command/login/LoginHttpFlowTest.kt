@@ -16,6 +16,7 @@
 
 package com.sphereon.oauth2.server.authorization.impl.http.command.login
 
+import com.sphereon.conf.theme.core.model.AssetElementValue
 import com.sphereon.conf.theme.core.model.ElementOrigin
 import com.sphereon.conf.theme.core.model.ProductType
 import com.sphereon.conf.theme.core.model.ResolvedElement
@@ -52,7 +53,6 @@ import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
-import com.sphereon.oauth2.server.authorization.provider.ClientApplicationResolver
 import com.sphereon.oauth2.server.authorization.provider.LoginPageAsset
 import com.sphereon.oauth2.server.authorization.provider.LoginPageContext
 import com.sphereon.oauth2.server.authorization.provider.LoginPageRenderer
@@ -70,6 +70,8 @@ import dev.zacsweers.metro.Provider
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionStore
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionStoreError
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -120,7 +122,7 @@ class LoginHttpFlowTest {
     // base resolver returns the deterministic [TRUSTED_BASE]. The renderer reflects the resolved
     // returnUrl + formActionBase into the HTML so the trusted-base/return_url assertions can read
     // them off the wire shape.
-    private fun newLoginPageCommandWithTrustedBase(): LoginPageHttpEndpointCommandImpl =
+    private fun newLoginPageCommandWithTrustedBase(trustedBase: String = TRUSTED_BASE): LoginPageHttpEndpointCommandImpl =
         LoginPageHttpEndpointCommandImpl(
             execution = TestSessionExecution(),
             loginPageRenderer = ReflectingLoginPageRenderer(),
@@ -133,7 +135,7 @@ class LoginHttpFlowTest {
                                 mapOf(
                                     "default" to
                                         com.sphereon.oauth2.common.config
-                                            .OAuth2ServerInstanceConfig(issuer = TRUSTED_BASE),
+                                            .OAuth2ServerInstanceConfig(issuer = trustedBase),
                                 ),
                         ),
                 ),
@@ -154,11 +156,12 @@ class LoginHttpFlowTest {
         secureRandom: SecureRandom = FixedSecureRandom("login-sid-1"),
         auditEmitter: OAuth2AuditEmitter = NoOpOAuth2AuditEmitter,
         seedPendingSession: Boolean = true,
+        applicationId: String? = "app-1",
     ): Pair<LoginSubmitHttpEndpointCommandImpl, InMemoryLoginSessionStore> {
         val pendingStore = InMemoryPendingAuthorizationSessionStore()
         if (seedPendingSession) {
-            pendingStore.create(pendingSession("sess-1"))
-            pendingStore.create(pendingSession("sess-csrf"))
+            pendingStore.create(pendingSession("sess-1").copy(applicationId = applicationId))
+            pendingStore.create(pendingSession("sess-csrf").copy(applicationId = applicationId))
         }
         val command =
             LoginSubmitHttpEndpointCommandImpl(
@@ -166,7 +169,6 @@ class LoginHttpFlowTest {
                 userAuthProvider = userAuthProvider,
                 loginSessionStore = store,
                 pendingAuthorizationSessionStore = pendingStore,
-                clientApplicationResolver = StubClientApplicationResolver(),
                 secureRandom = secureRandom,
                 configProvider = TestOAuth2ServersConfigProvider(),
                 clock = Clock.System,
@@ -345,6 +347,7 @@ class LoginHttpFlowTest {
                     validPair = "alice" to "wonderland",
                     acr = AuthAssuranceLevel.AAL2.acr,
                     amr = listOf(Amr.PWD, "otp"),
+                    roles = listOf("tenant-admin"),
                 )
             val (command, store) = newSubmitCommand(userAuthProvider = provider)
             val (body, csrfCookie) = csrfFormAndCookie("sess-1", "alice", "wonderland")
@@ -368,6 +371,41 @@ class LoginHttpFlowTest {
             assertEquals(AuthenticationMethod.PASSWORD, stored.authMethod)
             assertEquals(AuthAssuranceLevel.AAL2.acr, stored.acr)
             assertEquals(listOf(Amr.PWD, "otp"), stored.amr)
+            assertEquals(
+                JsonArray(listOf(JsonPrimitive("tenant-admin"))),
+                stored.claims["roles"],
+            )
+        }
+
+    @Test
+    fun loginPostSupportsApplicationAgnosticAuthentication() =
+        runTest {
+            val provider = StubUserAuthProvider(validPair = "alice" to "wonderland")
+            val (command, store) =
+                newSubmitCommand(
+                    userAuthProvider = provider,
+                    applicationId = null,
+                )
+            val (body, csrfCookie) = csrfFormAndCookie("sess-1", "alice", "wonderland")
+            val response =
+                command.execute(
+                    GenericHttpRequest(
+                        method = "POST",
+                        path = "/login",
+                        headers =
+                            mapOf(
+                                "Content-Type" to "application/x-www-form-urlencoded",
+                                "Cookie" to csrfCookie,
+                            ),
+                        bodySupplier = { body },
+                    ),
+                )
+
+            assertTrue(response.isOk)
+            assertEquals(302, response.value.statusCode)
+            assertNotNull(store.loaded("login-sid-1"), "Application-agnostic login must persist a session")
+            assertEquals("sess-1", provider.lastAuthenticationContext?.sessionId)
+            assertNull(provider.lastAuthenticationContext?.applicationId)
         }
 
     @Test
@@ -693,6 +731,27 @@ class LoginHttpFlowTest {
             // ${ctx.errorMessage} only — but we can read the cookie's tab_id which equals
             // what the page mints; that's enough to prove the page generated AND propagated
             // the value, even though the stub renderer doesn't reflect them in its body.
+        }
+
+    @Test
+    fun loginPageScopesCsrfCookieToPublicBasePath() =
+        runTest {
+            val command = newLoginPageCommandWithTrustedBase("$TRUSTED_BASE/auth")
+            val request =
+                GenericHttpRequest(
+                    method = "GET",
+                    path = "/login",
+                    queryParameters = mapOf("session_id" to "sess-csrf"),
+                    headers = mapOf("Host" to "as.example"),
+                )
+
+            val response = command.execute(request)
+
+            assertTrue(response.isOk)
+            assertTrue(
+                response.value.headers["Set-Cookie"].orEmpty().contains("Path=/auth/login"),
+                "CSRF cookie must follow the externally visible issuer base path",
+            )
         }
 
     @Test
@@ -1087,7 +1146,7 @@ class LoginHttpFlowTest {
                 mapOf(
                     "logo" to
                         ResolvedElement(
-                            asset = ThemeAssetReference(uri = logoUri),
+                            value = AssetElementValue(ThemeAssetReference(uri = logoUri)),
                             origin = ElementOrigin.TENANT,
                         ),
                 ),
@@ -1257,8 +1316,11 @@ class LoginHttpFlowTest {
         private val validPair: Pair<String, String>,
         private val acr: String? = AuthAssuranceLevel.AAL1.acr,
         private val amr: List<String>? = listOf(Amr.PWD),
+        private val roles: List<String> = emptyList(),
         private val validPasskeyCredentialId: String? = null,
     ) : UserAuthenticationProvider {
+        var lastAuthenticationContext: AuthenticationContext? = null
+
         override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> = Ok(null)
 
         override suspend fun initiateAuthentication(
@@ -1280,6 +1342,7 @@ class LoginHttpFlowTest {
             credentials: UserCredentials,
             context: AuthenticationContext?,
         ): IdkResult<AuthenticatedUser?, AuthenticationError> {
+            lastAuthenticationContext = context
             val webAuthn = credentials as? UserCredentials.WebAuthnAssertion
             if (webAuthn != null) {
                 val expectedMetadata =
@@ -1313,6 +1376,7 @@ class LoginHttpFlowTest {
                         authenticationMethod = AuthenticationMethod.PASSWORD,
                         acr = acr,
                         amr = amr,
+                        roles = roles,
                     ),
                 )
             } else {
@@ -1325,13 +1389,6 @@ class LoginHttpFlowTest {
         override suspend fun getUserInfo(userId: String): IdkResult<UserInfo, AuthenticationError> = Ok(UserInfo(userId = userId))
 
         override suspend fun isAuthenticationMethodAvailable(method: AuthenticationMethod,): IdkResult<Boolean, AuthenticationError> = Ok(method == AuthenticationMethod.PASSWORD)
-    }
-
-    private class StubClientApplicationResolver : ClientApplicationResolver {
-        override suspend fun resolveApplicationId(
-            clientId: String,
-            requestHost: String?
-        ): IdkResult<String?, IdkError> = Ok("app-1")
     }
 
     /**

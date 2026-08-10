@@ -56,19 +56,30 @@ import com.sphereon.crypto.core.kms.KmsProviderQuery
 import com.sphereon.crypto.core.kms.QueryProviderResult
 import com.sphereon.crypto.core.kms.QueryProvidersResult
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureResult
+import com.sphereon.crypto.core.kms.command.DecryptArgs
+import com.sphereon.crypto.core.kms.command.DecryptCommand
 import com.sphereon.crypto.core.kms.command.DecryptResult
 import com.sphereon.crypto.core.kms.command.DeleteKeyResult
+import com.sphereon.crypto.core.kms.command.EncryptArgs
+import com.sphereon.crypto.core.kms.command.EncryptCommand
 import com.sphereon.crypto.core.kms.command.EncryptResult
+import com.sphereon.crypto.core.kms.command.GenerateKeyArgs
+import com.sphereon.crypto.core.kms.command.GenerateKeyCommand
 import com.sphereon.crypto.core.kms.command.GenerateKeyResult
 import com.sphereon.crypto.core.kms.command.GenerateMacArgs
 import com.sphereon.crypto.core.kms.command.GenerateMacCommand
 import com.sphereon.crypto.core.kms.command.GenerateMacResult
 import com.sphereon.crypto.core.kms.command.GetKeyResult
+import com.sphereon.crypto.core.kms.command.ListKeysArgs
+import com.sphereon.crypto.core.kms.command.ListKeysCommand
 import com.sphereon.crypto.core.kms.command.ListKeysResult
 import com.sphereon.crypto.core.kms.command.PerformKeyAgreementResult
 import com.sphereon.crypto.core.kms.command.ResolvePublicKeyResult
+import com.sphereon.crypto.core.kms.command.SignDigestResult
+import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.command.StoreKeyResult
 import com.sphereon.crypto.core.kms.command.UnwrapKeyResult
+import com.sphereon.crypto.core.kms.command.VerifyDigestResult
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureResult
 import com.sphereon.crypto.core.kms.command.WrapKeyResult
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
@@ -79,7 +90,10 @@ import com.sphereon.data.store.party.model.IdentifierProtectionMode
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicy
 import com.sphereon.identity.matching.protection.NormalizationProfile
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.Mac
@@ -110,12 +124,38 @@ class KmsBackedIdentifierProtectorKmsFlowTest {
             normalization = NormalizationProfile.EMAIL,
         )
 
-    private fun newProtector(kms: InMemoryAesGcmKms): KmsBackedIdentifierProtector =
+    private fun newProtector(
+        kms: InMemoryAesGcmKms,
+        providerId: String? = "software",
+        macCommand: MapBackedGenerateMacCommand = MapBackedGenerateMacCommand(kms),
+        listKeysCommand: ListKeysCommand = MapBackedListKeysCommand(kms),
+    ): KmsBackedIdentifierProtector =
         KmsBackedIdentifierProtector(
-            generateMacCommand = MapBackedGenerateMacCommand(kms),
-            keyManagerService = kms,
-            providerId = "software",
+            generateKeyCommand = MapBackedGenerateKeyCommand(kms),
+            listKeysCommand = listKeysCommand,
+            generateMacCommand = macCommand,
+            encryptCommand = MapBackedEncryptCommand(kms),
+            decryptCommand = MapBackedDecryptCommand(kms),
+            providerId = providerId,
         )
+
+    @Test
+    fun providerSelectionSeparatesApplicationAndCustomerTenants() {
+        assertEquals(
+            "software",
+            identifierProtectionProviderId(
+                sessionTenantId = "platform",
+                applicationTenantId = "platform",
+            ),
+        )
+        assertEquals(
+            "default",
+            identifierProtectionProviderId(
+                sessionTenantId = "customer-tenant",
+                applicationTenantId = "platform",
+            ),
+        )
+    }
 
     @Test
     fun protectOnFreshKmsProvisionsEncryptionKeyAndSucceeds() =
@@ -176,6 +216,81 @@ class KmsBackedIdentifierProtectorKmsFlowTest {
             assertEquals(keysAfterFirst, kms.storedKeys.keys.toSet(), "Key provisioning must be idempotent per tenant")
             assertEquals(firstGenerateCount, kms.generateCount, "Existing keys must be reused, not regenerated")
         }
+
+    @Test
+    fun concurrentFirstUseAcrossProtectorInstancesGeneratesOneBlindIndexKey() =
+        runTest {
+            val kms = InMemoryAesGcmKms()
+            val listKeys = SnapshotYieldingListKeysCommand(kms)
+            val protectors =
+                listOf(
+                    newProtector(kms, listKeysCommand = listKeys),
+                    newProtector(kms, listKeysCommand = listKeys),
+                )
+
+            val blindIndexes =
+                protectors
+                    .map { protector ->
+                        async {
+                            protector
+                                .blindIndex(tenant, emailType, "Owner@Example.com", emailPolicy)
+                                .getOrNull() ?: error("concurrent blind-index derivation failed")
+                        }
+                    }.awaitAll()
+
+            assertEquals(1, kms.generateCount, "Concurrent first use must create the tenant blind-index key exactly once")
+            assertEquals(blindIndexes.first(), blindIndexes.last(), "Concurrent callers must derive the same blind index")
+        }
+
+    @Test
+    fun nullConfiguredProviderRoutesMacToResolvedKeyProvider() =
+        runTest {
+            val kms = InMemoryAesGcmKms()
+            val macCommand = MapBackedGenerateMacCommand(kms)
+            val protector = newProtector(kms, providerId = null, macCommand = macCommand)
+
+            protector.protect(tenant, "identity-1", emailType, "Owner@Example.com", emailPolicy).getOrNull()
+                ?: error("protect failed")
+
+            assertEquals(
+                "software",
+                macCommand.lastProviderId,
+                "MAC must use the provider returned by managed key resolution, not a null/default provider",
+            )
+        }
+
+    @Test
+    fun legacySingleProviderKeysRemainUsableAfterMultiProviderUpgrade() =
+        runTest {
+            // RC2 had a single software provider. Current deployments add more providers and may
+            // therefore have a different registry default, while the persisted identifier keys
+            // must remain in (and be used from) the original software keystore.
+            val kms = InMemoryAesGcmKms(defaultProviderIdValue = "platform")
+            val legacyMacCommand = MapBackedGenerateMacCommand(kms)
+            val legacyProtector = newProtector(kms, providerId = "software", macCommand = legacyMacCommand)
+            val rc2Ciphertext =
+                legacyProtector
+                    .protect(tenant, "identity-rc2", emailType, "Rc2@Example.com", emailPolicy)
+                    .getOrNull() ?: error("RC2 protection setup failed")
+            val generatedAtRc2 = kms.generateCount
+
+            val currentMacCommand = MapBackedGenerateMacCommand(kms)
+            val currentProtector = newProtector(kms, providerId = null, macCommand = currentMacCommand)
+
+            val revealed =
+                currentProtector
+                    .reveal(rc2Ciphertext, tenant, "identity-rc2", emailType)
+                    .getOrNull() ?: error("current release must decrypt RC2 ciphertext")
+            currentProtector
+                .protect(tenant, "identity-current", emailType, "Current@Example.com", emailPolicy)
+                .getOrNull() ?: error("current release must reuse RC2 identifier keys")
+
+            assertEquals("rc2@example.com", revealed)
+            assertEquals(generatedAtRc2, kms.generateCount, "Upgrade must not duplicate or rotate identifier keys")
+            assertEquals("software", currentMacCommand.lastProviderId)
+            assertEquals("software", kms.lastEncryptProviderId)
+            assertEquals("software", kms.lastDecryptProviderId)
+        }
 }
 
 /**
@@ -184,14 +299,30 @@ class KmsBackedIdentifierProtectorKmsFlowTest {
  * generateKey/storeKey. Mirrors the software KMS provider's behavior where
  * `resolveKeyIfNeeded` fails for unknown aliases.
  */
-private class InMemoryAesGcmKms : KeyManagerService {
+private class InMemoryAesGcmKms(
+    private val defaultProviderIdValue: String = "software",
+) : KeyManagerService {
     val storedKeys = mutableMapOf<String, ResolvedKeyInfo<Jwk>>()
     var generateCount = 0
+        private set
+    var lastEncryptProviderId: String? = null
+        private set
+    var lastDecryptProviderId: String? = null
         private set
 
     private val random = SecureRandom()
 
     fun keyBytes(alias: String): ByteArray? = storedKeys[alias]?.key?.k?.decodeFrom(Encoding.BASE64URL)
+
+    fun keyBytes(
+        alias: String,
+        providerId: String,
+    ): ByteArray? =
+        storedKeys[alias]
+            ?.takeIf { it.providerId == providerId }
+            ?.key
+            ?.k
+            ?.decodeFrom(Encoding.BASE64URL)
 
     // ===== Methods exercised by KmsBackedIdentifierProtector (real behavior) =====
 
@@ -220,8 +351,16 @@ private class InMemoryAesGcmKms : KeyManagerService {
         keyVisibility: KeyVisibility?,
     ): ManagedKeyPair {
         requireNotNull(alias) { "This test KMS requires an alias for key generation" }
-        require(alg == SignatureAlgorithm.HMAC_SHA256 || (use == JwkUse.enc && alg == null)) {
-            "This test KMS only mints symmetric keys (HMAC-SHA256 or use=enc AES-256); requested use=$use alg=$alg"
+        require(
+            (use == JwkUse.sig && alg == SignatureAlgorithm.HMAC_SHA256) ||
+                (
+                    use == JwkUse.enc &&
+                        alg == null &&
+                        keyOperations?.toSet() == setOf(KeyOperations.ENCRYPT, KeyOperations.DECRYPT)
+                ),
+        ) {
+            "This test KMS requires HMAC-SHA256 for MAC keys or an algorithm-free AES key with purpose-specific operations; " +
+                "requested use=$use alg=$alg keyOperations=${keyOperations?.toList()}"
         }
         generateCount++
         val rawKey = ByteArray(32).also { random.nextBytes(it) }
@@ -229,7 +368,12 @@ private class InMemoryAesGcmKms : KeyManagerService {
             Jwk(
                 kty = JwaKeyType.oct,
                 k = rawKey.encodeToBase64Url(),
-                alg = if (alg == SignatureAlgorithm.HMAC_SHA256) JwaAlgorithm.HS256 else null,
+                alg =
+                    if (use == JwkUse.sig && alg == SignatureAlgorithm.HMAC_SHA256) {
+                        JwaAlgorithm.HS256
+                    } else {
+                        null
+                    },
                 use = (use ?: JwkUse.sig).value,
                 kid = alias,
                 generateKid = false,
@@ -240,14 +384,14 @@ private class InMemoryAesGcmKms : KeyManagerService {
                 keyVisibility = KeyVisibility.PRIVATE,
                 keyType = KeyTypeMapping.Symmetric,
                 alias = alias,
-                providerId = providerId ?: "software",
+                providerId = providerId ?: defaultProviderIdValue,
                 kid = alias,
                 signatureAlgorithm = alg,
             )
         val publicJwk = privateJwk.copy(k = null)
         return ManagedKeyPair(
             kid = alias,
-            providerId = providerId ?: "software",
+            providerId = providerId ?: defaultProviderIdValue,
             alias = alias,
             jose = JoseKeyPair(privateJwk, publicJwk),
             cose = CoseKeyPair(null, CoseJoseKeyMappingService.toCoseKey(publicJwk)),
@@ -263,9 +407,17 @@ private class InMemoryAesGcmKms : KeyManagerService {
         val alias =
             keyInfo.alias ?: keyInfo.kid
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Encrypt requires an alias or kid"))
-        val keyBytes =
-            keyBytes(alias)
-                ?: return Err(IdkError.fromString(message = "Encryption failed: Could not find key for alias $alias"))
+        val effectiveProviderId = keyInfo.providerId ?: defaultProviderIdValue
+        lastEncryptProviderId = effectiveProviderId
+        val resolved = storedKeys[alias]
+        val keyBytes = if (resolved?.providerId == effectiveProviderId) keyBytes(alias) else null
+        if (keyBytes == null) {
+            return Err(
+                IdkError.fromString(
+                    message = "Encryption failed: Could not find key for alias $alias in provider $effectiveProviderId",
+                ),
+            )
+        }
         require(algorithm == ContentEncryptionAlgorithm.A256GCM) { "This test KMS only supports A256GCM" }
         val iv = ByteArray(12).also { random.nextBytes(it) }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -292,9 +444,17 @@ private class InMemoryAesGcmKms : KeyManagerService {
         val alias =
             keyInfo.alias ?: keyInfo.kid
                 ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Decrypt requires an alias or kid"))
-        val keyBytes =
-            keyBytes(alias)
-                ?: return Err(IdkError.fromString(message = "Decryption failed: Could not find key for alias $alias"))
+        val effectiveProviderId = keyInfo.providerId ?: defaultProviderIdValue
+        lastDecryptProviderId = effectiveProviderId
+        val resolved = storedKeys[alias]
+        val keyBytes = if (resolved?.providerId == effectiveProviderId) keyBytes(alias) else null
+        if (keyBytes == null) {
+            return Err(
+                IdkError.fromString(
+                    message = "Decryption failed: Could not find key for alias $alias in provider $effectiveProviderId",
+                ),
+            )
+        }
         return try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
@@ -319,6 +479,9 @@ private class InMemoryAesGcmKms : KeyManagerService {
         val resolved =
             storedKeys[alias] ?: storedKeys.values.find { it.kid == alias }
                 ?: throw IllegalArgumentException("Key not found: $alias")
+        if (keyInfo.providerId != null && resolved.providerId != keyInfo.providerId) {
+            throw IllegalArgumentException("Key not found: $alias in provider ${keyInfo.providerId}")
+        }
         return ManagedKeyInfo(alias = resolved.alias ?: alias, providerId = resolved.providerId ?: "software", resolvedKeyInfo = resolved)
     }
 
@@ -353,7 +516,7 @@ private class InMemoryAesGcmKms : KeyManagerService {
 
     // ===== Not exercised by the protector =====
 
-    override fun defaultProviderId(): String = "software"
+    override fun defaultProviderId(): String = defaultProviderIdValue
 
     override fun defaultResolverId(): String = unused()
 
@@ -364,9 +527,9 @@ private class InMemoryAesGcmKms : KeyManagerService {
 
     override fun getProviderIds(): Array<String> = unused()
 
-    override fun getProviderById(id: String): KmsProvider = unused()
+    override suspend fun getProviderById(id: String): KmsProvider = unused()
 
-    override fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider = unused()
+    override suspend fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider = unused()
 
     override fun getResolverById(id: String): KeyResolverService = unused()
 
@@ -393,7 +556,7 @@ private class InMemoryAesGcmKms : KeyManagerService {
 
     override fun getResolverIds(): Array<String> = unused()
 
-    override fun getProvider(
+    override suspend fun getProvider(
         providerId: String?,
         alg: SignatureAlgorithm?,
     ): KmsProvider = unused()
@@ -419,6 +582,38 @@ private class InMemoryAesGcmKms : KeyManagerService {
 
     override val keyStore: KeyStoreService
         get() = unused()
+
+    override suspend fun signDigestResult(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+        requireX5Chain: Boolean,
+    ): IdkResult<SignDigestResult, IdkError> = unused()
+
+    override suspend fun verifyDigestResult(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+    ): IdkResult<VerifyDigestResult, IdkError> = unused()
+
+    override suspend fun signDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+        requireX5Chain: Boolean,
+    ): ByteArray = unused()
+
+    override suspend fun verifyDigest(
+        keyInfo: KeyInfoType<*>,
+        digest: ByteArray,
+        signature: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
+        signatureEncoding: SignatureEncoding,
+    ): Boolean = unused()
 
     override suspend fun queryProvider(query: KmsProviderQuery): IdkResult<QueryProviderResult, IdkError> = unused()
 
@@ -509,6 +704,9 @@ private class InMemoryAesGcmKms : KeyManagerService {
 private class MapBackedGenerateMacCommand(
     private val kms: InMemoryAesGcmKms,
 ) : GenerateMacCommand {
+    var lastProviderId: String? = null
+        private set
+
     override val isEnabled: Boolean = true
     override val inputTypeToken = typeToken<GenerateMacArgs>()
     override val outputTypeToken = typeToken<GenerateMacResult>()
@@ -516,8 +714,10 @@ private class MapBackedGenerateMacCommand(
     override suspend fun supports(args: Any): Boolean = args is GenerateMacArgs
 
     override suspend fun execute(args: GenerateMacArgs): IdkResult<GenerateMacResult, IdkError> {
+        lastProviderId = args.providerId
+        val effectiveProviderId = args.providerId ?: kms.defaultProviderId()
         val keyBytes =
-            kms.keyBytes(args.keyId)
+            kms.keyBytes(args.keyId, effectiveProviderId)
                 ?: return Err(IdkError.NOT_FOUND_ERROR(resource = "Key", message = "MAC key '${args.keyId}' not found"))
         val mac =
             Mac
@@ -532,4 +732,91 @@ private class MapBackedGenerateMacCommand(
             ),
         )
     }
+}
+
+private class MapBackedGenerateKeyCommand(
+    private val kms: InMemoryAesGcmKms,
+) : GenerateKeyCommand {
+    override val isEnabled: Boolean = true
+    override val inputTypeToken = typeToken<GenerateKeyArgs>()
+    override val outputTypeToken = typeToken<GenerateKeyResult>()
+
+    override suspend fun supports(args: Any): Boolean = args is GenerateKeyArgs
+
+    override suspend fun execute(args: GenerateKeyArgs): IdkResult<GenerateKeyResult, IdkError> =
+        kms.generateKeyResult(
+            providerId = args.providerId,
+            alias = args.alias,
+            use = args.use,
+            keyOperations = args.keyOperations,
+            alg = args.alg,
+            keyVisibility = args.keyVisibility,
+        )
+}
+
+private class MapBackedListKeysCommand(
+    private val kms: InMemoryAesGcmKms,
+) : ListKeysCommand {
+    override val isEnabled: Boolean = true
+    override val inputTypeToken = typeToken<ListKeysArgs>()
+    override val outputTypeToken = typeToken<ListKeysResult>()
+
+    override suspend fun supports(args: Any): Boolean = args is ListKeysArgs
+
+    override suspend fun execute(args: ListKeysArgs): IdkResult<ListKeysResult, IdkError> = kms.listKeysResult(args.providerId)
+}
+
+/** Captures the lookup result before yielding so two callers deterministically observe the same initial miss. */
+private class SnapshotYieldingListKeysCommand(
+    private val kms: InMemoryAesGcmKms,
+) : ListKeysCommand {
+    override val isEnabled: Boolean = true
+    override val inputTypeToken = typeToken<ListKeysArgs>()
+    override val outputTypeToken = typeToken<ListKeysResult>()
+
+    override suspend fun supports(args: Any): Boolean = args is ListKeysArgs
+
+    override suspend fun execute(args: ListKeysArgs): IdkResult<ListKeysResult, IdkError> {
+        val snapshot = kms.listKeysResult(args.providerId)
+        yield()
+        return snapshot
+    }
+}
+
+private class MapBackedEncryptCommand(
+    private val kms: InMemoryAesGcmKms,
+) : EncryptCommand {
+    override val isEnabled: Boolean = true
+    override val inputTypeToken = typeToken<EncryptArgs>()
+    override val outputTypeToken = typeToken<EncryptResult>()
+
+    override suspend fun supports(args: Any): Boolean = args is EncryptArgs
+
+    override suspend fun execute(args: EncryptArgs): IdkResult<EncryptResult, IdkError> =
+        kms.encryptResult(
+            keyInfo = requireNotNull(args.keyInfo),
+            plaintext = args.plaintext,
+            algorithm = args.algorithm,
+            additionalAuthenticatedData = args.additionalAuthenticatedData,
+        )
+}
+
+private class MapBackedDecryptCommand(
+    private val kms: InMemoryAesGcmKms,
+) : DecryptCommand {
+    override val isEnabled: Boolean = true
+    override val inputTypeToken = typeToken<DecryptArgs>()
+    override val outputTypeToken = typeToken<DecryptResult>()
+
+    override suspend fun supports(args: Any): Boolean = args is DecryptArgs
+
+    override suspend fun execute(args: DecryptArgs): IdkResult<DecryptResult, IdkError> =
+        kms.decryptResult(
+            keyInfo = requireNotNull(args.keyInfo),
+            ciphertext = args.ciphertext,
+            algorithm = args.algorithm,
+            iv = args.iv,
+            authTag = args.authTag,
+            additionalAuthenticatedData = args.additionalAuthenticatedData,
+        )
 }

@@ -25,6 +25,7 @@ import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseComma
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestArgs
 import com.sphereon.oauth2.server.authorization.command.TokenRequestData
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestArgs
 import com.sphereon.oauth2.server.authorization.impl.TestFixtures
@@ -85,7 +86,6 @@ class PasswordGrantHandlerImplTest {
                     grantTypes = listOf(GrantType.PASSWORD, GrantType.REFRESH_TOKEN),
                     allowedScopes = listOf("read"),
                 )
-            assertTrue(clientRegistry.registerClient(client).isOk)
 
             val handler =
                 PasswordGrantHandlerImpl(
@@ -106,9 +106,18 @@ class PasswordGrantHandlerImplTest {
                         },
                 )
             val commands = CapturingPasswordGrantCommands()
-            val context = passwordGrantContext(client.clientId, commands)
+            val context = passwordGrantContext(clientId = client.clientId, commands = commands)
 
-            val result = handler.handle(context.tokenRequest.grantParameters, context)
+            val result =
+                handler.handleTrusted(
+                    context.tokenRequest.grantParameters,
+                    context,
+                    VerifiedClientAuthorization(
+                        clientId = client.clientId,
+                        grantTypes = client.grantTypes,
+                        allowedScopes = client.allowedScopes,
+                    ),
+                )
 
             assertTrue(result.isOk, "password grant should succeed, got ${if (!result.isOk) result.error else "ok"}")
             assertEquals("AT-PASSWORD", result.value.accessToken)

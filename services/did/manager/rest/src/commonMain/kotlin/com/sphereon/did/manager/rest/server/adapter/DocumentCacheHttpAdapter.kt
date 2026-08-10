@@ -45,7 +45,7 @@ class DocumentCacheHttpAdapter(
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
-        const val ID: String = "DID-MANAGER-DOCUMENT-CACHE"
+        const val ID: String = "did.manager.document-cache"
     }
 
     override val endpointCommands: List<HttpEndpointCommand> =

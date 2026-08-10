@@ -20,14 +20,18 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.kms.command.EcdhDeriveCommand
+import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
 import com.sphereon.crypto.jose.jwe.command.CreateJweCompactCommandImpl
 import com.sphereon.crypto.jose.jwe.command.CreateJweJsonFlattenedCommandImpl
 import com.sphereon.crypto.jose.jwe.command.CreateJweJsonGeneralCommandImpl
@@ -37,14 +41,17 @@ import com.sphereon.crypto.resolution.IdentifierContext
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierJwkResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.context.createAnonymousSessionContext
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -627,6 +634,71 @@ class JweMockedErrorPathsTest {
     // ========================================================================
 
     @Test
+    fun testDecryptJwe_ProviderBackedEcdhUsesDeriveCommandWithoutResolvingPrivateKey() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            val mockKeyManagerService = mockk<KeyManagerService>()
+            val mockIdentifierService = mockk<MultiManagedIdentifierService>()
+            val mockEcdhDeriveCommand = mockk<EcdhDeriveCommand>()
+            val plaintext = "provider-routed-jwe".encodeToByteArray()
+
+            coEvery { mockEcdhDeriveCommand.execute(any()) } returns
+                IdkResult.ok(EcdhDeriveResult(derivedSecret = ByteArray(32) { 7 }))
+            coEvery {
+                mockKeyManagerService.decrypt(any(), any(), any(), any(), any(), any())
+            } returns plaintext
+
+            val command =
+                DecryptJweCommandImpl(
+                    execution = mockExecution,
+                    identifierService = mockIdentifierService,
+                    keyManagerService = mockKeyManagerService,
+                    ecdhDeriveCommand = mockEcdhDeriveCommand,
+                )
+            val header =
+                JweHeader().apply {
+                    alg = "ECDH-ES"
+                    enc = "A256GCM"
+                    epk =
+                        Jwk(
+                            kty = JwaKeyType.EC,
+                            crv = JwaCurve.P_256,
+                            x = "WKn-ZIGevcwGFOMJ0GeEei2HiGCt9c1i9o6n3y8T7jc",
+                            y = "y77t-RvAHRKTsSGdIYUfweuOvwrvDD-Q3Hv5J0fSKbE",
+                        )
+                }
+            val decryptor =
+                ManagedOptsKeyInfo(
+                    identifier =
+                        KeyInfo<Nothing>(
+                            alias = "oidf-jarm-key",
+                            providerId = "customer-provider",
+                            keyVisibility = KeyVisibility.PRIVATE,
+                        ),
+                )
+
+            val result =
+                command.execute(
+                    DecryptJweArgs(
+                        jwe =
+                            JweCompact(
+                                header = header,
+                                encryptedKey = ByteArray(0),
+                                iv = ByteArray(12),
+                                ciphertext = ByteArray(16),
+                                authTag = ByteArray(16),
+                            ),
+                        decryptor = decryptor,
+                    ),
+                )
+
+            assertTrue(result.isOk, "Provider-backed ECDH JWE should decrypt: ${result.errorOrNull()}")
+            assertContentEquals(plaintext, result.value.plaintext)
+            coVerify(exactly = 1) { mockEcdhDeriveCommand.execute(any()) }
+            coVerify(exactly = 0) { mockIdentifierService.resolve(any<ManagedIdentifierOptsOrResult>()) }
+        }
+
+    @Test
     fun testDecryptJwe_NullJwe() =
         runTest {
             val mockExecution = mockk<SessionExecution>(relaxed = true)
@@ -638,6 +710,7 @@ class JweMockedErrorPathsTest {
                     execution = mockExecution,
                     identifierService = mockIdentifierService,
                     keyManagerService = mockKeyManagerService,
+                    ecdhDeriveCommand = mockk(),
                 )
 
             val args =
@@ -664,6 +737,7 @@ class JweMockedErrorPathsTest {
                     execution = mockExecution,
                     identifierService = mockIdentifierService,
                     keyManagerService = mockKeyManagerService,
+                    ecdhDeriveCommand = mockk(),
                 )
 
             // Create a properly constructed JweCompact
@@ -708,6 +782,7 @@ class JweMockedErrorPathsTest {
                     execution = mockExecution,
                     identifierService = mockIdentifierService,
                     keyManagerService = mockKeyManagerService,
+                    ecdhDeriveCommand = mockk(),
                 )
 
             // Create a properly constructed JweCompact
@@ -778,6 +853,7 @@ class JweMockedErrorPathsTest {
                     execution = mockExecution,
                     identifierService = mockIdentifierService,
                     keyManagerService = mockKeyManagerService,
+                    ecdhDeriveCommand = mockk(),
                 )
 
             // Create a JweCompact with unsupported algorithm

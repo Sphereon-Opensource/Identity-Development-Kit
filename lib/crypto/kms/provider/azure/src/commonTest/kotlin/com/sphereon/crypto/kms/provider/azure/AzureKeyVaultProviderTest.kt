@@ -77,7 +77,8 @@ class AzureKeyVaultProviderTest {
                         secretCredentialOpts =
                             SecretCredentialOpts(
                                 clientId = assertConfigValue { BuildKonfig.AZURE_KEYVAULT_CLIENT_ID },
-                                clientSecret = assertConfigValue { BuildKonfig.AZURE_KEYVAULT_CLIENT_SECRET },
+                                clientSecretId = "sec_azure_integration_credential",
+                                clientSecretMaterial = assertConfigValue { BuildKonfig.AZURE_KEYVAULT_CLIENT_SECRET },
                             ),
                     ),
                 exponentialBackoffRetryOpts =

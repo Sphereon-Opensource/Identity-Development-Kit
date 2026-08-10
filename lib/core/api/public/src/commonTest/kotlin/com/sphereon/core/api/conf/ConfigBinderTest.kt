@@ -572,6 +572,42 @@ class HierarchicalConfigBinderTest {
         // Default profile is "default" in TestConfigEnvironment
         assertNotNull(binder.getActiveProfile())
     }
+
+    @Test
+    fun hierarchicalTenantBinderHidesProtectedAppAndDelegatedEnvironmentValues() {
+        val app =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProtectedProperty("server.host", "server-owned", PropertyProtection.PROTECTED)
+            }
+        val delegatedEnvironment =
+            ScopedPropertySourceWrapper(
+                MapPropertySource("protected-environment", mapOf("server.timeout" to 99999L)),
+                ConfigLevel.APP,
+            )
+        val tenant =
+            ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT).apply {
+                addProperty("server.port", 8443)
+            }
+        val environment =
+            TestConfigEnvironment(
+                level = ConfigLevel.TENANT,
+                propertySources =
+                    DefaultPropertySources(
+                        mutableListOf(
+                            delegatedEnvironment,
+                            tenant,
+                            app,
+                        ),
+                    ),
+            )
+
+        val config = HierarchicalConfigBinder(environment).getConfig<ServerConfig>("server")
+
+        assertNotNull(config)
+        assertEquals("localhost", config.host)
+        assertEquals(8443, config.port)
+        assertEquals(30000L, config.timeout)
+    }
 }
 
 class ConfigEnvironmentToConfigBinderExtensionTest {
@@ -604,6 +640,88 @@ class ConfigEnvironmentToConfigBinderExtensionTest {
 
         val config: ServerConfig? = binder.getConfig("config")
         assertNotNull(config)
+    }
+
+    @Test
+    fun toConfigBinderUsesEnvironmentExactInterpolationCatalog() {
+        val source =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProperty("feature.value", "\${env:PATH}")
+            }
+        val policyProvider =
+            DefaultInterpolationPolicyProvider(
+                mapOf("feature.value" to InterpolationPolicy.APP_ENVIRONMENT),
+            )
+        val environment =
+            TestConfigEnvironment(
+                propertySources = DefaultPropertySources(mutableListOf(source)),
+                interpolationPolicyProvider = policyProvider,
+            )
+
+        val config = environment.toConfigBinder().getConfig<SimpleConfig>("feature")
+
+        assertNotNull(config)
+        assertTrue(config.value.isNotBlank())
+        assertFalse(config.value.contains("\${env:"))
+    }
+
+    @Test
+    fun interpolateFalseTenantBinderRetainsProtectedAndEnvironmentAuthorization() {
+        val app =
+            ProtectedMutableMapPropertySource("app", ConfigLevel.APP).apply {
+                addProtectedProperty("server.host", "server-owned", PropertyProtection.PROTECTED)
+            }
+        val delegatedEnvironment =
+            ScopedPropertySourceWrapper(
+                MapPropertySource("environment", mapOf("server.timeout" to 99999L)),
+                ConfigLevel.APP,
+            )
+        val tenant =
+            ProtectedMutableMapPropertySource("tenant", ConfigLevel.TENANT).apply {
+                addProperty("server.port", 8443)
+            }
+        val environment =
+            TestConfigEnvironment(
+                level = ConfigLevel.TENANT,
+                propertySources =
+                    DefaultPropertySources(
+                        mutableListOf(
+                            delegatedEnvironment,
+                            tenant,
+                            app,
+                        ),
+                    ),
+            )
+
+        val config = environment.toConfigBinder(interpolate = false).getConfig<ServerConfig>("server")
+
+        assertNotNull(config)
+        assertEquals("localhost", config.host)
+        assertEquals(8443, config.port)
+        assertEquals(30000L, config.timeout)
+    }
+
+    @Test
+    fun interpolateFalseTenantBinderRejectsSecretReferences() {
+        val tenant =
+            MutableMapPropertySource("tenant").apply {
+                addProperty("server.host", "\${secret:@map:tenant/server-host}")
+                addProperty("server.port", 8443)
+            }
+        val environment =
+            TestConfigEnvironment(
+                level = ConfigLevel.TENANT,
+                propertySources = DefaultPropertySources(mutableListOf(tenant)),
+            )
+
+        val error =
+            assertFailsWith<IllegalStateException> {
+                environment
+                    .toConfigBinder(interpolate = false)
+                    .getConfigResult<ServerConfig>("server")
+            }
+
+        assertFalse(error.message.orEmpty().contains("tenant/server-host"))
     }
 }
 
@@ -1215,7 +1333,9 @@ class DefaultConfigBinderExceptionHandlingTest {
         assertTrue(result.isErr)
         assertEquals("CONFIG_BIND_ERROR", result.error.code)
         assertEquals("config", result.error.meta["prefix"])
-        assertTrue(result.error.meta.containsKey("receivedValue"))
+        assertFalse(result.error.meta.containsKey("receivedValue"))
+        val renderedError = result.error.message.defaultMessage + result.error.meta.toString()
+        assertFalse(renderedError.contains("not-a-valid-integer-at-all-xyz"))
     }
 
     @Test

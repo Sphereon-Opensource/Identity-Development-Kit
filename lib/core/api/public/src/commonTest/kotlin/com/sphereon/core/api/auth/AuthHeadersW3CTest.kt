@@ -67,13 +67,6 @@ class AuthHeadersConstantsTest {
     }
 
     @Test
-    fun tenantIdConstantUnchanged() {
-        // Given the AuthHeaders object
-        // Then X_TENANT_ID is unchanged
-        assertEquals("X-Tenant-Id", AuthHeaders.X_TENANT_ID)
-    }
-
-    @Test
     fun requestIdConstantUnchanged() {
         // Given the AuthHeaders object
         // Then X_REQUEST_ID is unchanged
@@ -223,15 +216,15 @@ class AuthContextToHeadersTest {
     }
 
     @Test
-    fun toHeadersStillEmitsTenantId() {
+    fun toHeadersNeverEmitsTenantId() {
         // Given an AuthContext with a tenant ID
         val ctx = AuthContext(tenantId = "tenant-123")
 
         // When converting to headers
         val headers = ctx.toHeaders()
 
-        // Then X-Tenant-Id is still emitted
-        assertEquals("tenant-123", headers["X-Tenant-Id"])
+        // Tenant authority is carried only by the validated bearer token.
+        assertFalse(headers.containsKey("X-Tenant-Id"))
     }
 
     @Test
@@ -322,7 +315,7 @@ class AuthContextFromHeadersTest {
     }
 
     @Test
-    fun fromHeadersStillParsesTenantId() {
+    fun fromHeadersIgnoresTenantId() {
         // Given headers with X-Tenant-Id
         val headers =
             mapOf(
@@ -332,8 +325,8 @@ class AuthContextFromHeadersTest {
         // When parsing
         val ctx = AuthContext.fromHeaders(headers)
 
-        // Then tenantId is extracted
-        assertEquals("tenant-123", ctx.tenantId)
+        // Untrusted transport metadata never establishes tenant authority.
+        assertNull(ctx.tenantId)
     }
 
     @Test
@@ -367,9 +360,10 @@ class AuthContextFromHeadersTest {
         val headers = original.toHeaders()
         val restored = AuthContext.fromHeaders(headers)
 
-        // Then all fields survive the round-trip
+        // Then bearer and non-identity transport fields survive the round-trip.
+        // Tenant identity must be re-derived from the validated JWT.
         assertEquals(original.token, restored.token)
-        assertEquals(original.tenantId, restored.tenantId)
+        assertNull(restored.tenantId)
         assertEquals(original.traceparent, restored.traceparent)
         assertEquals(original.tracestate, restored.tracestate)
         assertEquals(original.correlationId, restored.correlationId)
@@ -587,9 +581,9 @@ class SessionContextAuthPropagationTest {
 
         val headers = session.toAuthContext(traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01").toHeaders()
 
-        assertEquals("default", headers[AuthHeaders.X_TENANT_ID])
-        assertNull(headers[AuthHeaders.X_PRINCIPAL_ID])
-        assertNull(headers[AuthHeaders.X_USER_ID])
+        assertNull(headers["X-Tenant-Id"])
+        assertNull(headers["X-Principal-Id"])
+        assertNull(headers["X-User-Id"])
     }
 }
 
@@ -623,31 +617,31 @@ class AuthContextFromHeadersCaseInsensitiveTest {
     }
 
     @Test
-    fun tenantIdMixedCase() {
+    fun tenantIdMixedCaseIsIgnored() {
         val headers = mapOf("x-tenant-id" to "tenant-1")
         val ctx = AuthContext.fromHeaders(headers)
-        assertEquals("tenant-1", ctx.tenantId)
+        assertNull(ctx.tenantId)
     }
 
     @Test
-    fun userIdUppercase() {
+    fun userIdUppercaseIsIgnored() {
         val headers = mapOf("X-USER-ID" to "user-1")
         val ctx = AuthContext.fromHeaders(headers)
-        assertEquals("user-1", ctx.userId)
+        assertNull(ctx.userId)
     }
 
     @Test
-    fun principalIdLowercase() {
+    fun principalIdLowercaseIsIgnored() {
         val headers = mapOf("x-principal-id" to "principal-1")
         val ctx = AuthContext.fromHeaders(headers)
-        assertEquals("principal-1", ctx.principalId)
+        assertNull(ctx.principalId)
     }
 
     @Test
-    fun serviceIdLowercase() {
+    fun serviceIdLowercaseIsIgnored() {
         val headers = mapOf("x-service-id" to "svc-1")
         val ctx = AuthContext.fromHeaders(headers)
-        assertEquals("svc-1", ctx.serviceId)
+        assertNull(ctx.serviceId)
     }
 
     @Test
@@ -680,17 +674,17 @@ class AuthContextFromHeadersCaseInsensitiveTest {
     }
 
     @Test
-    fun scopeLowercase() {
+    fun scopeLowercaseIsIgnored() {
         val headers = mapOf("x-scope" to "read write")
         val ctx = AuthContext.fromHeaders(headers)
-        assertEquals(setOf("read", "write"), ctx.scopes)
+        assertTrue(ctx.scopes.isEmpty())
     }
 
     @Test
-    fun policyContextLowercase() {
+    fun policyContextLowercaseIsIgnored() {
         val headers = mapOf("x-policy-context" to """{"env":"prod"}""")
         val ctx = AuthContext.fromHeaders(headers)
-        assertEquals(mapOf("env" to "prod"), ctx.policyContext)
+        assertTrue(ctx.policyContext.isEmpty())
     }
 
     @Test
@@ -722,16 +716,16 @@ class AuthContextFromHeadersCaseInsensitiveTest {
 
         assertEquals(original.token, restored.token)
         assertEquals(original.apiKey, restored.apiKey)
-        assertEquals(original.tenantId, restored.tenantId)
-        assertEquals(original.userId, restored.userId)
-        assertEquals(original.principalId, restored.principalId)
-        assertEquals(original.serviceId, restored.serviceId)
+        assertNull(restored.tenantId)
+        assertNull(restored.userId)
+        assertNull(restored.principalId)
+        assertNull(restored.serviceId)
         assertEquals(original.traceparent, restored.traceparent)
         assertEquals(original.tracestate, restored.tracestate)
         assertEquals(original.requestId, restored.requestId)
         assertEquals(original.correlationId, restored.correlationId)
-        assertEquals(original.policyContext, restored.policyContext)
-        assertEquals(original.scopes, restored.scopes)
+        assertTrue(restored.policyContext.isEmpty())
+        assertTrue(restored.scopes.isEmpty())
     }
 
     @Test
@@ -754,7 +748,7 @@ class AuthContextFromHeadersCaseInsensitiveTest {
         val restored = AuthContext.fromHeaders(uppercasedHeaders)
 
         assertEquals(original.token, restored.token)
-        assertEquals(original.tenantId, restored.tenantId)
+        assertNull(restored.tenantId)
         assertEquals(original.traceparent, restored.traceparent)
         assertEquals(original.requestId, restored.requestId)
     }

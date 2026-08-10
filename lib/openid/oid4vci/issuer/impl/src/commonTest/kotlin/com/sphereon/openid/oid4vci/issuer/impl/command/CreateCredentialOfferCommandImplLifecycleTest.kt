@@ -73,10 +73,11 @@ class CreateCredentialOfferCommandImplLifecycleTest {
         runTest {
             val hook = RecordingLifecycleHook(correlationId = "corr-1")
             val sessionStore = RecordingSessionStore()
+            val asBridge = NoOpAsBridge()
             val cmd =
                 CreateCredentialOfferCommandImpl(
                     execution = TestSessionExecution(),
-                    asBridge = NoOpAsBridge(),
+                    asBridge = asBridge,
                     offerStore = NoOpOfferStore(),
                     sessionStore = sessionStore,
                     lifecycleInitializer = OfferLifecycleInitializer(lifecycleHook = hook),
@@ -85,8 +86,21 @@ class CreateCredentialOfferCommandImplLifecycleTest {
             val out = cmd.execute(sampleArgs())
 
             assertTrue(out.isOk)
-            assertEquals(instanceId, sessionStore.created.first().instanceId)
-            assertEquals("corr-1", sessionStore.created.first().lifecycleCorrelationId)
+            assertEquals(true, asBridge.lastRegisterPreAuthCodeArgs?.useCredentialIdentifiers)
+            val storedSession = sessionStore.created.first()
+            assertEquals(instanceId, storedSession.instanceId)
+            assertEquals(storedSession.sessionId, storedSession.issuerState)
+            val tokenCorrelation =
+                resolveCredentialRequestCorrelation(
+                    requestedIdentifier = null,
+                    tokenIdentifiers = null,
+                    tokenId = "pre-authorized-token-jti",
+                    sessionStore = sessionStore,
+                    tokenIssuerState = storedSession.sessionId,
+                ).getOrThrow()
+            assertEquals(storedSession.sessionId, tokenCorrelation.protocolSessionId)
+            assertEquals(storedSession, tokenCorrelation.issuanceSession)
+            assertEquals("corr-1", storedSession.lifecycleCorrelationId)
             assertEquals(JsonPrimitive("Ada"), hook.offerArgs?.initialFields?.get("given_name"))
             assertEquals(JsonPrimitive("E1042"), hook.offerArgs?.initialFields?.get("employee_id"))
             assertEquals(listOf(Oid4vciIssuancePhase.START, Oid4vciIssuancePhase.PRE_AUTHORIZED), hook.phases.map { it.phase })

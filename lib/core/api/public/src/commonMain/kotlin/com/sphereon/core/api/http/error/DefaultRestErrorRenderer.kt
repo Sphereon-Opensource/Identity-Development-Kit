@@ -26,6 +26,7 @@ data class RestErrorBody(
 data class RestErrorDetail(
     val code: String,
     val message: String,
+    val category: ErrorCategory,
     val details: Map<String, String> = emptyMap(),
 )
 
@@ -92,6 +93,7 @@ class DefaultRestErrorRenderer : HttpErrorRenderer {
                     RestErrorDetail(
                         code = error.code,
                         message = error.message.defaultMessage,
+                        category = error.category,
                         details = details,
                     ),
             )

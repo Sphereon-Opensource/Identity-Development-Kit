@@ -26,13 +26,14 @@ import com.sphereon.wallet.credential.IdentifierRef
  *
  * Implementations may record the ref as an [com.sphereon.data.store.party.model.Identity]
  * with a [com.sphereon.data.store.party.model.IdentityIdentifier] and return a copy
- * enriched with the resulting [IdentifierRef.identityIdentifierId]. The IDK default is a
- * no-op that returns [ref] unchanged; the EDK wires the real identity repository.
+ * enriched with the resulting [IdentifierRef.identityIdentifierId]. Product composition roots
+ * must install a durable local or managed identity authority; there is no valid production
+ * pass-through behavior.
  */
 interface WalletIdentityResolver {
     /**
      * Returns [ref] enriched with a [IdentifierRef.identityIdentifierId] linking it to the
-     * identity book, or [ref] unchanged if no identity book is available.
+     * identity book. Missing identity authority is a composition error, not a runtime fallback.
      *
      * @param ref the identifier reference to resolve (issuer URL, DID, verifier client_id, etc.)
      * @param role the role this identity plays in the credential ecosystem

@@ -81,7 +81,7 @@ class MemoryKeyStoreSubstitutionPropertyTest {
 
     private val app = createJvmCryptoTestAppGraph(this)
     private val context = app.userContextManager.getAnonymous()
-    private val session = context.sessionContextManager.createOrGetFromId("memory-keystore-substitution-test")
+    private val session = context.sessionContextManager.createOrGetFromId("memory-keystore-substitution-test", principalType = com.sphereon.di.context.PrincipalType.USER)
 
     @BeforeTest
     fun setUp() {

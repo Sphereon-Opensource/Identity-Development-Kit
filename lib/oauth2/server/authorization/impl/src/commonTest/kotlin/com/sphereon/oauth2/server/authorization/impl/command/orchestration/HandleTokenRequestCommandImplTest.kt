@@ -51,6 +51,7 @@ import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestArgs
 import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestCommand
 import com.sphereon.oauth2.server.authorization.command.TokenRequestData
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentication
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientCredentialsGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant
@@ -83,6 +84,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -293,6 +296,11 @@ class HandleTokenRequestCommandImplTest {
     @Test
     fun clientCredentialsGrantHappyPath() =
         runTest {
+            val clientAuthorization =
+                VerifiedClientAuthorization(
+                    clientId = "client-1",
+                    grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                )
             val service =
                 serviceForClientCredentialsFlow(
                     parseStub =
@@ -314,7 +322,13 @@ class HandleTokenRequestCommandImplTest {
                         },
                     verifyClientAuthStub =
                         stubVerifyClientAuthentication {
-                            Ok(VerifiedClientAuthentication(clientId = it.clientId, method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC))
+                            Ok(
+                                VerifiedClientAuthentication(
+                                    clientId = it.clientId,
+                                    method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                                    clientAuthorization = clientAuthorization,
+                                ),
+                            )
                         },
                     verifyGrantStub =
                         stubVerifyClientCredentialsGrant {
@@ -351,6 +365,104 @@ class HandleTokenRequestCommandImplTest {
             assertEquals("AT-123", result.value.accessToken)
             assertEquals("Bearer", result.value.tokenType)
             assertEquals("read", result.value.scope)
+        }
+
+    @Test
+    fun anonymousPreAuthorizedCodeDoesNotResolveClientRegistry() =
+        runTest {
+            val delegateRegistry = newClientRegistry()
+            var registryReadCount = 0
+            val preAuthorizedConfigProvider =
+                TestOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(
+                        servers =
+                            mapOf(
+                                "default" to
+                                    OAuth2ServerInstanceConfig(
+                                        issuer = "https://as.example.com",
+                                        grantTypesEnabled =
+                                            setOf(
+                                                GrantType.AUTHORIZATION_CODE.value,
+                                                GrantType.CLIENT_CREDENTIALS.value,
+                                                GrantType.REFRESH_TOKEN.value,
+                                                GrantType.PRE_AUTHORIZED_CODE.value,
+                                            ),
+                                    ),
+                            ),
+                    ),
+                )
+            val registry =
+                object : ClientRegistry by delegateRegistry {
+                    override suspend fun getClient(clientId: String) =
+                        delegateRegistry.getClient(clientId).also { registryReadCount++ }
+                }
+            val service =
+                serviceForClientCredentialsFlow(
+                    parseStub =
+                        stubParseTokenRequest {
+                            Ok(
+                                TokenRequestData(
+                                    grantType = GrantType.PRE_AUTHORIZED_CODE,
+                                    clientId = "wallet-instance",
+                                    clientAuthentication = ClientAuthenticationConfig.None("wallet-instance"),
+                                    grantParameters =
+                                        GrantParameters.PreAuthorizedCode(
+                                            preAuthorizedCode = "pre-authorized-code",
+                                        ),
+                                    httpUrl = "https://as.example.com/token",
+                                ),
+                            )
+                        },
+                    verifyClientAuthStub =
+                        stubVerifyClientAuthentication { args ->
+                            assertSame(ClientAuthenticationConfig.Anonymous, args.clientAuthentication)
+                            Ok(
+                                VerifiedClientAuthentication(
+                                    clientId = args.clientId,
+                                    method = ClientAuthenticationMethod.NONE,
+                                ),
+                            )
+                        },
+                    verifyGrantStub = stubVerifyClientCredentialsGrant { error("client credentials verifier must not run") },
+                    createAccessTokenStub = stubCreateAccessToken { error("access token command must not run") },
+                    createTokenResponseStub = stubCreateTokenResponse { error("token response command must not run") },
+                )
+            val handler =
+                object : com.sphereon.oauth2.server.authorization.command.token.GrantHandler {
+                    override val grantType: String = GrantType.PRE_AUTHORIZED_CODE.value
+
+                    override fun supports(params: GrantParameters): Boolean = params is GrantParameters.PreAuthorizedCode
+
+                    override suspend fun handle(
+                        params: GrantParameters,
+                        context: com.sphereon.oauth2.server.authorization.command.token.GrantContext,
+                    ): IdkResult<TokenResponse, IdkError> {
+                        return Ok(TokenResponse(accessToken = "AT-PRE-AUTHORIZED", tokenType = "Bearer"))
+                    }
+                }
+            val command =
+                HandleTokenRequestCommandImpl(
+                    execution = ctx.execution,
+                    authorizationServerService = service,
+                    serversConfigProvider = preAuthorizedConfigProvider,
+                    clientRegistry = registry,
+                    verifyDpopProofCommand = rejectingDpopVerify,
+                    dpopProofJtiCache = newDpopJtiCache(),
+                    dpopNonceManager = newDpopNonceManager(),
+                    grantHandlers = setOf(handler),
+                )
+
+            val result =
+                command.execute(
+                    HandleTokenRequestArgs(
+                        requestBody = mapOf("grant_type" to listOf(GrantType.PRE_AUTHORIZED_CODE.value)),
+                        requestHeaders = emptyMap(),
+                        httpUrl = "https://as.example.com/token",
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(0, registryReadCount)
         }
 
     @Test
@@ -1623,6 +1735,11 @@ class HandleTokenRequestCommandImplTest {
         runTest {
             val subjectJkt = "jkt-bound-FFFF"
             var capturedAccessTokenArgs: CreateAccessTokenArgs? = null
+            val clientAuthorization =
+                VerifiedClientAuthorization(
+                    clientId = "client-1",
+                    grantTypes = listOf(GrantType.TOKEN_EXCHANGE),
+                )
             val service =
                 serviceForTokenExchangeFlow(
                     parseStub =
@@ -1649,7 +1766,13 @@ class HandleTokenRequestCommandImplTest {
                         },
                     verifyClientAuthStub =
                         stubVerifyClientAuthentication {
-                            Ok(VerifiedClientAuthentication(clientId = it.clientId, method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC))
+                            Ok(
+                                VerifiedClientAuthentication(
+                                    clientId = it.clientId,
+                                    method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                                    clientAuthorization = clientAuthorization,
+                                ),
+                            )
                         },
                     verifyExchangeStub =
                         stubVerifyTokenExchangeGrant { args ->
@@ -2064,6 +2187,7 @@ class HandleTokenRequestCommandImplTest {
                         com.sphereon.oauth2.server.authorization.impl.command.token.VerifyRefreshTokenGrantCommandImpl(
                             execution = ctx.execution,
                             tokenStorage = tokenStorage,
+                            configProvider = configProvider,
                         ),
                     createAccessTokenStub = stubCreateAccessToken { error("createAccessToken must NOT be invoked when refresh token is revoked") },
                     createRefreshTokenStub = stubCreateRefreshToken { error("createRefreshToken must NOT be invoked when refresh token is revoked") },
