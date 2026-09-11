@@ -20,6 +20,7 @@ import com.sphereon.core.api.log.LogService
 import com.sphereon.core.api.toException
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
+import com.sphereon.ktor.http.client.provider.UrlValidationPolicy
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.SessionData
 import com.sphereon.mdoc.SessionDataCborCodec
@@ -33,10 +34,18 @@ import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethodType
 import com.sphereon.mdoc.transfer.device.RestApiOptions
 import com.sphereon.mdoc.transfer.reader.ReaderEngagement
 import io.ktor.client.HttpClient
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
+import io.ktor.http.contentType
+import io.ktor.utils.io.readAvailable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,6 +86,8 @@ internal class DeviceRetrievalWebsiteImpl(
         val client = getClient(options)
         val response =
             client.post(getRestApiUrl()) {
+                contentType(ContentType.Application.Cbor)
+                header(HttpHeaders.Accept, ContentType.Application.Cbor.toString())
                 setBody(bytes)
             }
         if (response.status != HttpStatusCode.Companion.OK) {
@@ -89,8 +100,9 @@ internal class DeviceRetrievalWebsiteImpl(
             )
             error("Device engagement message failed to send to remote REST API reader at: ${this.restApiOptions.uri}, status: ${response.status}")
         }
+        requireCborResponse(response, "SessionEstablishment")
         log.debug("Received response from reader REST API: ${response.status}, will decode session establishment message")
-        return response.bodyAsBytes()
+        return readBoundedResponseBody(response)
     }
 
     // override
@@ -98,6 +110,8 @@ internal class DeviceRetrievalWebsiteImpl(
         val client = getClient(options)
         val response =
             client.post(getRestApiUrl()) {
+                contentType(ContentType.Application.Cbor)
+                header(HttpHeaders.Accept, ContentType.Application.Cbor.toString())
                 setBody(bytes)
             }
         if (response.status != HttpStatusCode.Companion.OK) {
@@ -110,8 +124,9 @@ internal class DeviceRetrievalWebsiteImpl(
             )
             error("Session data failed to send to remote REST API reader at: ${this.restApiOptions.uri}, status: ${response.status}")
         }
+        requireCborResponse(response, "SessionData")
         log.debug("Received response from reader REST API: ${response.status}, will decode session data message")
-        return response.bodyAsBytes()
+        return readBoundedResponseBody(response)
     }
 
     override suspend fun sendDeviceEngagement(
@@ -197,6 +212,7 @@ internal class DeviceRetrievalWebsiteImpl(
 
     private fun initRestApiOptions(restApiOptions: RestApiOptions? = null) {
         if (restApiOptions != null) {
+            validateRestApiUri(restApiOptions.uri)
             if (readerEngagement != null) {
                 if (!readerEngagement.hasWebsiteRetrievalMethod) {
                     error("Reader engagement was supplied, but it does not have a website retrieval method. Cannot combine non website retrieval method with supplied reader engagement")
@@ -213,6 +229,7 @@ internal class DeviceRetrievalWebsiteImpl(
                 error("Reader engagement was supplied, but it does not have a website retrieval method. Cannot retrieve device engagement without a reader engagement")
             } else {
                 val uri = readerEngagement.getWebsiteRetrievalOptions()?.uri ?: error("Reader engagement website retrieval method URI is null")
+                validateRestApiUri(uri)
                 this.restApiOptions = RestApiOptions(uri = uri)
                 return
             }
@@ -221,13 +238,39 @@ internal class DeviceRetrievalWebsiteImpl(
         error("No reader engagement or restApiOptions supplied. Cannot retrieve device engagement")
     }
 
+    private fun validateRestApiUri(uri: String) {
+        require(uri.startsWith("https://", ignoreCase = true)) {
+            "REST API URI must use HTTPS, got: $uri"
+        }
+        UrlValidationPolicy.BLOCK_PRIVATE.validate(Url(uri))
+    }
+
     private fun getRestApiUrl(): String {
         check(::restApiOptions.isInitialized) { "restApiOptions has not been initialized. Cannot retrieve device engagement" }
         return restApiOptions.uri
     }
 
+    /**
+     * Annex A exchanges CBOR data items over the website endpoint. Do not pass a successful text or
+     * JSON response to a CBOR decoder: accepting it makes a misrouted endpoint indistinguishable
+     * from a protocol response and can also consume an attacker-controlled response body first.
+     */
+    private fun requireCborResponse(response: HttpResponse, messageType: String) {
+        val responseType = response.contentType()?.withoutParameters()
+        require(responseType == ContentType.Application.Cbor) {
+            "REST API $messageType response must use Content-Type application/cbor, got ${response.contentType()}"
+        }
+    }
+
     private fun getClient(options: HttpClientOptions? = null): HttpClient {
-        val effectiveOptions = options ?: this.options
+        // Reader-engagement URLs are untrusted input. Do not let a caller-provided
+        // HttpClientOptions re-enable redirects or disable the SSRF policy for this
+        // retrieval mechanism.
+        val effectiveOptions =
+            (options ?: this.options).copy(
+                followRedirects = false,
+                urlValidation = UrlValidationPolicy.BLOCK_PRIVATE,
+            )
         if (!::client.isInitialized) {
             this.options = effectiveOptions
             this.client = httpClientFactory.createClient(effectiveOptions)
@@ -247,5 +290,60 @@ internal class DeviceRetrievalWebsiteImpl(
         if (::client.isInitialized) {
             client.close()
         }
+    }
+
+    /**
+     * Bound remote session responses before they reach the CBOR/session
+     * decryptors. The endpoint comes from reader engagement input and must not
+     * be able to turn an HTTP response into an unbounded allocation.
+     */
+    private suspend fun readBoundedResponseBody(response: HttpResponse): ByteArray {
+        val declaredLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+        require(declaredLength == null || declaredLength in 0..MAX_RESPONSE_BODY_BYTES) {
+            "REST API response body exceeds the configured maximum"
+        }
+
+        val channel = response.bodyAsChannel()
+        val chunks = mutableListOf<ByteArray>()
+        val buffer = ByteArray(minOf(8 * 1024L, MAX_RESPONSE_BODY_BYTES).toInt())
+        var total = 0L
+        try {
+            while (true) {
+                val count = channel.readAvailable(buffer)
+                if (count < 0) break
+                if (count == 0) continue
+                require(total <= MAX_RESPONSE_BODY_BYTES - count.toLong()) {
+                    "REST API response body exceeds the configured maximum"
+                }
+                total += count
+                chunks += buffer.copyOf(count)
+            }
+        } catch (expected: CancellationException) {
+            try {
+                channel.cancel(expected)
+            } catch (_: Exception) {
+                // Preserve cancellation.
+            }
+            throw expected
+        } catch (expected: Exception) {
+            try {
+                channel.cancel(expected)
+            } catch (_: Exception) {
+                // Preserve the primary read/size failure.
+            }
+            throw expected
+        }
+
+        val result = ByteArray(total.toInt())
+        var offset = 0
+        for (chunk in chunks) {
+            chunk.copyInto(result, destinationOffset = offset)
+            offset += chunk.size
+        }
+        return result
+    }
+
+    private companion object {
+        private const val MAX_RESPONSE_BODY_BYTES = 10L * 1024L * 1024L
     }
 }

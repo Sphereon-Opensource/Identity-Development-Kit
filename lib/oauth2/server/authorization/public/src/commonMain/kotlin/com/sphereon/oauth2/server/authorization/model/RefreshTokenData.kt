@@ -120,4 +120,6 @@ data class RefreshTokenData(
      * Additional metadata
      */
     val additionalData: Map<String, @Contextual Any> = emptyMap(),
+    /** Typed storage-only JSON; default preserves compatibility with pre-federation rows. */
+    val federationClaims: String? = null,
 )

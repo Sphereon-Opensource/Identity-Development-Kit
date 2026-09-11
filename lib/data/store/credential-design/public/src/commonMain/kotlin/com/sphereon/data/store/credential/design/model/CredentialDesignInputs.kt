@@ -185,7 +185,7 @@ data class ExternalDesignMetadata
         val openIdFederationEntity: JsonObject? = null,
         val oauthClientRegistration: JsonObject? = null,
         val eidasRegistryData: JsonObject? = null,
-        val eidasCatalogueData: JsonObject? = null,
+        val eidasCatalogData: JsonObject? = null,
         val w3cRenderMethod: JsonObject? = null,
         val ocaBundle: JsonObject? = null,
         val ocaCaptureBase: JsonObject? = null,

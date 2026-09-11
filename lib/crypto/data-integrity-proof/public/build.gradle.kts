@@ -57,7 +57,6 @@ kotlin {
             dependencies {
                 api(projects.libCoreApiPublic)
                 api(projects.libCryptoCore)
-                api(projects.libDidResolverPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.core)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)

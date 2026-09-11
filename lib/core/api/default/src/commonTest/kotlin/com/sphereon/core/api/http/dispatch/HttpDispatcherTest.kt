@@ -31,12 +31,13 @@ import com.sphereon.core.api.http.describe.TenantPathMode
 import com.sphereon.core.api.testutil.createCoreApiTestAppGraph
 import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.core.defaults.context.DefaultTenantInputString
-import com.sphereon.di.Order
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class HttpDispatcherTest {
     private fun createAppGraph() =
@@ -97,17 +98,6 @@ class HttpDispatcherTest {
     }
 
     @Test
-    fun catalogGetOrderReturnsMedium() {
-        val appGraph = createAppGraph()
-        try {
-            val catalog = DefaultHttpAdapterCatalog(emptySet(), UniversalHttpConfig.DEFAULT)
-            assertEquals(Order.MEDIUM.orderValue, catalog.getOrder())
-        } finally {
-            appGraph.destroy()
-        }
-    }
-
-    @Test
     fun catalogRequireNoCollisionsDoesNotThrowWhenEmpty() {
         val appGraph = createAppGraph()
         try {
@@ -117,6 +107,145 @@ class HttpDispatcherTest {
         } finally {
             appGraph.destroy()
         }
+    }
+
+    @Test
+    fun catalogRejectsDuplicateProviderIdsAtConstruction() {
+        val first = stubDescriptorProvider("DUPLICATE", "", "/first")
+        val second = stubDescriptorProvider("DUPLICATE", "", "/second")
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultHttpAdapterCatalog(setOf(first, second), UniversalHttpConfig.DEFAULT)
+        }
+    }
+
+    @Test
+    fun catalogRejectsEndpointWithoutHandlerIdentityAtConstruction() {
+        val provider =
+            object : HttpAdapterDescriptorProvider {
+                override val id: String = "MISSING-HANDLER"
+
+                override fun describe(): HttpAdapterDescription =
+                    HttpAdapterDescription(
+                        id = id,
+                        mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/missing"),
+                        endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/missing")),
+                    )
+            }
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultHttpAdapterCatalog(setOf(provider), UniversalHttpConfig.DEFAULT)
+        }
+    }
+
+    @Test
+    fun catalogRejectsRelativeOrOutOfBaseEndpointPatternsAtConstruction() {
+        fun provider(
+            id: String,
+            pattern: String,
+        ) = object : HttpAdapterDescriptorProvider {
+            override val id: String = id
+
+            override fun describe(): HttpAdapterDescription =
+                HttpAdapterDescription(
+                    id = id,
+                    mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/items"),
+                    endpoints =
+                        listOf(
+                            HttpEndpointDescriptor(
+                                method = HttpMethod.GET,
+                                pathPattern = pattern,
+                                handlerCommandId = "test.http.handler",
+                            ),
+                        ),
+                )
+        }
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultHttpAdapterCatalog(setOf(provider("RELATIVE", "items/{id}")), UniversalHttpConfig.DEFAULT)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            DefaultHttpAdapterCatalog(setOf(provider("OUTSIDE", "/other/{id}")), UniversalHttpConfig.DEFAULT)
+        }
+    }
+
+    @Test
+    fun catalogRejectsCollisionOnSecondaryEndpointAliasAtConstruction() {
+        fun provider(
+            id: String,
+            primaryPattern: String,
+        ) = object : HttpAdapterDescriptorProvider {
+            override val id: String = id
+
+            override fun describe(): HttpAdapterDescription =
+                HttpAdapterDescription(
+                    id = id,
+                    mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/items"),
+                    endpoints =
+                        listOf(
+                            HttpEndpointDescriptor(
+                                method = HttpMethod.GET,
+                                pathPatterns = listOf(primaryPattern, "/items/shared-alias"),
+                                handlerCommandId = "${id.lowercase()}.http.get",
+                            ),
+                        ),
+                )
+        }
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultHttpAdapterCatalog(
+                setOf(
+                    provider("FIRST", "/items/first"),
+                    provider("SECOND", "/items/second"),
+                ),
+                UniversalHttpConfig.DEFAULT,
+            )
+        }
+    }
+
+    @Test
+    fun routeSelectionCarriesCommandIdentityAndExtractedPathParameters() {
+        val provider =
+            object : HttpAdapterDescriptorProvider {
+                override val id: String = "ITEMS"
+
+                override fun describe(): HttpAdapterDescription =
+                    HttpAdapterDescription(
+                        id = id,
+                        mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/items"),
+                        endpoints =
+                            listOf(
+                                HttpEndpointDescriptor(
+                                    method = HttpMethod.GET,
+                                    pathPattern = "/items/{itemId}",
+                                    commandId = "items.catalog.get",
+                                    handlerCommandId = "items.http.get",
+                                ),
+                            ),
+                    )
+            }
+        val selector =
+            DefaultHttpAdapterRouteSelector(
+                DefaultHttpAdapterCatalog(setOf(provider), UniversalHttpConfig.DEFAULT),
+            )
+
+        val selection = selector.select("GET", "/items/item-123") as HttpAdapterRouteSelection.Selected
+
+        assertEquals("items.catalog.get", selection.match.commandId)
+        assertEquals(mapOf("itemId" to "item-123"), selection.match.pathParameters)
+    }
+
+    @Test
+    fun routeSelectionHonorsExplicitAdapterAllowList() {
+        val allowed = stubDescriptorProvider("ALLOWED", "", "/allowed")
+        val excluded = stubDescriptorProvider("EXCLUDED", "", "/excluded")
+        val selector =
+            DefaultHttpAdapterRouteSelector(
+                DefaultHttpAdapterCatalog(setOf(allowed, excluded), UniversalHttpConfig.DEFAULT),
+            )
+
+        assertTrue(selector.select("GET", "/allowed", setOf("ALLOWED")) is HttpAdapterRouteSelection.Selected)
+        assertTrue(selector.select("GET", "/excluded", setOf("ALLOWED")) is HttpAdapterRouteSelection.NotFound)
     }
 
     // ========== Config-Driven Catalog Tests ==========
@@ -173,6 +302,45 @@ class HttpDispatcherTest {
         assertNotNull(desc)
         assertEquals("/api", desc.mount.serverPrefix)
         assertEquals("/new-path", desc.mount.adapterBasePath)
+    }
+
+    @Test
+    fun catalogCanonicalizesAdapterRootEndpointWithoutTrailingSlash() {
+        val provider =
+            object : HttpAdapterDescriptorProvider {
+                override val id: String = "tenant.admin.http"
+
+                override fun describe(): HttpAdapterDescription =
+                    HttpAdapterDescription(
+                        id = id,
+                        mount =
+                            HttpAdapterMount(
+                                serverPrefix = "",
+                                adapterBasePath = "/api/platform/admin/v1/tenants",
+                            ),
+                        endpoints =
+                            listOf(
+                                HttpEndpointDescriptor(
+                                    method = HttpMethod.POST,
+                                    pathPattern = "/api/platform/admin/v1/tenants/",
+                                    handlerCommandId = "tenant-rest.admin.register",
+                                ),
+                            ),
+                    )
+            }
+        val catalog = DefaultHttpAdapterCatalog(setOf(provider), UniversalHttpConfig.DEFAULT)
+        val selector = DefaultHttpAdapterRouteSelector(catalog)
+
+        assertEquals(
+            "/api/platform/admin/v1/tenants",
+            catalog.descriptionById(provider.id)?.endpoints?.single()?.pathPattern,
+        )
+        val selected =
+            assertIs<HttpAdapterRouteSelection.Selected>(
+                selector.select("POST", "/api/platform/admin/v1/tenants"),
+            )
+        assertEquals("/api/platform/admin/v1/tenants", selected.match.matchedPathPattern)
+        assertEquals("tenant-rest.admin.register", selected.match.handlerCommandId)
     }
 
     @Test
@@ -291,29 +459,17 @@ class HttpDispatcherTest {
                     mount = HttpAdapterMount(serverPrefix = serverPrefix, adapterBasePath = adapterBasePath),
                     endpoints =
                         listOf(
-                            HttpEndpointDescriptor(method = HttpMethod.GET, pathPattern = "/", operationId = "test"),
+                            HttpEndpointDescriptor(
+                                method = HttpMethod.GET,
+                                pathPattern = adapterBasePath.ifEmpty { "/" },
+                                operationId = "test",
+                                handlerCommandId = "test.http.handler",
+                            ),
                         ),
                 )
         }
 
     // ========== DefaultHttpAdapterDispatcher Tests ==========
-
-    @Test
-    fun dispatcherGetOrderReturnsMedium() {
-        val appGraph = createAppGraph()
-        try {
-            val userContextInstance =
-                appGraph.userContextManager.createOrGetFromInputs(
-                    DefaultTenantInputString("test-tenant"),
-                    DefaultPrincipalInputString("test-user"),
-                )
-            val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
-            val dispatcher = (sessionInstance.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
-            assertEquals(Order.MEDIUM.orderValue, dispatcher.getOrder())
-        } finally {
-            appGraph.destroy()
-        }
-    }
 
     @Test
     fun dispatcherReturns404ForUnknownPath() =
@@ -325,18 +481,12 @@ class HttpDispatcherTest {
                         DefaultTenantInputString("test-tenant"),
                         DefaultPrincipalInputString("test-user"),
                     )
-                val sessionInstance = userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
-                val dispatcher = (sessionInstance.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
+                userContextInstance.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
+                val selector = (appGraph as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
 
-                val request =
-                    GenericHttpRequest(
-                        method = "GET",
-                        path = "/unknown/path/that/does/not/exist",
-                    )
+                val selection = selector.select("GET", "/unknown/path/that/does/not/exist")
 
-                val response = dispatcher.dispatch(request)
-                assertEquals(404, response.statusCode)
-                assertTrue(response.body?.contains("Not found") == true)
+                assertTrue(selection is HttpAdapterRouteSelection.NotFound)
             } finally {
                 appGraph.destroy()
             }
@@ -630,14 +780,25 @@ class HttpDispatcherTest {
     }
 
     @Test
-    fun noOpHttpAdapterHandleRequestReturns404() =
+    fun noOpHttpAdapterSelectedRouteFailsClosed() =
         runTest {
             val appGraph = createAppGraph()
             try {
                 val adapter = NoOpHttpAdapter()
                 val request = GenericHttpRequest(method = "GET", path = "/test")
-                val response = adapter.handleRequest(request)
-                assertEquals(404, response.statusCode)
+                val route =
+                    HttpAdapterRouteMatch(
+                        adapterId = NoOpHttpAdapter.ID,
+                        method = request.method,
+                        originalPath = request.path,
+                        normalizedPath = request.path,
+                        matchedPathPattern = "/test",
+                        handlerCommandId = "test.noop.handle",
+                        tenantIdFromPath = null,
+                    )
+                assertFailsWith<IllegalStateException> {
+                    adapter.handleResolvedRequest(request, route)
+                }
             } finally {
                 appGraph.destroy()
             }

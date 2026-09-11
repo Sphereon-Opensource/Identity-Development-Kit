@@ -61,6 +61,7 @@ kotlin {
                 implementation(sphereonlib.org.jetbrains.kotlinx.io.core)
                 api(sphereonlib.at.asitplus.awesn1.core)
                 api(sphereonlib.at.asitplus.awesn1.crypto)
+                api(sphereonlib.at.asitplus.awesn1.kxs)
                 implementation(sphereonlib.io.ktor.client.core)
                 implementation(sphereonlib.org.jetbrains.kotlinx.atomicfu)
                 // DI annotations

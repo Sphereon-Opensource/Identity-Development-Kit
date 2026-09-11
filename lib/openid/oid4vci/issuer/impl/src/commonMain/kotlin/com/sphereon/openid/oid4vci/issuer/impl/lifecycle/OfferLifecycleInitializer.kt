@@ -44,8 +44,8 @@ class OfferLifecycleInitializer(
         return Ok(Unit)
     }
 
-    suspend fun initializeLifecycle(args: CreateCredentialOfferArgs, protocolSessionId: String): String? {
-        val hook = lifecycleHook ?: return null
+    suspend fun initializeLifecycle(args: CreateCredentialOfferArgs, protocolSessionId: String): IdkResult<String?, IdkError> {
+        val hook = lifecycleHook ?: return Ok(null)
         val correlationId =
             hook
                 .initializeOffer(
@@ -58,9 +58,9 @@ class OfferLifecycleInitializer(
                         initialFields = args.combinedInitialLifecycleFields(args.preSeededAttributes.orEmpty()),
                         boundUsageToken = args.boundUsageToken,
                     ),
-                ).getOrNull()
-                ?.correlationId
-                ?: return null
+                ).getOrElse { return Err(it) }
+                .correlationId
+                ?: return Ok(null)
 
         recordOfferPhase(args, correlationId, protocolSessionId, Oid4vciIssuancePhase.START)
         if (args.preAuthorizedCodeGrant) {
@@ -69,7 +69,7 @@ class OfferLifecycleInitializer(
         if (args.authorizationCodeGrant) {
             recordOfferPhase(args, correlationId, protocolSessionId, Oid4vciIssuancePhase.AUTHORIZATION)
         }
-        return correlationId
+        return Ok(correlationId)
     }
 
     private fun findGrantPolicyViolation(

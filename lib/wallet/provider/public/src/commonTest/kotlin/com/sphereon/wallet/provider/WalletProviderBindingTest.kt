@@ -13,11 +13,63 @@ package com.sphereon.wallet.provider
 import com.sphereon.data.store.party.model.PartyRef
 import com.sphereon.data.store.party.model.PartyType
 import com.sphereon.wallet.wscd.WscdProfile
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class WalletProviderBindingTest {
+    @Test
+    fun unitProvisioningRequestRoundTripsItsRequiredProviderKind() {
+        val request =
+            UnitProvisioningRequest(
+                profileId = "personal",
+                wscdProfile = WscdProfile.Software,
+                providerKind = WalletProviderKind.LOCAL,
+            )
+
+        val json = Json.encodeToString(UnitProvisioningRequest.serializer(), request)
+        val decoded = Json.decodeFromString(UnitProvisioningRequest.serializer(), json)
+
+        assertEquals(request, decoded)
+        assertEquals(WalletProviderKind.LOCAL, decoded.providerKind)
+    }
+
+    @Test
+    fun unitProvisioningRequestRejectsMissingProviderKind() {
+        val json =
+            Json.encodeToString(
+                UnitProvisioningRequest.serializer(),
+                UnitProvisioningRequest(
+                    profileId = "personal",
+                    wscdProfile = WscdProfile.Software,
+                    providerKind = WalletProviderKind.LOCAL,
+                ),
+            ).replace(",\"providerKind\":\"LOCAL\"", "")
+
+        assertFailsWith<SerializationException> {
+            Json.decodeFromString(UnitProvisioningRequest.serializer(), json)
+        }
+    }
+
+    @Test
+    fun unitProvisioningRequestRejectsUnknownProviderKind() {
+        val json =
+            Json.encodeToString(
+                UnitProvisioningRequest.serializer(),
+                UnitProvisioningRequest(
+                    profileId = "personal",
+                    wscdProfile = WscdProfile.Software,
+                    providerKind = WalletProviderKind.LOCAL,
+                ),
+            ).replace("\"providerKind\":\"LOCAL\"", "\"providerKind\":\"UNKNOWN\"")
+
+        assertFailsWith<SerializationException> {
+            Json.decodeFromString(UnitProvisioningRequest.serializer(), json)
+        }
+    }
+
     @Test
     fun localBindingRoundTripsThroughJson() {
         val binding =

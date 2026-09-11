@@ -40,6 +40,7 @@ interface UserInfoHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "userinfo",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("userinfo", "oidc"),
                 summary = "OpenID Connect UserInfo endpoint",
             )

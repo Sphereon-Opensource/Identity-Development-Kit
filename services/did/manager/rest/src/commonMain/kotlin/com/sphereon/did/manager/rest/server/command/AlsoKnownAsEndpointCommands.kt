@@ -29,6 +29,7 @@ interface ListAlsoKnownAsEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listAlsoKnownAs",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("AlsoKnownAs"),
                 summary = "List alsoKnownAs entries",
             )
@@ -47,6 +48,7 @@ interface AddAlsoKnownAsEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addAlsoKnownAs",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("AlsoKnownAs"),
                 summary = "Add an alsoKnownAs entry",
             )
@@ -63,6 +65,7 @@ interface RemoveAlsoKnownAsEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}/also-known-as/{akaId}",
                 operationId = "removeAlsoKnownAs",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("AlsoKnownAs"),
                 summary = "Remove an alsoKnownAs entry",
             )

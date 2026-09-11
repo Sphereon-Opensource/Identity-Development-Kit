@@ -38,7 +38,8 @@ import com.sphereon.crypto.kms.rest.api.mapper.toSdk
 import com.sphereon.crypto.kms.rest.server.service.ResolversRestService
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -56,7 +57,8 @@ import kotlinx.serialization.json.Json
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(ResolversHttpAdapter.ID)
 class ResolversHttpAdapter(
     private val resolversService: ResolversRestService,
 ) : RoutedHttpAdapter() {
@@ -77,16 +79,19 @@ class ResolversHttpAdapter(
         httpRoutes {
             get("/") {
                 operationId("listResolvers")
+                handlerCommandId("kms.resolvers.list")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleListResolvers(req) }
             }
             get("/{resolverId}") {
                 operationId("getResolver")
+                handlerCommandId("kms.resolvers.get")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGetResolver(req) }
             }
             post("/{resolverId}/resolve") {
                 operationId("resolvePublicKey")
+                handlerCommandId("kms.resolvers.resolve")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleResolveKey(req) }

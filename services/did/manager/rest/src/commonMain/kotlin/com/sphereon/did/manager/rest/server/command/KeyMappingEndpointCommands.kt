@@ -29,6 +29,7 @@ interface ListKeyMappingsEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listKeyMappings",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("KeyMappings"),
                 summary = "List key mappings on a DID",
             )
@@ -47,6 +48,7 @@ interface AddKeyMappingEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addKeyMapping",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("KeyMappings"),
                 summary = "Create a key mapping",
             )
@@ -63,6 +65,7 @@ interface RemoveKeyMappingEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}/key-mappings/{mappingId}",
                 operationId = "removeKeyMapping",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("KeyMappings"),
                 summary = "Delete a key mapping",
             )

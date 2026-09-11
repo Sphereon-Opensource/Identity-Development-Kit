@@ -73,6 +73,7 @@ import com.sphereon.crypto.core.kms.KmsProvider
 import com.sphereon.crypto.core.kms.KmsProviderCapabilities
 import com.sphereon.crypto.core.kms.KmsProviderConfigBase
 import com.sphereon.crypto.core.kms.KmsProviderOperation
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
 import com.sphereon.crypto.core.kms.OperationCapability
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
@@ -83,6 +84,8 @@ import com.sphereon.crypto.core.kms.model.KeyProviderSettings
 import com.sphereon.crypto.core.sign.model.SignInput
 import com.sphereon.crypto.core.sign.model.SignOutput
 import com.sphereon.crypto.core.sign.model.Signature
+import com.sphereon.crypto.core.sign.requireSigningKeyCompatible
+import com.sphereon.crypto.core.sign.keyCompatibilityFailure
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreConfig
 import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreService
@@ -515,12 +518,18 @@ class MobileKmsProviderImpl(
         input: ByteArray,
         requireX5Chain: Boolean,
     ): ByteArray {
-        val managedKeyInfo = keyInfo as? ManagedKeyInfoType ?: lookupStore?.getKey(keyInfo)
+        requireManagedSigningKeySelection(keyInfo)
+        // Always resolve through the mobile provider. A ManagedKeyInfo supplied by a caller may
+        // carry stale or conflicting metadata; alias/kid/providerId select the key but never
+        // override the provider's resolved key policy.
+        val managedKeyInfo = getKey(keyInfo)
         val signatureAlgorithm =
-            managedKeyInfo?.signatureAlgorithm ?: keyInfo.signatureAlgorithm
+            keyInfo.signatureAlgorithm ?: managedKeyInfo.signatureAlgorithm
                 ?: throw IllegalArgumentException("No signature algorithm found or supplied for $keyInfo")
+        keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(signatureAlgorithm) }
+        managedKeyInfo.signingPolicyInfo().requireSigningKeyCompatible(signatureAlgorithm)
         val digest = signatureAlgorithm.digestAlgorithm?.toSignumAlgorithm() ?: Digest.SHA256
-        val alias = managedKeyInfo?.alias ?: keyInfo.alias ?: throw IllegalArgumentException("No key found for $keyInfo")
+        val alias = managedKeyInfo.alias
         val signer =
             provider
                 .getSignerForKey(alias = alias, {
@@ -554,12 +563,15 @@ class MobileKmsProviderImpl(
         input: ByteArray,
         signature: ByteArray,
     ): Boolean {
-        val keyInfo = keyInfo as? ManagedKeyInfoType ?: lookupStore?.getKey(keyInfo)
-        val key = keyInfo?.key ?: throw IllegalArgumentException("No key found for $keyInfo")
+        val resolvedKeyInfo = getKey(keyInfo)
+        val key = resolvedKeyInfo.key ?: throw IllegalArgumentException("No key found for $keyInfo")
         val jwk = CoseJoseKeyMappingService.toJoseJwk(key)
         val publicKey: CryptoPublicKey = jwk.toSignumPublicKey()
 
-        val signatureAlgorithm = keyInfo.signatureAlgorithm ?: key.getSignatureAlgorithm() ?: SignatureAlgorithm.ECDSA_SHA256
+        val signatureAlgorithm = keyInfo.signatureAlgorithm ?: resolvedKeyInfo.signatureAlgorithm ?: key.getSignatureAlgorithm()
+            ?: throw IllegalArgumentException("No signature algorithm found or supplied for $keyInfo")
+        keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(signatureAlgorithm) }
+        resolvedKeyInfo.verificationPolicyInfo().requireVerificationKeyCompatible(signatureAlgorithm)
         val digest = signatureAlgorithm.digestAlgorithm?.toSignumAlgorithm() ?: Digest.SHA256
         val verifier = signatureAlgorithm.toSignumAlgorithm().verifierFor(publicKey).getOrThrow()
         val signatureInput = SignatureInput(input)
@@ -583,9 +595,13 @@ class MobileKmsProviderImpl(
         signatureEncoding: SignatureEncoding,
         requireX5Chain: Boolean,
     ): ByteArray {
+        requireManagedSigningKeySelection(keyInfo)
         require(digest.isNotEmpty()) { "digest is required" }
         require(signatureAlgorithm.cryptoAlgorithm == CryptoAlg.ECDSA) { "Digest signing currently supports ECDSA algorithms only, got: $signatureAlgorithm" }
-        val resolvedSignatureAlgorithm = resolveEcdsaSignatureAlgorithm(keyInfo, "Digest signing")
+        val resolvedKeyInfo = getKey(keyInfo)
+        keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(signatureAlgorithm) }
+        resolvedKeyInfo.signingPolicyInfo().requireSigningKeyCompatible(signatureAlgorithm)
+        val resolvedSignatureAlgorithm = resolveEcdsaSignatureAlgorithm(resolvedKeyInfo, "Digest signing")
         require(resolvedSignatureAlgorithm == signatureAlgorithm) {
             "Digest signing requested $signatureAlgorithm but key resolves to $resolvedSignatureAlgorithm"
         }
@@ -614,13 +630,16 @@ class MobileKmsProviderImpl(
         require(digest.isNotEmpty()) { "digest is required" }
         require(signature.isNotEmpty()) { "signature is required" }
         require(signatureAlgorithm.cryptoAlgorithm == CryptoAlg.ECDSA) { "Digest verification currently supports ECDSA algorithms only, got: $signatureAlgorithm" }
-        val resolvedSignatureAlgorithm = resolveEcdsaSignatureAlgorithm(keyInfo, "Digest verification")
+        val resolvedKeyInfo = getKey(keyInfo)
+        keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(signatureAlgorithm) }
+        resolvedKeyInfo.verificationPolicyInfo().requireVerificationKeyCompatible(signatureAlgorithm)
+        val resolvedSignatureAlgorithm = resolveEcdsaSignatureAlgorithm(resolvedKeyInfo, "Digest verification")
         require(resolvedSignatureAlgorithm == signatureAlgorithm) {
             "Digest verification requested $signatureAlgorithm but key resolves to $resolvedSignatureAlgorithm"
         }
         val digestAlgorithm = signatureAlgorithm.digestAlgorithm?.toSignumAlgorithm() ?: Digest.SHA256
         val publicKey =
-            resolveSignumPublicKey(keyInfo) as? CryptoPublicKey.EC
+            resolveSignumPublicKey(resolvedKeyInfo) as? CryptoPublicKey.EC
                 ?: throw IllegalArgumentException("Digest verification with $signatureAlgorithm requires an EC public key")
 
         val verifier = signatureAlgorithm.toSignumAlgorithm().verifierFor(publicKey).getOrThrow()
@@ -671,8 +690,20 @@ class MobileKmsProviderImpl(
         val signingKeyResult = provider.getSignerForKey(alias = alias)
         require(signingKeyResult.isSuccess) { "No key found for $keyInfo" }
         val signingKey = signingKeyResult.getOrThrow()
-        val jwk = signingKey.publicKey.toJwk()
-        return ManagedKeyInfo<JwkType>(alias = alias, providerId = id, resolvedKeyInfo = ResolvedKeyInfo.fromKeyInfo(keyInfo, jwk))
+        // Signum exposes the public material but not an authoritative RS*/PS* restriction. Do
+        // not turn its size-based default into policy metadata; the requested algorithm is
+        // checked against the resolved family/curve/use/key_ops before signing.
+        val publicJwk = signingKey.publicKey.toJwk()
+        // Same canonical kid generateKeyAsync assigns. Alias is the operational selector;
+        // a caller-supplied kid is metadata and must not survive resolution or replace it.
+        val canonicalKid = publicJwk.kid ?: generateJwkThumbprint(publicJwk)
+        val jwk = publicJwk.copy(alg = null, kid = canonicalKid)
+        val resolvedInput = KeyInfo.fromDTO(keyInfo).copy(kid = null)
+        return ManagedKeyInfo<JwkType>(
+            alias = alias,
+            providerId = id,
+            resolvedKeyInfo = ResolvedKeyInfo.fromKeyInfo(resolvedInput, jwk),
+        )
     }
 
     override suspend fun storeKey(
@@ -694,7 +725,22 @@ class MobileKmsProviderImpl(
 
     override fun keyVisibility(): KeyVisibility = KeyVisibility.PUBLIC
 
-    private fun alias(keyInfo: KeyInfoType<*>): String = keyInfo.alias ?: keyInfo.kid ?: keyInfo.key?.getKeyId(true) ?: throw IllegalArgumentException("No key found for $keyInfo")
+    /** Mobile aliases are operational references and take precedence over metadata kids. */
+    private fun alias(keyInfo: KeyInfoType<*>): String =
+        keyInfo.alias ?: keyInfo.kid ?: keyInfo.key?.getKeyId(true) ?: throw IllegalArgumentException("No key found for $keyInfo")
+
+    private fun ManagedKeyInfoType<*>.signingPolicyInfo(): KeyInfoType<*> {
+        val dto = KeyInfo.fromDTO(this)
+        return if ((dto.key as? JwkType)?.alg == null) dto.copy(signatureAlgorithm = null) else dto
+    }
+
+    private fun ManagedKeyInfoType<*>.verificationPolicyInfo(): KeyInfoType<*> = signingPolicyInfo()
+
+    private fun KeyInfoType<*>.requireVerificationKeyCompatible(requestedAlgorithm: SignatureAlgorithm) {
+        keyCompatibilityFailure(requestedAlgorithm, KeyOperations.VERIFY)?.let { failure ->
+            throw IllegalArgumentException(failure)
+        }
+    }
 
     private suspend fun resolveKeyInfoWithProviderLookup(keyInfo: KeyInfoType<*>): KeyInfoType<*> =
         if (keyInfo.key != null) {

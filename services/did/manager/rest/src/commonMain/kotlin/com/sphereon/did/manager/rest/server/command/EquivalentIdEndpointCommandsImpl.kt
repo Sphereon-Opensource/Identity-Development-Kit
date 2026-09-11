@@ -17,8 +17,8 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.requireJsonBody
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.response.jsonResponse
@@ -35,13 +35,15 @@ import com.sphereon.did.manager.command.StringValueBody
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ListEquivalentIdsEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListEquivalentIdsEndpointCommand.COMMAND_ID)
 class ListEquivalentIdsEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: ListEquivalentIdsServiceCommand,
@@ -63,8 +65,8 @@ class ListEquivalentIdsEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<AddEquivalentIdEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(AddEquivalentIdEndpointCommand.COMMAND_ID)
 class AddEquivalentIdEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: AddEquivalentIdServiceCommand,
@@ -88,8 +90,8 @@ class AddEquivalentIdEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<RemoveEquivalentIdEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(RemoveEquivalentIdEndpointCommand.COMMAND_ID)
 class RemoveEquivalentIdEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: RemoveEquivalentIdServiceCommand,

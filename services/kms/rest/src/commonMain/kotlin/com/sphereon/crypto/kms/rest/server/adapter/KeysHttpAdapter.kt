@@ -28,9 +28,13 @@ import com.sphereon.core.api.http.response.createdResponse
 import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.core.api.http.response.noContentResponse
+import com.sphereon.core.api.http.response.ResponseBuilder
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.key.persistence.KeyReferenceResolutionException
+import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceInput
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceResponse
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
@@ -45,7 +49,8 @@ import com.sphereon.crypto.kms.rest.api.mapper.toSdk
 import com.sphereon.crypto.kms.rest.server.service.KmsRestService
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -66,7 +71,8 @@ import com.sphereon.crypto.kms.rest.api.generated.models.KeyOperations as KeyOpe
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(KeysHttpAdapter.ID)
 class KeysHttpAdapter(
     private val kmsService: KmsRestService,
     private val registerCommand: RegisterKeyReferenceServiceCommand,
@@ -89,34 +95,40 @@ class KeysHttpAdapter(
         httpRoutes {
             get("/{aliasOrKid}") {
                 operationId("getKey")
+                handlerCommandId("kms.keys.get")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGetKey(req) }
             }
             get("/") {
                 operationId("listKeys")
+                handlerCommandId("kms.keys.list")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleListKeys(req) }
             }
             post("/") {
                 operationId("generateKey")
+                handlerCommandId("kms.keys.generate")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGenerateKey(req) }
             }
             post("/import") {
                 operationId("importKey")
+                handlerCommandId("kms.keys.import")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleImportKey(req) }
             }
             post("/register") {
                 operationId("registerKeyReference")
+                handlerCommandId("kms.keys.register")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleRegisterKeyReference(req) }
             }
             delete("/{aliasOrKid}") {
                 operationId("deleteKey")
+                handlerCommandId("kms.keys.delete")
                 handle { req -> handleDeleteKey(req) }
             }
         }
@@ -153,7 +165,16 @@ class KeysHttpAdapter(
             } catch (expected: Exception) {
                 return errorResponse(expected)
             }
-        return jsonResponse(200, json.encodeToString(GetKeyResponse(keyInfo = keyInfo.toRest())))
+        val reference =
+            try {
+                kmsService.getKeyReference(aliasOrKid, keyInfo.providerId)
+            } catch (expected: Exception) {
+                // Persisted lifecycle metadata is authoritative for ownership and DELETE
+                // semantics. A store failure is an internal availability error, not a
+                // caller-visible lifecycle conflict.
+                return errorResponse(500, "Registered key reference lookup failed")
+            }
+        return jsonResponse(200, json.encodeToString(GetKeyResponse(keyInfo = keyInfo.toRest(reference))))
     }
 
     private suspend fun handleListKeys(request: GenericHttpRequest): GenericHttpResponse {
@@ -244,7 +265,7 @@ class KeysHttpAdapter(
 
         val response =
             result.getOrElse { error ->
-                return errorResponse(500, "Failed to register key reference: ${error.message}")
+                return errorResponse(registrationHttpStatus(error), "Key reference registration failed")
             }
 
         return createdResponse(
@@ -261,10 +282,49 @@ class KeysHttpAdapter(
         val providerId = req.queryParams["providerId"]
 
         try {
-            kmsService.deleteKey(aliasOrKid, providerId)
+            val deleted = kmsService.deleteKey(aliasOrKid, providerId)
+            if (!deleted) {
+                return keyDeleteNotFoundResponse(aliasOrKid)
+            }
         } catch (expected: Exception) {
-            return errorResponse(expected)
+            return keyDeleteErrorResponse(expected)
         }
         return noContentResponse()
     }
 }
+
+internal fun registrationHttpStatus(error: IdkError): Int =
+    when (error.code) {
+        "ILLEGAL_ARGUMENT_ERROR" -> 400
+        "NOT_FOUND_ERROR",
+        "KMS_PROVIDER_NOT_FOUND",
+        "KMS_PROVIDER_NOT_AVAILABLE",
+        "KMS_EXTERNAL_KEY_NOT_FOUND",
+        -> 404
+        "KMS_EXTERNAL_KEY_IDENTITY_MISMATCH",
+        "KMS_EXTERNAL_KEY_REGISTRATION_CONFLICT",
+        KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
+        -> 409
+        else -> 500
+    }
+
+internal fun keyDeleteErrorResponse(error: Throwable): GenericHttpResponse =
+    if (
+        error is KeyReferenceResolutionException &&
+        error.code in
+            setOf(
+                KeyReferenceStoreErrorCodes.AMBIGUOUS_REFERENCE,
+                KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
+            )
+    ) {
+        ResponseBuilder.error(
+            statusCode = 409,
+            code = error.code,
+            message = error.message ?: "Key reference resolution conflict",
+        )
+    } else {
+        errorResponse(error)
+    }
+
+internal fun keyDeleteNotFoundResponse(aliasOrKid: String): GenericHttpResponse =
+    errorResponse(404, "Key not found: $aliasOrKid")

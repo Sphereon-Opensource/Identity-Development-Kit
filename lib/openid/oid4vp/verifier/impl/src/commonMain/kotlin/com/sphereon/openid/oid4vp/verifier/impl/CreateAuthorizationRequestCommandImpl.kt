@@ -204,6 +204,21 @@ class CreateAuthorizationRequestCommandImpl(
         // the direct_post endpoint can look up the session by the echoed state.
         val effectiveState = processedArgs.state ?: sessionId
 
+        // A caller-selected state is also the persistence key. Never turn create into a blind
+        // upsert that replaces another live request's nonce and DCQL query.
+        val correlationIdExists = authorizationSessionStore.exists(effectiveState).getOrElse { return Err(it) }
+        if (processedArgs.operationFingerprint == null && effectiveState.startsWith(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX)) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Reserved claimed-session correlation namespace"))
+        }
+        if (correlationIdExists && processedArgs.operationFingerprint == null) {
+            return Err(
+                IdkError.ALREADY_EXISTS_ERROR(
+                    resource = "oid4vp authorization session:$effectiveState",
+                    message = "Authorization session already exists: $effectiveState",
+                ),
+            )
+        }
+
         // Build the authorization request using the type-safe builder
         val request =
             buildOid4vpAuthorizationRequest(
@@ -260,7 +275,8 @@ class CreateAuthorizationRequestCommandImpl(
 
         // Persist an authorization session keyed by effectiveState (the wallet-echoed correlation key).
         val now = Clock.System.now().toEpochMilliseconds()
-        val ttlSeconds = AuthorizationSessionStore.DEFAULT_TTL_SECONDS
+        val ttlSeconds = processedArgs.ttlSeconds ?: AuthorizationSessionStore.DEFAULT_TTL_SECONDS
+        val expiresAt = authorizationSessionExpiresAt(now, ttlSeconds).getOrElse { return Err(it) }
         val session =
             AuthorizationSession(
                 instanceId = instanceId,
@@ -272,7 +288,12 @@ class CreateAuthorizationRequestCommandImpl(
                 dcqlQueryVersion = processedArgs.dcqlQueryVersion,
                 verifierId = processedArgs.verifierId,
                 templateId = processedArgs.templateId,
+                templateRevision = processedArgs.templateRevision,
                 authorizationRequest = request,
+                // Post-completion destination for the direct_post response body. It is NOT part of
+                // the request the wallet fetches (redirect_uri and response_uri are mutually
+                // exclusive there), so the session is the only place it can survive to response time.
+                directPostResponseRedirectUri = processedArgs.directPostResponseRedirectUri,
                 status = AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED,
                 error = null,
                 parsedResponse = null,
@@ -283,17 +304,21 @@ class CreateAuthorizationRequestCommandImpl(
                 credentialStatusPolicies = processedArgs.credentialStatusPolicies,
                 createdAt = now,
                 updatedAt = now,
-                expiresAt = now + (ttlSeconds * 1000),
+                expiresAt = expiresAt,
             )
 
-        authorizationSessionStore.put(effectiveState, session, ttlSeconds).getOrElse { e ->
-            return Err(e)
+        val operationFingerprint = processedArgs.operationFingerprint
+        val persisted = if (operationFingerprint != null) {
+            authorizationSessionStore.createClaimedSession(session, operationFingerprint, ttlSeconds).getOrElse { return Err(it) }
+        } else {
+            authorizationSessionStore.put(effectiveState, session, ttlSeconds).getOrElse { return Err(it) }
+            session
         }
-        pendingHistorySession = session
+        pendingHistorySession = persisted
 
         return Ok(
             CreatedAuthorizationRequest(
-                request = request,
+                request = persisted.authorizationRequest,
                 sessionId = effectiveState,
             ),
         )

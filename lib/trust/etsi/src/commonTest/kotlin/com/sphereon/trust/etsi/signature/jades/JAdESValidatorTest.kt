@@ -18,12 +18,15 @@ package com.sphereon.trust.etsi.signature.jades
 
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.encodeTo
+import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import com.sphereon.trust.etsi.testutil.EtsiTestContext
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -55,16 +58,190 @@ class JAdESValidatorTest {
     }
 
     @Test
+    fun validationPreservesTheExactSerializedInputBytes() =
+        runTest {
+            val serialized = buildCompactJws().encodeToByteArray()
+            val result = validator.validate(serialized)
+
+            assertContentEquals(serialized, result.serializedData)
+        }
+
+    @Test
+    fun validationReportsMissingConfiguredSignerRoots() =
+        runTest {
+            val result = validator.validate(buildCompactJws().encodeToByteArray())
+
+            assertTrue(result.reasonCodes.contains(TrustDiagnosticReasonCodes.SIGNER_ROOT_NOT_CONFIGURED))
+        }
+
+    @Test
+    fun explicitlyPinnedEmbeddedSignerIsNotRejectedAsSelfSigned() =
+        runTest {
+            val result =
+                validator.validate(
+                    buildCompactJws().encodeToByteArray(),
+                    options = JAdESValidationOptions(
+                        trustedCertificates = listOf(byteArrayOf(0, 0, 0)),
+                    ),
+                )
+
+            assertFalse(result.reasonCodes.contains(TrustDiagnosticReasonCodes.EMBEDDED_CERTIFICATE_NOT_TRUSTED))
+            assertFalse(result.reasonCodes.contains(TrustDiagnosticReasonCodes.SIGNER_CHAIN_INVALID))
+        }
+
+    @Test
+    fun unrelatedConfiguredSignerRootIsRejected() =
+        runTest {
+            val result =
+                validator.validate(
+                    buildCompactJws().encodeToByteArray(),
+                    options = JAdESValidationOptions(trustedCertificates = listOf(byteArrayOf(1, 2, 3))),
+                )
+
+            assertFalse(result.valid)
+            assertFalse(result.reasonCodes.contains(TrustDiagnosticReasonCodes.EMBEDDED_CERTIFICATE_NOT_TRUSTED))
+        }
+
+    @Test
+    fun validationResultEqualityIncludesSerializedBytesAndReasonCodes() {
+        val result =
+            JAdESValidationResult(
+                valid = false,
+                signatureValid = false,
+                serializedData = byteArrayOf(1),
+                reasonCodes = listOf("SIGNATURE_INVALID"),
+            )
+
+        assertNotEquals(result, result.copy(serializedData = byteArrayOf(2)))
+        assertNotEquals(result, result.copy(reasonCodes = listOf("SIGNER_CHAIN_INVALID")))
+        assertEquals(result.hashCode(), result.copy(serializedData = byteArrayOf(1)).hashCode())
+    }
+
+    @Test
     fun shouldParseJAdESSigningTime() =
         runTest {
             val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"sigT":"2024-01-15T10:30:00Z"}"""
             val jws = buildCompactJws(headerJson = headerJson)
-            val result = validator.validate(jws.encodeToByteArray())
+            val result = validator.validate(
+                jws.encodeToByteArray(),
+                options = JAdESValidationOptions(requireEtsiHeaders = true),
+            )
 
             // Crypto will fail with dummy cert, but ETSI headers should still be extracted
             assertNotNull(result.etsiHeaders)
             assertEquals("2024-01-15T10:30:00Z", result.etsiHeaders!!.sigT)
             assertNotNull(result.signingTime)
+            assertFalse(result.errors.any { "required" in it || "invalid" in it })
+        }
+
+    @Test
+    fun shouldAcceptCurrentNumericDateIatWhenEtsiHeadersAreRequired() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"iat":1778226423}"""
+            val jws = buildCompactJws(headerJson = headerJson)
+            val result = validator.validate(
+                jws.encodeToByteArray(),
+                options = JAdESValidationOptions(requireEtsiHeaders = true),
+            )
+
+            assertNotNull(result.etsiHeaders)
+            assertNotNull(result.signingTime)
+            assertFalse(result.errors.any { "required" in it || "invalid" in it })
+        }
+
+    @Test
+    fun shouldRejectNumericDateIatWhenLongMaxDoesNotRoundTripToInstant() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"iat":9223372036854775807}"""
+            val result = validator.validate(
+                buildCompactJws(headerJson = headerJson).encodeToByteArray(),
+                options = JAdESValidationOptions(requireEtsiHeaders = true),
+            )
+
+            assertFalse(result.valid)
+            assertTrue(result.errors.any { "iat" in it.lowercase() && "round-trip" in it })
+        }
+
+    @Test
+    fun shouldRejectNumericDateIatWhenLongMinDoesNotRoundTripToInstant() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"iat":-9223372036854775808}"""
+            val result = validator.validate(
+                buildCompactJws(headerJson = headerJson).encodeToByteArray(),
+                options = JAdESValidationOptions(requireEtsiHeaders = true),
+            )
+
+            assertFalse(result.valid)
+            assertTrue(result.errors.any { "iat" in it.lowercase() && "round-trip" in it })
+        }
+
+    @Test
+    fun shouldRejectMalformedNumericDateIat() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"iat":"not-a-number"}"""
+            val result = validator.validate(
+                buildCompactJws(headerJson = headerJson).encodeToByteArray(),
+                options = JAdESValidationOptions(requireEtsiHeaders = true),
+            )
+
+            assertFalse(result.valid)
+            assertTrue(result.errors.any { "iat" in it.lowercase() && "integer" in it.lowercase() })
+        }
+
+    @Test
+    fun shouldRejectMalformedHistoricalSigT() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"sigT":"not-a-date"}"""
+            val result = validator.validate(
+                buildCompactJws(headerJson = headerJson).encodeToByteArray(),
+                options = JAdESValidationOptions(requireEtsiHeaders = true),
+            )
+
+            assertFalse(result.valid)
+            assertTrue(result.errors.any { "sigT" in it && "invalid" in it })
+        }
+
+    @Test
+    fun shouldRejectConflictingCurrentIatAndHistoricalSigT() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"iat":1778226423,"sigT":"2024-01-15T10:30:00Z"}"""
+            val result = validator.validate(
+                buildCompactJws(headerJson = headerJson).encodeToByteArray(),
+                options = JAdESValidationOptions(requireEtsiHeaders = true),
+            )
+
+            assertFalse(result.valid)
+            assertTrue(result.errors.any { "iat" in it.lowercase() && "sigT" in it })
+        }
+
+    @Test
+    fun shouldRejectCriticalIatWhenHeaderIsMissing() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"crit":["iat"]}"""
+            val result = validator.validate(buildCompactJws(headerJson = headerJson).encodeToByteArray())
+
+            assertFalse(result.valid)
+            assertTrue(result.errors.any { "critical" in it.lowercase() && "missing" in it.lowercase() })
+        }
+
+    @Test
+    fun shouldRejectCriticalHeaderWithBlankName() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"crit":[""]}"""
+            val result = validator.validate(buildCompactJws(headerJson = headerJson).encodeToByteArray())
+
+            assertFalse(result.valid)
+            assertTrue(result.errors.any { "critical" in it.lowercase() && "blank" in it.lowercase() })
+        }
+
+    @Test
+    fun shouldRejectDuplicateCriticalHeaderNames() =
+        runTest {
+            val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"iat":1778226423,"crit":["iat","iat"]}"""
+            val result = validator.validate(buildCompactJws(headerJson = headerJson).encodeToByteArray())
+
+            assertFalse(result.valid)
+            assertTrue(result.errors.any { "critical" in it.lowercase() && "duplicate" in it.lowercase() })
         }
 
     @Test
@@ -122,7 +299,7 @@ class JAdESValidatorTest {
         }
 
     @Test
-    fun shouldWarnAboutUnsupportedCriticalHeaders() =
+    fun shouldRejectUnsupportedCriticalHeaders() =
         runTest {
             val headerJson = """{"alg":"RS256","x5c":["$certBase64"],"crit":["sigT","unknownHeader"],"sigT":"2024-01-15T10:30:00Z"}"""
             val jws = buildCompactJws(headerJson = headerJson)
@@ -130,7 +307,7 @@ class JAdESValidatorTest {
 
             assertNotNull(result.etsiHeaders)
             assertNotNull(result.etsiHeaders!!.crit)
-            assertTrue(result.warnings.any { "Unsupported critical headers" in it })
+            assertTrue(result.errors.any { "Unsupported critical headers" in it })
         }
 
     @Test

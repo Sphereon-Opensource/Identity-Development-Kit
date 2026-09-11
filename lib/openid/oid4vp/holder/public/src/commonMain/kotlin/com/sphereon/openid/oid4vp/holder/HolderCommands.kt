@@ -22,6 +22,7 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.crypto.jose.jwe.JweHeader
 import com.sphereon.oauth2.common.jarm.JarmConfig
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.oauth2.common.model.AuthorizationResponse
@@ -145,6 +146,7 @@ interface ResolveAuthorizationRequestCommandService {
 data class CreateAuthorizationResponseArgs(
     val request: ResolvedOid4vpRequest,
     val selectedCredentials: List<SelectedCredential>,
+    val preparedPresentations: List<PreparedPresentation> = emptyList(),
 )
 
 /**
@@ -170,6 +172,7 @@ interface CreateAuthorizationResponseCommandService {
     suspend fun createAuthorizationResponse(
         request: ResolvedOid4vpRequest,
         selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation> = emptyList(),
     ): IdkResult<AuthorizationResponse, IdkError>
 }
 
@@ -190,6 +193,9 @@ data class JarmOptions(
     val signingKey: ManagedIdentifierOptsOrResult? = null,
     val issuer: String,
     val jarmConfig: JarmConfig? = null,
+    /** Optional profile-specific protected JWE headers; null preserves regular OID4VP behavior. */
+    @kotlinx.serialization.Transient
+    val protectedHeaderOverrides: JweHeader? = null,
 )
 
 /**

@@ -22,7 +22,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.log.LogLevel
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.federation.FederationCompleteOutcome
@@ -33,9 +32,10 @@ import com.sphereon.oauth2.server.authorization.provider.FederatedClaimMapper
 import com.sphereon.oauth2.server.authorization.provider.FederatedIdentityLinker
 import com.sphereon.oauth2.server.authorization.provider.FederationFlowConfig
 import com.sphereon.oauth2.server.authorization.provider.LinkFederatedSessionRequest
-import com.sphereon.oauth2.server.authorization.provider.LinkedFederatedSession
 import com.sphereon.oauth2.server.authorization.storage.CachedUserInfo
 import com.sphereon.oauth2.server.authorization.storage.FederationSessionStore
+import com.sphereon.oauth2.server.authorization.model.NormalizedAuthenticationEvidence
+import com.sphereon.oauth2.server.authorization.model.ProvenancedAuthenticationClaim
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -47,8 +47,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlin.time.Clock
-
-private const val SUBJECT_PREFIX_LEN = 6
 
 /**
  * Normal federation login completion: project upstream claims via [FederatedClaimMapper], link
@@ -94,9 +92,6 @@ class HandleFederationOutcomeCommandImpl(
 
         val rawClaims = exchange.claims
         log.debug("Raw claims from upstream (${rawClaims.size} total, keys=${rawClaims.keys})")
-        if (log.isEnabled(level = LogLevel.TRACE)) {
-            rawClaims.forEach { (k, v) -> log.trace("  RAW: $k = $v") }
-        }
 
         val mergedClaims =
             try {
@@ -116,19 +111,9 @@ class HandleFederationOutcomeCommandImpl(
             }
 
         log.debug("Projected claims (${mergedClaims.size} total, keys=${mergedClaims.keys})")
-        if (log.isEnabled(level = LogLevel.TRACE)) {
-            mergedClaims.forEach { (k, v) -> log.trace("  PROJECTED: $k = $v") }
-        }
+        val upstreamSub = exchange.upstreamSubject
 
-        val upstreamSub =
-            mergedClaims[providerConfig.identifierClaimName]?.toString()
-                ?: return Err(
-                    AuthenticationError.Generic(
-                        description = "Missing '${providerConfig.identifierClaimName}' claim in upstream response",
-                    ),
-                )
-
-        val tenant = execution.sessionContext.context.tenant.tenantId
+        val tenant = execution.tenantId
         val now = clock.now()
         val linked =
             federatedIdentityLinker
@@ -136,7 +121,7 @@ class HandleFederationOutcomeCommandImpl(
                     LinkFederatedSessionRequest(
                         tenantId = tenant,
                         sessionId = pending.sessionId,
-                        upstreamIssuer = providerConfig.issuerUrl,
+                        upstreamIssuer = pending.upstreamIssuer,
                         upstreamSub = upstreamSub,
                         identifierClaimName = providerConfig.identifierClaimName,
                         claims = mergedClaims,
@@ -150,12 +135,12 @@ class HandleFederationOutcomeCommandImpl(
                         applicationId = pending.applicationId,
                     ),
                 ).getOrElse {
-                    // `upstreamSub` identifies a natural person; log a redacted fingerprint at warn
-                    // and keep the full value at trace. The structured audit event for this failure
-                    // is emitted by FederatedIdentityLinker itself (which has tenant context).
-                    log.warn("FederatedIdentityLinker failed for sub=${redactSubject(upstreamSub)}; falling back to upstream sub: ${it.message}")
-                    log.trace("FederatedIdentityLinker failed for full upstreamSub=$upstreamSub")
-                    return@getOrElse LinkedFederatedSession(localIdentityId = upstreamSub)
+                    return Err(
+                        AuthenticationError.Generic(
+                            exception = it.exception,
+                            description = it.message.defaultMessage,
+                        ),
+                    )
                 }
         val userId: String = linked.localIdentityId
 
@@ -167,7 +152,7 @@ class HandleFederationOutcomeCommandImpl(
         val upstreamClaims =
             buildMap<String, JsonElement> {
                 put("upstream_sub", JsonPrimitive(upstreamSub))
-                put("upstream_iss", JsonPrimitive(providerConfig.issuerUrl))
+                put("upstream_iss", JsonPrimitive(pending.upstreamIssuer))
                 exchange.upstreamAcr?.let { put("upstream_acr", JsonPrimitive(it)) }
                 exchange.upstreamAmr?.let { amr -> put("upstream_amr", buildJsonArray { amr.forEach { add(JsonPrimitive(it)) } }) }
             }
@@ -178,6 +163,40 @@ class HandleFederationOutcomeCommandImpl(
                 claims = claimsAsJson + upstreamClaims,
                 cachedAt = clock.now(),
             )
+        val selectedRouteBinding = pending.authenticationRoute.eligibleBindings.single { it.bindingId == pending.federationBindingId }
+        if (selectedRouteBinding.claimsMapping.values.toSet().size != selectedRouteBinding.claimsMapping.size) {
+            return Err(
+                AuthenticationError.Generic(
+                    description = "Federation claim mapping contains duplicate governed targets",
+                ),
+            )
+        }
+        val governedClaims = selectedRouteBinding.claimsMapping.mapNotNull { (source, target) ->
+            rawClaims[source]?.let { value ->
+                target to ProvenancedAuthenticationClaim(
+                    value = value.toJsonElement(),
+                    sourceClaim = source,
+                    issuer = pending.upstreamIssuer,
+                )
+            }
+        }.toMap()
+        val evidence = NormalizedAuthenticationEvidence(
+            hostedAuthorizationServerId = pending.hostedAuthorizationServerId,
+            federationBindingId = pending.federationBindingId,
+            upstreamIssuer = pending.upstreamIssuer,
+            upstreamSubject = upstreamSub,
+            localSubject = userId,
+            acr = exchange.upstreamAcr,
+            amr = exchange.upstreamAmr.orEmpty(),
+            authTime = exchange.upstreamAuthTime ?: exchange.validatedAt,
+            governedClaims = governedClaims,
+            downstreamTransactionId = pending.sessionId,
+            upstreamTransactionId = pending.state,
+            validatedAt = exchange.validatedAt,
+            hostedAuthorizationServerRevision = pending.hostedAuthorizationServerRevision,
+            federationBindingRevision = pending.federationBindingRevision,
+            upstreamResourceRevision = pending.upstreamAuthorizationServerRevision,
+        )
         val completeResult =
             sessionStore.completePendingFederation(
                 state = state,
@@ -186,6 +205,7 @@ class HandleFederationOutcomeCommandImpl(
                 claimsTtl = flowConfig.claimsCacheTtl,
                 upstreamAcr = exchange.upstreamAcr,
                 upstreamAmr = exchange.upstreamAmr,
+                evidence = evidence,
             )
         if (completeResult.isErr) {
             return Err(
@@ -198,11 +218,6 @@ class HandleFederationOutcomeCommandImpl(
         return Ok(FederationCompleteOutcome(sessionId = pending.sessionId))
     }
 
-    private fun redactSubject(subject: String): String {
-        if (subject.isEmpty()) return "<empty>"
-        val prefix = subject.take(SUBJECT_PREFIX_LEN)
-        return "$prefix*(len=${subject.length})"
-    }
 }
 
 private fun Any?.toJsonElement(): JsonElement =

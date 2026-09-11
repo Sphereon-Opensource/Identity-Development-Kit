@@ -19,7 +19,19 @@ import kotlinx.serialization.Serializable
 interface WalletInteractionClient {
     suspend fun start(input: WalletInteractionInput): WalletInteractionSession
 
-    suspend fun resume(sessionId: WalletInteractionSessionId): WalletInteractionSession
+    /**
+     * Rehydrates [sessionId] from the session store without starting a new phase. Get/dispatch/cancel
+     * use this so reading a Failed session cannot un-fail it.
+     */
+    suspend fun load(sessionId: WalletInteractionSessionId): WalletInteractionSession
+
+    /**
+     * Holder action that picks a [WalletFailureDisposition.RESUMABLE] Failed session up where it
+     * stopped. Live sessions are rehydrated as [load]. Failed sessions that are not RESUMABLE are
+     * rejected. The default forwards to [load] so a client cannot un-fail by implementing only
+     * [resume] and forgetting [load].
+     */
+    suspend fun resume(sessionId: WalletInteractionSessionId): WalletInteractionSession = load(sessionId)
 
     suspend fun dispatch(
         sessionId: WalletInteractionSessionId,
@@ -139,6 +151,8 @@ data class WalletInteractionContext(
     val executionOwner: ProtocolExecutionOwner,
     val protocolExecutor: WalletProtocolExecutor = WalletProtocolExecutor.walletApp,
     val trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
+    /** Resolves issuer-bound verification keys before OID4VCI credential storage. */
+    val issuerAuthenticationResolver: WalletIssuerAuthenticationResolver = WalletIssuerAuthenticationResolver.none,
     val trustPolicy: WalletTrustPolicy = WalletTrustPolicy.warn,
     val securityGate: WalletSecurityGate = WalletSecurityGate.deny,
     val privateSessionStore: WalletInteractionPrivateSessionStore = WalletInteractionPrivateSessionStore.none,
@@ -173,6 +187,7 @@ data class WalletInteractionContext(
         WalletInteractionState(
             sessionId = sessionId,
             walletUnitId = walletUnitId,
+            executionOwner = executionOwner,
             status = status,
             flowKind = flowKind,
             protocol = protocol,
@@ -209,6 +224,7 @@ data class WalletInteractionContext(
                 walletAccountId = decision.walletAccountId ?: request.walletAccountId,
                 activationDecisionId = decision.activationDecisionId ?: request.activationDecisionId,
                 operationType = decision.operationType ?: request.operationType,
+                operationBinding = decision.operationBinding ?: request.operationBinding,
                 operationHash = decision.operationHash ?: request.operationHash,
                 nonce = decision.nonce ?: request.nonce,
                 requiredAssurance = decision.requiredAssurance,
@@ -250,6 +266,7 @@ data class WalletProtocolExecutionRequest(
     val walletAccountId: String? = null,
     val activationDecisionId: String? = null,
     val operationType: String? = null,
+    val operationBinding: String? = null,
     val operationHash: String? = null,
     val nonce: String? = null,
     val requiredAssurance: WalletSecurityAssurance = WalletSecurityAssurance.USER_PRESENT,
@@ -273,6 +290,7 @@ data class WalletProtocolExecutionDecision(
     val walletAccountId: String? = null,
     val activationDecisionId: String? = null,
     val operationType: String? = null,
+    val operationBinding: String? = null,
     val operationHash: String? = null,
     val nonce: String? = null,
 ) {
@@ -301,6 +319,7 @@ data class WalletProtocolExecutionDecision(
                 walletAccountId = request.walletAccountId,
                 activationDecisionId = request.activationDecisionId,
                 operationType = request.operationType,
+                operationBinding = request.operationBinding,
                 operationHash = request.operationHash,
                 nonce = request.nonce,
             )

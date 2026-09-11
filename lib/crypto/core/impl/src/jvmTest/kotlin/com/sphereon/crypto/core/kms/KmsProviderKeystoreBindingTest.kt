@@ -28,10 +28,10 @@ import kotlin.test.assertTrue
 
 /**
  * A file-backed keystore cannot be opened without its password, so a `pkcs12` provider entry that
- * carries no password is not a provider anyone can use. The binder refuses it, and because the
- * entries under `kms.providers` are bound as one strict map, the refusal takes the whole map with
- * it rather than dropping the single entry: a caller that silently saw one provider fewer would
- * reach for a different key instead of failing.
+ * carries no password is not a provider anyone can use. The binder refuses that entry, and the
+ * refusal is scoped to it: enumeration keeps the providers that do bind, and resolving the refused
+ * provider by id still throws. Failing the whole map instead would turn one malformed entry into a
+ * 500 on every request that resolves any provider, including requests that never name it.
  *
  * This is what makes generic provider configuration unusable for a customer tenant. A deployment's
  * own providers receive their password as deployment configuration; a tenant's keystore password is
@@ -86,7 +86,33 @@ class KmsProviderKeystoreBindingTest {
     }
 
     @Test
-    fun aPkcs12ProviderWithoutItsPasswordFailsTheWholeMap() {
+    fun aPkcs12ProviderWithoutItsPasswordIsSkippedWithoutTakingTheSiblingsWithIt() {
+        app as JvmCryptoTestAppGraph
+        val configService = (app as AppConfigService.Graph).appConfigService
+        val binder = (app as KmsProviderConfigBinder.Graph).kmsProviderConfigBinder
+
+        val complete = rows(id = "deployment-owned", password = "keystore-password")
+        val incomplete = rows(id = "tenant-owned", password = null)
+
+        withRows(complete + incomplete) {
+            val configs = binder.getKmsProviderConfigs(configService)
+            assertTrue(
+                configs.any { it.id == "deployment-owned" },
+                "the complete provider must survive an unbindable sibling; got ${configs.map { it.id }}",
+            )
+            assertTrue(
+                configs.none { it.id == "tenant-owned" },
+                "an unbindable provider must not be returned half-bound; got ${configs.map { it.id }}",
+            )
+            assertTrue(
+                binder.getKmsProviderIds(configService).contains("deployment-owned"),
+                "enumeration must keep listing the providers that bind",
+            )
+        }
+    }
+
+    @Test
+    fun resolvingTheUnbindableProviderByIdStillFails() {
         app as JvmCryptoTestAppGraph
         val configService = (app as AppConfigService.Graph).appConfigService
         val binder = (app as KmsProviderConfigBinder.Graph).kmsProviderConfigBinder
@@ -97,13 +123,13 @@ class KmsProviderKeystoreBindingTest {
         withRows(complete + incomplete) {
             val failure =
                 assertFailsWith<IllegalArgumentException> {
-                    binder.getKmsProviderConfigs(configService)
+                    binder.getKmsProviderConfig(configService, "tenant-owned")
                 }
-            // The diagnostic names the entry in its normalized form: the key normalizer replaces a
-            // hyphen with the key delimiter, so an operator matching the refusal against the stored
-            // key has to expect `tenant.owned` where configuration says `tenant-owned`.
+            // A single-entry lookup reports the id as configuration spells it, so the refusal an
+            // operator sees for a named provider carries the hyphen rather than the normalized
+            // delimiter the whole-map diagnostics use.
             assertTrue(
-                failure.message.orEmpty().contains("kms.providers.tenant.owned"),
+                failure.message.orEmpty().contains("kms.providers.tenant-owned"),
                 "the refusal must name the entry that could not bind: ${failure.message}",
             )
         }

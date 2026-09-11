@@ -35,8 +35,11 @@ object WebSystemDefaults {
     /** Pre-resolved dark theme tokens */
     val dark: Map<String, String> by lazy { resolveDefaults(ThemeVariant.DARK) }
 
-    /** Pre-resolved high-contrast theme tokens */
-    val highContrast: Map<String, String> by lazy { resolveDefaults(ThemeVariant.HIGH_CONTRAST) }
+    /** Pre-resolved high-contrast theme tokens, light ground */
+    val highContrastLight: Map<String, String> by lazy { resolveDefaults(ThemeVariant.HIGH_CONTRAST_LIGHT) }
+
+    /** Pre-resolved high-contrast theme tokens, dark ground */
+    val highContrastDark: Map<String, String> by lazy { resolveDefaults(ThemeVariant.HIGH_CONTRAST_DARK) }
 
     /**
      * Get pre-resolved token map for a variant.
@@ -45,16 +48,19 @@ object WebSystemDefaults {
         when (variant) {
             ThemeVariant.LIGHT -> light
             ThemeVariant.DARK -> dark
-            ThemeVariant.HIGH_CONTRAST -> highContrast
+            ThemeVariant.HIGH_CONTRAST_LIGHT -> highContrastLight
+            ThemeVariant.HIGH_CONTRAST_DARK -> highContrastDark
         }
 
     /**
-     * Get pre-resolved token map for a variant string ("light", "dark", "high_contrast").
+     * Get pre-resolved token map for a variant string ("light", "dark", "high_contrast_light",
+     * "high_contrast_dark").
      */
     fun forVariantString(variant: String): Map<String, String> =
         when (variant.lowercase()) {
             "dark" -> dark
-            "high_contrast" -> highContrast
+            "high_contrast_light" -> highContrastLight
+            "high_contrast_dark" -> highContrastDark
             else -> light
         }
 
@@ -62,7 +68,8 @@ object WebSystemDefaults {
         val definition =
             when (variant) {
                 ThemeVariant.DARK -> SystemDefaults.baselineDark
-                ThemeVariant.HIGH_CONTRAST -> SystemDefaults.baselineHighContrast
+                ThemeVariant.HIGH_CONTRAST_LIGHT -> SystemDefaults.baselineHighContrastLight
+                ThemeVariant.HIGH_CONTRAST_DARK -> SystemDefaults.baselineHighContrastDark
                 ThemeVariant.LIGHT -> SystemDefaults.baseline
             }
         val flat = TokenFlattener.merge(listOf(definition))

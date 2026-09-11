@@ -58,6 +58,8 @@ data class RoleVerificationRequest(
     val useCache: Boolean = true,
     /** Maximum cache age in milliseconds */
     val maxCacheAge: Long = 3600000,
+    /** Explicitly configured signer roots used when resolving the trust lists. */
+    val trustedSignerRoots: List<ByteArray>? = null,
 )
 
 /**
@@ -79,6 +81,8 @@ data class RoleVerificationResult(
     val details: String?,
     /** When the verification was performed */
     val verifiedAt: Instant,
+    /** Stable machine-readable reasons for a fail-closed decision. */
+    val reasonCodes: List<String> = emptyList(),
 )
 
 /**
@@ -121,6 +125,8 @@ data class RoleDiscoveryRequest(
     val useCache: Boolean = true,
     /** Maximum cache age in milliseconds */
     val maxCacheAge: Long = 3600000,
+    /** Explicitly configured signer roots used when resolving the trust lists. */
+    val trustedSignerRoots: List<ByteArray>? = null,
 )
 
 /**

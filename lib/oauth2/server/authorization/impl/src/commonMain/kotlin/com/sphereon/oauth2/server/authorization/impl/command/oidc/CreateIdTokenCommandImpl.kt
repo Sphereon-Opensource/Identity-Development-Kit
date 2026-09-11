@@ -32,16 +32,17 @@ import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierResult
 import com.sphereon.crypto.resolution.managed.MultiManagedIdentifierService
 import com.sphereon.di.session.SessionScope
-import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.validation.jwsAlgToDigest
 import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.asSigningProtectedHeader
 import com.sphereon.oauth2.server.authorization.impl.command.discovery.keyAlgorithmToJwsAlg
 import com.sphereon.oauth2.server.authorization.impl.command.putClaims
 import com.sphereon.oauth2.server.authorization.provider.SessionParticipationRecorder
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionIdProvider
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -71,6 +72,7 @@ class CreateIdTokenCommandImpl(
     private val jwtService: JwtService,
     private val configProvider: OAuth2ServersConfigProvider,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
+    private val clientRegistry: ClientRegistry,
     private val identifierService: MultiManagedIdentifierService,
     private val sessionParticipationRecorders: Set<SessionParticipationRecorder>,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
@@ -94,7 +96,41 @@ class CreateIdTokenCommandImpl(
     }
 
     private suspend fun executeInternal(args: CreateIdTokenArgs): IdkResult<String, AuthorizationServerError> {
-        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
+        val config = configProvider.serverConfig
+        val clientResult = clientRegistry.getClient(args.clientId)
+        if (clientResult.isErr) {
+            return Err(clientResult.error)
+        }
+        val client = clientResult.value ?: return Err(AuthorizationServerError.ClientNotFound(args.clientId))
+        val requestedAlg = client.idTokenSignedResponseAlg?.trim()?.takeIf { it.isNotEmpty() }
+        if (requestedAlg != null) {
+            if (requestedAlg.equals("none", ignoreCase = true)) {
+                return Err(AuthorizationServerError.ServerError(details = "Client '${args.clientId}' requests forbidden ID-token alg 'none'"))
+            }
+            val advertised = config.idTokenSigningAlgValuesSupported
+            if (advertised != null && advertised.none { it.equals(requestedAlg, ignoreCase = true) }) {
+                return Err(
+                    AuthorizationServerError.ServerError(
+                        details = "Client '${args.clientId}' requests ID-token alg '$requestedAlg', which this server does not advertise",
+                    ),
+                )
+            }
+        }
+        val serverIdentifier =
+            try {
+                if (requestedAlg == null) {
+                    signingIdentifierResolver.resolveSigningIdentifier()
+                } else {
+                    signingIdentifierResolver.resolveSigningIdentifier(requestedAlg)
+                }
+            } catch (expected: Exception) {
+                return Err(
+                    AuthorizationServerError.ServerError(
+                        details = "Cannot create ID token for client '${args.clientId}': ${expected.message}",
+                        exception = expected,
+                    ),
+                )
+            }
         if (serverIdentifier == null) {
             return Err(
                 AuthorizationServerError.ServerError(
@@ -116,7 +152,6 @@ class CreateIdTokenCommandImpl(
                 )
 
         val now = Clock.System.now()
-        val config = configProvider.serverConfig
         val expiresAt = now.epochSeconds + config.idTokenLifetimeSeconds
 
         // Resolve the signing key once so the JWS `alg` we report through `at_hash`/`c_hash`
@@ -155,10 +190,9 @@ class CreateIdTokenCommandImpl(
 
                 // at_hash / c_hash per OIDC Core §3.1.3.6: hash algorithm matches the ID token
                 // signing alg (RS/ES/PS/HS 256/384/512 → SHA-256/-384/-512). The signing alg
-                // is derived from the resolved KMS key so the digest matches the JWS header
-                // `alg` `PrepareJwsCommandImpl` will write — config-pinned overrides win over
-                // derivation so an operator can advertise a narrower set than the key supports.
-                val idTokenSigningAlg = resolveIdTokenAlg(config, resolvedKey)
+                // is derived from the selected KMS key so the digest matches the JWS header
+                // `alg` `PrepareJwsCommandImpl` will write.
+                val idTokenSigningAlg = resolveIdTokenAlg(resolvedKey)
                 args.accessToken?.let { token ->
                     computeTokenHash(token, idTokenSigningAlg)?.let { put("at_hash", it) }
                 }
@@ -191,10 +225,7 @@ class CreateIdTokenCommandImpl(
                 putClaims(args.additionalClaims)
             }
 
-        val header =
-            buildJsonObject {
-                put("typ", "JWT")
-            }
+        val header = asSigningProtectedHeader("JWT", serverIdentifier)
 
         return try {
             val jwsArgs =
@@ -286,20 +317,13 @@ class CreateIdTokenCommandImpl(
 
     /**
      * Pick the JWS `alg` to digest under for `at_hash`/`c_hash`. Resolution order:
-     *  1. Operator-pinned `idTokenSigningAlgValuesSupported` (first entry) — lets a deployment
-     *     advertise a narrower / different alg than the key supports if the metadata path was
-     *     overridden.
-     *  2. The resolved KMS key's `signatureAlgorithm` mapped through [keyAlgorithmToJwsAlg] —
+     *  1. The resolved KMS key's `signatureAlgorithm` mapped through [keyAlgorithmToJwsAlg] —
      *     this is what `PrepareJwsCommandImpl` will write into the JOSE `alg` header at sign
      *     time, so the digest matches the actual signature.
-     *  3. RS256 — OIDC Core §10.1 mandates RP support for this alg; safer than ES256 as a
+     *  2. RS256 — OIDC Core §10.1 mandates RP support for this alg; safer than ES256 as a
      *     defensive default when the key resolver returned nothing.
      */
-    private fun resolveIdTokenAlg(
-        config: OAuth2ServerInstanceConfig,
-        resolvedKey: ManagedIdentifierResult<*>?,
-    ): String {
-        config.idTokenSigningAlgValuesSupported?.firstOrNull()?.let { return it }
+    private fun resolveIdTokenAlg(resolvedKey: ManagedIdentifierResult<*>?): String {
         val keyAlg =
             resolvedKey?.keyInfo?.signatureAlgorithm
                 ?: resolvedKey?.keyInfo?.key?.getSignatureAlgorithm()

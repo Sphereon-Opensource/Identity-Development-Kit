@@ -48,6 +48,7 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -136,16 +137,12 @@ class JwksUrlExternalIdentifierResolutionServiceImpl private constructor(
                         ?: return IdkError.NOT_FOUND_ERROR(message = "No key with kid '$requestedKid' found in JWKS from $url").asErrorResult()
                 }
 
-                resolvedKeys.isNotEmpty() -> {
-                    resolvedKeys.first()
-                }
-
-                // We simply take the first key
                 else -> {
-                    return IdkError
-                        .ILLEGAL_ARGUMENT_ERROR(
-                            message = "JWKS from $url contains no keys",
-                        ).asErrorResult()
+                    resolvedKeys.singleOrNull()
+                        ?: return IdkError
+                            .ILLEGAL_ARGUMENT_ERROR(
+                                message = "JWKS from $url must contain exactly one usable key when kid is omitted",
+                            ).asErrorResult()
                 }
             }
 
@@ -291,10 +288,38 @@ class JwksUrlExternalIdentifierResolutionServiceImpl private constructor(
 
     override suspend fun isSupportedIdentifier(identifier: Any): Boolean {
         // Do not try to infer the method from the URL shape; selection should be driven by opts.method (JWKS_URL).
-        // We only require a valid-looking http(s) URL here.
-        return identifier is String &&
-            (identifier.startsWith("https://", ignoreCase = true) || identifier.startsWith("http://", ignoreCase = true)) &&
-            identifier.contains("://")
+        // HTTPS is required for remote production endpoints. HTTP is retained only for
+        // in-network JWKS fetch: RFC 6761 loopback, Compose/K8s single-label Service DNS,
+        // and Kubernetes cluster-local Service FQDNs. `.local` / `.internal` and RFC1918
+        // literals stay rejected (SSRF). Public gateway hosts stay HTTPS-only.
+        return identifier is String && isAllowedJwksUrl(identifier)
+    }
+
+    private fun isAllowedJwksUrl(identifier: String): Boolean {
+        val url = identifier.trim()
+        val schemeSeparator = url.indexOf("://")
+        if (schemeSeparator <= 0) return false
+        val explicitScheme = url.substring(0, schemeSeparator).lowercase()
+        if (explicitScheme != "https" && explicitScheme != "http") return false
+
+        val parsed = runCatching { Url(url) }.getOrNull() ?: return false
+        val scheme = parsed.protocol.name.lowercase()
+        if (scheme != explicitScheme) return false
+        if (scheme == "https") return parsed.host.isNotBlank()
+        return isInNetworkHttpJwksHost(parsed.host.lowercase())
+    }
+
+    private fun isInNetworkHttpJwksHost(host: String): Boolean {
+        if (host.isBlank()) return false
+        if (host == "localhost" || host == "127.0.0.1" || host == "::1" || host.endsWith(".localhost")) {
+            return true
+        }
+        // Compose short names (`enterprise-platform`) and Helm same-namespace Service
+        // DNS (`edk-sih-edk-enterprise-platform`, `…-platform-identity`) have no dot.
+        if (!host.contains('.')) return true
+        return host.endsWith(".svc") ||
+            host.endsWith(".svc.cluster.local") ||
+            host.endsWith(".cluster.local")
     }
 
     override suspend fun resolve(opts: ExternalIdentifierOptsOrResult): IdkResult<ExternalIdentifierResult.JwksUrl, IdkErrorType> = execute(opts)

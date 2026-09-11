@@ -24,16 +24,17 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.httpRoutes
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.AppScope
-import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(NoOpHttpAdapter.ID)
 class NoOpHttpAdapter : RoutedHttpAdapter() {
     override val id: String = ID
 
@@ -43,8 +44,6 @@ class NoOpHttpAdapter : RoutedHttpAdapter() {
             adapterBasePath = "",
         )
 
-    // Routes are relative to the mount (adapterBasePath = /keys)
-    // The mount prefix is automatically prepended when matching requests
     override val routes =
         httpRoutes {
         }
@@ -56,9 +55,7 @@ class NoOpHttpAdapter : RoutedHttpAdapter() {
 
 /**
  * AppScope companion descriptor for [NoOpHttpAdapter]. Carries an empty endpoint list, so it
- * advertises nothing through the catalog while keeping the IDK invariant that every contributed
- * [HttpAdapter] has a matching [HttpAdapterDescriptorProvider]. The parity is enforced by the
- * OIDF harness `OAuth2HttpAdapterParityTest`.
+ * advertises nothing through the catalog.
  */
 @Inject
 @SingleIn(AppScope::class)

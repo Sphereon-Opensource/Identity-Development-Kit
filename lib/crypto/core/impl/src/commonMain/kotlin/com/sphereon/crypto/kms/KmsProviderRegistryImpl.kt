@@ -18,6 +18,7 @@
 package com.sphereon.crypto.kms
 
 import com.sphereon.core.api.conf.ConfigEnvironment
+import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.SyncConfigSnapshotCache
 import com.sphereon.core.api.conf.refreshableContentRevision
@@ -99,16 +100,25 @@ class KmsProviderRegistryImpl(
         providerId: String?,
         alg: SignatureAlgorithm?,
     ): KmsProvider {
-        if (providerId == null && alg != null) {
-            return getKmsBySignatureAlgorithm(alg)
+        if (providerId != null) {
+            val provider = getProviderById(providerId)
+            if (alg != null && !provider.getCapabilities().signatureAlgorithms.contains(alg)) {
+                throw PKIException("KMS provider $providerId does not support signature algorithm $alg")
+            }
+            return provider
         }
-        return getProviderById(providerId ?: defaultProviderId())
+
+        val defaultProvider = getProviderById(defaultProviderId())
+        if (alg == null || defaultProvider.getCapabilities().signatureAlgorithms.contains(alg)) {
+            return defaultProvider
+        }
+        return getKmsBySignatureAlgorithm(alg)
     }
 
     override suspend fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm): KmsProvider {
-        kmsProvidersById.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }?.let { return it }
+        kmsProvidersById.values.firstOrNull { it.getCapabilities().signatureAlgorithms.contains(signatureAlgorithm) }?.let { return it }
         refreshProvidersFromConfig(force = true)
-        return kmsProvidersById.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }
+        return kmsProvidersById.values.firstOrNull { it.getCapabilities().signatureAlgorithms.contains(signatureAlgorithm) }
             ?: throw PKIException("No KMS found for signature algorithm $signatureAlgorithm")
     }
 
@@ -133,9 +143,14 @@ class KmsProviderRegistryImpl(
         if (force || (lastProviderConfigRevision != null && lastProviderConfigRevision != revision)) {
             snapshotCache.invalidateByPrefix(KMS_PROVIDERS_PREFIX)
         }
+        // Provider selection is tenant-scoped. Include tenant providers in a
+        // principal session registry so alias-only signing can find the tenant's
+        // KMS key instead of falling back to a principal software provider.
         val configProviders =
-            kmsProviderManager
-                .createFromProperties(contextConfig, execution)
+            listOf(ConfigLevel.APP, ConfigLevel.TENANT, ConfigLevel.PRINCIPAL)
+                .map { level -> execution.conf.conf(level) }
+                .distinctBy { it }
+                .flatMap { config -> kmsProviderManager.createFromProperties(config, execution) }
                 .sortedBy { it.id }
         val nextConfigManagedProviderIds = configProviders.mapTo(mutableSetOf()) { it.id }
 

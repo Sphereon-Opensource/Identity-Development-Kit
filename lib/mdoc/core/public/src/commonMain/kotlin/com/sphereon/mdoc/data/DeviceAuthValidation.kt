@@ -18,6 +18,7 @@ package com.sphereon.mdoc.data
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyType
+import com.sphereon.crypto.core.generic.VerifySignatureResult
 import com.sphereon.crypto.core.generic.VerifySignatureResultType
 import com.sphereon.mdoc.data.device.Document
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
@@ -59,4 +60,27 @@ interface DeviceAuthValidation {
         document: Document,
         expectedSessionTranscript: SessionTranscript,
     ): VerifySignatureResultType<CoseKeyType>
+
+    /**
+     * Verify mdoc MAC authentication when the transport has already derived the ISO EMacKey.
+     *
+     * The derivation input is deliberately supplied by the caller: the derivation depends on
+     * the engagement/session context and on the reader/device key agreement, which is owned by
+     * the transport or key-management layer rather than by this document validator.  The
+     * default implementation fails closed so existing implementations remain source-compatible
+     * while callers never accidentally accept a MAC they did not validate.
+     *
+     * This method is not used by the OID4VP two-argument path, where there is no shared secret.
+     */
+    suspend fun verifyDeviceAuthWithMac(
+        document: Document,
+        expectedSessionTranscript: SessionTranscript,
+        macKey: ByteArray,
+    ): VerifySignatureResultType<CoseKeyType> =
+        VerifySignatureResult(
+            error = true,
+            critical = true,
+            message = "This DeviceAuthValidation implementation does not support EMacKey validation.",
+            name = "${com.sphereon.crypto.core.CryptoConst.COSE_LITERAL}:mdoc:DeviceAuthentication",
+        )
 }

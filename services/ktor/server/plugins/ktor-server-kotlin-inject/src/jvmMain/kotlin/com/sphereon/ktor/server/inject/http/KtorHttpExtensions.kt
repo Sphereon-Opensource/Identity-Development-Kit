@@ -37,7 +37,9 @@ import io.ktor.server.request.receiveChannel
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.response.respondText
+import io.ktor.utils.io.writeFully
 import io.ktor.utils.io.readAvailable
 import java.io.ByteArrayOutputStream
 import com.sphereon.ktor.server.inject.BaseTenantIdAttribute as SharedBaseTenantIdAttribute
@@ -87,7 +89,8 @@ fun ApplicationCall.setBaseTenantId(tenantId: String) {
  * @param call The ApplicationCall containing request context
  * @return A GenericHttpRequest suitable for use with HttpAdapters
  */
-suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): GenericHttpRequest {
+suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall, maxBodyBytes: Int? = null): GenericHttpRequest {
+    require(maxBodyBytes == null || maxBodyBytes >= 0)
     val path = this.path()
     val method = this.httpMethod.value
     val request = this
@@ -99,7 +102,12 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
         try {
             val contentType = request.contentType()
             val contentLength = request.contentLength()
+            if (maxBodyBytes != null && contentLength != null && contentLength > maxBodyBytes) throw RequestBodyTooLargeException()
             if (request.httpMethod.mayCarryRequestBody() && contentLength != 0L) {
+                if (maxBodyBytes != null) {
+                    val bytes = readBoundedRequestBytes(call.receiveChannel(), maxBodyBytes)
+                    if (contentType.isTextLikeRequestBody()) GenericHttpBody.Text(bytes.decodeToString()) else GenericHttpBody.Bytes(bytes)
+                } else
                 if (contentType.isTextLikeRequestBody()) {
                     GenericHttpBody.Text(call.receiveText())
                 } else {
@@ -108,7 +116,12 @@ suspend fun ApplicationRequest.toGenericHttpRequest(call: ApplicationCall): Gene
             } else {
                 GenericHttpBody.Empty
             }
-        } catch (_: Exception) {
+        } catch (receiveFailure: Exception) {
+            if (maxBodyBytes != null || receiveFailure is kotlinx.coroutines.CancellationException) throw receiveFailure
+            // A silently-empty body turned a valid revision-CAS DELETE into an undiagnosable
+            // "EOF" decode error downstream; name the cause so the next one is one log line.
+            io.ktor.util.logging.KtorSimpleLogger("KtorHttpExtensions")
+                .warn("Request body read failed for $method $path: ${receiveFailure.message}")
             GenericHttpBody.Empty
         }
 
@@ -169,7 +182,30 @@ private fun ContentType?.isTextLikeRequestBody(): Boolean {
         value.startsWith("application/x-www-form-urlencoded")
 }
 
-private fun HttpMethod.mayCarryRequestBody(): Boolean = this == HttpMethod.Post || this == HttpMethod.Put || this == HttpMethod.Patch
+// DELETE carries a body on revision-CAS admin routes (the OpenAPI requires it); dropping it
+// turned a valid delete into "Expected start of the object '{', but had 'EOF'".
+private fun HttpMethod.mayCarryRequestBody(): Boolean =
+    this == HttpMethod.Post || this == HttpMethod.Put || this == HttpMethod.Patch || this == HttpMethod.Delete
+
+/** Overflow is handled as 413 by the server, never converted to an empty body. */
+class RequestBodyTooLargeException : IllegalArgumentException("Request body exceeds endpoint byte limit")
+
+internal suspend fun readBoundedRequestBytes(channel: io.ktor.utils.io.ByteReadChannel, maxBytes: Int): ByteArray {
+    require(maxBytes >= 0)
+    val out = ByteArrayOutputStream(minOf(maxBytes, DEFAULT_BUFFER_SIZE))
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    while (!channel.isClosedForRead) {
+        val count = channel.readAvailable(buffer, 0, minOf(buffer.size.toLong(), maxBytes.toLong() - out.size() + 1).toInt())
+        if (count < 0) break
+        if (count > maxBytes - out.size()) {
+            channel.cancel(RequestBodyTooLargeException())
+            throw RequestBodyTooLargeException()
+        }
+        if (count > 0) out.write(buffer, 0, count)
+    }
+    channel.closedCause?.let { throw it }
+    return out.toByteArray()
+}
 
 private suspend fun ApplicationCall.receiveBodyBytes(): ByteArray {
     val channel = receiveChannel()
@@ -194,12 +230,16 @@ private suspend fun ApplicationCall.receiveBodyBytes(): ByteArray {
  */
 suspend fun ApplicationCall.respondWithGeneric(response: GenericHttpResponse) {
     val status = HttpStatusCode.fromValue(response.statusCode)
-    val contentType = ContentType.parse(response.headers["Content-Type"] ?: "application/json")
+    val contentType = ContentType.parse(response.contentType ?: "application/json")
 
     // Add headers once (not duplicated between if/else branches)
     this.response.headers.apply {
+        val repeatedNames = response.multiValueHeaders.keys.map(String::lowercase).toSet()
         response.headers.forEach { (key, value) ->
-            append(key, value)
+            if (key.lowercase() !in repeatedNames) append(key, value)
+        }
+        response.multiValueHeaders.forEach { (key, values) ->
+            values.forEach { value -> append(key, value) }
         }
     }
 
@@ -241,6 +281,15 @@ suspend fun ApplicationCall.respondWithGeneric(response: GenericHttpResponse) {
 
         is GenericHttpBody.Empty -> {
             this.respond(status)
+        }
+
+        is GenericHttpBody.TextStream -> {
+            this.respondBytesWriter(contentType = contentType, status = status) {
+                bodyContent.flow.collect { chunk ->
+                    writeFully(chunk.encodeToByteArray())
+                    flush()
+                }
+            }
         }
     }
 }

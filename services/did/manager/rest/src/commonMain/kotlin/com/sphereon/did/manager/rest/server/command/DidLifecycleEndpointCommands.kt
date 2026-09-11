@@ -43,6 +43,7 @@ interface CreateDidEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "createDid",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "Create a new DID",
             )
@@ -60,6 +61,7 @@ interface ListDidsEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listDids",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "List DIDs",
             )
@@ -77,6 +79,7 @@ interface TrackExternalDidEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "trackExternalDid",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "Track an externally-managed DID",
             )
@@ -94,6 +97,7 @@ interface GetDidEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDid",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "Get a DID by identifier",
             )
@@ -112,6 +116,7 @@ interface UpdateDidEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "updateDid",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "Partially update a DID (JSON Merge Patch)",
             )
@@ -130,6 +135,7 @@ interface ReplaceDidEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "replaceDid",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "Replace a DID's declarative collections",
             )
@@ -146,6 +152,7 @@ interface DeleteDidEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}",
                 operationId = "deleteDid",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "Soft-delete a DID locally",
             )
@@ -164,6 +171,7 @@ interface DeactivateDidEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "deactivateDid",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "Deactivate a DID on its network",
             )
@@ -181,6 +189,7 @@ interface ResolveDidEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "resolveDid",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Dids"),
                 summary = "Resolve a DID to its DID Document via the resolver registry",
             )

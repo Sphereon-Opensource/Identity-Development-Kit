@@ -214,6 +214,7 @@ class VerifyRefreshTokenGrantCommandImpl(
                 amr = tokenData.amr,
                 nonce = tokenData.nonce,
                 loginSessionId = tokenData.loginSessionId,
+                federationClaims = tokenData.federationClaims,
             ),
         )
     }

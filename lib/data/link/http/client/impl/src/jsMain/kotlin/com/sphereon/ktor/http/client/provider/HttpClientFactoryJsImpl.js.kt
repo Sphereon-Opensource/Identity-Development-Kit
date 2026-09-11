@@ -95,6 +95,10 @@ class HttpClientFactoryJsImpl(
                 }
 
                 additionalConfig?.invoke(this)
+
+                // Keep the caller-selected option last so additionalConfig cannot re-enable
+                // auto-follow when a platform can expose manual redirects.
+                followRedirects = options.followRedirects
             }.also { client ->
                 val validationPolicy = urlValidation
                 if (validationPolicy != null) {
@@ -118,6 +122,10 @@ class HttpClientFactoryJsImpl(
     override fun isSupportedOptions(options: HttpClientOptions): Boolean {
         if (!getEngineTypesSupported().contains(options.engine ?: getEngineTypeDefault())) {
             log.error("Http client engine type ${options.engine} not supported on JS")
+            return false
+        }
+        if (!options.followRedirects) {
+            log.error("The JS/browser HTTP engine cannot expose manual 3xx responses")
             return false
         }
         return true

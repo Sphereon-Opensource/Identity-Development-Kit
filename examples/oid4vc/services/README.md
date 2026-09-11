@@ -266,11 +266,17 @@ Import `postman/IDK-OID4VCI-OID4VP-E2E.postman_collection.json` into Postman.
 
 Set the `base_url` collection variable to your `EXTERNAL_BASE_URL`.
 
-The collection has four folders:
+The collection has five folders and 66 requests:
+
 - **Setup**. Health checks, metadata discovery
 - **Pre-Authorized Code Flow**. Full issuance flow (auto-extracts tokens between requests)
 - **Authorization Code Flow**. Issuance with user login (some manual steps)
 - **OID4VP Verification**. Create request, check result
+- **Authorization Server Administration**. The same 50-request UUID-resource,
+  lifecycle, discovery, client/identity, federation-binding, OID4VCI selection,
+  protocol-profile, and migration-remediation contract segment maintained in
+  the customer collection. Scenarios requiring stale discovery or failed
+  migration rows need the seeded release-gate database state.
 
 Automated smoke checks against a running compose environment:
 

@@ -625,6 +625,35 @@ class EngagementDataTest {
         assertTrue(engagementData.isRestApiRetrievalSupported())
     }
 
+    @Test
+    fun websiteDeviceEngagementUsesExplicitTrustedOrigin() {
+        val engagementData =
+            holderBuilder()
+                .withEphemeralKey(createResolvedKeyInfo())
+                .withReaderEngagement(createReaderEngagement())
+                .withTrustedOriginDomain("trusted.example.com")
+                .build()
+
+        val deviceEngagement = engagementData.getDeviceEngagement().data { deviceEngagementCborCodec.decode(it).getOrThrow().value }
+        val origin = (deviceEngagement as DeviceEngagement.V1_1).originInfos!!.single()
+
+        assertEquals("trusted.example.com", origin.details?.get("domain"))
+    }
+
+    @Test
+    fun websiteDeviceEngagementDoesNotDeriveOriginFromReaderEndpoint() {
+        val engagementData =
+            holderBuilder()
+                .withEphemeralKey(createResolvedKeyInfo())
+                .withReaderEngagement(createReaderEngagement())
+                .build()
+
+        val deviceEngagement = engagementData.getDeviceEngagement().data { deviceEngagementCborCodec.decode(it).getOrThrow().value }
+        val origin = (deviceEngagement as DeviceEngagement.V1_1).originInfos!!.single()
+
+        assertEquals("", origin.details?.get("domain"))
+    }
+
     // getUuid tests
 
     @Test

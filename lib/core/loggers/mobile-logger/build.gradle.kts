@@ -20,7 +20,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.core.log.mobile"
         compileSdk = 36
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }

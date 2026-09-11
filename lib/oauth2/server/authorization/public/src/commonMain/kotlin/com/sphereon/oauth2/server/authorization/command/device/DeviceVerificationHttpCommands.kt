@@ -43,6 +43,7 @@ interface DeviceVerificationEntryHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.Custom("text/html")),
                 operationId = "deviceEntry",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("device"),
                 summary = "Render the RFC 8628 device verification entry form",
             )
@@ -67,6 +68,7 @@ interface DeviceVerificationSubmitHttpEndpointCommand : HttpEndpointCommand {
                 consumes = setOf(MediaType.ApplicationFormUrlEncoded),
                 operationId = "deviceSubmit",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("device"),
                 summary = "Submit the user_code to the RFC 8628 device verification flow",
             )
@@ -90,6 +92,7 @@ interface DeviceVerificationApprovalHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.Custom("text/html")),
                 operationId = "deviceApproveGet",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("device"),
                 summary = "Render the RFC 8628 device approval prompt",
             )
@@ -112,6 +115,7 @@ interface DeviceVerificationApprovalSubmitHttpEndpointCommand : HttpEndpointComm
                 consumes = setOf(MediaType.ApplicationFormUrlEncoded),
                 operationId = "deviceApprove",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("device"),
                 summary = "Submit the allow / deny decision for the RFC 8628 device approval",
             )

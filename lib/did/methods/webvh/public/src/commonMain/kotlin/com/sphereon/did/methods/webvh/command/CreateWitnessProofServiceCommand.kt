@@ -52,6 +52,7 @@ interface CreateWitnessProofServiceCommand :
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "createWebvhWitnessProof",
                 tags = setOf("did:webvh"),
                 summary = "Witness signs a did:webvh versionId",

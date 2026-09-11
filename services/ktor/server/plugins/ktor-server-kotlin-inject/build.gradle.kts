@@ -100,7 +100,7 @@ kotlin {
 
         findByName("jsMain")?.dependencies {
             // JS-specific dependencies
-            implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
+            implementation("org.jetbrains.kotlin:kotlin-reflect:2.4.20-RC")
         }
 
         findByName("jsTest")?.dependencies {

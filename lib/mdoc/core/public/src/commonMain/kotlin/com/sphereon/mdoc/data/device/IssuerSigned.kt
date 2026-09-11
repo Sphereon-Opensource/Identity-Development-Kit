@@ -44,6 +44,7 @@ import com.sphereon.mdoc.data.mso.DeviceKeyInfo
 import com.sphereon.mdoc.data.mso.DigestAlgorithm
 import com.sphereon.mdoc.data.mso.DigestID
 import com.sphereon.mdoc.data.mso.MobileSecurityObject
+import com.sphereon.mdoc.data.mso.Status
 import com.sphereon.mdoc.data.mso.ValidityInfo
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -90,11 +91,41 @@ data class IssuerSigned(
         if (ns == null) {
             return this.copy()
         }
+
+        // ISO 18013-5 second-edition alternative data elements are evaluated in
+        // declaration order. A requested element wins when it is present; otherwise
+        // the first complete alternative set available in the issuer-signed document
+        // is disclosed. Availability is calculated against the original document so
+        // an earlier selection cannot make a later alternative appear available.
+        val requestedIdentifiersByNamespace =
+            docRequest
+                .getNameSpaces()
+                .associateWith { nameSpace -> docRequest.getIdentifiers(nameSpace).keys.toMutableSet() }
+                .toMutableMap()
+        docRequest.itemsRequest.docRequestInfo?.alternativeDataElements.orEmpty().forEach { alternative ->
+            val requested = alternative.requestedElement
+            val requestedAvailable = ns[requested.first]?.any { it.data().elementIdentifier == requested.second } == true
+            val selectedReferences =
+                if (requestedAvailable) {
+                    listOf(requested)
+                } else {
+                    alternative.alternativeElementSets.firstOrNull { candidateSet ->
+                        candidateSet.isNotEmpty() &&
+                            candidateSet.all { reference ->
+                                ns[reference.first]?.any { it.data().elementIdentifier == reference.second } == true
+                            }
+                    }.orEmpty()
+                }
+            selectedReferences.forEach { (nameSpace, identifier) ->
+                requestedIdentifiersByNamespace.getOrPut(nameSpace) { mutableSetOf() }.add(identifier)
+            }
+        }
+
         val filtered =
             ns.map { (nsName, items) ->
                 {
-                    val requestedIdentifiers: Map<DataElementIdentifier, IntentToRetain> = docRequest.getIdentifiers(nsName)
-                    val value = items.filter { item: CborEncodedItem<IssuerSignedItem<Any>> -> requestedIdentifiers.containsKey(item.data().elementIdentifier) }
+                    val requestedIdentifiers = requestedIdentifiersByNamespace[nsName].orEmpty()
+                    val value = items.filter { item: CborEncodedItem<IssuerSignedItem<Any>> -> item.data().elementIdentifier in requestedIdentifiers }
                     Pair(nsName, value.toTypedArray())
                 }
             }
@@ -113,6 +144,7 @@ data class IssuerSigned(
         var expectedUpdate: LocalDateTimeKMP? = null,
         var deviceKeyInfo: ResolvedKeyInfoType<CoseKeyType>? = null,
         var issuerKeyInfo: ManagedKeyInfoType<*>? = null,
+        var status: Status? = null,
     ) {
         fun addNameSpace(
             nameSpace: NameSpace,
@@ -165,6 +197,9 @@ data class IssuerSigned(
                 this.issuerKeyInfo = issuerKeyInfo
             }
 
+        /** Adds the optional second-edition ISO 18013-5 MSO status reference. */
+        fun withStatus(status: Status?) = apply { this.status = status }
+
         fun build(alg: DigestAlg? = issuerKeyInfo?.signatureAlgorithm?.digestAlgorithm ?: DigestAlg.SHA256): Pair<MobileSecurityObject, IssuerSignedNameSpaces> {
             require(deviceKeyInfo !== null) { "Please provide a device key or key info object" }
             require(validUntil !== null) { "Please provide a valid until value" }
@@ -188,6 +223,7 @@ data class IssuerSigned(
                     docType = docType!!,
                     validityInfo = validityInfo,
                     original = null,
+                    status = status,
                 )
 
             return mso to nameSpaces

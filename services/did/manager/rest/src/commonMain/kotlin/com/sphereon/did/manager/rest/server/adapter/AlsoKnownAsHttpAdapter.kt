@@ -13,14 +13,13 @@ package com.sphereon.did.manager.rest.server.adapter
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.manager.rest.server.DidManagerRestConfig
-import com.sphereon.did.manager.rest.server.command.AddAlsoKnownAsEndpointCommand
-import com.sphereon.did.manager.rest.server.command.ListAlsoKnownAsEndpointCommand
-import com.sphereon.did.manager.rest.server.command.RemoveAlsoKnownAsEndpointCommand
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -32,26 +31,20 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(AlsoKnownAsHttpAdapter.ID)
 class AlsoKnownAsHttpAdapter(
     execution: SessionExecution,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
     config: DidManagerRestConfig,
-    private val listAlsoKnownAs: ListAlsoKnownAsEndpointCommand,
-    private val addAlsoKnownAs: AddAlsoKnownAsEndpointCommand,
-    private val removeAlsoKnownAs: RemoveAlsoKnownAsEndpointCommand,
 ) : CommandBackedHttpAdapter(
         id = ID,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = config.adapterBasePath),
     ) {
     companion object {
         const val ID: String = "did.manager.also-known-as"
     }
 
-    override val endpointCommands: List<HttpEndpointCommand> =
-        listOf(
-            listAlsoKnownAs,
-            addAlsoKnownAs,
-            removeAlsoKnownAs,
-        )
 }

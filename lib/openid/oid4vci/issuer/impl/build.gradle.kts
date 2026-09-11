@@ -55,11 +55,20 @@ kotlin {
                 api(projects.libSdjwtImpl)
 
                 // JSON-LD context + schema validation for VCDM 2.0 enveloped issuance
-                // (vc+ld+json+jwt). The public module supplies command contracts;
+                // (jwt_vc_json-ld). The public module supplies command contracts;
                 // loader supplies the @ContributesBinding implementations + the
                 // bundled W3C/UNTP @context registry.
                 api(projects.libJsonldPublic)
                 implementation(projects.libJsonldLoader)
+
+                // W3C VC Data Integrity issuance (`ldp_vc`). The public contract supplies
+                // AddProofServiceCommand; the implementation and bundled default cryptosuite
+                // register the command and its signing creator in the session graph.
+                api(projects.libCryptoDataIntegrityProofPublic)
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
 
                 // Crypto (JWT/JWE, managed identifiers)
                 api(projects.libCryptoCoreImpl)
@@ -85,6 +94,8 @@ kotlin {
 
                 // OAuth2 AS (for SphereonAsBridge)
                 api(projects.libOauth2ServerAuthorizationPublic)
+                implementation(projects.libOauth2ServerResourcePublic)
+                implementation(projects.libOauth2CommonPublic)
 
                 // X.509 trust anchors for key-attestation x5c chain validation
                 // (OID4VCI 1.0 §7.2 — KeyAttestationVerifier)
@@ -107,6 +118,8 @@ kotlin {
                 implementation(projects.libCoreEventsImpl)
                 // Real in-memory status-list driver + enricher for the fail-closed issuance tests
                 implementation(projects.libStatuslistImpl)
+                // Real UserInfo command, token storage, and scope mapper for hosted-AS bridge tests.
+                implementation(projects.libOauth2ServerAuthorizationImpl)
             }
         }
     }

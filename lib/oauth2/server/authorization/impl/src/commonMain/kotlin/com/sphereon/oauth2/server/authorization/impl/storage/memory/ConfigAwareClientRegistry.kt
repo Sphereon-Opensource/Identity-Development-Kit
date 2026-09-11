@@ -24,6 +24,7 @@ import com.sphereon.core.api.conf.configContentRevision
 import com.sphereon.core.api.security.ConstantTime
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.ClientRegistrySourcePrecedence
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -34,6 +35,11 @@ import com.sphereon.oauth2.server.authorization.impl.config.OAuth2ClientsConfigB
 import com.sphereon.oauth2.server.authorization.impl.config.OpaqueInternalClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
+import com.sphereon.oauth2.server.authorization.storage.ClientSecretHasher
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistrationStore
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistrationStatus
+import com.sphereon.oauth2.server.authorization.storage.DynamicClientRegistrationMetadata
+import com.sphereon.oauth2.server.authorization.storage.StoredClientRegistration
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -42,14 +48,19 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlin.time.TimeSource
 
 /**
  * Session-scoped client registry that overlays principal-resolved static client configuration
- * on top of the shared in-memory registry used by tests and dev flows.
+ * on top of the durable dynamic-client store used by tests, dev flows, and provisioned
+ * infrastructure clients (for example RFC 8628 device-flow screens).
  *
- * Configured clients are available for the current session context, while programmatically
- * registered clients remain backed by [InMemoryOAuth2BackingStorage].
+ * Configured clients are available for the current session context. Programmatically registered
+ * clients persist through [ClientRegistrationStore]: an in-memory default keeps historical
+ * behaviour when no durable backend is on the classpath, while the EDK Postgres implementation
+ * swaps in via its `replaces` binding so registrations survive restarts.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -61,10 +72,15 @@ class ConfigAwareClientRegistry(
     private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
     private val opaqueInternalClientSecretVerifier: OpaqueInternalClientSecretVerifier,
+    private val clientRegistrationStore: ClientRegistrationStore,
+    private val clientSecretHasher: ClientSecretHasher,
+    private val clock: Clock = Clock.System,
     private val configuredClientSetMemoizer: ConfiguredClientSetMemoizer = ConfiguredClientSetMemoizer(),
 ) : ClientRegistry {
     private val partitionKey = OAuth2StoragePartitionKey.appLevel()
     private val partition get() = backingStorage.getPartition(partitionKey)
+    private val shadowWarningMutex = Mutex()
+    private val shadowWarnedClientIds = mutableSetOf<String>()
 
     /**
      * Configured clients merged from two sources:
@@ -84,8 +100,19 @@ class ConfigAwareClientRegistry(
      * surface operator misconfiguration.
      */
     private suspend fun configuredClientSet(): IdkResult<ConfiguredClientSet, AuthorizationServerError.StorageError> {
+        // Resolving the key refreshes every refreshable property source before hashing it, so this
+        // is a potential I/O step on the token path and not just a map lookup. It is measured
+        // separately from the binds it guards.
+        val keyResolution = TimeSource.Monotonic.markNow()
         val key = resolutionKey()
-        return configuredClientSetMemoizer.getOrResolve(key, ::resolveConfiguredClientSet)
+        val keyResolutionMs = keyResolution.elapsedNow().inWholeMilliseconds
+        return configuredClientSetMemoizer
+            .getOrResolve(key, ::resolveConfiguredClientSet)
+            .also {
+                execution.log.debug(
+                    "VDX_OAUTH2_CLIENT_REGISTRY_TIMING stage=config-revision-resolution elapsedMs=$keyResolutionMs",
+                )
+            }
     }
 
     /**
@@ -93,11 +120,13 @@ class ConfigAwareClientRegistry(
      * plus the revision of every property source that can feed a client registration.
      *
      * A registry instance is `@SingleIn(SessionScope::class)` and a session is created per
-     * inbound request (the transport derives its id from the request's trace id). The memoizer
-     * is scoped to that request, so a newly published or revoked client is never hidden behind
-     * process-wide registration metadata. It still avoids re-running three config binds for
-     * repeated lookups within the same request. It contains registration metadata only; the
-     * opaque-client verifier still resolves and compares the protected credential per request.
+     * inbound request (the transport derives its id from the request's trace id). This memoizer
+     * owns the assembled request view, including any resolved configured-client or typed
+     * bootstrap secret, and therefore never crosses the request boundary. The lower-level
+     * [com.sphereon.oauth2.server.authorization.impl.config.OAuth2ClientMetadataCache] shares only
+     * parsed non-secret metadata and opaque locators under the exact principal config view and
+     * revision. The opaque-client verifier still resolves and compares protected credentials per
+     * request.
      *
      * Keying on the configuration revision keeps the re-read that tenant provisioning depends
      * on: a client published mid-request, or a secret id rotated mid-request, moves the revision
@@ -107,7 +136,7 @@ class ConfigAwareClientRegistry(
      */
     private fun resolutionKey(): ResolutionKey =
         ResolutionKey(
-            tenantId = execution.sessionContext.context.tenant.tenantId,
+            tenantId = execution.tenantId,
             asInstanceId = asInstanceIdProvider.currentAsInstanceId(),
             configRevision = execution.conf.conf(ConfigLevel.PRINCIPAL).configContentRevision(),
         )
@@ -115,14 +144,44 @@ class ConfigAwareClientRegistry(
     private suspend fun resolveConfiguredClientSet(): IdkResult<ConfiguredClientSet, AuthorizationServerError.StorageError> {
         val started = TimeSource.Monotonic.markNow()
         val serversConfig = serversConfigProvider.getConfig()
+        val serversConfigMs = started.elapsedNow().inWholeMilliseconds
         val activeServerId = activeServerId(serversConfig)
-        val globalClients = configBinder.loadClientRegistrations()
+        val globalBind = TimeSource.Monotonic.markNow()
+        val globalClients = configBinder.loadClientRegistrations(activeServerId = activeServerId)
+        val globalBindMs = globalBind.elapsedNow().inWholeMilliseconds
         if (globalClients.isErr) return Err(globalClients.error)
+        val serverBind = TimeSource.Monotonic.markNow()
         val serverClients = configBinder.loadClientRegistrations(activeServerId)
+        val serverBindMs = serverBind.elapsedNow().inWholeMilliseconds
         if (serverClients.isErr) return Err(serverClients.error)
+        val opaqueBind = TimeSource.Monotonic.markNow()
         val opaqueInternalClients = configBinder.loadOpaqueInternalClientRegistrations(activeServerId)
+        val opaqueBindMs = opaqueBind.elapsedNow().inWholeMilliseconds
         if (opaqueInternalClients.isErr) return Err(opaqueInternalClients.error)
-        val merged = LinkedHashMap(globalClients.value)
+        val inheritGlobalClientAudiences =
+            execution.conf.conf(ConfigLevel.PRINCIPAL)
+                .getPropertyAsString("oauth2.servers.$activeServerId.inherit-global-client-audiences", null)
+                ?.trim()
+                ?.lowercase()
+                ?.let { configured ->
+                    require(configured == "true" || configured == "false") {
+                        "oauth2.servers.$activeServerId.inherit-global-client-audiences must be true or false"
+                    }
+                    configured.toBoolean()
+                }
+                ?: true
+        val merged = LinkedHashMap(
+            if (inheritGlobalClientAudiences) {
+                globalClients.value
+            } else {
+                globalClients.value.mapValues { (_, registration) ->
+                    registration.copy(
+                        defaultAccessTokenAudience = null,
+                        allowedAccessTokenAudiences = emptySet(),
+                    )
+                }
+            },
+        )
         for ((clientId, registration) in serverClients.value) {
             merged[clientId] = registration
         }
@@ -140,14 +199,19 @@ class ConfigAwareClientRegistry(
             merged[clientId] = configured.registration
         }
         execution.log.debug(
-            "OAuth2ClientRegistry resolved request state in ${started.elapsedNow().inWholeMilliseconds}ms " +
-                "(global=${globalClients.value.size}, server=${serverClients.value.size}, " +
-                "typedInternal=${typedInternalClients.size}, opaqueInternal=${opaqueInternalClients.value.size})",
+            "VDX_OAUTH2_CLIENT_REGISTRY_TIMING stage=configured-client-set " +
+                "elapsedMs=${started.elapsedNow().inWholeMilliseconds} " +
+                "serversConfigMs=$serversConfigMs globalBindMs=$globalBindMs " +
+                "serverBindMs=$serverBindMs opaqueBindMs=$opaqueBindMs " +
+                "global=${globalClients.value.size} server=${serverClients.value.size} " +
+                "typedInternal=${typedInternalClients.size} opaqueInternal=${opaqueInternalClients.value.size}",
         )
         return Ok(
             ConfiguredClientSet(
                 registrations = merged,
                 opaqueInternalClients = opaqueInternalClients.value,
+                sourcePrecedence = sourcePrecedence(serversConfig, activeServerId),
+                activeServerId = activeServerId,
             ),
         )
     }
@@ -156,6 +220,18 @@ class ConfigAwareClientRegistry(
         val configured = configuredClientSet()
         return if (configured.isOk) Ok(configured.value.registrations) else Err(configured.error)
     }
+
+    /**
+     * Source the active authorization server treats as authoritative when a client id exists in
+     * both. Resolved once per configured-client set so every read path of this registry (lookup,
+     * credential verification, listing) agrees on one order.
+     */
+    private fun sourcePrecedence(
+        serversConfig: OAuth2ServersConfig,
+        activeServerId: String,
+    ): ClientRegistrySourcePrecedence =
+        serversConfig.servers[activeServerId]?.clientRegistrySourcePrecedence
+            ?: ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY
 
     private fun activeServerId(serversConfig: OAuth2ServersConfig): String =
         asInstanceIdProvider.currentAsInstanceId() ?: serversConfig.defaultServer
@@ -182,16 +258,143 @@ class ConfigAwareClientRegistry(
         return result
     }
 
+    /**
+     * The authorization server a client lookup belongs to. A client id is unique only within one
+     * server, so every store call carries it alongside the tenant.
+     */
+    private suspend fun currentServerId(): String {
+        val configured = configuredClientSet()
+        return if (configured.isOk) configured.value.activeServerId else OAuth2ServersConfig().defaultServer
+    }
+
+    /** Tenant the durable dynamic registrations partition under (same discipline as signing keys). */
+    private fun dynamicTenantId(): String = execution.tenantId
+
+    /**
+     * ACTIVE dynamic registrations from [clientRegistrationStore] mapped onto full model objects.
+     * REVOKED tombstones never surface here; admin surfaces read the store directly.
+     */
+    internal suspend fun dynamicClients(): Map<String, ClientRegistration> {
+        val stored = clientRegistrationStore.list(dynamicTenantId(), currentServerId(), limit = Int.MAX_VALUE)
+        if (stored.isErr) return emptyMap()
+        return stored.value
+            .filter { it.status == ClientRegistrationStatus.ACTIVE }
+            .associate { it.clientId to it.toClientRegistration() }
+    }
+
+    /** Targeted dynamic lookup for the hot read path; avoids materializing the whole tenant set. */
+    private suspend fun dynamicClient(clientId: String): ClientRegistration? {
+        val stored = clientRegistrationStore.findByClientId(dynamicTenantId(), currentServerId(), clientId)
+        if (stored.isErr || stored.value?.status != ClientRegistrationStatus.ACTIVE) return null
+        return stored.value!!.toClientRegistration()
+    }
+
+    /** Maps a durable record back onto the full registration model using config-binder defaults. */
+    private fun StoredClientRegistration.toClientRegistration(): ClientRegistration =
+        ClientRegistration(
+            clientId = clientId,
+            // Plaintext secrets are never recoverable from the durable hash; confidential dynamic
+            // clients authenticate through the hash verifier wired into the request view instead.
+            clientSecret = null,
+            clientName = registration.clientName,
+            clientType = if (registration.tokenEndpointAuthMethod == ClientAuthenticationMethod.NONE) ClientType.PUBLIC else ClientType.CONFIDENTIAL,
+            grantTypes = registration.grantTypes,
+            responseTypes = registration.responseTypes,
+            redirectUris = registration.redirectUris,
+            allowedScopes = registration.allowedScopes,
+            defaultAccessTokenAudience = registration.defaultAccessTokenAudience,
+            allowedAccessTokenAudiences = registration.allowedAccessTokenAudiences,
+            principalRoles = registration.principalRoles,
+            tokenEndpointAuthMethod = registration.tokenEndpointAuthMethod,
+            requirePkce = registration.requirePkce ?: (registration.clientType == ClientType.PUBLIC),
+            dpopBoundAccessTokens = registration.dpopBoundAccessTokens,
+            accessTokenLifetime = registration.accessTokenLifetime,
+            additionalMetadata = registration.metadata,
+        )
+
+    private suspend fun ClientRegistration.toStored(
+        now: Instant,
+        existing: StoredClientRegistration?,
+        serverId: String,
+    ): StoredClientRegistration {
+        val secret = clientSecret
+        val secretHash =
+            when {
+                secret == null -> existing?.clientSecretHash
+                else -> clientSecretHasher.hash(secret)
+            }
+        val metadata = DynamicClientRegistrationMetadata(
+            clientName = clientName,
+            grantTypes = grantTypes,
+            responseTypes = responseTypes,
+            redirectUris = redirectUris,
+            allowedScopes = allowedScopes,
+            defaultAccessTokenAudience = defaultAccessTokenAudience,
+            allowedAccessTokenAudiences = allowedAccessTokenAudiences,
+            principalRoles = principalRoles,
+            tokenEndpointAuthMethod = tokenEndpointAuthMethod,
+            requirePkce = requirePkce,
+            dpopBoundAccessTokens = dpopBoundAccessTokens,
+            accessTokenLifetime = accessTokenLifetime,
+            metadata = additionalMetadata.mapValues { (_, value) -> value.toString() },
+        )
+        return StoredClientRegistration(
+            tenantId = dynamicTenantId(),
+            authorizationServerId = serverId,
+            clientId = clientId,
+            clientSecretHash = secretHash,
+            status = existing?.status ?: ClientRegistrationStatus.ACTIVE,
+            registeredAt = existing?.registeredAt ?: now,
+            updatedAt = now,
+            registration = metadata,
+        )
+    }
+
     internal suspend fun resolveClientRegistryRequestView(): IdkResult<ClientRegistry, AuthorizationServerError.StorageError> {
         val configured = configuredClientSet()
         if (configured.isErr) return Err(configured.error)
         return Ok(
             ConfigAwareClientRegistryRequestView(
                 owner = this,
-                clients = configured.value.registrations + partition.clients,
+                configuredClients = configured.value.registrations,
+                localClients = partition.clients.toMap(),
+                sourcePrecedence = configured.value.sourcePrecedence,
                 opaqueInternalClients = configured.value.opaqueInternalClients,
                 opaqueInternalClientSecretVerifier = opaqueInternalClientSecretVerifier,
+                dynamicLookup = ::dynamicClient,
+                dynamicSecretVerifier = { clientId, secret ->
+                    val stored =
+                        clientRegistrationStore.findByClientId(dynamicTenantId(), configured.value.activeServerId, clientId)
+                    val active = stored.getOrNull()?.takeIf { it.status == ClientRegistrationStatus.ACTIVE }
+                    DurableClientSecretVerification(
+                        activeRegistrationExists = active != null,
+                        secretMatches = active != null && clientSecretHasher.verify(secret, active.clientSecretHash),
+                    )
+                },
+                shadowedConfiguredClientWarner = { clientId ->
+                    warnShadowedConfiguredClient(clientId, configured.value.activeServerId)
+                },
             ),
+        )
+    }
+
+    /**
+     * Reports a configuration entry whose client id an ACTIVE persisted registration already owns
+     * under [ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY], where it can neither be looked up
+     * nor authenticate. Reported once per client id for the lifetime of this session-scoped
+     * registry, so a busy token endpoint does not repeat it per request. Secret material is never
+     * part of the message.
+     */
+    private suspend fun warnShadowedConfiguredClient(
+        clientId: String,
+        activeServerId: String,
+    ) {
+        val firstReport = shadowWarningMutex.withLock { shadowWarnedClientIds.add(clientId) }
+        if (!firstReport) return
+        execution.log.warn(
+            "VDX_OAUTH2_CLIENT_REGISTRY_SHADOWED_CONFIGURED_CLIENT clientId=$clientId " +
+                "asId=$activeServerId precedence=${ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY.configValue} " +
+                "reason=an ACTIVE persisted registration owns this client id, so the configured entry is never used",
         )
     }
 
@@ -202,21 +405,47 @@ class ConfigAwareClientRegistry(
 
     override suspend fun registerClient(registration: ClientRegistration): IdkResult<ClientRegistration, AuthorizationServerError.StorageError> {
         val configured = configuredClients()
-        return if (configured.isOk) {
-            val loadedConfiguredClients = configured.value
-            if (loadedConfiguredClients.containsKey(registration.clientId) || partition.clients.containsKey(registration.clientId)) {
+        if (configured.isErr) return Err(configured.error)
+        val loadedConfiguredClients = configured.value
+        if (loadedConfiguredClients.containsKey(registration.clientId) || partition.clients.containsKey(registration.clientId)) {
+            return Err(
+                AuthorizationServerError.StorageError(
+                    operation = "registerClient",
+                    details = "Client with ID ${registration.clientId} already exists",
+                ),
+            )
+        }
+        val existing = clientRegistrationStore.findByClientId(dynamicTenantId(), currentServerId(), registration.clientId)
+        if (existing.isErr) {
+            return Err(
+                AuthorizationServerError.StorageError(
+                    operation = "registerClient",
+                    details = existing.error.toString(),
+                ),
+            )
+        }
+        if (existing.value?.status == ClientRegistrationStatus.ACTIVE) {
+            return Err(
+                AuthorizationServerError.StorageError(
+                    operation = "registerClient",
+                    details = "Client with ID ${registration.clientId} already exists",
+                ),
+            )
+        }
+        val saved =
+            clientRegistrationStore.save(
+                dynamicTenantId(),
+                registration.toStored(clock.now(), null, currentServerId()),
+            )
+        return when {
+            saved.isOk -> Ok(registration)
+            else ->
                 Err(
                     AuthorizationServerError.StorageError(
                         operation = "registerClient",
-                        details = "Client with ID ${registration.clientId} already exists",
+                        details = saved.error.toString(),
                     ),
                 )
-            } else {
-                partition.clients[registration.clientId] = registration
-                Ok(registration)
-            }
-        } else {
-            Err(configured.error)
         }
     }
 
@@ -241,7 +470,39 @@ class ConfigAwareClientRegistry(
                 }
 
                 else -> {
-                    Err(AuthorizationServerError.ClientNotFound(clientId = clientId))
+                    val stored = clientRegistrationStore.findByClientId(dynamicTenantId(), currentServerId(), clientId)
+                    when {
+                        stored.isErr -> {
+                            Err(
+                                AuthorizationServerError.StorageError(
+                                    operation = "updateClient",
+                                    details = stored.error.toString(),
+                                ),
+                            )
+                        }
+
+                        stored.value == null || stored.value!!.status != ClientRegistrationStatus.ACTIVE -> {
+                            Err(AuthorizationServerError.ClientNotFound(clientId = clientId))
+                        }
+
+                        else -> {
+                            val saved =
+                                clientRegistrationStore.save(
+                                    dynamicTenantId(),
+                                    registration.toStored(clock.now(), stored.value!!, currentServerId()).copy(status = ClientRegistrationStatus.ACTIVE),
+                                )
+                            if (saved.isOk) {
+                                Ok(registration)
+                            } else {
+                                Err(
+                                    AuthorizationServerError.StorageError(
+                                        operation = "updateClient",
+                                        details = saved.error.toString(),
+                                    ),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -263,7 +524,21 @@ class ConfigAwareClientRegistry(
                 }
 
                 else -> {
-                    Err(AuthorizationServerError.ClientNotFound(clientId = clientId))
+                    val revoked = clientRegistrationStore.revoke(dynamicTenantId(), currentServerId(), clientId)
+                    when {
+                        revoked.isOk && revoked.value -> Ok(Unit)
+                        revoked.isOk ->
+                            // False means absent or already revoked; both surface as not-found
+                            // to preserve the SPI contract callers already code against.
+                            Err(AuthorizationServerError.ClientNotFound(clientId = clientId))
+                        else ->
+                            Err(
+                                AuthorizationServerError.StorageError(
+                                    operation = "deleteClient",
+                                    details = revoked.error.toString(),
+                                ),
+                            )
+                    }
                 }
             }
         }
@@ -313,13 +588,29 @@ class ConfigAwareClientRegistry(
         }
     }
 
+    /**
+     * Listing merge. The authoritative source is merged last so it wins on a colliding client id,
+     * matching the order the request view consults on the authentication path.
+     */
     private suspend inline fun <T> withMergedClients(action: (Map<String, ClientRegistration>) -> IdkResult<T, AuthorizationServerError.StorageError>): IdkResult<T, AuthorizationServerError.StorageError> {
-        val configured = configuredClients()
-        return if (configured.isOk) {
-            action(configured.value + partition.clients)
-        } else {
-            Err(configured.error)
+        val configured = configuredClientSet()
+        if (configured.isErr) return Err(configured.error)
+        val configuredRegistrations = configured.value.registrations
+        val durableClients = dynamicClients()
+        if (configured.value.sourcePrecedence == ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY) {
+            for (clientId in configuredRegistrations.keys) {
+                if (durableClients.containsKey(clientId)) {
+                    warnShadowedConfiguredClient(clientId, configured.value.activeServerId)
+                }
+            }
         }
+        val persisted = partition.clients + durableClients
+        return action(
+            when (configured.value.sourcePrecedence) {
+                ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY -> configuredRegistrations + persisted
+                ClientRegistrySourcePrecedence.CONFIGURATION_PRIMARY -> persisted + configuredRegistrations
+            },
+        )
     }
 
     @ContributesTo(SessionScope::class)
@@ -341,16 +632,27 @@ internal data class ResolutionKey(
 internal data class ConfiguredClientSet(
     val registrations: Map<String, ClientRegistration>,
     val opaqueInternalClients: Map<String, OpaqueInternalClientRegistration>,
+    val sourcePrecedence: ClientRegistrySourcePrecedence,
+    val activeServerId: String,
 )
 
 /**
- * Request-scoped memoization of revision-addressed OAuth client metadata.
+ * Outcome of checking a presented secret against the durable client registration store: whether an
+ * ACTIVE registration owns the client id at all, and whether its stored secret matched.
+ */
+internal data class DurableClientSecretVerification(
+    val activeRegistrationExists: Boolean,
+    val secretMatches: Boolean,
+)
+
+/**
+ * Request-scoped memoization of the assembled revision-addressed OAuth client view.
  *
  * The key carries the tenant, active AS, and content revision, so repeated lookups in the same
- * request do not rebind configuration. It deliberately does not survive the request: tenant
- * onboarding and client administration publish dynamic registrations, and an unavailable
- * cross-replica invalidation must not leave an authorization server accepting stale clients or
- * rejecting newly-created ones until a process restart. Failures are not cached.
+ * request do not rebind configuration or re-resolve configured secrets. It deliberately does not
+ * survive the request because [ConfiguredClientSet] may contain resolved plaintext client-secret
+ * material. Parsed non-secret configuration has a separate AppScope cache whose key includes the
+ * authoritative UserScope config identity and revision. Failures are not cached.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -409,20 +711,76 @@ class ConfiguredClientSetMemoizer {
 
 private class ConfigAwareClientRegistryRequestView(
     private val owner: ClientRegistry,
-    private val clients: Map<String, ClientRegistration>,
+    private val configuredClients: Map<String, ClientRegistration>,
+    private val localClients: Map<String, ClientRegistration>,
+    private val sourcePrecedence: ClientRegistrySourcePrecedence,
     private val opaqueInternalClients: Map<String, OpaqueInternalClientRegistration>,
     private val opaqueInternalClientSecretVerifier: OpaqueInternalClientSecretVerifier,
+    private val dynamicLookup: suspend (String) -> ClientRegistration?,
+    private val dynamicSecretVerifier: suspend (String, String) -> DurableClientSecretVerification,
+    private val shadowedConfiguredClientWarner: suspend (String) -> Unit,
 ) : ClientRegistry by owner {
-    override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> = Ok(clients[clientId])
+    override suspend fun getClient(clientId: String): IdkResult<ClientRegistration?, AuthorizationServerError.StorageError> =
+        Ok(
+            when (sourcePrecedence) {
+                ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY ->
+                    dynamicLookup(clientId)
+                        ?.also { if (configuredClients.containsKey(clientId)) shadowedConfiguredClientWarner(clientId) }
+                        ?: localClients[clientId]
+                        ?: configuredClients[clientId]
+
+                ClientRegistrySourcePrecedence.CONFIGURATION_PRIMARY ->
+                    configuredClients[clientId] ?: localClients[clientId] ?: dynamicLookup(clientId)
+            },
+        )
 
     override suspend fun verifyClientCredentials(
         clientId: String,
         clientSecret: String,
     ): IdkResult<Boolean, AuthorizationServerError.StorageError> {
+        // Opaque internal clients are a deployment-internal mechanism with their own credential
+        // resolution, and keep absolute priority under either precedence.
         opaqueInternalClients[clientId]?.let { configured ->
             return opaqueInternalClientSecretVerifier.verify(configured.credential, clientSecret)
         }
-        val expectedSecret = clients[clientId]?.clientSecret
-        return Ok(expectedSecret != null && ConstantTime.equalsCT(expectedSecret, clientSecret))
+        // Configured secrets compare constant-time; the durable-hash verifier fails closed for
+        // absent registrations, so an unknown client id authenticates under neither order.
+        return Ok(
+            when (sourcePrecedence) {
+                ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY -> {
+                    // Ownership decides here, not first match: once an ACTIVE persisted
+                    // registration holds the client id, only its stored secret can authenticate
+                    // it, and a configured entry for the same id is dead rather than a fallback.
+                    // Both sources are still examined before either answer is read, so the
+                    // persisted branch does no less work than the configured one and response
+                    // time cannot be used to probe which client ids are stored.
+                    val durable = dynamicSecretVerifier(clientId, clientSecret)
+                    val configuredMatches = matchesConfiguredSecret(clientId, clientSecret)
+                    if (durable.activeRegistrationExists) {
+                        if (configuredClients.containsKey(clientId)) shadowedConfiguredClientWarner(clientId)
+                        durable.secretMatches
+                    } else {
+                        configuredMatches
+                    }
+                }
+
+                ClientRegistrySourcePrecedence.CONFIGURATION_PRIMARY ->
+                    if (configuredSecret(clientId) != null) {
+                        matchesConfiguredSecret(clientId, clientSecret)
+                    } else {
+                        dynamicSecretVerifier(clientId, clientSecret).secretMatches
+                    }
+            },
+        )
+    }
+
+    private fun configuredSecret(clientId: String): String? = configuredClients[clientId]?.clientSecret
+
+    private fun matchesConfiguredSecret(
+        clientId: String,
+        clientSecret: String,
+    ): Boolean {
+        val expectedSecret = configuredSecret(clientId) ?: return false
+        return ConstantTime.equalsCT(expectedSecret, clientSecret)
     }
 }

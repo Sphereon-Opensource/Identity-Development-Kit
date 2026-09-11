@@ -24,7 +24,8 @@ import com.sphereon.crypto.kms.rest.api.generated.models.WrapKeyRequest
 import com.sphereon.crypto.kms.rest.server.service.EncryptionRestService
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -33,7 +34,8 @@ import kotlinx.serialization.json.Json
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(EncryptionHttpAdapter.ID)
 class EncryptionHttpAdapter(
     private val encryptionService: EncryptionRestService,
 ) : RoutedHttpAdapter() {
@@ -49,30 +51,35 @@ class EncryptionHttpAdapter(
         httpRoutes {
             post("/encrypt") {
                 operationId("encrypt")
+                handlerCommandId("kms.encryption.encrypt")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleEncrypt(req) }
             }
             post("/decrypt") {
                 operationId("decrypt")
+                handlerCommandId("kms.encryption.decrypt")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleDecrypt(req) }
             }
             post("/wrap") {
                 operationId("wrapKey")
+                handlerCommandId("kms.encryption.wrap")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleWrapKey(req) }
             }
             post("/unwrap") {
                 operationId("unwrapKey")
+                handlerCommandId("kms.encryption.unwrap")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleUnwrapKey(req) }
             }
             post("/key-agreement") {
                 operationId("performKeyAgreement")
+                handlerCommandId("kms.encryption.agree")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleKeyAgreement(req) }

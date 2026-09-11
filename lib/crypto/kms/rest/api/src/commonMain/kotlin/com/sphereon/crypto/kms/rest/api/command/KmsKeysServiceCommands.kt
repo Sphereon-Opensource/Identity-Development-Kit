@@ -20,9 +20,11 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.api.model.Origin
 import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.PublicApiCommand
 import com.sphereon.core.api.service.ServiceCommand
+import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyGlobal
 import com.sphereon.crypto.kms.rest.api.generated.models.GenerateKeyResponse
 import com.sphereon.crypto.kms.rest.api.generated.models.GetKeyResponse
@@ -121,6 +123,8 @@ data class RegisterKeyReferenceResponse(
     val alias: String,
     val providerId: String,
     val kid: String? = null,
+    val origin: Origin = Origin.EXTERNAL,
+    val controlMode: ResourceControlMode = ResourceControlMode.EXTERNALLY_MANAGED,
 )
 
 // ========== Service Command Interfaces ==========
@@ -143,6 +147,7 @@ interface GetKeyServiceCommand :
                 pathPattern = "/keys/{aliasOrKid}",
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Keys"),
                 summary = "Get a key by alias or kid",
             )
@@ -171,6 +176,7 @@ interface ListKeysServiceCommand :
                 pathPattern = "/keys",
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Keys"),
                 summary = "List all keys",
             )
@@ -203,6 +209,7 @@ interface ImportKeyServiceCommand :
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Keys"),
                 summary = "Import externally supplied key material",
             )
@@ -236,6 +243,7 @@ interface GenerateKeyServiceCommand :
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Keys"),
                 summary = "Generate a new key",
             )
@@ -264,6 +272,7 @@ interface DeleteKeyServiceCommand :
                 pathPattern = "/keys/{aliasOrKid}",
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Keys"),
                 summary = "Delete a key by alias or kid",
             )
@@ -275,7 +284,7 @@ interface DeleteKeyServiceCommand :
 }
 
 /**
- * Service command for registering an existing provider key for platform use.
+ * Service command for registering an existing provider key as an external reference.
  *
  * POST /keys/register
  */
@@ -293,6 +302,7 @@ interface RegisterKeyReferenceServiceCommand :
                 produces = setOf(MediaType.ApplicationJson),
                 consumes = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Keys"),
                 summary = "Register an existing provider key for platform use",
             )

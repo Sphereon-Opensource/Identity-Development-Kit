@@ -1,0 +1,3 @@
+# Bad IRI : space.
+<http://example/ space> <http://example/p> <http://example/o> .
+

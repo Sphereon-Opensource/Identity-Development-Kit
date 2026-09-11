@@ -31,6 +31,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
+import com.sphereon.openid.oid4vci.issuer.bridge.authorizationServerTarget
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleDeferredCredentialRequestCommand
 import com.sphereon.openid.oid4vci.issuer.Oid4vciIssuerSessionEventTypes
@@ -206,30 +207,39 @@ class HandleDeferredCredentialRequestCommandImpl(
         val applied = applyDuring(args)
         val deferredRequest = applied.deferredRequest
 
+        // Resolve only server-owned deferred/session state before authentication, then verify the
+        // token against that session's immutable AS target.
+        val transactionId = deferredRequest.transactionId
+        val entry = deferredStore.get(transactionId).getOrElse { return Err(it) }
+            ?: return invalidTransactionId()
+        val protocolSessionId = entry.issuanceSessionId.takeIf(String::isNotBlank) ?: return invalidTransactionId()
+        val pinnedSession = sessionStore.get(protocolSessionId).getOrElse { return Err(it) }
+            ?: return Err(IdkError.INVALID_STATE(message = "Deferred credential has no issuance session"))
+        val snapshot = pinnedSession.authorizationPolicySnapshot
+            ?: return Err(IdkError.INVALID_STATE(message = "Deferred credential session has no immutable authorization-server snapshot"))
+
         // 1. Validate access token
         val tokenContext =
             asBridge
                 .validateAccessToken(
                     ValidateAccessTokenArgs(
+                        authorizationServer = snapshot.authorizationServerTarget(),
+                        expectedAudience = pinnedSession.issuerId,
                         accessToken = applied.accessToken,
                         dpopProof = applied.dpopProof,
                         httpUrl = applied.httpUrl,
                         httpMethod = applied.httpMethod,
                     ),
                 ).getOrElse { return Err(it) }
+        validateAuthorizationServerSnapshot(snapshot, tokenContext).getOrElse { return Err(it) }
 
         // 2. Look up deferred entry
-        val transactionId = deferredRequest.transactionId
-        val entry =
-            deferredStore.get(transactionId).getOrElse { return Err(it) }
-                ?: return invalidTransactionId()
         pendingDeferredStatus = entry.status
         pendingCredentialConfigurationId = entry.credentialConfigurationId
         pendingRetryAfterSeconds = entry.retryAfterSeconds
         pendingDeferredExpiresAt = entry.expiresAt
-        val protocolSessionId = entry.issuanceSessionId.takeIf(String::isNotBlank) ?: return invalidTransactionId()
         pendingHistoryProtocolSessionId = protocolSessionId
-        pendingHistorySession = sessionStore.get(protocolSessionId).getOrElse { return Err(it) }
+        pendingHistorySession = pinnedSession
         val storedInstanceId = pendingHistorySession?.instanceId ?: entry.instanceId
         if (pendingHistorySession != null && pendingHistorySession?.instanceId != entry.instanceId) {
             return Err(IdkError.INVALID_STATE(message = "Deferred credential identity does not match its issuance session"))

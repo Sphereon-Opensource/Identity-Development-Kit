@@ -26,6 +26,8 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.crypto.core.ManagedKeyReference
+import com.sphereon.crypto.core.ManagedKeyReferenceFilter
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import com.sphereon.crypto.core.kms.ManagedKeyStoreService
 import com.sphereon.crypto.core.kms.command.DeleteKeyArgs
@@ -44,6 +46,7 @@ import com.sphereon.crypto.core.kms.command.StoreKeyArgs
 import com.sphereon.crypto.core.kms.command.StoreKeyCommand
 import com.sphereon.crypto.core.kms.command.StoreKeyResult
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
+import com.sphereon.crypto.key.persistence.KeyReferenceResolutionException
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
@@ -92,9 +95,20 @@ class GenerateKeyCommandImpl(
             // Repeating the write under the provider id the returned key reports is what produced a
             // second row for one key whenever that provider answers to more than one id.
             if (!provider.maintainsKeyReferenceIndex) {
-                indexGeneratedKey(keyPair)
+                indexGeneratedKey(keyPair, appliedArgs.walletUnitId)
             }
-            GenerateKeyResult(keyPair).asOkResult()
+            GenerateKeyResult(
+                keyPair = keyPair,
+                keyReference =
+                    ManagedKeyReference(
+                        alias = keyPair.alias,
+                        kid = keyPair.kid,
+                        providerId = keyPair.providerId,
+                        signatureAlgorithm = appliedArgs.alg,
+                        keyVisibility = appliedArgs.keyVisibility,
+                        walletUnitId = appliedArgs.walletUnitId,
+                    ),
+            ).asOkResult()
         } catch (expected: Exception) {
             log.warn("Key generation failed: ${expected.message}")
             IdkError.fromString(message = "Key generation failed: ${expected.message}", code = "CRYPTO_ERROR", exception = expected).asErrorResult()
@@ -104,7 +118,10 @@ class GenerateKeyCommandImpl(
     override suspend fun supports(args: Any): Boolean = args is GenerateKeyArgs
 
     /** Index the generated key in the reference store. Silently skips if persistence is unavailable. */
-    private suspend fun indexGeneratedKey(keyPair: com.sphereon.crypto.core.generic.ManagedKeyPair) {
+    private suspend fun indexGeneratedKey(
+        keyPair: com.sphereon.crypto.core.generic.ManagedKeyPair,
+        walletUnitId: String?,
+    ) {
         if (!keyReferenceStore.isAvailable) {
             return
         }
@@ -114,6 +131,7 @@ class GenerateKeyCommandImpl(
                 KeyReferenceRecord.fromManagedKey(
                     managedKeyInfo,
                     tenantId = execution.sessionContext.context.tenant.tenantId,
+                    walletUnitId = walletUnitId,
                 )
             keyReferenceStore.upsert(record)
         } catch (expected: Exception) {
@@ -149,13 +167,13 @@ class ListKeysCommandImpl(
         log.debug("Listing keys${appliedArgs.providerId?.let { " for provider: $it" } ?: ""}")
 
         return try {
-            val keys = keyStore.listKeys()
             val filteredKeys =
-                if (appliedArgs.providerId != null) {
-                    keys.filter { it.providerId == appliedArgs.providerId }.toTypedArray()
-                } else {
-                    keys
-                }
+                keyStore.listKeys(
+                    ManagedKeyReferenceFilter(
+                        providerId = appliedArgs.providerId,
+                        alias = appliedArgs.alias,
+                    ),
+                )
             log.debug("Listed ${filteredKeys.size} keys")
             ListKeysResult(filteredKeys).asOkResult()
         } catch (expected: Exception) {
@@ -301,6 +319,13 @@ class DeleteKeyCommandImpl(
             val deleted = keyStore.deleteKey(keyInfo)
             log.debug("Key deletion result: $deleted")
             DeleteKeyResult(deleted).asOkResult()
+        } catch (expected: KeyReferenceResolutionException) {
+            log.warn("Delete key rejected during reference resolution: ${expected.message}")
+            IdkError.fromString(
+                message = "Key deletion rejected: ${expected.message}",
+                code = expected.code,
+                exception = expected,
+            ).asErrorResult()
         } catch (expected: Exception) {
             log.warn("Delete key failed: ${expected.message}")
             IdkError.UNKNOWN_ERROR(message = "Failed to delete key: ${expected.message}").asErrorResult()

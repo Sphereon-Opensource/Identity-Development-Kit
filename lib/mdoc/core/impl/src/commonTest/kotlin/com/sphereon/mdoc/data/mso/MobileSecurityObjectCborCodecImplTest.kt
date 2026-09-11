@@ -72,6 +72,73 @@ class MobileSecurityObjectCborCodecImplTest {
         }
     }
 
+    @Test
+    fun mobileSecurityObject_round_trips_second_edition_status_references() {
+        val expectedStatus =
+            Status(
+                statusList = StatusListInfo(
+                    idx = 1340u,
+                    uri = "https://example.test/status-list",
+                    certificate = byteArrayOf(0x05, 0x06),
+                ),
+            )
+        val expected = createMobileSecurityObject().copy(status = expectedStatus)
+
+        val decoded = codec.decode(codec.encode(expected).getOrThrow()).getOrThrow().value
+
+        assertEquals(expectedStatus, decoded.status)
+        assertEquals(expectedStatus.identifierList?.uri, decoded.status?.identifierList?.uri)
+        assertContentEquals(expectedStatus.identifierList?.id, decoded.status?.identifierList?.id)
+        assertContentEquals(expectedStatus.identifierList?.certificate, decoded.status?.identifierList?.certificate)
+        assertEquals(expectedStatus.statusList?.idx, decoded.status?.statusList?.idx)
+        assertEquals(expectedStatus.statusList?.uri, decoded.status?.statusList?.uri)
+        assertContentEquals(expectedStatus.statusList?.certificate, decoded.status?.statusList?.certificate)
+    }
+
+    @Test
+    fun mobileSecurityObject_rejects_status_with_both_revocation_mechanisms() {
+        assertFailsWith<IllegalArgumentException> {
+            Status(
+                identifierList = IdentifierListInfo(byteArrayOf(0x01), "https://example.test/identifier-list"),
+                statusList = StatusListInfo(1u, "https://example.test/status-list"),
+            )
+        }
+    }
+
+    @Test
+    fun mobileSecurityObject_rejects_digest_ids_outside_the_uint_range() {
+        val mso = createMobileSecurityObject()
+        val invalidValueDigests =
+            CborMap(
+                mutableMapOf(
+                    StringLabel("org.iso.18013.5.1") to
+                        CborMap(
+                            mutableMapOf(
+                                com.sphereon.cbor.NumberLabel(UInt.MAX_VALUE.toLong() + 1) to
+                                    CborByteString(byteArrayOf(0x01)),
+                            ),
+                        ),
+                ),
+            )
+        val encoded =
+            Cbor.encode(
+                CborMap(
+                    mutableMapOf(
+                        MobileSecurityObject.VALIDITY_INFO to encodeValidityInfo(mso.validityInfo),
+                        MobileSecurityObject.DOC_TYPE to CborString(mso.docType.toString()),
+                        MobileSecurityObject.DEVICE_KEY_INFO to encodeDeviceKeyInfo(mso.deviceKeyInfo),
+                        MobileSecurityObject.VALUE_DIGESTS to invalidValueDigests,
+                        MobileSecurityObject.DIGEST_ALGORITHM to CborString(mso.digestAlgorithm.toString()),
+                        MobileSecurityObject.VERSION to CborString(mso.version.toString()),
+                    ),
+                ),
+            )
+
+        assertFailsWith<IllegalArgumentException> {
+            codec.decode(encoded).getOrThrow()
+        }
+    }
+
     private fun createMobileSecurityObject(): MobileSecurityObject =
         MobileSecurityObject(
             version = MsoVersion("1.0"),

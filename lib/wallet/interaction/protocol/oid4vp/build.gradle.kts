@@ -9,6 +9,10 @@ plugins {
     alias(sphereonplug.plugins.com.vanniktech.maven.publish)
     alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
     alias(sphereonplug.plugins.com.sphereon.gradle.plugin.npm.publication)
+    alias(sphereonplug.plugins.dev.zacsweers.metro)
+}
+
+metro {
 }
 
 kotlin {
@@ -42,7 +46,16 @@ kotlin {
                 api(projects.libWalletInteractionPublic)
                 api(projects.libWalletPublic)
                 api(projects.libWalletWscaPublic)
+                api(projects.libCryptoDataIntegrityProofPublic)
+                // Production Data Integrity holder signing uses the concrete cryptosuites and
+                // JsonLdProcessor (see Oid4vpDataIntegrityCryptosuiteSigner).
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
+                api(projects.libJsonldPublic)
+                implementation(projects.libJsonldProcessor)
                 api(projects.libOpenidOid4vpHolderPublic)
+                implementation(projects.libOpenidOid4vpHolderImpl)
                 api(projects.libOpenidOid4vpCommonPublic)
                 api(projects.libOpenidOid4vpDcql)
                 // SD-JWT codec (parse/serialize) reused by SecureComponentOid4vpSdJwtHolderBindingProvider
@@ -55,6 +68,11 @@ kotlin {
         val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
+                implementation(projects.libJsonldLoader)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
             }
         }

@@ -18,7 +18,12 @@ package com.sphereon.wallet.interaction
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlin.jvm.JvmInline
 
 @Serializable
@@ -297,6 +302,8 @@ data class WalletInteractionState(
     val counterparty: WalletCounterpartySummary? = null,
     val counterpartyEncounter: WalletCounterpartyEncounterResult? = null,
     val trust: WalletCounterpartyTrustSummary? = null,
+    /** Issuer-bound authentication result retained through the session for receive-time checks. */
+    val issuerAuthentication: WalletIssuerAuthenticationResult? = null,
     val credentialOffer: WalletCredentialOfferSummary? = null,
     val selectedCredentialConfigurationIds: List<String> = emptyList(),
     val credentialPreview: List<WalletCredentialPreview> = emptyList(),
@@ -368,11 +375,33 @@ data class WalletDisplayMessage(
     }
 }
 
+/**
+ * What can still be done with a failed interaction. Three genuinely different outcomes that a
+ * boolean cannot express.
+ *
+ * [TERMINAL] means the exchange is over and the captured input is spent: offers, pre-authorized
+ * codes and nonces are single-use, so re-uploading the same input would fail again for a new
+ * reason. [REPEATABLE] means the failure was incidental to the exchange, a transport error or an
+ * upstream timeout, and uploading the SAME captured input again is expected to work. [RESUMABLE]
+ * means the interaction itself survived and can be picked up where it stopped, without re-uploading
+ * anything. Consumers that do not recognise a value must treat it as [TERMINAL].
+ *
+ * [WalletInteractionState.terminal] and [TERMINAL] answer different questions (machine left live
+ * statuses vs captured input is spent).
+ */
+@Serializable
+enum class WalletFailureDisposition {
+    TERMINAL,
+    REPEATABLE,
+    RESUMABLE,
+}
+
 @Serializable
 data class WalletInteractionError(
     val code: String,
+    val disposition: WalletFailureDisposition = WalletFailureDisposition.TERMINAL,
+    val message: String? = null,
     val messageKey: String? = null,
-    val retryable: Boolean = false,
     val arguments: Map<String, String> = emptyMap(),
 ) {
     init {
@@ -396,6 +425,118 @@ data class WalletImplementationChoice(
 }
 
 @Serializable
+enum class WalletAttributeSourceKind {
+    SELF_ASSERTED,
+    SUPERIOR_ATTESTED,
+    SUPERIOR_POLICY_PINNED,
+    ACCESS_CERTIFICATE,
+    REGISTRAR_REGISTERED,
+    QUALIFIED_SUPERVISED,
+}
+
+/**
+ * Provenance of one displayed fact. Non-[SELF_ASSERTED][WalletAttributeSourceKind.SELF_ASSERTED]
+ * kinds require a named [authority]; an attested fact with no attester cannot be constructed.
+ */
+@Serializable
+data class WalletAttributeSource(
+    val kind: WalletAttributeSourceKind,
+    val authority: String? = null,
+    val authorityIdentifier: String? = null,
+) {
+    init {
+        if (kind != WalletAttributeSourceKind.SELF_ASSERTED) {
+            require(!authority.isNullOrBlank()) { "wallet_attribute_source_authority_required" }
+        }
+    }
+}
+
+@Serializable
+data class WalletAttributedString(
+    val value: String,
+    val source: WalletAttributeSource,
+)
+
+@Serializable
+data class WalletCounterpartyDetail(
+    val legalName: WalletAttributedString? = null,
+    val registeredAddress: WalletAttributedString? = null,
+    val registrationNumber: WalletAttributedString? = null,
+    val contactEmail: WalletAttributedString? = null,
+    val contactPhone: WalletAttributedString? = null,
+    val websiteUri: WalletAttributedString? = null,
+    val privacyPolicyUri: WalletAttributedString? = null,
+    val jurisdiction: WalletAttributedString? = null,
+) {
+    fun isBlank(): Boolean =
+        legalName == null &&
+            registeredAddress == null &&
+            registrationNumber == null &&
+            contactEmail == null &&
+            contactPhone == null &&
+            websiteUri == null &&
+            privacyPolicyUri == null &&
+            jurisdiction == null
+}
+
+/** Display-metadata name is the party's own claim. Blank or absent is not a source. */
+fun selfAssertedDisplayNameSource(metadataName: String?): WalletAttributeSource? =
+    metadataName?.takeUnless { it.isBlank() }?.let {
+        WalletAttributeSource(kind = WalletAttributeSourceKind.SELF_ASSERTED)
+    }
+
+private val selfAssertedAttributeSource = WalletAttributeSource(kind = WalletAttributeSourceKind.SELF_ASSERTED)
+
+fun selfAssertedAttributed(value: String?): WalletAttributedString? =
+    value?.takeUnless { it.isBlank() }?.let { WalletAttributedString(value = it, source = selfAssertedAttributeSource) }
+
+/**
+ * RFC 7591 / OIDC Registration fields still present on raw `client_metadata` JSON.
+ * Typed OID4VP ClientMetadata drops them; this projection does not promote `client_name`
+ * into [WalletCounterpartyDetail.legalName].
+ */
+fun counterpartyDetailFromDcrMetadata(clientMetadata: JsonElement?): WalletCounterpartyDetail? {
+    val obj = clientMetadata.asJsonObjectOrNull() ?: return null
+    val contactEmail =
+        obj["contacts"]
+            ?.let { it as? JsonArray }
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.takeUnless(String::isBlank) }
+            ?.firstOrNull { contact -> contact.contains('@') && ' ' !in contact }
+    val detail =
+        WalletCounterpartyDetail(
+            contactEmail = selfAssertedAttributed(contactEmail),
+            websiteUri = selfAssertedAttributed(obj.stringField("client_uri")),
+            privacyPolicyUri = selfAssertedAttributed(obj.stringField("policy_uri")),
+        )
+    return detail.takeUnless { it.isBlank() }
+}
+
+fun WalletCounterpartySummary.emittedAttributeSources(): List<WalletAttributeSource> =
+    buildList {
+        displayNameSource?.let(::add)
+        detail?.legalName?.source?.let(::add)
+        detail?.registeredAddress?.source?.let(::add)
+        detail?.registrationNumber?.source?.let(::add)
+        detail?.contactEmail?.source?.let(::add)
+        detail?.contactPhone?.source?.let(::add)
+        detail?.websiteUri?.source?.let(::add)
+        detail?.privacyPolicyUri?.source?.let(::add)
+        detail?.jurisdiction?.source?.let(::add)
+    }
+
+private fun JsonElement?.asJsonObjectOrNull(): JsonObject? =
+    when (this) {
+        is JsonObject -> this
+        is JsonPrimitive ->
+            contentOrNull?.trim()?.takeUnless { it.isBlank() }?.let { raw ->
+                runCatching { Json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+            }
+        else -> null
+    }
+
+private fun JsonObject.stringField(name: String): String? = (this[name] as? JsonPrimitive)?.contentOrNull?.trim()?.takeUnless { it.isBlank() }
+
+@Serializable
 data class WalletCounterpartySummary(
     val role: WalletCounterpartyRole,
     val identifier: String,
@@ -406,6 +547,10 @@ data class WalletCounterpartySummary(
     val metadata: Map<String, String> = emptyMap(),
     /** Stable Party identifier assigned by the wallet Party registry after resolution. */
     val partyId: String? = null,
+    /** Who stands behind [displayName]. Absent when displayName is the identifier fallback or unset. */
+    val displayNameSource: WalletAttributeSource? = null,
+    /** Expandable attributed facts. Absence is the common case. */
+    val detail: WalletCounterpartyDetail? = null,
 ) {
     init {
         require(identifier.isNotBlank()) { "wallet_counterparty_identifier_blank" }
@@ -504,12 +649,30 @@ data class WalletCredentialSelectionRequest(
 )
 
 @Serializable
+data class WalletRequestedClaim(
+    val path: List<JsonElement>,
+    val label: String? = null,
+    val description: String? = null,
+)
+
+@Serializable
+data class WalletCandidateDisclosure(
+    val credentialId: String,
+    val disclosedClaims: List<WalletRequestedClaim> = emptyList(),
+    val satisfiesFully: Boolean = true,
+)
+
+@Serializable
 data class WalletCredentialRequirement(
     val id: String,
     val format: String? = null,
     val multipleAllowed: Boolean = false,
     val requiredClaimPaths: List<List<JsonElement>> = emptyList(),
     val candidateCredentialIds: List<String> = emptyList(),
+    /** Parallel labelled form of [requiredClaimPaths]. Empty means that form was not produced. */
+    val requestedClaims: List<WalletRequestedClaim> = emptyList(),
+    /** Per-candidate cost, keyed to [candidateCredentialIds]. Empty means cost was not computed. */
+    val candidateDisclosures: List<WalletCandidateDisclosure> = emptyList(),
 )
 
 @Serializable

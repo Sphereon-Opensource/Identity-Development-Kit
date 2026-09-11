@@ -18,6 +18,7 @@ package com.sphereon.mdoc.transfer.device.website
 
 import com.sphereon.core.api.log.LoggerConfig
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
+import com.sphereon.ktor.http.client.provider.UrlValidationPolicy
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.cbor.cbor
@@ -27,6 +28,8 @@ internal fun defaultDeviceRetrievalWebsiteHttpClientOptions(): HttpClientOptions
     HttpClientOptions(
         enableHttpCache = false,
         enableLogging = true,
+        followRedirects = false,
+        urlValidation = UrlValidationPolicy.BLOCK_PRIVATE,
         loggingConfig = LoggerConfig.Default,
         enableContentNegotiation = true,
         contentNegotiationConfig = {

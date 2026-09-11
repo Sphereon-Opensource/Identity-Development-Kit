@@ -21,7 +21,9 @@ import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.dataintegrity.model.DataIntegrityVerificationResult
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
+import com.sphereon.crypto.dataintegrity.resolution.VerificationMethodResolutionPolicy
 
 /**
  * W3C VC-DI 1.0 §4.4 "Verify Proof" algorithm exposed as an IDK ServiceCommand.
@@ -55,4 +57,8 @@ data class VerifyProofInput(
      * allows the caller to constrain it.
      */
     val expectedMediaType: String? = null,
+    /** Verifier-owned exact-reference policy; never derived from proof input. */
+    @Transient
+    val verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy =
+        VerificationMethodResolutionPolicy.empty(),
 )

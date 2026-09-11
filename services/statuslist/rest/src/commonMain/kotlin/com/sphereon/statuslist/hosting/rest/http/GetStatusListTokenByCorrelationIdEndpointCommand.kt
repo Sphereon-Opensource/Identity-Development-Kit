@@ -48,6 +48,7 @@ interface GetStatusListTokenByCorrelationIdEndpointCommand : HttpEndpointCommand
                 pathPattern = Paths.TOKEN_BY_CORRELATION_ID,
                 produces = TOKEN_MEDIA_TYPES,
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "getStatusListTokenByCorrelationId",
                 tags = HOSTING_TAGS,
                 summary = "Resolve the signed status-list token by correlation id",

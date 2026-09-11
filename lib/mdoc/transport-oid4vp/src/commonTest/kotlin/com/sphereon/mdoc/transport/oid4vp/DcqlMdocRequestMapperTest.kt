@@ -24,6 +24,7 @@ import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
@@ -71,30 +72,31 @@ class DcqlMdocRequestMapperTest {
 
     @Test
     fun rejectsDraftSingleSegmentMdocClaimPath() {
-        val dcqlQuery =
-            DcqlQuery(
-                credentials =
-                    listOf(
-                        DcqlCredentialQuery(
-                            id = "mdl",
-                            format = "mso_mdoc",
-                            meta =
-                                JsonObject(
-                                    mapOf(
-                                        "doctype_value" to JsonPrimitive("org.iso.18013.5.1.mDL"),
+        assertFailsWith<IllegalArgumentException> {
+            val dcqlQuery =
+                DcqlQuery(
+                    credentials =
+                        listOf(
+                            DcqlCredentialQuery(
+                                id = "mdl",
+                                format = "mso_mdoc",
+                                meta =
+                                    JsonObject(
+                                        mapOf(
+                                            "doctype_value" to JsonPrimitive("org.iso.18013.5.1.mDL"),
+                                        ),
                                     ),
-                                ),
-                            claims =
-                                listOf(
-                                    DcqlClaimQuery(
-                                        path = ClaimsPathPointer(listOf(JsonPrimitive("family_name"))),
+                                claims =
+                                    listOf(
+                                        DcqlClaimQuery(
+                                            path = ClaimsPathPointer(listOf(JsonPrimitive("family_name"))),
+                                        ),
                                     ),
-                                ),
+                            ),
                         ),
-                    ),
-            )
-
-        assertFailsWith<IllegalArgumentException> { DcqlMdocRequestMapper.toDeviceRequest(dcqlQuery) }
+                )
+            DcqlMdocRequestMapper.toDeviceRequest(dcqlQuery)
+        }
     }
 
     @Test
@@ -106,7 +108,12 @@ class DcqlMdocRequestMapperTest {
                         DcqlCredentialQuery(
                             id = "sdjwt",
                             format = "dc+sd-jwt",
-                            meta = JsonObject(emptyMap()),
+                            meta =
+                                JsonObject(
+                                    mapOf(
+                                        "vct_values" to JsonArray(listOf(JsonPrimitive("https://credentials.example.com/identity"))),
+                                    ),
+                                ),
                             claims =
                                 listOf(
                                     DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("name")))),

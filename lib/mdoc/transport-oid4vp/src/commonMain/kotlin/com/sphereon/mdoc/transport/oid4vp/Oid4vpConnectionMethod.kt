@@ -34,14 +34,14 @@ import kotlin.native.ObjCName
  * This represents the OpenID4VP credential presentation protocol for mdocs,
  * which uses:
  * - Custom URL scheme (`mdoc-openid4vp://`) for wallet invocation
- * - Authorization Request with DCQL (default) or Presentation Definition (legacy)
+ * - Authorization Request with the ISO 18013-7 restricted Presentation-Exchange profile
  * - Direct Post mode for encrypted response
  * - JARM (JWT-secured Authorization Response Mode)
  *
  * The OID4VP flow in ISO 18013-7:
  * 1. Verifier invokes wallet via `mdoc-openid4vp://` URI
  * 2. Wallet fetches Authorization Request Object from `request_uri` (HTTPS)
- * 3. Wallet validates JWT signature and resolves DCQL (default) or Presentation Definition (legacy)
+ * 3. Wallet validates JWT signature and resolves the restricted Presentation Definition
  * 4. Wallet presents credentials using mdoc format (DeviceResponse)
  * 5. Wallet POSTs encrypted Authorization Response to `response_uri` (HTTPS)
  * 6. Verifier decrypts and validates response
@@ -129,7 +129,9 @@ data class Oid4vpConnectionMethod(
  * @param requestUri Optional HTTPS URL to fetch Authorization Request Object
  * @param responseUri The HTTPS URL where wallet POSTs encrypted response
  * @param nonce The cryptographic nonce from Authorization Request (min 16 bytes)
- * @param presentationDefinitionUri Optional URL to fetch Presentation Definition (legacy)
+ * @param presentationDefinitionUri Legacy compatibility field for an optional HTTPS Presentation Definition URL.
+ * ISO 18013-7 Annex B rejects this field and requires the restricted Presentation Exchange
+ * definition inline in the signed Authorization Request.
  * @return OID4VP connection method ready for transport
  */
 fun oid4vpConnectionMethod(

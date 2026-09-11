@@ -94,6 +94,10 @@ data class WscdKeyHandle(
 data class ActivationProof(
     val kind: ActivationProofKind,
     val token: String,
+    /** Stable server-owned operation correlation; required for remote activation decisions. */
+    val operationBinding: String? = null,
+    /** Exact WSCD/proof key reference authorized by the decision. */
+    val operationKeyRef: String? = null,
     val digestBinding: String? = null,
     val nonce: String? = null,
     /** Secret-free ceremony evidence, for example `factor=pin|biometric`. */

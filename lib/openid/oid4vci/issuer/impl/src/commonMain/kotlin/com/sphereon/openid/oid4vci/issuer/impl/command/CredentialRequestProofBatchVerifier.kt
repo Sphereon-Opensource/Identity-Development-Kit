@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
+import com.sphereon.openid.oid4vci.issuer.config.ResolveWalletProviderTrustArgs
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.impl.proof.ProofVerifier
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
@@ -45,6 +46,7 @@ internal class CredentialRequestProofBatchVerifier(
         audience: String,
         expectedClientId: String?,
         credentialConfigId: String,
+        walletProviderTrustArgs: ResolveWalletProviderTrustArgs?,
         proofTypeSupported: ProofTypeSupported? = null,
     ): IdkResult<List<VerifiedProof>, IdkError> {
         val verifier = proofVerifierFor(proofType).getOrElse { return Err(it) }
@@ -60,6 +62,7 @@ internal class CredentialRequestProofBatchVerifier(
                             expectedAudience = audience,
                             expectedClientId = expectedClientId,
                             credentialConfigId = credentialConfigId,
+                            walletProviderTrustArgs = walletProviderTrustArgs,
                             proofTypeSupported = proofTypeSupported,
                         ).getOrElse { return Err(it) },
                 ),
@@ -77,6 +80,7 @@ internal class CredentialRequestProofBatchVerifier(
                                 expectedAudience = audience,
                                 expectedClientId = expectedClientId,
                                 credentialConfigId = credentialConfigId,
+                                walletProviderTrustArgs = walletProviderTrustArgs,
                                 proofTypeSupported = proofTypeSupported,
                                 expectedNonce = requestNonce,
                                 consumeNonce = false,

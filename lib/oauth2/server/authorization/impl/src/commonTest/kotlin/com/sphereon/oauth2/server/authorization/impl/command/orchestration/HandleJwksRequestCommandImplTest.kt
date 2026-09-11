@@ -35,11 +35,8 @@ class HandleJwksRequestCommandImplTest {
     fun delegatesToGetJwksCommand() =
         runTest {
             val expected = JwksResult(keys = emptyList())
-            val service =
-                StubAuthorizationServerService(
-                    getJwksStub = stubGetJwks { Ok(expected) },
-                )
-            val command = HandleJwksRequestCommandImpl(ctx.execution, service)
+            val getJwks = stubGetJwks { Ok(expected) }
+            val command = HandleJwksRequestCommandImpl(ctx.execution, getJwks)
 
             val result = command.execute(HandleJwksRequestArgs())
 
@@ -50,11 +47,8 @@ class HandleJwksRequestCommandImplTest {
     @Test
     fun propagatesGetJwksError() =
         runTest {
-            val service =
-                StubAuthorizationServerService(
-                    getJwksStub = stubGetJwks { Err(IdkError.fromString(code = "server_error", message = "boom")) },
-                )
-            val command = HandleJwksRequestCommandImpl(ctx.execution, service)
+            val getJwks = stubGetJwks { Err(IdkError.fromString(code = "server_error", message = "boom")) }
+            val command = HandleJwksRequestCommandImpl(ctx.execution, getJwks)
 
             val result = command.execute(HandleJwksRequestArgs())
 

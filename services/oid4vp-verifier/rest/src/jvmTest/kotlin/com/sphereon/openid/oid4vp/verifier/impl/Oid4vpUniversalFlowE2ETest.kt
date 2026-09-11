@@ -25,7 +25,9 @@ import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
-import com.sphereon.core.api.http.HttpAdapter
+import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelector
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.crypto.core.KeyVisibility
@@ -85,6 +87,7 @@ import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.holder.ResolveAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.holder.SubmissionResult
 import com.sphereon.openid.oid4vp.holder.SubmitAuthorizationResponseArgs
+import com.sphereon.openid.oid4vp.common.impl.UnavailableOid4vpRequestTrustMaterialProvider
 import com.sphereon.openid.oid4vp.holder.impl.ParseAuthorizationRequestCommandImpl
 import com.sphereon.openid.oid4vp.holder.impl.SubmitAuthorizationResponseCommandImpl
 import com.sphereon.openid.oid4vp.universal.impl.createUniversalOid4vpTestAppGraph
@@ -574,8 +577,8 @@ class UniversalOid4vpE2ETest {
             assertTrue("client_id" in Url(requestUriLink).parameters.names())
             assertTrue("request_uri" in Url(requestUriLink).parameters.names())
 
-            // Get the HTTP adapter from DI - it's injected with all required commands
-            val rpAdapter: HttpAdapter = (verifierGraph as Oid4vpVerifierHttpAdapter.Graph).oid4VpVerifierHttpAdapter
+            val routeSelector = (app as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
+            val httpDispatcher = (verifierGraph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
 
             val httpClientFactory =
                 object : HttpClientFactory {
@@ -587,14 +590,16 @@ class UniversalOid4vpE2ETest {
 
                                 // 1) request_uri fetch: wallet -> RP
                                 if (request.method == HttpMethod.Get && path.startsWith(Oid4vpVerifierHttpAdapter.REQUEST_URI_PREFIX)) {
-                                    val resp =
-                                        rpAdapter.handleRequest(
-                                            GenericHttpRequest(
-                                                method = "GET",
-                                                path = path,
-                                                headers = request.headers.entries().associate { (k, v) -> k to v.joinToString(",") },
-                                            ),
+                                    val genericRequest =
+                                        GenericHttpRequest(
+                                            method = "GET",
+                                            path = path,
+                                            headers = request.headers.entries().associate { (k, v) -> k to v.joinToString(",") },
                                         )
+                                    val selection = routeSelector.select(genericRequest.method, genericRequest.path)
+                                    val route = (selection as? HttpAdapterRouteSelection.Selected)?.match
+                                        ?: error("Expected request-uri route, got $selection")
+                                    val resp = httpDispatcher.dispatch(genericRequest, route)
                                     return@MockEngine respond(
                                         content = resp.body ?: "",
                                         status = HttpStatusCode.fromValue(resp.statusCode),
@@ -672,6 +677,7 @@ class UniversalOid4vpE2ETest {
                     httpClientFactory = httpClientFactory,
                     externalIdentifierService = externalIdentifierService,
                     jwtService = (holderGraph as JwtServiceImpl.Graph).jwtService,
+                    requestTrustMaterialProvider = UnavailableOid4vpRequestTrustMaterialProvider(),
                 )
 
             // 2) Holder fetches request_uri, verifies JAR signature, and parses the Authorization Request.
@@ -910,8 +916,8 @@ class UniversalOid4vpE2ETest {
                     ).getOrThrow()
                     .value
 
-            // Get the HTTP adapter from DI - it's injected with all required commands
-            val rpAdapter: HttpAdapter = (verifierGraph as Oid4vpVerifierHttpAdapter.Graph).oid4VpVerifierHttpAdapter
+            val routeSelector = (app as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
+            val httpDispatcher = (verifierGraph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
 
             // The JWK published at jwks_uri carries `alg = RSA-OAEP` so the wallet's
             // deriveJarmConfigFromClientMetadata picks the JWE key encryption algorithm from
@@ -945,14 +951,16 @@ class UniversalOid4vpE2ETest {
 
                                 // request_uri fetch: wallet -> RP
                                 if (request.method == HttpMethod.Get && path.startsWith(Oid4vpVerifierHttpAdapter.REQUEST_URI_PREFIX)) {
-                                    val resp =
-                                        rpAdapter.handleRequest(
-                                            GenericHttpRequest(
-                                                method = "GET",
-                                                path = path,
-                                                headers = request.headers.entries().associate { (k, v) -> k to v.joinToString(",") },
-                                            ),
+                                    val genericRequest =
+                                        GenericHttpRequest(
+                                            method = "GET",
+                                            path = path,
+                                            headers = request.headers.entries().associate { (k, v) -> k to v.joinToString(",") },
                                         )
+                                    val selection = routeSelector.select(genericRequest.method, genericRequest.path)
+                                    val route = (selection as? HttpAdapterRouteSelection.Selected)?.match
+                                        ?: error("Expected request-uri route, got $selection")
+                                    val resp = httpDispatcher.dispatch(genericRequest, route)
                                     return@MockEngine respond(
                                         content = resp.body ?: "",
                                         status = HttpStatusCode.fromValue(resp.statusCode),
@@ -1050,6 +1058,7 @@ class UniversalOid4vpE2ETest {
                     httpClientFactory = httpClientFactory,
                     externalIdentifierService = externalIdentifierService,
                     jwtService = (holderGraph as JwtServiceImpl.Graph).jwtService,
+                    requestTrustMaterialProvider = UnavailableOid4vpRequestTrustMaterialProvider(),
                 )
 
             val parsedRequest =

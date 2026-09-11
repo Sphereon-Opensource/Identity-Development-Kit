@@ -25,6 +25,7 @@ import com.sphereon.openid.oid4vp.universal.UniversalOid4vpCategories
 import com.sphereon.openid.oid4vp.universal.UniversalOid4vpEventTypes
 import com.sphereon.openid.oid4vp.universal.UniversalOid4vpSubsystems
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionCallbackDispatcher
+import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionCallbackSigning
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionStatusUpdate
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
@@ -188,7 +189,14 @@ class SessionStatusEventEmitterImpl(
                         ).build(),
                 )
 
-                val dispatchResult = callbackDispatcher.dispatch(callback.url, update)
+                val dispatchResult = callbackDispatcher.dispatch(
+                    callback.url,
+                    update,
+                    AuthorizationSessionCallbackSigning(
+                        secretRef = callback.secretRef,
+                        algorithm = callback.signing,
+                    ).takeUnless { callback.secretRef == null && callback.signing == null },
+                )
 
                 // Emit callback event (success or failure)
                 val callbackEventType =

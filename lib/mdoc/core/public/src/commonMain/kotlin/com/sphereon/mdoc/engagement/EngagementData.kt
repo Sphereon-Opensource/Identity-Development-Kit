@@ -49,7 +49,6 @@ import com.sphereon.mdoc.transfer.device.RestApiOptions
 import com.sphereon.mdoc.transfer.reader.ReaderEngagement
 import com.sphereon.mdoc.transfer.reader.ReaderEngagementCborCodec
 import com.sphereon.util.stringify
-import io.ktor.http.Url
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
@@ -70,6 +69,8 @@ class EngagementData private constructor(
     private var blePeripheralServerModeUUID: Uuid? = null,
     private var bleCentralClientModeUUID: Uuid? = null,
     private var debugLogger: IMdocDebugLogger? = null,
+    /** Domain supplied by a trusted user-agent/referrer context, never from ReaderEngagement. */
+    private var trustedOriginDomain: String? = null,
     private val coseKeyCborCodec: CoseKeyCborCodec? = null,
     private val deviceEngagementCborCodec: DeviceEngagementCborCodec? = null,
     private val readerEngagementCborCodec: ReaderEngagementCborCodec? = null,
@@ -100,6 +101,13 @@ class EngagementData private constructor(
     fun getCurve() = curve
 
     fun getRole() = role
+
+    /**
+     * Returns the trusted domain-origin value that will be placed in DeviceEngagement.
+     * An absent value is encoded as the empty string, which is intentionally not a
+     * successful origin assertion.
+     */
+    fun getTrustedOriginDomain(): String? = trustedOriginDomain
 
     fun getUuid(required: Boolean = true): Uuid? {
         if (isRestApiRetrievalSupported() || isRestApiEngagementSupported()) {
@@ -254,8 +262,10 @@ class EngagementData private constructor(
             val restApiOptions =
                 readerEngagement!!.deviceRetrievalMethods?.firstOrNull { it.type == DeviceRetrievalMethodType.WEBSITE }?.retrievalOptions as? RestApiOptions
                     ?: throw IllegalArgumentException("Device retrieval website")
-            // FIXME. We should set the domain from a referer
-            val domain = Url(restApiOptions.uri).host
+            // ISO/IEC TS 18013-7 Annex A.3.2 forbids deriving this value from
+            // ReaderEngagement. It must come from a trusted user-agent/referrer
+            // source; absent that source, send the specified empty value.
+            val domain = trustedOriginDomain ?: ""
 
             val coseKey: CoseKeyType = CoseKey.fromDTO(ephemeralKey.key).toPublicKey()
             val encodedCoseKeyBytes = requireCoseKeyCborCodec().encode(CoseKey.fromDTO(coseKey)).getOrThrow()
@@ -267,7 +277,7 @@ class EngagementData private constructor(
                         eDeviceKeyBytes = CborEncodedItem(encodedCoseKeyBytes, coseKey),
                     ),
                 //                deviceRetrievalMethods = retrievalMethods.toTypedArray(),
-                originInfos = arrayOf(OriginInfo(cat = OriginInfoCategory(1u), type = OriginInfoType(1u), details = OriginInfoDetails(mapOf("domain" to domain)), null)),
+                originInfos = arrayOf(OriginInfo(cat = OriginInfoCategory(1u), type = OriginInfoType(1u), details = OriginInfoDetails(mapOf(OriginInfoDetails.DOMAIN to domain)), null)),
                 capabilities = Capabilities(macKeysSupport = false, macKeyCurves = null),
                 original = null,
             )
@@ -596,7 +606,7 @@ class EngagementData private constructor(
             return EngagementData(
                 deviceEngagement = encodedEngagement,
                 ephemeralKey = ResolvedKeyInfo(key = engagement.security.eDeviceKeyBytes.data()),
-                curve = Curve.fromCose(CoseCurve.fromValue(engagement.security.cipherSuite.toInt())),
+                curve = Curve.fromCose(CoseCurve.fromValue(engagement.security.cipherSuite.toIntExact("DeviceEngagement.security.cipherSuite"))),
                 role = MdocRole.MDOC_READER,
                 retrievalMethods = retrievalMethods,
                 bleCentralClientModeUUID = bleCentralClientModeUUID,
@@ -623,6 +633,7 @@ class EngagementData private constructor(
         private var readerEngagement: ReaderEngagement? = null // For reverse engagement
         private var engagementUri: String? = null // Store the mdoc: or mdoc:// URI for reverse engagement
         private var debugLogger: IMdocDebugLogger? = null
+        private var trustedOriginDomain: String? = null
 
         fun withEngagementMethods(vararg engagementMethods: MdocEngagementMethod) =
             apply {
@@ -659,6 +670,15 @@ class EngagementData private constructor(
             }
             engagementMethod.readerEngagement.deviceRetrievalMethods?.map { addRetrievalMethod(it) }
         }
+
+        /**
+         * Supplies the domain origin obtained from a trusted user-agent/referrer
+         * context. Never pass the ReaderEngagement endpoint's host here.
+         */
+        fun withTrustedOriginDomain(domain: String?) =
+            apply {
+                this.trustedOriginDomain = domain?.trim()?.takeIf { it.isNotEmpty() }
+            }
 
         fun withReaderEngagementUri(dataUri: String) =
             apply {
@@ -761,6 +781,7 @@ class EngagementData private constructor(
                     role = role,
                     engagementMethods = engagementMethods.toSet(),
                     debugLogger = debugLogger,
+                    trustedOriginDomain = trustedOriginDomain,
                     coseKeyCborCodec = coseKeyCborCodec,
                     deviceEngagementCborCodec = deviceEngagementCborCodec,
                     readerEngagementCborCodec = readerEngagementCborCodec,
@@ -775,4 +796,9 @@ class EngagementData private constructor(
             return data
         }
     }
+}
+
+private fun UInt.toIntExact(field: String): Int {
+    require(this <= Int.MAX_VALUE.toUInt()) { "$field is outside the signed 32-bit range" }
+    return toInt()
 }

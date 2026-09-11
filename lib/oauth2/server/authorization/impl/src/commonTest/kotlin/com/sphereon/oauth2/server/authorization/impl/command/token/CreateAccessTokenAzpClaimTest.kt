@@ -120,6 +120,7 @@ class CreateAccessTokenAzpClaimTest {
                         subject = SERVICE_CLIENT_ID,
                         clientId = SERVICE_CLIENT_ID,
                         scope = "service",
+                        audience = listOf("https://api.example.com"),
                     ),
                 )
 
@@ -152,6 +153,7 @@ class CreateAccessTokenAzpClaimTest {
                         subject = SERVICE_CLIENT_ID,
                         clientId = SERVICE_CLIENT_ID,
                         scope = "service",
+                        audience = listOf("https://api.example.com"),
                     ),
                 )
 
@@ -180,6 +182,7 @@ class CreateAccessTokenAzpClaimTest {
                         subject = "user-123",
                         clientId = "web-app-client",
                         scope = "openid profile",
+                        audience = listOf("https://api.example.com"),
                     ),
                 )
 
@@ -205,6 +208,7 @@ class CreateAccessTokenAzpClaimTest {
                     CreateAccessTokenArgs(
                         subject = "user-123",
                         clientId = "web-app-client",
+                        audience = listOf("https://api.example.com"),
                         authTime = 1_784_485_200L,
                         acr = "urn:nist:sp:800-63:aal1",
                         amr = listOf("pwd"),
@@ -236,6 +240,7 @@ class CreateAccessTokenAzpClaimTest {
                         subject = SERVICE_CLIENT_ID,
                         clientId = SERVICE_CLIENT_ID,
                         scope = "service",
+                        audience = listOf("https://api.example.com"),
                     ),
                 )
 

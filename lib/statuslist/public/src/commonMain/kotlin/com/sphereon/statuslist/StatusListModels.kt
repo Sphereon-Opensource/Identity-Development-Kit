@@ -44,10 +44,34 @@ enum class StatusListSpec(
     }
 }
 
+/** ISO/IEC 18013-5 second-edition status mechanism selected for a Token Status List. */
+@Serializable
+@JsExportCompat
+enum class MdocStatusListProfile(
+    val value: String,
+) {
+    /** One-bit status list indexed by the status reference in the MSO. */
+    @SerialName("status_list")
+    STATUS_LIST("status_list"),
+
+    /** Revocation list containing the binary identifiers of revoked MSOs. */
+    @SerialName("identifier_list")
+    IDENTIFIER_LIST("identifier_list"),
+    ;
+
+    companion object {
+        fun fromValue(value: String): MdocStatusListProfile? =
+            entries.firstOrNull {
+                it.value.equals(value, ignoreCase = true) || it.name.equals(value, ignoreCase = true)
+            }
+    }
+}
+
 /** Media types for the hosted, signed status-list token, keyed by proof envelope. */
 object StatusListContentTypes {
     const val STATUSLIST_JWT = "application/statuslist+jwt"
     const val STATUSLIST_CWT = "application/statuslist+cwt"
+    const val IDENTIFIERLIST_CWT = "application/identifierlist+cwt"
 
     /** W3C Bitstring Status List Credential enveloped as a VC-JWT. */
     const val VC_JWT = "application/vc+jwt"
@@ -144,6 +168,12 @@ data class StatusListBinding(
     val statusListCorrelationId: String,
     val spec: StatusListSpec,
     val purposes: List<StatusPurpose> = listOf(StatusPurpose.REVOCATION),
+    /** Optional ISO/IEC 18013-5 status mechanism carried by an mdoc MSO. */
+    val mdocProfile: MdocStatusListProfile? = null,
+    /** The proof envelope configured for the bound list; required for mso_mdoc bindings. */
+    val proofFormat: StatusProofFormat? = null,
+    /** Optional ISO aggregation endpoint carried in the MSO status reference. */
+    val aggregationUri: String? = null,
 )
 
 // region status-claim models (embedded in issued credentials)
@@ -187,9 +217,9 @@ data class BitstringStatusListEntry(
 // region references
 
 /**
- * Resolves a status list. Provide [statusListUri] to resolve a globally-unique, tenant-agnostic
- * status list by its full hosting URL (status lists are unique by URL, even across tenants and
- * external hosting), or the tenant-scoped [id]/[correlationId] for management resolution.
+ * Resolves a status list. Management operations resolve [id] or [correlationId] inside the current
+ * tenant. The public token operation may additionally resolve a globally unique [statusListUri] by
+ * its full hosting URL; that read-only path does not grant tenant-scoped management access.
  */
 @Serializable
 @JsExportCompat
@@ -234,6 +264,10 @@ data class StatusListResult(
     /** The signed status-list token (compact JWS / CWT / VC-JWT). */
     val signedToken: String,
     val contentType: String,
+    val mdocProfile: MdocStatusListProfile? = null,
+    val aggregationUri: String? = null,
+    /** The persisted expiry used as the mdoc CWT `exp` claim, when configured. */
+    val validUntil: Instant? = null,
 )
 
 /**
@@ -272,6 +306,8 @@ data class StatusListSummary(
     val remainingCapacity: Int,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val mdocProfile: MdocStatusListProfile? = null,
+    val aggregationUri: String? = null,
 )
 
 /** A single allocated entry within a status list. */
@@ -285,6 +321,8 @@ data class StatusListEntry(
     val credentialHash: String? = null,
     val value: Int,
     val purpose: StatusPurpose,
+    /** ISO mdoc identifier used by an Identifier List profile, when applicable. */
+    val identifier: ByteArray? = null,
 )
 
 // endregion
@@ -357,6 +395,10 @@ data class CreateStatusListArgs(
     val ttlSeconds: Long? = null,
     val validFrom: Instant? = null,
     val validUntil: Instant? = null,
+    /** Optional ISO/IEC 18013-5 profile; null retains the generic status-list behavior. */
+    val mdocProfile: MdocStatusListProfile? = null,
+    /** Optional ISO aggregation endpoint carried in the mdoc status-list payload. */
+    val aggregationUri: String? = null,
 )
 
 /**
@@ -377,6 +419,8 @@ data class AllocateEntryArgs(
     val credentialId: String? = null,
     val credentialHash: String? = null,
     val initialValue: Int = StatusValues.VALID,
+    /** Binary MSO identifier required for an Identifier List profile. */
+    val identifier: ByteArray? = null,
 )
 
 @Serializable
@@ -430,10 +474,24 @@ data class ListStatusListsArgs(
 @JsExportCompat
 data class ResolveStatusArgs(
     val uri: String,
-    val index: Int,
+    val index: Int = 0,
     /** When null, the spec/format is inferred from the fetched token's media type / envelope. */
     val expectedSpec: StatusListSpec? = null,
     val expectedFormat: StatusProofFormat? = null,
+    /** Optional ISO mdoc Identifier List key. When supplied, the identifier list is resolved by presence. */
+    val identifier: ByteArray? = null,
+    /**
+     * Explicit trust anchors for an ISO mdoc revocation CWT signer. They are deliberately not
+     * inferred from the CWT's protected x5chain: that chain is evidence, not a new root of trust.
+     * Generic JWT/CWT resolution does not use this field and keeps its existing behavior.
+     */
+    val trustedCerts: Array<String>? = null,
+    /**
+     * Optional certificate pin supplied by an authenticated mdoc MSO. This is evidence that the
+     * protected CWT chain is the expected chain, not a trust anchor. The resolver must still
+     * validate [trustedCerts] and must reject a chain that does not contain this certificate.
+     */
+    val expectedCertificate: ByteArray? = null,
 )
 
 /** Verifier-side resolved status. */

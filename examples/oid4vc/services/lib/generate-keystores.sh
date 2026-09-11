@@ -344,8 +344,8 @@ EOF
 # separate output JWKS, separate trust-anchor file — but issued from the same demo CA
 # so the keystore-bootstrap pipeline stays single-source.
 #
-# Operator workflow: paste the contents of the produced JWKS file into the OIDF
-# conformance plan UI's `vci.key_attestation_jwks` field. The plan's
+# Operator workflow: provide the produced JWKS file to the OIDF
+# conformance plan's managed key-attestation setup. The plan's
 # `VCIGenerateKeyAttestationIfNecessary` step always emits the leaf cert in the JWS
 # `x5c` header (signJWT(..., includeX5c=true, errorIfX5cMissing=true)), and our
 # verifier validates the chain against trust-anchors/key-attester-ca.pem via

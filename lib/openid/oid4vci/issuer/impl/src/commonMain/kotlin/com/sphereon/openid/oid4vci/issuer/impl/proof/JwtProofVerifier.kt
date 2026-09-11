@@ -71,6 +71,7 @@ class JwtProofVerifier(
         expectedAudience: String,
         expectedClientId: String?,
         credentialConfigId: String,
+        walletProviderTrustArgs: com.sphereon.openid.oid4vci.issuer.config.ResolveWalletProviderTrustArgs?,
         proofTypeSupported: ProofTypeSupported?,
         expectedNonce: String?,
         consumeNonce: Boolean,
@@ -244,12 +245,20 @@ class JwtProofVerifier(
         }
         var keyAttestationEvidence: com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation? = null
         if (attestationJwt != null) {
-            val trustConfig = issuerConfigProvider.keyAttesterTrustFor(credentialConfigId, supportedProofType)
+            val trustArgs =
+                walletProviderTrustArgs
+                    ?: return Err(
+                        IdkError.fromString(
+                            code = Oid4vciErrors.INVALID_PROOF,
+                            message = "Wallet-provider trust requires persisted issuer, issuance-template, and credential-configuration identities",
+                        ),
+                    )
+            val walletProviderTrust = issuerConfigProvider.walletProviderTrustFor(trustArgs).getOrElse { return Err(it) }
             val validated =
                 keyAttestationVerifier
                     .verify(
                         keyAttestationJwt = attestationJwt,
-                        trustConfig = trustConfig,
+                        walletProviderTrust = walletProviderTrust,
                         policy = attestationPolicy,
                         expectedNonce = nonce,
                     ).getOrElse { return Err(it) }

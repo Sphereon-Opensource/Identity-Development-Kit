@@ -23,6 +23,7 @@ import com.sphereon.crypto.core.cose.CoseKeyCborCodec
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
+import com.sphereon.ktor.http.client.provider.UrlValidationPolicy
 import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.SessionDataCborCodec
 import com.sphereon.mdoc.SessionEstablishmentCborCodec
@@ -139,11 +140,12 @@ class RestApiTransportFactory(
      */
     private val httpClient: HttpClient by lazy {
         httpClientFactory.createClient(
-            HttpClientOptions(
+            HttpClientOptions.createDefault().copy(
                 engine = httpClientFactory.getEngineTypeDefault(),
-                enableContentNegotiation = true,
                 enableHttpCache = false,
                 enableLogging = true,
+                followRedirects = false,
+                urlValidation = UrlValidationPolicy.BLOCK_PRIVATE,
             ),
         )
     }

@@ -28,12 +28,23 @@ import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.kms.KeyStoreConfig
 import com.sphereon.crypto.core.kms.KmsProviderConfigBase
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesTo
+import dev.zacsweers.metro.ForScope
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.IntoSet
+import dev.zacsweers.metro.Provides
+import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.binding
 import kotlinx.serialization.PolymorphicSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.SerializersModuleBuilder
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
+import software.amazon.app.platform.scope.Scope
+import software.amazon.app.platform.scope.Scoped
 import kotlin.js.JsName
 
 @JsExportCompat
@@ -138,4 +149,28 @@ object CryptoJsonSupport {
             PolymorphicSerializer(KeyStoreConfig::class),
             json,
         )
+}
+
+/**
+ * Installs crypto-core's polymorphic serializers when an application enters its app scope.
+ *
+ * Remote command clients use the shared [JsonSupport] streaming codec directly, so serializer
+ * registration must not depend on some unrelated code path first touching [CryptoJsonSupport].
+ */
+@Inject
+@ContributesBinding(AppScope::class, binding = binding<SerializerRegistration>())
+@SingleIn(AppScope::class)
+class CoreCryptoSerializationRegistration : SerializerRegistration {
+    override fun onEnterScope(scope: Scope) {
+        // Accessing the object runs its idempotent base registration.
+        CryptoJsonSupport.module
+    }
+}
+
+@ContributesTo(AppScope::class)
+interface CoreCryptoSerializationRegistrationModule {
+    @Provides
+    @IntoSet
+    @ForScope(AppScope::class)
+    fun provideScoped(impl: CoreCryptoSerializationRegistration): Scoped = impl
 }

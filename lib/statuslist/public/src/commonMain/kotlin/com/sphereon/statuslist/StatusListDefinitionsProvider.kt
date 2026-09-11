@@ -16,6 +16,9 @@
 
 package com.sphereon.statuslist
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 
 /**
@@ -42,4 +45,11 @@ interface StatusListDefinitionsProvider {
      * `/statuslists/{id}`), or null when undefined.
      */
     fun byId(correlationId: String): CreateStatusListArgs?
+
+    /**
+     * Resolve a definition at an issuance/runtime boundary. Implementations backed by suspend
+     * persistence may override this without forcing the synchronous config/metadata surface to
+     * block. The default keeps existing providers source-compatible.
+     */
+    suspend fun resolve(correlationId: String): IdkResult<CreateStatusListArgs?, IdkError> = Ok(byId(correlationId))
 }

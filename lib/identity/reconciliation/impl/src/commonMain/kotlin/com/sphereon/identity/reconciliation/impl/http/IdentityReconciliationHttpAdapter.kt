@@ -80,6 +80,7 @@ class IdentityReconciliationHttpAdapter(
         httpRoutes {
             post("/sessions") {
                 operationId("createReconciliationSession")
+                handlerCommandId(CreateReconciliationSessionCommand.COMMAND_ID)
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req ->
@@ -93,6 +94,7 @@ class IdentityReconciliationHttpAdapter(
             }
             get("/sessions/{sessionId}") {
                 operationId("getReconciliationSession")
+                handlerCommandId(GetReconciliationSessionCommand.COMMAND_ID)
                 produces(MediaType.ApplicationJson)
                 handle { req ->
                     val sessionId = req.pathParameters["sessionId"] ?: return@handle errorResponse(400, "Missing sessionId")
@@ -106,6 +108,7 @@ class IdentityReconciliationHttpAdapter(
             }
             post("/sessions/{sessionId}/complete") {
                 operationId("completeReconciliation")
+                handlerCommandId(CompleteReconciliationCommand.COMMAND_ID)
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req ->
@@ -119,6 +122,7 @@ class IdentityReconciliationHttpAdapter(
             }
             delete("/sessions/{sessionId}") {
                 operationId("cancelReconciliationSession")
+                handlerCommandId(CancelReconciliationSessionCommand.COMMAND_ID)
                 produces(MediaType.ApplicationJson)
                 handle { req ->
                     val sessionId = req.pathParameters["sessionId"] ?: return@handle errorResponse(400, "Missing sessionId")

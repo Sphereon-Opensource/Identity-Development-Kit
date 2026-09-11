@@ -88,7 +88,7 @@ internal object DcqlMdocRequestMapper {
                 state.itemsBuilder.add(
                     NameSpace(namespace),
                     DataElementIdentifier(identifier),
-                    IntentToRetain(false),
+                    IntentToRetain(claim.intentToRetain),
                 )
             }
         }
@@ -116,7 +116,7 @@ internal object DcqlMdocRequestMapper {
             require(path.size == 2) {
                 "mso_mdoc Claims Path Pointer must contain exactly namespace and data element identifier"
             }
-            DcqlClaimPath(path = path)
+            DcqlClaimPath(path = path, intentToRetain = claim.intent_to_retain == true)
         }
     }
 
@@ -133,6 +133,7 @@ internal object DcqlMdocRequestMapper {
 
     private data class DcqlClaimPath(
         val path: List<String>,
+        val intentToRetain: Boolean,
     )
 
     private data class DocRequestBuildState(

@@ -21,22 +21,28 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.isEnabled
-import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
+import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseCommand
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys
 import com.sphereon.oauth2.server.authorization.command.token.VerifyDeviceCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.token.VerifyDeviceCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.DeviceAuthorizationStorage
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.binding
 import kotlin.time.Clock
 
@@ -52,13 +58,19 @@ import kotlin.time.Clock
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<GrantHandler>())
+@ContributesIntoMap(SessionScope::class, binding = binding<GrantHandler>())
+@StringKey(GrantHandlerKeys.DEVICE_CODE)
 class DeviceCodeGrantHandlerImpl(
     private val verifyDeviceCodeGrantCommand: VerifyDeviceCodeGrantCommand,
     private val deviceAuthorizationStorage: DeviceAuthorizationStorage,
     private val clock: Clock,
+    private val createAccessToken: CreateAccessTokenCommand,
+    private val createRefreshToken: Lazy<CreateRefreshTokenCommand>,
+    private val createIdToken: Lazy<CreateIdTokenCommand>,
+    private val createTokenResponse: CreateTokenResponseCommand,
+    private val clientRegistry: ClientRegistry,
 ) : GrantHandler {
-    override val grantType: String = GrantType.DEVICE_CODE.value
+    override val grantType: String = GrantHandlerKeys.DEVICE_CODE
 
     override fun supports(params: GrantParameters): Boolean = params is GrantParameters.DeviceCode
 
@@ -68,7 +80,6 @@ class DeviceCodeGrantHandlerImpl(
     ): IdkResult<TokenResponse, IdkError> {
         val tokenRequest = context.tokenRequest
         val applied = context.applied
-        val commands = context.commands
         val proofJkt = context.proofJkt
         val certThumbprint = context.certThumbprintS256
         val serverConfig = context.serverConfig
@@ -92,18 +103,30 @@ class DeviceCodeGrantHandlerImpl(
 
         val grantedScope = verified.grantedScope
 
+        // Registered clients may pin a default audience (RFC 8707 derivation order: explicit
+        // request audiences win; the registration default fills the gap) and carry issuance
+        // metadata that must ride the token as claims. Device-flow enrollment for infrastructure
+        // clients such as hand-off screens relies on both: the screen never sends audience or
+        // claim parameters itself, so everything derives from its registration.
+        val registeredClient = clientRegistry.getClient(tokenRequest.clientId).getOrNull()
+        val audience = verified.audience?.takeIf { it.isNotEmpty() }
+            ?: registeredClient?.defaultAccessTokenAudience?.let { listOf(it) }
+            ?: emptyList()
+        val additionalClaims = registeredClient?.additionalMetadata.orEmpty().filterKeys { it in ENROLLMENT_CLAIM_ALLOWLIST }
+
         val accessToken =
-            commands.createAccessToken
+            createAccessToken
                 .execute(
                     CreateAccessTokenArgs(
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = grantedScope,
-                        audience = verified.audience ?: emptyList(),
+                        audience = audience,
                         dpopJkt = deviceBoundJkt,
                         certificateThumbprintS256 = certThumbprint,
                         authTime = verified.authTime?.epochSeconds,
                         baseUrlOverride = applied.baseUrlOverride,
+                        additionalClaims = additionalClaims,
                     ),
                 ).getOrElse { error -> return Err(error) }
 
@@ -116,7 +139,7 @@ class DeviceCodeGrantHandlerImpl(
         val authTimeEpochSeconds = verified.authTime?.epochSeconds
         val refreshToken =
             if ("offline_access" in grantedScopes) {
-                commands.createRefreshToken
+                createRefreshToken.value
                     .execute(
                         CreateRefreshTokenArgs(
                             subject = verified.subject,
@@ -135,7 +158,7 @@ class DeviceCodeGrantHandlerImpl(
         val oidcEnabled = serverConfig.oidc.isEnabled
         val idToken =
             if (oidcEnabled && "openid" in grantedScopes) {
-                commands.createIdToken
+                createIdToken.value
                     .execute(
                         CreateIdTokenArgs(
                             subject = verified.subject,
@@ -168,7 +191,7 @@ class DeviceCodeGrantHandlerImpl(
                 )
             }
 
-        return commands.createTokenResponse.execute(
+        return createTokenResponse.execute(
             CreateTokenResponseArgs(
                 accessToken = accessToken.value,
                 tokenType = tokenTypeFor(deviceBoundJkt),
@@ -177,5 +200,16 @@ class DeviceCodeGrantHandlerImpl(
                 idToken = idToken,
             ),
         )
+    }
+
+    private companion object {
+        /**
+         * Registration metadata keys the device grant may mint into access-token claims. The
+         * allowlist keeps arbitrary registration metadata from leaking into tokens; a screen
+         * client's `handoff_role` is REQUIRED downstream (fail closed at the resource), so an
+         * under-specified registration produces a useless token rather than a dangerous one.
+         */
+        val ENROLLMENT_CLAIM_ALLOWLIST: Set<String> =
+            setOf("handoff_role", "handoff_location", "device_ref", "label")
     }
 }

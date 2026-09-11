@@ -46,7 +46,8 @@ import com.sphereon.crypto.kms.rest.server.service.KeyProviderPresentationSource
 import com.sphereon.crypto.kms.rest.server.service.ProvidersRestService
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -68,7 +69,8 @@ import com.sphereon.crypto.kms.rest.api.generated.models.KeyOperations as KeyOpe
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(ProvidersHttpAdapter.ID)
 class ProvidersHttpAdapter(
     private val providersService: ProvidersRestService,
     private val presentation: KeyProviderPresentationSource,
@@ -90,38 +92,45 @@ class ProvidersHttpAdapter(
         httpRoutes {
             get("/") {
                 operationId("listKeyProviders")
+                handlerCommandId("kms.providers.list")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleListProviders(req) }
             }
             get("/{providerId}") {
                 operationId("getKeyProvider")
+                handlerCommandId("kms.providers.get")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGetProvider(req) }
             }
             get("/{providerId}/keys") {
                 operationId("providerListKeys")
+                handlerCommandId("kms.providers.list-keys")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleListKeys(req) }
             }
             get("/{providerId}/keys/{aliasOrKid}") {
                 operationId("providerGetKey")
+                handlerCommandId("kms.providers.get-key")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGetKey(req) }
             }
             post("/{providerId}/keys") {
                 operationId("providerGenerateKey")
+                handlerCommandId("kms.providers.generate-key")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGenerateKey(req) }
             }
             post("/{providerId}/keys/import") {
                 operationId("providerImportKey")
+                handlerCommandId("kms.providers.import-key")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleImportKey(req) }
             }
             delete("/{providerId}/keys/{aliasOrKid}") {
                 operationId("providerDeleteKey")
+                handlerCommandId("kms.providers.delete-key")
                 handle { req -> handleDeleteKey(req) }
             }
         }

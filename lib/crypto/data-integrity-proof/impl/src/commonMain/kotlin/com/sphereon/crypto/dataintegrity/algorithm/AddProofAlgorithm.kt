@@ -175,6 +175,10 @@ class AddProofAlgorithmImpl(
                     "proof.domain '${proof.domain}' does not match options.domain '${options.domain}'"
                 }
 
+                options.domainSet != null && proof.domainSet != options.domainSet -> {
+                    "proof.domain set does not match options.domainSet"
+                }
+
                 options.challenge != null && proof.challenge != options.challenge -> {
                     "proof.challenge does not match options.challenge"
                 }

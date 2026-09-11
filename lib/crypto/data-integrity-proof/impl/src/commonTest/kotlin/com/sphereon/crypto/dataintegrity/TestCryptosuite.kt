@@ -27,6 +27,7 @@ import com.sphereon.crypto.dataintegrity.cryptosuite.DataIntegrityCryptosuiteCre
 import com.sphereon.crypto.dataintegrity.cryptosuite.DataIntegrityCryptosuiteVerifier
 import com.sphereon.crypto.dataintegrity.model.DataIntegrityProof
 import com.sphereon.crypto.dataintegrity.model.ProofOptions
+import com.sphereon.crypto.dataintegrity.resolution.VerificationMethodResolutionPolicy
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -65,20 +66,25 @@ internal class TestCryptosuiteCreator(
                 created = options.created ?: "2026-04-29T12:00:00Z",
                 expires = options.expires,
                 domain = options.domain,
+                domainSet = options.domainSet,
                 challenge = options.challenge,
                 nonce = options.nonce,
                 previousProof = options.previousProof,
+                additionalProofProperties = options.additionalProofProperties ?: JsonObject(emptyMap()),
             ),
         )
 }
 
 internal class TestCryptosuiteVerifier(
     override val cryptosuiteId: String = TEST_CRYPTOSUITE_ID,
+    private val onResolutionPolicy: ((VerificationMethodResolutionPolicy) -> Unit)? = null,
 ) : DataIntegrityCryptosuiteVerifier {
     override suspend fun verifyProof(
         unsecuredDocument: JsonObject,
         proof: DataIntegrityProof,
+        verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy,
     ): IdkResult<CryptosuiteVerification, IdkError> {
+        onResolutionPolicy?.invoke(verificationMethodResolutionPolicy)
         val expected = deterministicSignature(unsecuredDocument, cryptosuiteId)
         val ok = expected == proof.proofValue
         return Ok(

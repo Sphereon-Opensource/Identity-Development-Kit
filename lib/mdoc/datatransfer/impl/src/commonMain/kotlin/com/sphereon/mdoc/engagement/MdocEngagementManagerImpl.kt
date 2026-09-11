@@ -592,6 +592,7 @@ class MdocEngagementManagerImpl(
     override suspend fun toApp(
         mdocUri: String,
         autoStart: Boolean,
+        trustedOriginDomain: String?,
     ): IdkResult<EngagementInstance, IdkError> {
         val engagementResult =
             when {
@@ -660,6 +661,7 @@ class MdocEngagementManagerImpl(
                     val readerRestApiOptions = readerEngagement.getWebsiteRetrievalOptions()
 
                     createEngagement {
+                        this.trustedOriginDomain = trustedOriginDomain
                         engagement {
                             reader {
                                 withReaderEngagement(readerEngagement)

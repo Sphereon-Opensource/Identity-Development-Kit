@@ -19,6 +19,7 @@ package com.sphereon.statuslist.spi
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.statuslist.CredentialStatusReference
+import com.sphereon.statuslist.CredentialStatusInput
 import com.sphereon.statuslist.ResolvedStatus
 import kotlinx.serialization.json.JsonObject
 
@@ -40,6 +41,13 @@ interface CredentialStatusVerifier {
      * verifier recognizes. Empty when the credential carries no reference this mechanism understands.
      */
     fun references(credentialClaims: JsonObject): List<CredentialStatusReference>
+
+    /**
+     * Inspect claims together with authenticated credential metadata. The default implementation
+     * preserves existing JWT/VC verifiers; format-specific verifiers may override it to consume
+     * typed metadata without flattening it into claims.
+     */
+    fun references(input: CredentialStatusInput): List<CredentialStatusReference> = references(input.claims)
 
     /** Resolve the live status of one [reference] this verifier produced. */
     suspend fun resolve(reference: CredentialStatusReference): IdkResult<ResolvedStatus, IdkError>

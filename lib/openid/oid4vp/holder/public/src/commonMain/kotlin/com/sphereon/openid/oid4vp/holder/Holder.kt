@@ -51,6 +51,7 @@ interface Oid4vpHolderService {
     suspend fun createAuthorizationResponse(
         request: ResolvedOid4vpRequest,
         selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation> = emptyList(),
     ): IdkResult<AuthorizationResponse, IdkError>
 
     suspend fun submitAuthorizationResponse(
@@ -167,6 +168,7 @@ interface Oid4vpHolder : Oid4vpHolderAdapter {
     override suspend fun createAuthorizationResponse(
         request: ResolvedOid4vpRequest,
         selectedCredentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
     ): IdkResult<AuthorizationResponse, IdkError>
 
     /**

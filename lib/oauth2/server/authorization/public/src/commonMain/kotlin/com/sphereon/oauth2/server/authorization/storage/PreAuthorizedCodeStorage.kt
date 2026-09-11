@@ -37,6 +37,28 @@ interface PreAuthorizedCodeStorage {
     ): IdkResult<Unit, AuthorizationServerError.StorageError>
 
     /**
+     * Look up a pre-authorized code without consuming it.
+     *
+     * The grant verifier uses this read to validate expiry, tx_code, and client binding before
+     * calling [consumePreAuthorizedCodeIfValid]. Implementations MUST make the consume operation
+     * atomic so concurrent valid exchanges still permit only one successful use.
+     */
+    suspend fun findPreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError>
+
+    /**
+     * Atomically consume a code only if it is still [expectedData] and has not expired at [now].
+     *
+     * This compare-and-consume closes the race between validation and single-use consumption:
+     * implementations must compare and remove the current record under one atomic operation.
+     * Returns null when the code was replaced, already consumed, or expired at the commit time.
+     */
+    suspend fun consumePreAuthorizedCodeIfValid(
+        code: String,
+        expectedData: PreAuthorizedCodeData,
+        now: Instant,
+    ): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError>
+
+    /**
      * Atomically consume a pre-authorized code, returning its data.
      *
      * Returns null if the code does not exist or has already been consumed.

@@ -15,6 +15,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration
 
 /**
@@ -43,4 +44,12 @@ data class CredentialAttributeContribution(
     @JsExportIgnoreCompat
     val pendingAsyncCallbackSources: Set<String> = emptySet(),
     val syncWaitWindow: Duration = Duration.ZERO,
+    /** Lossless top-level VCDM properties contributed by the issuance pipeline. */
+    @JsExportIgnoreCompat
+    val vcdmProperties: JsonObject = JsonObject(emptyMap()),
+    /** Optional semantic VCDM credential identifier, independent from protocol identities. */
+    val credentialId: String? = null,
+    /** Ordered complete semantic VCDM credential-subject objects. */
+    @JsExportIgnoreCompat
+    val credentialSubjects: List<JsonObject> = emptyList(),
 )

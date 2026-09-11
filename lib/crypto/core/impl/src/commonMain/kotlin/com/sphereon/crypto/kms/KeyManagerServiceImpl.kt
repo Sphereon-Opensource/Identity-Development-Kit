@@ -44,6 +44,7 @@ import com.sphereon.crypto.core.kms.GetAllCapabilitiesCommand
 import com.sphereon.crypto.core.kms.GetAllCapabilitiesResult
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
 import com.sphereon.crypto.core.kms.KeyResolverRegistry
 import com.sphereon.crypto.core.kms.KeyResolverService
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
@@ -106,8 +107,7 @@ import com.sphereon.crypto.core.kms.command.WrapKeyCommand
 import com.sphereon.crypto.core.kms.command.WrapKeyResult
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
 import com.sphereon.crypto.core.sign.SimpleSignatureService
-import com.sphereon.crypto.core.toKeyReferenceOrNull
-import com.sphereon.crypto.core.toSigningKeyReferenceOrNull
+import com.sphereon.crypto.kms.command.toSigningCommandKeyInfo
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -173,6 +173,17 @@ open class KeyManagerServiceImpl
         // Delegate keyStore to the injected keyStoreService
         override val keyStore: ManagedKeyStoreService
             get() = keyStoreService
+
+        /**
+         * Keep the managed-key authority contract visible through the public KMS facade. The
+         * interface default is intentionally null for provider-only implementations, but this
+         * implementation always has a managed key-store delegate.
+         */
+        override suspend fun findRegisteredKeyReference(
+            aliasOrKid: String,
+            providerId: String?,
+        ): com.sphereon.crypto.core.ManagedKeyReference? =
+            keyStore.findRegisteredKeyReference(aliasOrKid, providerId)
 
         // Implement KeyStoreService methods by delegating to keyStore
         override val settings: com.sphereon.crypto.core.kms.model.KeyProviderSettings?
@@ -334,7 +345,7 @@ open class KeyManagerServiceImpl
             if (command != null && exec != null) {
                 val args =
                     CreateRawSignatureArgs(
-                        keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                        keyInfo = keyInfo.toSigningCommandKeyInfo(),
                         input = input,
                         requireX5Chain = requireX5Chain,
                     )
@@ -342,7 +353,9 @@ open class KeyManagerServiceImpl
                 return result.getOrElse { throw PKIException(it.message.defaultMessage ?: "Signature creation failed") }.signature
             }
             // Fallback to direct provider call when commands not available (e.g., in tests)
-            return getProvider(providerId = keyInfo.providerId, alg = keyInfo.signatureAlgorithm).createRawSignature(keyInfo, input, requireX5Chain)
+            val provider = getProvider(providerId = keyInfo.providerId, alg = keyInfo.signatureAlgorithm)
+            provider.requireManagedSigningKeySelection(keyInfo)
+            return provider.createRawSignature(keyInfo, input, requireX5Chain)
         }
 
         override suspend fun isValidRawSignature(
@@ -386,7 +399,7 @@ open class KeyManagerServiceImpl
             if (command != null && exec != null) {
                 val args =
                     SignDigestArgs(
-                        keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                        keyInfo = keyInfo.toSigningCommandKeyInfo(),
                         digest = digest,
                         signatureAlgorithm = signatureAlgorithm,
                         signatureEncoding = signatureEncoding,
@@ -395,8 +408,9 @@ open class KeyManagerServiceImpl
                 val result = command.execute(args)
                 return result.getOrElse { throw PKIException(it.message.defaultMessage ?: "Digest signature creation failed") }.signature
             }
-            return getProvider(providerId = keyInfo.providerId, alg = signatureAlgorithm)
-                .signDigest(keyInfo, digest, signatureAlgorithm, signatureEncoding, requireX5Chain)
+            val provider = getProvider(providerId = keyInfo.providerId, alg = signatureAlgorithm)
+            provider.requireManagedSigningKeySelection(keyInfo)
+            return provider.signDigest(keyInfo, digest, signatureAlgorithm, signatureEncoding, requireX5Chain)
         }
 
         override suspend fun verifyDigest(
@@ -704,7 +718,7 @@ open class KeyManagerServiceImpl
 
             val args =
                 CreateRawSignatureArgs(
-                    keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                    keyInfo = keyInfo.toSigningCommandKeyInfo(),
                     input = input,
                     requireX5Chain = requireX5Chain,
                 )
@@ -743,7 +757,7 @@ open class KeyManagerServiceImpl
 
             val args =
                 SignDigestArgs(
-                    keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                    keyInfo = keyInfo.toSigningCommandKeyInfo(),
                     digest = digest,
                     signatureAlgorithm = signatureAlgorithm,
                     signatureEncoding = signatureEncoding,
@@ -889,6 +903,7 @@ open class KeyManagerServiceImpl
             keyOperations: Array<out KeyOperations>?,
             alg: SignatureAlgorithm?,
             keyVisibility: KeyVisibility?,
+            walletUnitId: String?,
         ): IdkResult<GenerateKeyResult, IdkError> {
             val command =
                 generateKeyCommand
@@ -905,6 +920,7 @@ open class KeyManagerServiceImpl
                     keyOperations = keyOperations,
                     alg = alg,
                     keyVisibility = keyVisibility,
+                    walletUnitId = walletUnitId,
                 )
             return command.execute(args)
         }

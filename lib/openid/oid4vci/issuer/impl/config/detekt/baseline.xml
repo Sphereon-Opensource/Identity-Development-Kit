@@ -18,7 +18,6 @@
     <ID>ClassOrdering:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$/** * Session correlation context captured during [doExecuteInternal]. Set * only when an [IssuanceSession] was resolved for the request; stays * null for sessionless flows. Read by [dispatchPostIssuanceHooks] to * populate [PostIssuanceHookArgs.boundUsageToken] / `preAuthCode` / * `subject` from the offer-side source of truth without re-resolving. * * Instance state is safe here: the command is session-scoped and a * single HTTP request is processed sequentially within its session. */ private var pendingHookContext: HookContext? = null</ID>
     <ID>CyclomaticComplexMethod:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$private fun buildCredentialConfiguration(configId: String): CredentialConfigurationSupported</ID>
     <ID>CyclomaticComplexMethod:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$private suspend fun doExecuteInternal( args: HandleCredentialRequestArgs, applyDuring: (HandleCredentialRequestArgs) -> HandleCredentialRequestArgs, ): IdkResult&lt;CredentialResponse, IdkError></ID>
-    <ID>CyclomaticComplexMethod:KeyAttestationVerifier.kt$KeyAttestationVerifier$@Suppress("LongMethod", "ReturnCount") suspend fun verify( keyAttestationJwt: String, trustConfig: KeyAttesterTrustConfig?, policy: KeyAttestationsRequired?, expectedNonce: String? = null, clockSkewSeconds: Long = DEFAULT_CLOCK_SKEW_SECONDS, ): IdkResult&lt;ValidatedKeyAttestation, IdkError></ID>
     <ID>CyclomaticComplexMethod:MsoMdocFormatHandler.kt$MsoMdocFormatHandler$@Suppress("UNCHECKED_CAST") override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
     <ID>CyclomaticComplexMethod:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
     <ID>LongMethod:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$private fun buildCredentialConfiguration(configId: String): CredentialConfigurationSupported</ID>
@@ -56,7 +55,6 @@
     <ID>ReturnCount:MsoMdocFormatHandler.kt$MsoMdocFormatHandler.Companion$fun jsonElementToNativeValue(element: JsonElement): Any</ID>
     <ID>ReturnCount:NonceManager.kt$NonceManager$suspend fun consume(nonce: String): IdkResult&lt;NonceEntry?, IdkError></ID>
     <ID>ReturnCount:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$override suspend fun issueCredential( request: CredentialRequest, context: IssuanceContext, ): IdkResult&lt;CredentialEnvelope, IdkError></ID>
-    <ID>ReturnCount:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$private suspend fun resolveX5cHeader( keyAlias: String, certChainPath: String?, ): JsonObject?</ID>
     <ID>ReturnCount:SphereonAsBridge.kt$SphereonAsBridge$override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult&lt;ValidatedTokenContext, IdkError></ID>
     <ID>SpreadOperator:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$( proofTypeKey, *algValues.toTypedArray(), keyAttestationsRequired = proofTypeAttestations[proofTypeKey], )</ID>
     <ID>SpreadOperator:ConfigDrivenOid4vciIssuerConfigProvider.kt$ConfigDrivenOid4vciIssuerConfigProvider$(*credentialDefinitionTypes.toTypedArray())</ID>
@@ -69,7 +67,6 @@
     <ID>TooGenericExceptionCaught:JwtProofVerifier.kt$JwtProofVerifier$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:KeyAttestationVerifier.kt$KeyAttestationVerifier$t: Throwable</ID>
     <ID>UnusedParameter:JwtProofVerifier.kt$JwtProofVerifier$jwkIfPresent: JsonElement?</ID>
-    <ID>UnusedParameter:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$certChainPath: String?</ID>
     <ID>UnusedPrivateProperty:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$private val encryptor: CredentialResponseEncryptor</ID>
     <ID>UnusedPrivateProperty:HandleCredentialRequestCommandImpl.kt$HandleCredentialRequestCommandImpl$private val nonceManager: NonceManager</ID>
     <ID>UnusedPrivateProperty:SdJwtVcFormatHandler.kt$SdJwtVcFormatHandler$private val didProviderRegistry: DidProviderRegistry</ID>

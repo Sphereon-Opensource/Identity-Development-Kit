@@ -24,7 +24,7 @@ import com.sphereon.oauth2.server.authorization.command.AuthorizationResponseDat
 /*
  * Orchestration ServiceCommand contracts behind the browser-facing `/authorize` and
  * `/authorize/callback` flow. Args carry no caller-identity fields: tenant is read from
- * `SessionExecution.sessionContext.context.tenant.tenantId` inside each impl. Errors stay as
+ * `SessionExecution.tenantId` inside each impl. Errors stay as
  * `IdkError` to match the surrounding parse/verify/create-code/create-response chain; the lifted
  * code already speaks `IdkError`, so converting to a domain error here would be a refactor, not a
  * verbatim lift.
@@ -79,12 +79,13 @@ interface HandleAuthorizeRequestCommand : ServiceCommand<HandleAuthorizeRequestA
 // ============================================================================
 
 /**
- * Args carry only the session id from the `/authorize/callback` query string; the impl reads
- * the pending session, removes it (single-use), pulls the authenticated user + claims, and runs
- * code issuance + response assembly.
+ * Args carry the pending authorization session id and, when authentication used a separately
+ * keyed provider session, that authentication session id. The impl removes the pending session
+ * (single-use), pulls the authenticated user + claims, and runs code issuance + response assembly.
  */
 data class HandleAuthorizeCallbackArgs(
     val sessionId: String,
+    val authenticationSessionId: String? = null,
     /**
      * Per-request base URL the HTTP shell resolved from `Host` + `X-Forwarded-Proto`. Threaded
      * to the response-shaping path so JARM JWT minting can populate the `iss` claim when the

@@ -57,6 +57,12 @@ kotlin {
                 api(projects.libCryptoCore)
                 api(projects.libCryptoCorePublic)
 
+                // VCDM Data Integrity facade and identifier-neutral
+                // verification-method resolution used by the common-platform
+                // verification adapter. Concrete identifier resolvers are
+                // supplied by the deployment graph.
+                api(projects.libCryptoDataIntegrityProofPublic)
+
                 // DID manager (for did:jwk kid resolution in JAR signing)
                 api(projects.libDidManagerPublic)
                 api(projects.libDidCorePublic)
@@ -83,7 +89,7 @@ kotlin {
                 implementation(projects.libStatuslistPublic)
 
                 // JSON-LD context + schema validation for VCDM 2.0
-                // (vc+ld+json+jwt) presentations. Mirrors the wiring on the
+                // (jwt_vc_json-ld) presentations. Mirrors the wiring on the
                 // issuer side in lib-openid-oid4vci-issuer-impl.
                 api(projects.libJsonldPublic)
                 implementation(projects.libJsonldLoader)
@@ -120,6 +126,13 @@ kotlin {
                 implementation(projects.libCoreTest)
                 implementation(projects.libCoreApiDefault)
                 implementation(projects.libCoreEventsImpl)
+                // The verifier implementation consumes the VCDM port only. Concrete VCDM and
+                // Data Integrity implementations belong to the final test/app graph.
+                implementation(project(":lib-openid-oid4vp-verifier-vcdm-impl"))
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
                 // KvDcqlQueryConfigurationStore binding for the verifier test app graph
                 implementation(projects.libOpenidOid4vpDcqlStoreImpl)
                 implementation(projects.libDataLinkHttpClientImpl)
@@ -145,10 +158,19 @@ kotlin {
             }
         }
         val jvmTest by getting {
+            // Keep the canonical W3C vectors in oid4vc/common/public; expose that one
+            // resource tree to this production-verifier test source set without duplicating
+            // fixtures into the verifier module.
+            resources.srcDir(rootProject.file("lib/openid/oid4vc/common/public/src/jvmTest/resources"))
             dependencies {
                 implementation(projects.libCoreTest)
                 implementation(projects.libCoreApiDefault)
                 implementation(projects.libCoreEventsImpl)
+                implementation(project(":lib-openid-oid4vp-verifier-vcdm-impl"))
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
                 implementation(projects.libOpenidOid4vpDcqlStoreImpl)
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoCoreImpl)

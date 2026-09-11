@@ -19,6 +19,7 @@ package com.sphereon.oauth2.client.command
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.oauth2.client.token.OAuth2TokenEndpointTransportContext
 import com.sphereon.oauth2.common.model.TokenRequest
 import com.sphereon.oauth2.common.model.TokenResponse
 
@@ -29,9 +30,11 @@ import com.sphereon.oauth2.common.model.TokenResponse
  * @property request The token request with grant-specific parameters
  */
 @JsExportCompat
+@Suppress("NON_EXPORTABLE_TYPE")
 data class ExchangeTokenArgs(
     val tokenEndpoint: String,
     val request: TokenRequest,
+    val transportContext: OAuth2TokenEndpointTransportContext? = null,
 )
 
 /**
@@ -56,3 +59,5 @@ interface ExchangeTokenCommand : ServiceCommand<ExchangeTokenArgs, TokenResponse
         const val COMMAND_ID = "oauth2.token.exchange"
     }
 }
+
+

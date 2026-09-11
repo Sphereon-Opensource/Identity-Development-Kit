@@ -66,7 +66,7 @@ object DefaultPaletteMapping {
             // Accent — interactive brand accent (mirrors primary)
             "color.accent" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_500),
             // Secondary
-            "color.secondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_500),
+            "color.secondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_600),
             "color.onSecondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_50),
             "color.secondaryContainer" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_100),
             "color.onSecondaryContainer" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_900),
@@ -138,7 +138,7 @@ object DefaultPaletteMapping {
             "color.accent" to PaletteRef(ROLE_BRAND, stop = PaletteScale.STOP_400),
             // Secondary
             "color.secondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_300),
-            "color.onSecondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_50),
+            "color.onSecondary" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_900),
             "color.secondaryContainer" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_700),
             "color.onSecondaryContainer" to PaletteRef(ROLE_SECONDARY, stop = PaletteScale.STOP_100),
             // Tertiary — mapped from brand with offset stops

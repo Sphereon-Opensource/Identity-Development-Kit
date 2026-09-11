@@ -21,6 +21,7 @@ import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialSetQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
@@ -83,7 +84,7 @@ class VerifiedDataBuilderTest {
                             listOf(
                                 MatchedCredential(
                                     credentialQueryId = "passport",
-                                    format = "dc+sd-jwt",
+                                    credentialFormat = CredentialFormat.SD_JWT_VC,
                                     presentation = "eyJhbGciOiJFUzI1NiJ9.payload.signature",
                                     issuer =
                                         CredentialIssuerRef(
@@ -124,5 +125,29 @@ class VerifiedDataBuilderTest {
         assertNotNull(authorizationResponse["vp_token"])
 
         assertEquals(null, authorizationResponse["dcql_response"])
+        // A valid historical result does not fabricate the newly required provenance.
+        assertEquals(null, verifiedData.credentialClaims?.single()?.verificationEvidence)
+        val evidence = com.sphereon.openid.oid4vp.verifier.VerifiedCredentialEvidence(
+            presentationSha256 = "server-digest",
+            verifiedAtEpochMillis = 2L,
+            trust = CredentialTrustValidation(enabled = true, trusted = false,
+                mode = CredentialTrustValidationMode.AUDIT, details = "private-diagnostic",
+                diagnostics = listOf("private-address")),
+            status = com.sphereon.openid.oid4vp.verifier.VerifiedCredentialStatus(
+                com.sphereon.openid.oid4vp.verifier.VerifiedCredentialStatusOutcome.SKIPPED,
+                required = false, rejectOnUnresolvable = true),
+        )
+        val original = session.validationResult!!.matchedCredentials.single()
+        val withEvidence = session.copy(validationResult = ValidationResult(true, listOf(original.copy(
+            verificationEvidence = evidence,
+            disclosedClaims = mapOf("verificationEvidence" to "forged", "verifiedAtEpochMillis" to 999L),
+        ))))
+        val exposed = assertNotNull(buildVerifiedData(withEvidence)?.credentialClaims?.single()?.verificationEvidence)
+        assertEquals("server-digest", exposed.presentationSha256)
+        assertEquals(2L, exposed.verifiedAtEpochMillis)
+        assertEquals(CredentialTrustValidationMode.AUDIT, exposed.trust?.mode)
+        assertEquals(false, exposed.trust?.trusted)
+        assertEquals(null, exposed.trust?.details)
+        assertEquals(emptyList(), exposed.trust?.diagnostics)
     }
 }

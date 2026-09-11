@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class TokenParsingTest {
     @Test
@@ -78,5 +81,84 @@ class TokenParsingTest {
     @Test
     fun parseDpInvalidReturnsFallback() {
         assertEquals(8.dp, parseDp("abc", 8.dp))
+    }
+
+    @Test
+    fun parseBrushReadsAVerticalGradient() {
+        assertNotNull(parseBrush("linear-gradient(180deg, #854EE9 0%, #4F16B7 100%)"))
+    }
+
+    @Test
+    fun parseBrushReadsTheOtherAxisAlignedDirections() {
+        assertNotNull(parseBrush("linear-gradient(90deg, #854EE9 0%, #4F16B7 100%)"))
+        assertNotNull(parseBrush("linear-gradient(to top, #854EE9, #4F16B7)"))
+        assertNotNull(parseBrush("linear-gradient(to left, #854EE9, #4F16B7)"))
+    }
+
+    @Test
+    fun parseBrushDefaultsToTopToBottomWhenNoAngleIsGiven() {
+        assertNotNull(parseBrush("linear-gradient(#854EE9, #4F16B7)"))
+    }
+
+    @Test
+    fun parseBrushRejectsWhatItCannotRenderFaithfully() {
+        // A non axis-aligned angle cannot be expressed without the drawn size, so it is refused
+        // rather than rendered at the wrong angle.
+        assertNull(parseBrush("linear-gradient(37deg, #854EE9 0%, #4F16B7 100%)"))
+        // Stops that are not plain colours, and gradient kinds with no Brush equivalent here.
+        assertNull(parseBrush("linear-gradient(180deg, color-mix(in srgb, #854EE9 50%, #000) 0%, #4F16B7 100%)"))
+        assertNull(parseBrush("radial-gradient(1200px 600px at 100% -10%, #854EE9, transparent 60%)"))
+        assertNull(parseBrush("#854EE9"))
+        assertNull(parseBrush("linear-gradient(180deg, #854EE9 0%)"))
+    }
+
+    @Test
+    fun tokenFillPrefersTheBrushAndFallsBackToAFlatColor() {
+        val gradient = tokenFill("linear-gradient(180deg, #854EE9 0%, #4F16B7 100%)", Color.Red)
+        assertNotNull(gradient.brush)
+        assertEquals(Color.Transparent, gradient.containerColor)
+
+        val flat = tokenFill("#854EE9", Color.Red)
+        assertNull(flat.brush)
+        assertEquals(parseColor("#854EE9"), flat.containerColor)
+
+        val unreadable = tokenFill("not-a-color", Color.Red)
+        assertNull(unreadable.brush)
+        assertEquals(Color.Red, unreadable.containerColor)
+    }
+
+    @Test
+    fun anUnrenderableGradientWarnsOnceThroughTheInjectedSink() {
+        val seen = mutableListOf<String>()
+        TokenDiagnostics.resetWarnings()
+        TokenDiagnostics.setWarningSink { message -> seen += message }
+        try {
+            val unsupported = "linear-gradient(37deg, #854EE9 0%, #4F16B7 100%)"
+            tokenFill(unsupported, Color.Red)
+            tokenFill(unsupported, Color.Red)
+            tokenFill(unsupported, Color.Red)
+            assertEquals(1, seen.size, "A gradient the renderer cannot honour should warn once per value, not per call")
+            assertTrue(seen.single().contains("37deg"), "The warning should name the value that could not be rendered")
+
+            // A plain colour failing to parse as a gradient is the normal case, not a problem.
+            tokenFill("#854EE9", Color.Red)
+            tokenFill("transparent", Color.Red)
+            assertEquals(1, seen.size, "Flat colour values must not warn")
+
+            // A second, different unsupported value is its own warning.
+            tokenFill("radial-gradient(1200px 600px at 100% -10%, #854EE9, transparent 60%)", Color.Red)
+            assertEquals(2, seen.size)
+        } finally {
+            TokenDiagnostics.setWarningSink(null)
+            TokenDiagnostics.resetWarnings()
+        }
+    }
+
+    @Test
+    fun nothingIsEmittedWhenNoSinkIsInstalled() {
+        TokenDiagnostics.resetWarnings()
+        TokenDiagnostics.setWarningSink(null)
+        // The library must never print on its own; with no sink this is simply silent.
+        assertNull(tokenFill("linear-gradient(37deg, #854EE9 0%, #4F16B7 100%)", Color.Red).brush)
     }
 }

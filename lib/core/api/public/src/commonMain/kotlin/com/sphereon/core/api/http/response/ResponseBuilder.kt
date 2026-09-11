@@ -19,6 +19,7 @@ package com.sphereon.core.api.http.response
 import com.sphereon.core.api.http.GenericHttpBody
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.pagination.Page
+import com.sphereon.core.api.pagination.toPageMeta
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -175,6 +176,7 @@ object ResponseBuilder {
      * derived from [Page].
      */
     inline fun <reified T> paginated(page: Page<T>): GenericHttpResponse {
+        val pageMeta = page.toPageMeta()
         val body =
             buildJsonObject {
                 putJsonArray("data") {
@@ -183,13 +185,13 @@ object ResponseBuilder {
                     }
                 }
                 putJsonObject("pagination") {
-                    put("limit", page.limit)
-                    put("offset", page.offset)
-                    put("page", page.pageNumber)
-                    put("size", page.limit)
-                    put("total", page.totalCount)
-                    put("totalPages", page.totalPages)
-                    put("hasMore", page.hasMore)
+                    put("limit", pageMeta.limit)
+                    put("offset", pageMeta.offset)
+                    put("page", pageMeta.page)
+                    put("size", pageMeta.size)
+                    put("total", pageMeta.total)
+                    put("totalPages", pageMeta.totalPages)
+                    put("hasMore", pageMeta.hasMore)
                 }
             }
         return ok(json.encodeToString(body))

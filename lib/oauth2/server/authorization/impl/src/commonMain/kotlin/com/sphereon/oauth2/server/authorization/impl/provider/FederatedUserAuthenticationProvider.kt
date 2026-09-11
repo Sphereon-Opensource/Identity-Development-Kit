@@ -21,7 +21,7 @@ import com.sphereon.oauth2.server.authorization.command.federation.GetAuthentica
 import com.sphereon.oauth2.server.authorization.command.federation.GetUserInfoCommand
 import com.sphereon.oauth2.server.authorization.command.federation.HandleFederationCallbackCommand
 import com.sphereon.oauth2.server.authorization.command.federation.InitiateProviderAuthenticationCommand
-import com.sphereon.oauth2.server.authorization.provider.FederationProviderRegistry
+import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.storage.FederationSessionStore
 import dev.zacsweers.metro.ContributesIntoMap
@@ -65,14 +65,14 @@ fun interface ReconciliationCallbackHandler {
 @ContributesIntoMap(SessionScope::class, binding = binding<UserAuthenticationProvider>())
 @StringKey("federated")
 class FederatedUserAuthenticationProvider(
-    providerRegistry: FederationProviderRegistry,
+    providerResolver: FederationProviderRuntimeResolver,
     sessionStore: FederationSessionStore,
     initiateProviderAuthenticationCommand: InitiateProviderAuthenticationCommand,
     handleFederationCallbackCommand: HandleFederationCallbackCommand,
     getAuthenticatedUserCommand: GetAuthenticatedUserCommand,
     getUserInfoCommand: GetUserInfoCommand,
 ) : AbstractFederatedUserAuthenticationProvider(
-        providerRegistry = providerRegistry,
+        providerResolver = providerResolver,
         sessionStore = sessionStore,
         initiateProviderAuthenticationCommand = initiateProviderAuthenticationCommand,
         handleFederationCallbackCommand = handleFederationCallbackCommand,

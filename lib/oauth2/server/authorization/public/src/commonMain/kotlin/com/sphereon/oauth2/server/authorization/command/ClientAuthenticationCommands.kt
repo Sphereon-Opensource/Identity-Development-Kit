@@ -55,6 +55,7 @@ data class VerifiedClientAuthorization(
     val allowedScopes: List<String>? = null,
     val defaultAccessTokenAudience: String? = null,
     val allowedAccessTokenAudiences: Set<String> = emptySet(),
+    val principalRoles: List<String> = emptyList(),
     val requirePkce: Boolean = false,
     val tlsClientCertificateBoundAccessTokens: Boolean = false,
     val tenantId: String? = null,

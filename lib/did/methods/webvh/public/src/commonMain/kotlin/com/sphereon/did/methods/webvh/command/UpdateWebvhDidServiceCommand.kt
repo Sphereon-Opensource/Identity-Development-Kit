@@ -49,6 +49,7 @@ interface UpdateWebvhDidServiceCommand :
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "updateWebvhDid",
                 tags = setOf("did:webvh"),
                 summary = "Append an update entry to a did:webvh log",

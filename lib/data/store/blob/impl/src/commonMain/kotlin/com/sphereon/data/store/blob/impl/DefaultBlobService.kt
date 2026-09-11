@@ -185,12 +185,7 @@ class DefaultBlobService(
             info.path ?: kotlin.uuid.Uuid
                 .random()
                 .toString()
-        val scopedPath =
-            if (logicalPath == tenantId || logicalPath.startsWith("$tenantId/")) {
-                logicalPath
-            } else {
-                "$tenantId/$logicalPath"
-            }
+        val scopedPath = BlobTenantScope.scopePath(logicalPath, tenantId)
         return info.copy(path = scopedPath, storeId = info.storeId ?: configuredStoreId)
     }
 
@@ -219,13 +214,7 @@ class DefaultBlobService(
         tenantId: String,
         configuredStoreId: String,
     ): BlobDescriptor {
-        val prefix = "$tenantId/"
-        val unscopedPath =
-            if (descriptor.path.startsWith(prefix)) {
-                descriptor.path.removePrefix(prefix)
-            } else {
-                descriptor.path
-            }
+        val unscopedPath = BlobTenantScope.unscopePath(descriptor.path, tenantId)
         return descriptor.copy(path = unscopedPath, storeId = configuredStoreId)
     }
 
@@ -240,9 +229,8 @@ class DefaultBlobService(
         tenantId: String,
         configuredStoreId: String,
     ): ResolvedBlobInfo {
-        val prefix = "$tenantId/"
         val unscopedInfoPath =
-            resolved.info.path?.let { if (it.startsWith(prefix)) it.removePrefix(prefix) else it }
+            resolved.info.path?.let { BlobTenantScope.unscopePath(it, tenantId) }
         return resolved.copy(
             info = resolved.info.copy(path = unscopedInfoPath, storeId = configuredStoreId),
             descriptor = unscopeForCaller(resolved.descriptor, tenantId, configuredStoreId),
@@ -562,7 +550,7 @@ class DefaultBlobService(
         val tenantId = info.tenantId ?: "default"
         val configuredStoreId = resolveStoreId(info.storeId)
         val store = resolveStore(info.storeId)
-        val scopedOptions = options.copy(prefix = "$tenantId/${options.prefix ?: ""}")
+        val scopedOptions = options.copy(prefix = BlobTenantScope.scopePrefix(options.prefix, tenantId))
         val scopedInfo = tenantScopedInfo(info, tenantId, configuredStoreId)
         val listResult = store.list(scopedInfo, scopedOptions)
         if (listResult.isErr) {
@@ -572,6 +560,10 @@ class DefaultBlobService(
         return Ok(
             result.copy(
                 descriptors = result.descriptors.map { unscopeForCaller(it, tenantId, configuredStoreId) },
+                // commonPrefixes carry the same tenant scope as descriptor paths; unscope them too
+                // so the caller never sees the internal "<tenantId>/..." layout (a later getBlob on a
+                // returned prefix would otherwise re-scope into "<tenantId>/<tenantId>/...").
+                commonPrefixes = result.commonPrefixes.map { BlobTenantScope.unscopePath(it, tenantId) },
             ),
         )
     }
@@ -734,7 +726,7 @@ class DefaultBlobService(
         query: MetadataSearchQuery,
     ): IdkResult<List<BlobDescriptor>, IdkError> {
         val tenantId = info.tenantId ?: "default"
-        val scopedQuery = query.copy(pathPrefix = "$tenantId/${query.pathPrefix ?: ""}")
+        val scopedQuery = query.copy(pathPrefix = BlobTenantScope.scopePrefix(query.pathPrefix, tenantId))
         val searchResult = metadataIndex.search(scopedQuery)
         if (searchResult.isErr) return searchResult
         // Hand back caller-facing descriptors: strip the tenant prefix from the path so a later

@@ -63,6 +63,7 @@ class AttestationProofVerifier(
         expectedAudience: String,
         expectedClientId: String?,
         credentialConfigId: String,
+        walletProviderTrustArgs: com.sphereon.openid.oid4vci.issuer.config.ResolveWalletProviderTrustArgs?,
         proofTypeSupported: ProofTypeSupported?,
         expectedNonce: String?,
         consumeNonce: Boolean,
@@ -76,15 +77,23 @@ class AttestationProofVerifier(
                     ),
                 )
 
-        val trustConfig = issuerConfigProvider.keyAttesterTrustFor(credentialConfigId, supportedProofType)
+        val trustArgs =
+            walletProviderTrustArgs
+                ?: return Err(
+                    IdkError.fromString(
+                        code = Oid4vciErrors.INVALID_PROOF,
+                        message = "Attestation proof requires persisted issuer, issuance-template, and credential-configuration identities",
+                    ),
+                )
+        val walletProviderTrust = issuerConfigProvider.walletProviderTrustFor(trustArgs).getOrElse { return Err(it) }
         val policy = proofTypeSupported?.keyAttestationsRequired
-        val requireWalletUnitEvidence = trustConfig?.requireWalletUnitEvidence == true
+        val requireWalletUnitEvidence = walletProviderTrust.requireWalletUnitEvidence
 
         val validated =
             keyAttestationVerifier
                 .verify(
                     keyAttestationJwt = attestationJwt,
-                    trustConfig = trustConfig,
+                    walletProviderTrust = walletProviderTrust,
                     policy = policy,
                 ).getOrElse { return Err(it) }
 

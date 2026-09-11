@@ -137,6 +137,73 @@ class UserContextManagerTest {
     }
 
     @Test
+    fun classifiedPrincipalInputIsHonouredByCreateOrGetFromInputs() {
+        val appGraph = createAppGraph()
+        try {
+            val manager = appGraph.userContextManager
+            val tenantInput = DefaultTenantInputString("classified-tenant")
+
+            val instance =
+                manager.createOrGetFromInputs(
+                    tenantInput = tenantInput,
+                    principalInput =
+                        WorkloadPrincipalInput("system:dispatcher:classified-tenant"),
+                    makeActive = false,
+                )
+
+            assertEquals(PrincipalType.WORKLOAD, instance.context.principalType)
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    @Test
+    fun internalDispatchAndTransportAgreeOnTheSameSystemPrincipal() {
+        // The production sequence that produced "Principal classification mismatch for
+        // existing context": an internal dispatcher runs a command under its own system
+        // principal, then the very same identity calls back in over the transport, where
+        // the token it minted classifies as WORKLOAD. Both key `tenant:principal`.
+        val appGraph = createAppGraph()
+        try {
+            val manager = appGraph.userContextManager
+            val principalId = "system:dispatcher:agreement-tenant"
+
+            manager.createOrGetFromInputs(
+                tenantInput = DefaultTenantInputString("agreement-tenant"),
+                principalInput = WorkloadPrincipalInput(principalId),
+                makeActive = false,
+            )
+
+            val fromTransport =
+                manager.createOrGet(
+                    tenantAware =
+                        object : com.sphereon.di.context.TenantAware {
+                            override val tenant =
+                                object : com.sphereon.di.context.TenantContextData {
+                                    override val tenantId = "agreement-tenant"
+                                }
+                        },
+                    principalAware =
+                        object : com.sphereon.di.context.PrincipalAware {
+                            override val principal = principalId
+                        },
+                    principalType = PrincipalType.WORKLOAD,
+                    makeActive = false,
+                )
+
+            assertEquals(PrincipalType.WORKLOAD, fromTransport.context.principalType)
+        } finally {
+            appGraph.destroy()
+        }
+    }
+
+    private data class WorkloadPrincipalInput(
+        override val principal: String,
+    ) : com.sphereon.di.context.ClassifiedPrincipalInput {
+        override val principalType = PrincipalType.WORKLOAD
+    }
+
+    @Test
     fun authoritativeContextDataPreservesItsRequiredPrincipalType() {
         val appGraph = createAppGraph()
         try {

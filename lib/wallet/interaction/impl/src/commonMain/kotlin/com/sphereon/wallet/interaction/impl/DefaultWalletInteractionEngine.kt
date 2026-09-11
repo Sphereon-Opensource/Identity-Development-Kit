@@ -7,15 +7,17 @@
 package com.sphereon.wallet.interaction.impl
 
 import com.sphereon.wallet.interaction.WalletCounterpartyTrustResolver
+import com.sphereon.wallet.interaction.WalletIssuerAuthenticationResolver
 import com.sphereon.wallet.interaction.WalletDisplayMessage
 import com.sphereon.wallet.interaction.WalletEntryPoint
+import com.sphereon.wallet.interaction.WalletFailureDisposition
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActionType
 import com.sphereon.wallet.interaction.WalletInteractionActivityProjection
 import com.sphereon.wallet.interaction.WalletInteractionClient
 import com.sphereon.wallet.interaction.WalletInteractionContext
 import com.sphereon.wallet.interaction.WalletInteractionEngine
-import com.sphereon.wallet.interaction.WalletInteractionError
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
 import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
@@ -30,6 +32,7 @@ import com.sphereon.wallet.interaction.WalletProtocolExecutor
 import com.sphereon.wallet.interaction.WalletProtocolMatchStrength
 import com.sphereon.wallet.interaction.WalletSecurityGate
 import com.sphereon.wallet.interaction.WalletTrustPolicy
+import com.sphereon.wallet.interaction.classifiedWalletInteractionError
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +52,7 @@ class DefaultWalletInteractionEngine(
     private val counterpartyEncounterRegistry: com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry =
         com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry.none,
     private val trustResolver: WalletCounterpartyTrustResolver = WalletCounterpartyTrustResolver.unresolved,
+    private val issuerAuthenticationResolver: WalletIssuerAuthenticationResolver = WalletIssuerAuthenticationResolver.none,
     private val trustPolicy: WalletTrustPolicy = WalletTrustPolicy.warn,
     private val securityGate: WalletSecurityGate = WalletSecurityGate.deny,
     private val sensitiveInputAuthority: com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority,
@@ -114,8 +118,32 @@ class DefaultWalletInteractionEngine(
         return WalletInteractionSession(sessionId, updated)
     }
 
-    override suspend fun resume(sessionId: WalletInteractionSessionId): WalletInteractionSession {
+    override suspend fun load(sessionId: WalletInteractionSessionId): WalletInteractionSession {
         val record = requireRecord(sessionId)
+        return WalletInteractionSession(sessionId, record.state.value)
+    }
+
+    override suspend fun resume(sessionId: WalletInteractionSessionId): WalletInteractionSession {
+        val loaded = load(sessionId)
+        val state = loaded.state
+        if (state.status != WalletInteractionStatus.Failed) {
+            return loaded
+        }
+        if (state.error?.disposition != WalletFailureDisposition.RESUMABLE) {
+            throw IllegalStateException("wallet_interaction_resume_not_allowed")
+        }
+        val waiting =
+            lastWaitingState(sessionId)
+                ?: throw IllegalStateException("wallet_interaction_resume_not_allowed")
+        val record = requireRecord(sessionId)
+        update(
+            record,
+            waiting.copy(
+                revision = state.revision + 1,
+                error = null,
+                terminal = false,
+            ),
+        )
         return WalletInteractionSession(sessionId, record.state.value)
     }
 
@@ -143,8 +171,8 @@ class DefaultWalletInteractionEngine(
                             status = WalletInteractionStatus.Failed,
                             terminal = true,
                             error =
-                                WalletInteractionError(
-                                    code = "wallet_interaction.no_adapter",
+                                classifiedWalletInteractionError(
+                                    code = WalletInteractionFailureCodes.NO_ADAPTER,
                                     messageKey = "wallet.interaction.error.no_adapter",
                                 ),
                         )
@@ -188,10 +216,9 @@ class DefaultWalletInteractionEngine(
             return record.state.value.next(
                 status = WalletInteractionStatus.ImplementationChoiceRequired,
                 error =
-                    WalletInteractionError(
-                        code = "wallet_interaction.unknown_adapter",
+                    classifiedWalletInteractionError(
+                        code = WalletInteractionFailureCodes.UNKNOWN_ADAPTER,
                         messageKey = "wallet.interaction.error.unknown_adapter",
-                        retryable = true,
                         arguments = mapOf("adapterId" to adapterId.orEmpty()),
                     ),
             )
@@ -212,6 +239,7 @@ class DefaultWalletInteractionEngine(
             protocolExecutor = protocolExecutor.withExecutionOwner(input.executionOwner),
             counterpartyEncounterRegistry = counterpartyEncounterRegistry,
             trustResolver = trustResolver,
+            issuerAuthenticationResolver = issuerAuthenticationResolver,
             trustPolicy = trustPolicy,
             securityGate = securityGate,
             privateSessionStore = privateSessionStore,
@@ -220,11 +248,21 @@ class DefaultWalletInteractionEngine(
         )
 
     private suspend fun cleanupPrivateSessionIfTerminal(state: WalletInteractionState) {
-        if (state.terminal && state.completionHandoffRef == null) {
+        if (state.terminal &&
+            state.completionHandoffRef == null &&
+            state.error?.disposition != WalletFailureDisposition.RESUMABLE
+        ) {
             sensitiveInputAuthority.clear(state.sessionId)
             privateSessionStore.removeSession(state.sessionId)
         }
     }
+
+    private suspend fun lastWaitingState(sessionId: WalletInteractionSessionId): WalletInteractionState? =
+        sessionStore
+            .events(sessionId)
+            .asReversed()
+            .map { event -> event.state }
+            .firstOrNull { waiting -> waiting.status.isWaitingForResume() }
 
     private suspend fun update(
         record: SessionRecord,
@@ -406,3 +444,14 @@ private val WalletProtocolMatchStrength.rank: Int
             WalletProtocolMatchStrength.WEAK -> 1
             WalletProtocolMatchStrength.STRONG -> 2
         }
+
+private fun WalletInteractionStatus.isWaitingForResume(): Boolean =
+    when (this) {
+        WalletInteractionStatus.Failed,
+        WalletInteractionStatus.Cancelled,
+        WalletInteractionStatus.Completed,
+        WalletInteractionStatus.UnsupportedEntryPoint,
+        WalletInteractionStatus.ResolvingEntryPoint,
+        -> false
+        else -> true
+    }

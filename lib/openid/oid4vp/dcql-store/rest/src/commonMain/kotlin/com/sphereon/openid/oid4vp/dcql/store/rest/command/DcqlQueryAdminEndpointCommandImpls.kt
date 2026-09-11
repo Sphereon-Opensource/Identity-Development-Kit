@@ -25,6 +25,7 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpJson
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.dcql.store.command.CreateDcqlQueryArgs
@@ -47,6 +48,8 @@ import com.sphereon.openid.oid4vp.dcql.store.http.model.UpdateDcqlQueryRequest
 import com.sphereon.openid.oid4vp.dcql.store.model.DcqlQueryConfiguration
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.builtins.ListSerializer
@@ -82,7 +85,8 @@ private fun parseBody(
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ListDcqlQueriesEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListDcqlQueriesEndpointCommand.COMMAND_ID)
 class ListDcqlQueriesEndpointCommandImpl(
     execution: SessionExecution,
     private val listCommand: ListDcqlQueriesServiceCommand,
@@ -112,7 +116,8 @@ class ListDcqlQueriesEndpointCommandImpl(
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<CreateDcqlQueryEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(CreateDcqlQueryEndpointCommand.COMMAND_ID)
 class CreateDcqlQueryEndpointCommandImpl(
     execution: SessionExecution,
     private val createCommand: CreateDcqlQueryServiceCommand,
@@ -152,7 +157,8 @@ class CreateDcqlQueryEndpointCommandImpl(
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetDcqlQueryEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetDcqlQueryEndpointCommand.COMMAND_ID)
 class GetDcqlQueryEndpointCommandImpl(
     execution: SessionExecution,
     private val getCommand: GetDcqlQueryServiceCommand,
@@ -221,7 +227,8 @@ private suspend fun runUpdate(
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ReplaceDcqlQueryEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ReplaceDcqlQueryEndpointCommand.COMMAND_ID)
 class ReplaceDcqlQueryEndpointCommandImpl(
     execution: SessionExecution,
     private val updateCommand: UpdateDcqlQueryServiceCommand,
@@ -242,7 +249,8 @@ class ReplaceDcqlQueryEndpointCommandImpl(
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<PatchDcqlQueryEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(PatchDcqlQueryEndpointCommand.COMMAND_ID)
 class PatchDcqlQueryEndpointCommandImpl(
     execution: SessionExecution,
     private val updateCommand: UpdateDcqlQueryServiceCommand,
@@ -263,7 +271,8 @@ class PatchDcqlQueryEndpointCommandImpl(
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<DeleteDcqlQueryEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(DeleteDcqlQueryEndpointCommand.COMMAND_ID)
 class DeleteDcqlQueryEndpointCommandImpl(
     execution: SessionExecution,
     private val deleteCommand: DeleteDcqlQueryServiceCommand,

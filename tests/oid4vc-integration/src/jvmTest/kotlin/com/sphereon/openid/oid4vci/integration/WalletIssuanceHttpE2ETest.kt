@@ -19,8 +19,9 @@ package com.sphereon.openid.oid4vci.integration
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
-import com.sphereon.core.api.http.describe.HttpAdapterDescription
-import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelector
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
@@ -60,12 +61,12 @@ import kotlin.test.assertTrue
 /**
  * Graph interface to access HTTP adapters from the session graph.
  *
- * HTTP adapters are contributed via @ContributesIntoSet(SessionScope::class) as Set<HttpAdapter>.
- * We cast to this interface to pull them out for direct invocation.
+ * HTTP adapters are contributed as a keyed lazy map. Tests inspect keys without materializing
+ * unrelated adapters and execute requests through the production selector/dispatcher contract.
  */
 @ContributesTo(SessionScope::class)
 interface HttpAdapterTestGraph {
-    val httpAdapters: Set<HttpAdapter>
+    val httpAdapters: Map<String, Lazy<HttpAdapter>>
 }
 
 /**
@@ -103,25 +104,42 @@ class WalletIssuanceHttpE2ETest {
 
     private val issuerHost = "issuer.example.com"
     private val issuerUrl = "https://$issuerHost"
+    private val routeSelector = (ctx.app as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
+    private val dispatcher = (ctx.session.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
+
+    private suspend fun dispatch(request: GenericHttpRequest): GenericHttpResponse {
+        val selection = routeSelector.select(request.method, request.path)
+        val route = (selection as? HttpAdapterRouteSelection.Selected)?.match
+            ?: return when (selection) {
+                is HttpAdapterRouteSelection.NotFound -> GenericHttpResponse(404, emptyMap(), "Not found")
+                is HttpAdapterRouteSelection.Ambiguous -> GenericHttpResponse(500, emptyMap(), "Ambiguous route")
+                is HttpAdapterRouteSelection.Misconfigured -> GenericHttpResponse(500, emptyMap(), selection.message)
+                is HttpAdapterRouteSelection.Selected -> error("unreachable")
+            }
+        return dispatcher.dispatch(request, route)
+    }
+
+    private fun adapters(): List<HttpAdapter> =
+        (ctx.session.graph as HttpAdapterTestGraph).httpAdapters.values.map { it.value }
 
     // =========================================================================
     // Helper: extract adapters from DI graph
     // =========================================================================
 
     private fun issuerAdapter(): Oid4vciIssuerProtocolHttpAdapter {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
+        val adapters = adapters()
         return adapters.filterIsInstance<Oid4vciIssuerProtocolHttpAdapter>().firstOrNull()
             ?: error("Oid4vciIssuerProtocolHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
     }
 
     private fun metadataAdapter(): Oid4vciIssuerMetadataHttpAdapter {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
+        val adapters = adapters()
         return adapters.filterIsInstance<Oid4vciIssuerMetadataHttpAdapter>().firstOrNull()
             ?: error("Oid4vciIssuerMetadataHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
     }
 
     private fun oauthAdapters(): List<HttpAdapter> {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
+        val adapters = adapters()
         val oauth2 =
             adapters.filter { adapter ->
                 adapter is OAuth2DiscoveryHttpAdapter ||
@@ -137,15 +155,13 @@ class WalletIssuanceHttpE2ETest {
         return oauth2
     }
 
-    private fun oauthAdapter(): HttpAdapter = OAuth2DispatchHttpAdapter(oauthAdapters())
-
     // =========================================================================
     // Test 1: Adapters resolve from DI graph
     // =========================================================================
 
     @Test
     fun httpAdaptersResolveFromDi() {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
+        val adapters = adapters()
         assertTrue(adapters.isNotEmpty(), "HTTP adapters set should not be empty")
 
         val issuerAdapters = adapters.filterIsInstance<Oid4vciIssuerProtocolHttpAdapter>()
@@ -200,7 +216,7 @@ class WalletIssuanceHttpE2ETest {
                     path = "/.well-known/openid-credential-issuer",
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val response = adapter.handleRequest(metadataRequest)
+            val response = dispatch(metadataRequest)
 
             // The config-driven provider has no OID4VCI config in the test graph,
             // so issuerIdentifier is empty, causing a validation error (500).
@@ -236,7 +252,6 @@ class WalletIssuanceHttpE2ETest {
     @Test
     fun walletFetchesOAuth2DiscoveryViaHttp() =
         runTest {
-            val adapter = oauthAdapter()
 
             val discoveryRequest =
                 GenericHttpRequest(
@@ -244,7 +259,7 @@ class WalletIssuanceHttpE2ETest {
                     path = "/.well-known/oauth-authorization-server",
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val response = adapter.handleRequest(discoveryRequest)
+            val response = dispatch(discoveryRequest)
 
             // Route is wired — should not get 404
             assertTrue(
@@ -276,7 +291,7 @@ class WalletIssuanceHttpE2ETest {
                     headers = mapOf("content-type" to "application/json"),
                     bodySupplier = { "{}" },
                 )
-            val response = adapter.handleRequest(nonceRequest)
+            val response = dispatch(nonceRequest)
 
             assertEquals(200, response.statusCode, "Nonce endpoint should return 200. Body: ${response.body}")
             assertNotNull(response.body, "Response body should not be null")
@@ -297,7 +312,6 @@ class WalletIssuanceHttpE2ETest {
     @Test
     fun tokenRequestWithInvalidPreAuthCodeReturns400() =
         runTest {
-            val adapter = oauthAdapter()
 
             val tokenRequest =
                 GenericHttpRequest(
@@ -310,7 +324,7 @@ class WalletIssuanceHttpE2ETest {
                             "&client_id=wallet-client"
                     },
                 )
-            val response = adapter.handleRequest(tokenRequest)
+            val response = dispatch(tokenRequest)
 
             assertTrue(
                 response.statusCode in 400..499,
@@ -362,7 +376,7 @@ class WalletIssuanceHttpE2ETest {
                         )
                     },
                 )
-            val response = adapter.handleRequest(credentialRequest)
+            val response = dispatch(credentialRequest)
 
             assertEquals(401, response.statusCode, "Missing auth should return 401. Body: ${response.body}")
             assertNotNull(response.body, "Error response body should not be null")
@@ -391,7 +405,7 @@ class WalletIssuanceHttpE2ETest {
                         ),
                     bodySupplier = { "this is not json" },
                 )
-            val response = adapter.handleRequest(credentialRequest)
+            val response = dispatch(credentialRequest)
 
             assertEquals(400, response.statusCode, "Malformed request should return 400. Body: ${response.body}")
             assertNotNull(response.body, "Error response body should not be null")
@@ -421,7 +435,7 @@ class WalletIssuanceHttpE2ETest {
                         """{"notification_id":"test-notif","event":"credential_accepted"}"""
                     },
                 )
-            val response = adapter.handleRequest(notificationRequest)
+            val response = dispatch(notificationRequest)
 
             assertEquals(401, response.statusCode, "Missing auth should return 401. Body: ${response.body}")
 
@@ -445,7 +459,7 @@ class WalletIssuanceHttpE2ETest {
                     pathParameters = mapOf("offerId" to "non-existent-offer-id"),
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val response = adapter.handleRequest(offerRequest)
+            val response = dispatch(offerRequest)
 
             assertEquals(404, response.statusCode, "Non-existent offer should return 404. Body: ${response.body}")
         }
@@ -469,7 +483,6 @@ class WalletIssuanceHttpE2ETest {
 
             val issuerHttpAdapter = issuerAdapter()
             val issuerMetadataHttpAdapter = metadataAdapter()
-            val oauthHttpAdapter = oauthAdapter()
 
             // =====================================================================
             // Step 1: Issuer creates credential offer (server-side setup)
@@ -477,10 +490,11 @@ class WalletIssuanceHttpE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vc-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
             assertTrue(
@@ -509,7 +523,7 @@ class WalletIssuanceHttpE2ETest {
                     path = "/.well-known/openid-credential-issuer",
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val metadataResponse = issuerMetadataHttpAdapter.handleRequest(metadataRequest)
+            val metadataResponse = dispatch(metadataRequest)
             assertTrue(
                 metadataResponse.statusCode != 404,
                 "Metadata endpoint should be routable (not 404). Got ${metadataResponse.statusCode}: ${metadataResponse.body}",
@@ -524,7 +538,7 @@ class WalletIssuanceHttpE2ETest {
                     path = "/.well-known/oauth-authorization-server",
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val asDiscoveryResponse = oauthHttpAdapter.handleRequest(asDiscoveryRequest)
+            val asDiscoveryResponse = dispatch(asDiscoveryRequest)
             assertTrue(
                 asDiscoveryResponse.statusCode != 404,
                 "AS discovery endpoint should be routable (not 404). Got ${asDiscoveryResponse.statusCode}: ${asDiscoveryResponse.body}",
@@ -591,7 +605,7 @@ class WalletIssuanceHttpE2ETest {
                             "&client_id=wallet-e2e"
                     },
                 )
-            val tokenHttpResponse = oauthHttpAdapter.handleRequest(tokenHttpRequest)
+            val tokenHttpResponse = dispatch(tokenHttpRequest)
             // This should fail because the code doesn't exist - validates routing works
             assertTrue(
                 tokenHttpResponse.statusCode in 400..499,
@@ -608,7 +622,7 @@ class WalletIssuanceHttpE2ETest {
                     headers = mapOf("content-type" to "application/json"),
                     bodySupplier = { "{}" },
                 )
-            val nonceResponse = issuerHttpAdapter.handleRequest(nonceRequest)
+            val nonceResponse = dispatch(nonceRequest)
             assertEquals(200, nonceResponse.statusCode, "Nonce endpoint should return 200. Body: ${nonceResponse.body}")
             val nonce = json.decodeFromString<NonceResponse>(nonceResponse.body!!)
             assertNotNull(nonce.cNonce, "c_nonce should be present in HTTP response")
@@ -667,7 +681,7 @@ class WalletIssuanceHttpE2ETest {
                         ),
                     bodySupplier = { json.encodeToString(CredentialRequest.serializer(), credentialRequestBody) },
                 )
-            val credentialResponse = issuerHttpAdapter.handleRequest(credentialRequest)
+            val credentialResponse = dispatch(credentialRequest)
 
             // The credential request goes through real DI wiring. It may fail at the
             // format handler level (no issuer signing key configured for actual credential
@@ -710,10 +724,11 @@ class WalletIssuanceHttpE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vc-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
             assertTrue(offerResult.isOk, "Offer creation should succeed")
@@ -731,7 +746,7 @@ class WalletIssuanceHttpE2ETest {
                     pathParameters = mapOf("offerId" to offerId),
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val offerResponse = adapter.handleRequest(offerRequest)
+            val offerResponse = dispatch(offerRequest)
 
             assertEquals(200, offerResponse.statusCode, "Offer retrieval should return 200. Body: ${offerResponse.body}")
             assertNotNull(offerResponse.body, "Response body should not be null")
@@ -760,7 +775,7 @@ class WalletIssuanceHttpE2ETest {
                     headers = mapOf("content-type" to "application/json"),
                     bodySupplier = { """{"transaction_id":"some-transaction-id"}""" },
                 )
-            val response = adapter.handleRequest(deferredRequest)
+            val response = dispatch(deferredRequest)
 
             assertEquals(401, response.statusCode, "Missing auth should return 401. Body: ${response.body}")
             val errorResponse = json.decodeFromString<TokenErrorResponse>(response.body!!)
@@ -782,7 +797,7 @@ class WalletIssuanceHttpE2ETest {
                     path = "/oid4vci/does-not-exist",
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val response = adapter.handleRequest(unknownRequest)
+            val response = dispatch(unknownRequest)
 
             assertTrue(
                 response.statusCode in listOf(400, 404),
@@ -797,7 +812,6 @@ class WalletIssuanceHttpE2ETest {
     @Test
     fun tokenEndpointWithMissingBodyReturns400() =
         runTest {
-            val adapter = oauthAdapter()
 
             val tokenRequest =
                 GenericHttpRequest(
@@ -806,7 +820,7 @@ class WalletIssuanceHttpE2ETest {
                     headers = mapOf("content-type" to "application/x-www-form-urlencoded"),
                     // No body supplier - empty body
                 )
-            val response = adapter.handleRequest(tokenRequest)
+            val response = dispatch(tokenRequest)
 
             assertEquals(400, response.statusCode, "Missing body should return 400. Body: ${response.body}")
             val errorJson = json.parseToJsonElement(response.body!!).jsonObject
@@ -846,7 +860,7 @@ class WalletIssuanceHttpE2ETest {
                     path = "/.well-known/openid-credential-issuer",
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val response = adapter.handleRequest(metadataRequest)
+            val response = dispatch(metadataRequest)
 
             // Route is wired (not 404). Content-Type is present regardless of status.
             assertTrue(
@@ -871,7 +885,6 @@ class WalletIssuanceHttpE2ETest {
     @Test
     fun jwksEndpointReturnsValidResponse() =
         runTest {
-            val adapter = oauthAdapter()
 
             val jwksRequest =
                 GenericHttpRequest(
@@ -879,7 +892,7 @@ class WalletIssuanceHttpE2ETest {
                     path = "/.well-known/jwks.json",
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val response = adapter.handleRequest(jwksRequest)
+            val response = dispatch(jwksRequest)
 
             // Route is wired — we should not get 404
             assertTrue(
@@ -893,36 +906,4 @@ class WalletIssuanceHttpE2ETest {
                 assertTrue(jwksJson.containsKey("keys"), "JWKS response should contain 'keys' array")
             }
         }
-}
-
-/**
- * Test-only [HttpAdapter] that fans a request out to the OAuth2 AS adapter set, returning the
- * first response that is not 404. Replaces the legacy single-adapter route fan-out so the wallet
- * tests keep their `adapter.handleRequest(req)` shape while the production code splits the routes
- * across six per-area adapters.
- */
-private class OAuth2DispatchHttpAdapter(
-    private val delegates: List<HttpAdapter>
-) : HttpAdapter {
-    override val id: String = "OAUTH2_AS_DISPATCH"
-
-    override fun describe(): HttpAdapterDescription =
-        HttpAdapterDescription(
-            id = id,
-            mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/"),
-            endpoints = delegates.flatMap { it.describe().endpoints },
-        )
-
-    override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
-        for (delegate in delegates) {
-            if (delegate is com.sphereon.core.api.http.RoutableHttpAdapter && !delegate.canHandle(request)) {
-                continue
-            }
-            val response = delegate.handleRequest(request)
-            if (response.statusCode != 404) {
-                return response
-            }
-        }
-        return GenericHttpResponse(statusCode = 404, headers = emptyMap(), body = "Not found")
-    }
 }

@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Â© 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.sphereon.ktor.http.client.config
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
+import com.sphereon.ktor.http.client.provider.HttpMinimumTlsVersion
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -35,6 +36,7 @@ data class SslConfig(
 @ObjCName("ClientSslConfig", exact = true)
 data class ClientSslConfig(
     val engine: HttpClientEngineType = HttpClientEngineType.CIO,
+    val minimumTlsVersion: HttpMinimumTlsVersion = HttpMinimumTlsVersion.TLS_1_2,
     val perHostCertificate: Map<String, KeystoreCertificateOpts> = mapOf(),
     val defaultCertificate: KeystoreCertificateOpts? = null,
 ) {
@@ -62,7 +64,30 @@ data class ServerSslConfig(
 data class CaOpts(
     val includePlatformDefaults: Boolean = true,
     val additionalCAs: Set<KeystoreCertificateOpts> = setOf(),
-)
+    /** Public, already governed CA certificates. This never contains client identities or private keys. */
+    val resolvedCertificates: Set<ResolvedCaCertificateOpts> = setOf(),
+) {
+    fun hasCustomTrust(): Boolean = additionalCAs.isNotEmpty() || resolvedCertificates.isNotEmpty()
+}
+
+@JsExportCompat
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ResolvedCaCertificateOpts", exact = true)
+data class ResolvedCaCertificateOpts(
+    val certificateAlias: String,
+    val certificatePem: String,
+    val certificateFingerprint: String,
+) {
+    init {
+        require(certificateAlias.isNotBlank()) { "Resolved CA certificate alias must not be blank" }
+        require(certificatePem.isNotBlank()) { "Resolved CA certificate PEM must not be blank" }
+        require(certificateFingerprint.isNotBlank()) { "Resolved CA certificate fingerprint must not be blank" }
+    }
+
+    override fun toString(): String =
+        "ResolvedCaCertificateOpts(certificateAlias=$certificateAlias, certificatePem=<public-certificate-redacted>, " +
+            "certificateFingerprint=$certificateFingerprint)"
+}
 
 @JsExportCompat
 @OptIn(ExperimentalObjCName::class)
@@ -71,3 +96,5 @@ data class KeystoreCertificateOpts(
     val certificateAlias: String,
     val keyStoreId: String,
 )
+
+

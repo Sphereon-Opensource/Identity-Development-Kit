@@ -26,6 +26,7 @@ import dev.zacsweers.metro.SingleIn
  *     base-path: /public/statuslists             # default: /public/statuslists (public, cacheable token)
  *     management-base-path: /api/statuslist/v1   # default: /api/statuslist/v1 (by-index admin)
  *     external-base-url: https://issuer.example  # for the REST publisher to derive statusListUri
+ *     cache-max-age-seconds: 0                    # optional public response override; unset uses token TTL
  * ```
  *
  * The hosting + management base paths are decoupled: hosting is the unauthenticated, cacheable
@@ -73,12 +74,34 @@ class StatusListHostingConfig(
             ?.trimEnd('/')
     }
 
+    /**
+     * Optional deployment-wide cache freshness override for public status-list responses.
+     *
+     * When unset, hosting preserves the existing behavior: use the signed token's TTL hint and
+     * fall back to [StatusListHostingApiConstants.DEFAULT_CACHE_MAX_AGE_SECONDS]. A value of zero
+     * emits `public, max-age=0`, which makes resolvers fetch the current signed publication for
+     * each decision without changing (or invalidating) the positive TTL carried by an mdoc CWT.
+     * Negative or malformed values fail closed during configuration resolution.
+     */
+    val cacheMaxAgeSeconds: Long? by lazy {
+        val configured =
+            appConfigProvider
+                ?.invoke()
+                ?.getPropertyAsString(CACHE_MAX_AGE_SECONDS_KEY)
+                ?: return@lazy null
+        val seconds = configured.trim().toLongOrNull()
+            ?: throw IllegalArgumentException("$CACHE_MAX_AGE_SECONDS_KEY must be a non-negative integer")
+        require(seconds >= 0L) { "$CACHE_MAX_AGE_SECONDS_KEY must be a non-negative integer" }
+        seconds
+    }
+
     companion object {
         // Same root, protocol-neutral `statuslists` namespace the definitions provider reads (no
         // `sphereon.` prefix — config keys map to the top-level YAML block).
         const val BASE_PATH_KEY = "statuslists.hosting.basePath"
         const val MANAGEMENT_BASE_PATH_KEY = "statuslists.hosting.managementBasePath"
         const val EXTERNAL_BASE_URL_KEY = "statuslists.hosting.externalBaseUrl"
+        const val CACHE_MAX_AGE_SECONDS_KEY = "statuslists.hosting.cacheMaxAgeSeconds"
 
         /** Leading slash, no trailing slash, internal slashes preserved (e.g. `/public/statuslists`). */
         internal fun normalizeBasePath(value: String): String {

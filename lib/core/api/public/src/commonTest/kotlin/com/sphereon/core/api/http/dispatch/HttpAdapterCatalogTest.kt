@@ -17,6 +17,7 @@
 
 package com.sphereon.core.api.http.dispatch
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
@@ -148,6 +149,70 @@ class HttpAdapterCatalogDiagnosticsTest {
                 it.type == HttpAdapterCatalogCollisionType.OVERLAPPING_ENDPOINT
             }
         assertEquals(1, overlappingCollisions.size)
+    }
+
+    @Test
+    fun requiredLeadingAndOptionalSuffixPoliciesAreDisjoint() {
+        val endpoint = HttpEndpointDescriptor(HttpMethod.GET, "/.well-known/openid-configuration")
+        val leading =
+            HttpAdapterDescription(
+                id = "path-issuer",
+                mount =
+                    HttpAdapterMount(
+                        serverPrefix = "",
+                        adapterBasePath = "/",
+                        tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2, required = true),
+                    ),
+                endpoints = listOf(endpoint),
+            )
+        val suffix =
+            HttpAdapterDescription(
+                id = "well-known-suffix",
+                mount =
+                    HttpAdapterMount(
+                        serverPrefix = "",
+                        adapterBasePath = "/",
+                        tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(maxDepth = 2),
+                    ),
+                endpoints = listOf(endpoint),
+            )
+
+        assertTrue(HttpAdapterCatalogDiagnostics.from(listOf(leading, suffix)).collisions.isEmpty())
+    }
+
+    @Test
+    fun optionalLeadingAndOptionalSuffixPoliciesStillCollideOnUnpeeledPath() {
+        val endpoint = HttpEndpointDescriptor(HttpMethod.GET, "/metadata")
+        val descriptions =
+            listOf(
+                HttpAdapterDescription(
+                    id = "leading",
+                    mount =
+                        HttpAdapterMount(
+                            serverPrefix = "",
+                            adapterBasePath = "/",
+                            tenantPathPolicy = TenantPathPolicy.LeadingSlug(),
+                        ),
+                    endpoints = listOf(endpoint),
+                ),
+                HttpAdapterDescription(
+                    id = "suffix",
+                    mount =
+                        HttpAdapterMount(
+                            serverPrefix = "",
+                            adapterBasePath = "/",
+                            tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(),
+                        ),
+                    endpoints = listOf(endpoint),
+                ),
+            )
+
+        assertEquals(
+            1,
+            HttpAdapterCatalogDiagnostics.from(descriptions).collisions.count {
+                it.type == HttpAdapterCatalogCollisionType.OVERLAPPING_ENDPOINT
+            },
+        )
     }
 
     @Test

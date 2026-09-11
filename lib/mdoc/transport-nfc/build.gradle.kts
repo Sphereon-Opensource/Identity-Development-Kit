@@ -21,7 +21,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.mdoc.transport.nfc"
         compileSdk = 35
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }

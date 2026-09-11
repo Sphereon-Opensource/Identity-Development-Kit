@@ -20,11 +20,13 @@ package com.sphereon.crypto.kms.provider.mobile
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.core.compat.Uuid
 import com.sphereon.core.defaults.app.staticMinimalTestAppGraph
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
@@ -108,6 +110,58 @@ class MobileCryptoProviderTest {
         }
 
     @Test
+    fun testRawSigningRejectsAlgorithmMismatchAfterAliasResolution() =
+        runTest {
+            val managedKeyPair = mobileCryptoProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val resolved = managedKeyPair.joseToManagedKeyInfo()
+            val selectorOnly =
+                KeyInfo<JwkType>(
+                    alias = resolved.alias,
+                    providerId = resolved.providerId,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA384,
+                )
+
+            assertFailsWith<IllegalArgumentException> {
+                mobileCryptoProvider.createRawSignature(selectorOnly, "mismatch".encodeToByteArray(), false)
+            }
+        }
+
+    @Test
+    fun testRawVerificationRejectsAlgorithmMismatchAfterAliasResolution() =
+        runTest {
+            val managedKeyPair = mobileCryptoProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val resolved = managedKeyPair.joseToManagedKeyInfo()
+            val signature = mobileCryptoProvider.createRawSignature(resolved, "verify-mismatch".encodeToByteArray(), false)
+            val selectorOnly =
+                KeyInfo<JwkType>(
+                    alias = resolved.alias,
+                    providerId = resolved.providerId,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA384,
+                )
+
+            assertFailsWith<IllegalArgumentException> {
+                mobileCryptoProvider.isValidRawSignature(selectorOnly, "verify-mismatch".encodeToByteArray(), signature)
+            }
+        }
+
+    @Test
+    fun getKeyReturnsProviderCanonicalKidWhenCallerKidConflicts() =
+        runTest {
+            val managedKeyPair = mobileCryptoProvider.generateKeyAsync(alias = "mobile-canonical-kid", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val resolved = managedKeyPair.joseToManagedKeyInfo()
+            val selectorOnly =
+                KeyInfo<JwkType>(
+                    alias = resolved.alias,
+                    kid = "stale-caller-kid",
+                    providerId = resolved.providerId,
+                )
+
+            val lookedUp = mobileCryptoProvider.getKey(selectorOnly)
+
+            assertEquals(resolved.kid, lookedUp.kid)
+        }
+
+    @Test
     fun testInvalidEcdsaRawSignatureAndVerification() =
         runTest {
             val managedKeyPair = mobileCryptoProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
@@ -151,6 +205,64 @@ class MobileCryptoProviderTest {
                 ),
                 "A digest signature must not verify as a normal ECDSA signature over SHA-256(digest)",
             )
+        }
+
+    @Test
+    fun directSigningRejectsAliasKidMismatchBeforeMobileCryptoAndPreservesSelectors() =
+        runTest {
+            val keyA = mobileCryptoProvider.generateKeyAsync(alias = "direct-selector-a", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyB = mobileCryptoProvider.generateKeyAsync(alias = "direct-selector-b", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val publicA = keyA.joseToManagedKeyInfo()
+            val publicB = keyB.joseToManagedKeyInfo()
+            val providerId = checkNotNull(publicB.providerId)
+            val aliasB = checkNotNull(publicB.alias)
+            val kidA = checkNotNull(publicA.kid)
+            val kidB = checkNotNull(publicB.kid)
+            val input = "direct mobile selector raw".encodeToByteArray()
+
+            val mismatch =
+                assertFailsWith<IllegalArgumentException> {
+                    mobileCryptoProvider.createRawSignature(
+                        KeyInfo<JwkType>(
+                            alias = aliasB,
+                            kid = kidA,
+                            providerId = providerId,
+                            signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                        ),
+                        input,
+                        false,
+                    )
+                }
+            assertTrue(mismatch.message.orEmpty().contains("resolved to kid '$kidB'"))
+
+            val matching =
+                mobileCryptoProvider.createRawSignature(
+                    KeyInfo<JwkType>(alias = aliasB, kid = kidB, providerId = providerId, signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256),
+                    input,
+                    false,
+                )
+            assertTrue(mobileCryptoProvider.isValidRawSignature(publicB, input, matching))
+
+            val digest = hash(input, DigestAlg.SHA256)
+            val digestMismatch =
+                assertFailsWith<IllegalArgumentException> {
+                    mobileCryptoProvider.signDigest(
+                        KeyInfo<JwkType>(alias = aliasB, kid = kidA, providerId = providerId, signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256),
+                        digest,
+                        SignatureAlgorithm.ECDSA_SHA256,
+                        SignatureEncoding.RAW,
+                    )
+                }
+            assertTrue(digestMismatch.message.orEmpty().contains("resolved to kid '$kidB'"))
+
+            val digestSignature =
+                mobileCryptoProvider.signDigest(
+                    KeyInfo<JwkType>(alias = aliasB, kid = kidB, providerId = providerId, signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256),
+                    digest,
+                    SignatureAlgorithm.ECDSA_SHA256,
+                    SignatureEncoding.RAW,
+                )
+            assertTrue(mobileCryptoProvider.verifyDigest(publicB, digest, digestSignature, SignatureAlgorithm.ECDSA_SHA256, SignatureEncoding.RAW))
         }
 
     @Test

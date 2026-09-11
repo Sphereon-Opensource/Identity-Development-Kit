@@ -33,6 +33,7 @@ import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 
@@ -94,6 +95,13 @@ class GetJwksCommandImplTest {
             // (Jwk has subtypes for both).
             for (jwk in result.value.keys) {
                 assertEquals("RS256", jwk.alg?.toString(), "RSA-SHA256 keys must publish alg=RS256")
+                assertNull(jwk.d, "JWKS must not publish the RSA private exponent")
+                assertNull(jwk.p, "JWKS must not publish the first RSA prime factor")
+                assertNull(jwk.q, "JWKS must not publish the second RSA prime factor")
+                assertNull(jwk.dP, "JWKS must not publish the first RSA CRT exponent")
+                assertNull(jwk.dQ, "JWKS must not publish the second RSA CRT exponent")
+                assertNull(jwk.qInv, "JWKS must not publish the RSA CRT coefficient")
+                assertNull(jwk.k, "JWKS must not publish symmetric key material")
             }
         }
 

@@ -29,6 +29,7 @@ interface ListControllersEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listControllers",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Controllers"),
                 summary = "List controllers",
             )
@@ -47,6 +48,7 @@ interface AddControllerEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addController",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Controllers"),
                 summary = "Add a controller",
             )
@@ -63,6 +65,7 @@ interface RemoveControllerEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}/controllers/{controllerId}",
                 operationId = "removeController",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Controllers"),
                 summary = "Remove a controller",
             )

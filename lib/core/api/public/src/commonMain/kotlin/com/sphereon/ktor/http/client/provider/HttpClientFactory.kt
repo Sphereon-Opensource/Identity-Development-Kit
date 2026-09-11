@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Â© 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,6 +73,8 @@ data class HttpClientOptions(
      * access private networks, or [UrlValidationPolicy.NONE] to disable validation.
      */
     val urlValidation: UrlValidationPolicy? = null,
+    /** Whether the client may automatically follow redirects. Governed contexts always set false. */
+    val followRedirects: Boolean = true,
 ) {
     companion object {
         @JvmStatic
@@ -102,6 +104,15 @@ data class HttpClientOptions(
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HttpClientFactory", exact = true)
 interface HttpClientFactory {
+    /**
+     * Creates a new client owned by the caller. The caller must close the returned client when the
+     * operation is complete.
+     *
+     * Implementations MUST apply [HttpClientOptions.followRedirects] at both layers when it is
+     * `false`: the Ktor client redirect plugin and the underlying engine's transport redirect
+     * settings. This is required because a client-level setting cannot disable an engine that
+     * follows redirects itself.
+     */
     fun createClient(options: HttpClientOptions): HttpClient
 
     fun isSupportedOptions(options: HttpClientOptions): Boolean
@@ -113,3 +124,4 @@ interface HttpClientFactory {
 
     fun getEngineTypeDefault(): HttpClientEngineType
 }
+

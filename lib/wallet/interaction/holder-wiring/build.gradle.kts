@@ -43,25 +43,14 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                // The Tier 1 <-> Tier 2 holder wiring seam (spec section 3.7/1): the ONE place that
-                // contributes the real OID4VCI/OID4VP protocol adapters into the SessionScope
-                // Set<WalletInteractionProtocolAdapter> multibinding, so both wallet-app-impl's own
-                // product graph and wallet-runner's graph resolve REAL flow execution instead of each
-                // declaring a competing, duplicate wiring (Metro rejects two @Multibinds declarations
-                // for the same key on one graph).
                 api(projects.libWalletInteractionPublic)
                 api(projects.libWalletWscaPublic)
-                implementation(projects.libWalletInteractionImpl)
-                implementation(projects.libDataStoreKvImpl)
-                implementation(projects.libWalletInteractionProtocolOid4vci)
-                implementation(projects.libWalletInteractionProtocolOid4vp)
+                implementation(projects.libDidResolverPublic)
                 implementation(projects.libWalletPublic)
                 implementation(projects.libOpenidOid4vciHolderPublic)
                 implementation(projects.libOpenidOid4vpHolderPublic)
+                implementation(projects.libOpenidOid4vpVerifierPublic)
                 implementation(projects.libOpenidOid4vpCommonPublic)
-                implementation(projects.libSdjwtPublic)
-                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
-                implementation(sphereonlib.org.jetbrains.kotlinx.serialization.json)
                 implementation(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)
             }
@@ -69,6 +58,8 @@ kotlin {
         val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(projects.libDidResolverImpl)
+                implementation(projects.libDidMethodsKey)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
             }
         }

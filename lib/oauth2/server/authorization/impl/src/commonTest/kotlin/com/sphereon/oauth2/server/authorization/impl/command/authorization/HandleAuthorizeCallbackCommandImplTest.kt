@@ -146,7 +146,10 @@ class HandleAuthorizeCallbackCommandImplTest {
         private val authenticatedUser: AuthenticatedUser? = null,
         private val authError: AuthenticationError? = null,
     ) : UserAuthenticationProvider {
+        val requestedSessionIds = mutableListOf<String>()
+
         override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> {
+            requestedSessionIds += sessionId
             authError?.let { return Err(it) }
             return Ok(authenticatedUser)
         }
@@ -214,7 +217,13 @@ class HandleAuthorizeCallbackCommandImplTest {
                     InMemoryOidcLoginSessionStore(Clock.System),
                 )
 
-            val result = command.execute(HandleAuthorizeCallbackArgs(sessionId = session.sessionId))
+            val result =
+                command.execute(
+                    HandleAuthorizeCallbackArgs(
+                        sessionId = session.sessionId,
+                        authenticationSessionId = "wallet-session-1",
+                    ),
+                )
 
             assertTrue(result.isOk)
             assertEquals("AC-1", result.value.code)
@@ -224,6 +233,7 @@ class HandleAuthorizeCallbackCommandImplTest {
             assertEquals(session.sessionId, captured.session.sessionId)
             assertEquals("user-1", captured.userId)
             assertEquals(1, store.removeCalls)
+            assertEquals(listOf("wallet-session-1"), authProvider.requestedSessionIds)
         }
 
     @Test

@@ -19,7 +19,12 @@ package com.sphereon.oauth2.server.authorization.impl.command.federation
 import com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersArgs
 import com.sphereon.oauth2.server.authorization.config.FederationProviderConfig
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
-import com.sphereon.oauth2.server.authorization.provider.FederationProviderRegistry
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
+import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,12 +35,16 @@ class ListEnabledFederationProvidersCommandImplTest {
 
     private class FakeRegistry(
         private val providers: List<FederationProviderConfig>,
-    ) : FederationProviderRegistry {
-        override fun findById(providerId: String): FederationProviderConfig? = providers.firstOrNull { it.id == providerId }
+    ) : FederationProviderRuntimeResolver {
+        override suspend fun resolve(bindingId: String): IdkResult<FederationProviderConfig, AuthenticationError> =
+            providers.firstOrNull { it.id == bindingId }?.let(::Ok)
+                ?: Err(AuthenticationError.Generic(description = "not found"))
 
-        override fun all(): List<FederationProviderConfig> = providers
+        override suspend fun listEnabled(): IdkResult<List<FederationProviderConfig>, AuthenticationError> =
+            Ok(providers.filter(FederationProviderConfig::enabled))
 
-        override fun defaultProviderId(): String? = null
+        override suspend fun clientAuthentication(bindingId: String, audience: String): IdkResult<ClientAuthenticationConfig, AuthenticationError> =
+            Ok(ClientAuthenticationConfig.None(bindingId))
     }
 
     @Test

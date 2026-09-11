@@ -28,6 +28,9 @@ import dev.zacsweers.metro.createGraphFactory
 
 @DependencyGraph(AppScope::class)
 abstract class WalletAppGraph : AbstractAppGraph() {
+    /** Test-only access to the AppScope factory owning the session key-reference authority. */
+    abstract val keyReferenceStoreFactory: InMemoryKeyReferenceStoreFactory
+
     @DependencyGraph.Factory
     fun interface Factory {
         fun create(

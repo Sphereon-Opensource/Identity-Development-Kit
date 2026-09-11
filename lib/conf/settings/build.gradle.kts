@@ -24,7 +24,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.config.multiplatform"
         compileSdk = 35
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }

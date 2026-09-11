@@ -33,6 +33,7 @@ import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.openid.oid4vci.holder.impl.CreateCredentialRequestProofCommandImpl
+import com.sphereon.openid.oid4vci.holder.impl.CredentialRequestProofPreparationImpl
 import com.sphereon.openid.oid4vci.common.model.stringValues
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.unit.WalletAttestedKeyRef
@@ -43,6 +44,9 @@ import com.sphereon.wallet.wsca.WscaClientAttestationAuthRequest
 import com.sphereon.wallet.wsca.WscaClientAttestationAuthResult
 import com.sphereon.wallet.wsca.WscaDpopProofRequest
 import com.sphereon.wallet.wsca.WscaDpopProofResult
+import com.sphereon.wallet.wsca.WscaPreparedSigning
+import com.sphereon.wallet.wsca.WscaPreparedSigningFactory
+import com.sphereon.wallet.wsca.WscaSigningRequest
 import com.sphereon.wallet.wsca.WscaUserAuthentication
 import com.sphereon.wallet.wscd.WscdProfile
 import kotlinx.coroutines.test.runTest
@@ -58,7 +62,7 @@ class CreateCredentialRequestProofCommandTest {
     fun jwtProofAddsKeyAttestationHeader() =
         runTest {
             val wsca = RecordingWsca()
-            val command = CreateCredentialRequestProofCommandImpl(ProofTestSessionExecution(), wsca)
+            val command = CreateCredentialRequestProofCommandImpl(ProofTestSessionExecution(), CredentialRequestProofPreparationImpl(wsca))
 
             val result =
                 command.execute(
@@ -88,7 +92,7 @@ class CreateCredentialRequestProofCommandTest {
     fun attestationProofReturnsKeyAttestationWithoutSigningPopJwt() =
         runTest {
             val wsca = RecordingWsca()
-            val command = CreateCredentialRequestProofCommandImpl(ProofTestSessionExecution(), wsca)
+            val command = CreateCredentialRequestProofCommandImpl(ProofTestSessionExecution(), CredentialRequestProofPreparationImpl(wsca))
 
             val result =
                 command.execute(
@@ -110,6 +114,7 @@ class CreateCredentialRequestProofCommandTest {
 }
 
 private class RecordingWsca : Wsca {
+    private val preparedSigningFactory = WscaPreparedSigningFactory.create()
     var capturedSigningInput: ByteArray? = null
 
     override val wscdProfile: WscdProfile
@@ -139,13 +144,31 @@ private class RecordingWsca : Wsca {
         algorithm: SignatureAlgorithm,
     ): IdkResult<WalletAttestedKeyRef, IdkError> = error("Not needed for this test")
 
-    override suspend fun sign(
+    override suspend fun discardCredentialKey(
         walletUnitId: String,
         keyRef: WalletAttestedKeyRef,
-        signingInput: ByteArray,
-        operationBinding: String,
+    ): IdkResult<Unit, IdkError> = error("Not needed for this test")
+
+    override suspend fun prepareSign(request: WscaSigningRequest): IdkResult<WscaPreparedSigning, IdkError> =
+        Ok(
+            preparedSigningFactory.mint(
+                walletUnitId = request.walletUnitId,
+                keyRef = request.keyRef,
+                walletAccountId = request.walletAccountId,
+                operationBinding = request.operationBinding,
+                operationType = "test.sign",
+                digestBinding = "test-digest",
+                nonce = request.nonce ?: "test-nonce",
+                audience = request.audience ?: request.operationBinding,
+                signingInput = request.signingInput,
+            ),
+        )
+
+    override suspend fun sign(
+        prepared: WscaPreparedSigning,
+        request: WscaSigningRequest,
     ): IdkResult<ByteArray, IdkError> {
-        capturedSigningInput = signingInput
+        capturedSigningInput = request.signingInput
         return Ok(byteArrayOf(1, 2, 3))
     }
 

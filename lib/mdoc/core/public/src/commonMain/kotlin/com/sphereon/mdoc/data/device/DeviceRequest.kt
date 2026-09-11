@@ -29,6 +29,9 @@ import kotlin.jvm.JvmInline
 import kotlin.jvm.JvmStatic
 import kotlin.native.ObjCName
 
+/** The one-or-more reader MAC keys advertised by the ISO 18013-7 request flow. */
+typealias MacKeys = Array<CoseKey>
+
 @JvmInline
 @Serializable
 @OptIn(ExperimentalObjCName::class)
@@ -37,7 +40,7 @@ value class DeviceRequestVersion(
     private val value: String,
 ) {
     init {
-        require(value == "1.0") { "Version must be '1.0' but was '$value' instead'" }
+        require(value == "1.0" || value == "1.1") { "Version must be '1.0' or '1.1' but was '$value' instead'" }
     }
 
     override fun toString(): String = value
@@ -68,9 +71,11 @@ data class DeviceRequest(
      * This mitigates the issue of the mdoc reader not knowing which key to send, or when the mdoc contains documents with different curves for mdoc mac authentication.
      *
      */
-    val macKeys: Array<CoseKey>? = null,
+    val macKeys: MacKeys? = null,
     val oid4vpRequest: Oid4VPPresentationDefinition? = null,
     val original: ByteArray?,
+    val deviceRequestInfo: DeviceRequestInfo? = null,
+    val readerAuthAll: Array<ReaderAuthAll>? = null,
 ) {
     /**
      * Swift ergonomics: provide a copyWith(...) instead of relying on Kotlin's named args from Swift.
@@ -78,9 +83,11 @@ data class DeviceRequest(
     fun copyWith(
         version: DeviceRequestVersion = this.version,
         docRequests: Array<DocRequest>? = this.docRequests,
-        macKeys: Array<CoseKey>? = this.macKeys,
+        macKeys: MacKeys? = this.macKeys,
         oid4vpRequest: Oid4VPPresentationDefinition? = this.oid4vpRequest,
         original: ByteArray? = this.original,
+        deviceRequestInfo: DeviceRequestInfo? = this.deviceRequestInfo,
+        readerAuthAll: Array<ReaderAuthAll>? = this.readerAuthAll,
     ): DeviceRequest =
         this.copy(
             version = version,
@@ -88,6 +95,8 @@ data class DeviceRequest(
             macKeys = macKeys,
             oid4vpRequest = oid4vpRequest,
             original = original,
+            deviceRequestInfo = deviceRequestInfo,
+            readerAuthAll = readerAuthAll,
         )
 
     val hasOid4vpRequest: Boolean = oid4vpRequest != null
@@ -122,16 +131,30 @@ data class DeviceRequest(
             return false
         }
 
+        if (!macKeys.contentEquals(other.macKeys) || oid4vpRequest != other.oid4vpRequest) {
+            return false
+        }
+
+        if (deviceRequestInfo != other.deviceRequestInfo || !readerAuthAll.contentEquals(other.readerAuthAll)) {
+            return false
+        }
+
         return true
     }
 
     override fun hashCode(): Int {
         var result = version.hashCode()
-        result = 31 * result + docRequests.hashCode()
+        result = 31 * result + (docRequests?.contentHashCode() ?: 0)
+        result = 31 * result + (macKeys?.contentHashCode() ?: 0)
+        result = 31 * result + (oid4vpRequest?.hashCode() ?: 0)
+        result = 31 * result + (deviceRequestInfo?.hashCode() ?: 0)
+        result = 31 * result + (readerAuthAll?.contentHashCode() ?: 0)
         return result
     }
 
-    override fun toString(): String = "DeviceRequest(version=$version, docRequests=${stringify(docRequests)}, original=${stringify(original)})"
+    override fun toString(): String =
+        "DeviceRequest(version=$version, docRequests=${stringify(docRequests)}, deviceRequestInfo=$deviceRequestInfo, " +
+            "readerAuthAll=${stringify(readerAuthAll)}, original=${stringify(original)})"
 
     companion object Decoder {
         @JsStatic
@@ -149,5 +172,13 @@ data class DeviceRequest(
         @JsStatic
         @JvmStatic
         val OID4VP_REQUEST = StringLabel("oid4vpRequest")
+
+        @JsStatic
+        @JvmStatic
+        val DEVICE_REQUEST_INFO = StringLabel("deviceRequestInfo")
+
+        @JsStatic
+        @JvmStatic
+        val READER_AUTH_ALL = StringLabel("readerAuthAll")
     }
 }

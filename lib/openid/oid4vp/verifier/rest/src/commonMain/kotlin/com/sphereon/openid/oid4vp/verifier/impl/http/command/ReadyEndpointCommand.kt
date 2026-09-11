@@ -31,6 +31,8 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
@@ -52,6 +54,7 @@ interface ReadyEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/ready",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "readinessProbe",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp", "health"),
                 summary = "Readiness probe — validates signing configuration",
             )
@@ -60,7 +63,8 @@ interface ReadyEndpointCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ReadyEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ReadyEndpointCommand.COMMAND_ID)
 class ReadyEndpointCommandImpl(
     execution: SessionExecution,
     private val signingConfig: RequestObjectSigningConfig,

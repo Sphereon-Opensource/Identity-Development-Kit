@@ -26,14 +26,17 @@ import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class RegisterPreAuthorizedCodeCommandImplTest {
     private val ctx = OAuth2ServerTestContext("register-preauth-code-test", this)
+    private val expiry = 1_900_000_042L
 
     private class FakePreAuthorizedCodeStorage : PreAuthorizedCodeStorage {
         var stored: Pair<String, PreAuthorizedCodeData>? = null
@@ -47,6 +50,14 @@ class RegisterPreAuthorizedCodeCommandImplTest {
         }
 
         override suspend fun consumePreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> = Ok(null)
+
+        override suspend fun findPreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> = Ok(null)
+
+        override suspend fun consumePreAuthorizedCodeIfValid(
+            code: String,
+            expectedData: PreAuthorizedCodeData,
+            now: kotlin.time.Instant,
+        ): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> = Ok(null)
 
         override suspend fun isCodeUsed(code: String): IdkResult<Boolean, AuthorizationServerError.StorageError> = Ok(false)
     }
@@ -64,6 +75,20 @@ class RegisterPreAuthorizedCodeCommandImplTest {
                 ),
         ),
     )
+
+    private class RecordingClientRegistry(
+        private val delegate: ClientRegistry,
+    ) : ClientRegistry by delegate {
+        var verifyCalls = 0
+
+        override suspend fun verifyClientCredentials(
+            clientId: String,
+            clientSecret: String,
+        ): IdkResult<Boolean, com.sphereon.oauth2.server.authorization.error.AuthorizationServerError.StorageError> {
+            verifyCalls++
+            return delegate.verifyClientCredentials(clientId, clientSecret)
+        }
+    }
 
     @Test
     fun storesCodeAfterValidatingBasicAuthCredentials() =
@@ -84,6 +109,7 @@ class RegisterPreAuthorizedCodeCommandImplTest {
                         code = "preauth-1",
                         sessionId = "sess-1",
                         credentialConfigurationIds = listOf("config-1"),
+                        expiresAtEpochSeconds = expiry,
                     ),
                 )
 
@@ -93,6 +119,7 @@ class RegisterPreAuthorizedCodeCommandImplTest {
             assertEquals("preauth-1", storedCode)
             assertEquals("sess-1", storedData.sessionId)
             assertEquals(listOf("config-1"), storedData.credentialConfigurationIds)
+            assertEquals(Instant.fromEpochSeconds(expiry), storedData.expiresAt)
         }
 
     @Test
@@ -113,6 +140,7 @@ class RegisterPreAuthorizedCodeCommandImplTest {
                         code = "preauth-2",
                         sessionId = "sess-2",
                         credentialConfigurationIds = emptyList(),
+                        expiresAtEpochSeconds = expiry,
                     ),
                 )
 
@@ -138,10 +166,129 @@ class RegisterPreAuthorizedCodeCommandImplTest {
                         code = "preauth-3",
                         sessionId = "sess-3",
                         credentialConfigurationIds = emptyList(),
+                        expiresAtEpochSeconds = expiry,
                     ),
                 )
 
             assertTrue(result.isErr)
             assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun rejectsEqualNowExpiryBeforeClientCredentialVerificationOrStorage() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val registry = RecordingClientRegistry(clientRegistry())
+            val command =
+                RegisterPreAuthorizedCodeCommandImpl(
+                    execution = ctx.execution,
+                    clientRegistry = registry,
+                    preAuthorizedCodeStorage = storage,
+                    clock = object : kotlin.time.Clock {
+                        override fun now(): Instant = Instant.fromEpochSeconds(expiry)
+                    },
+                )
+
+            val result = command.execute(
+                RegisterPreAuthorizedCodeArgs(
+                    basicAuthClientId = "issuer-client",
+                    basicAuthClientSecret = "issuer-secret",
+                    code = "preauth-equal-now",
+                    sessionId = "sess-equal-now",
+                    credentialConfigurationIds = listOf("config-1"),
+                    expiresAtEpochSeconds = expiry,
+                ),
+            )
+
+            assertTrue(result.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
+            assertEquals(0, registry.verifyCalls)
+            assertEquals(null, storage.stored)
+        }
+
+    @Test
+    fun rejectsUnrepresentableExpiryBeforeClientCredentialVerificationOrStorage() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val registry = RecordingClientRegistry(clientRegistry())
+            val command =
+                RegisterPreAuthorizedCodeCommandImpl(
+                    execution = ctx.execution,
+                    clientRegistry = registry,
+                    preAuthorizedCodeStorage = storage,
+                )
+
+            val result = command.execute(
+                RegisterPreAuthorizedCodeArgs(
+                    basicAuthClientId = "issuer-client",
+                    basicAuthClientSecret = "issuer-secret",
+                    code = "preauth-unrepresentable",
+                    sessionId = "sess-unrepresentable",
+                    credentialConfigurationIds = listOf("config-1"),
+                    expiresAtEpochSeconds = Long.MAX_VALUE,
+                ),
+            )
+
+            assertTrue(result.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
+            assertEquals(0, registry.verifyCalls)
+            assertEquals(null, storage.stored)
+        }
+
+    @Test
+    fun rejectsNonFutureExpiryBeforeClientCredentialVerificationOrStorage() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val registry = RecordingClientRegistry(clientRegistry())
+            val command =
+                RegisterPreAuthorizedCodeCommandImpl(
+                    execution = ctx.execution,
+                    clientRegistry = registry,
+                    preAuthorizedCodeStorage = storage,
+                )
+
+            val result =
+                command.execute(
+                    RegisterPreAuthorizedCodeArgs(
+                        basicAuthClientId = "issuer-client",
+                        basicAuthClientSecret = "issuer-secret",
+                        code = "preauth-expired",
+                        sessionId = "sess-expired",
+                        credentialConfigurationIds = listOf("config-1"),
+                        expiresAtEpochSeconds = 1L,
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
+            assertEquals(0, registry.verifyCalls)
+            assertEquals(null, storage.stored)
+        }
+
+    @Test
+    fun rejectsExpiryOverflowBeforeStorage() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val command =
+                RegisterPreAuthorizedCodeCommandImpl(
+                    execution = ctx.execution,
+                    clientRegistry = clientRegistry(),
+                    preAuthorizedCodeStorage = storage,
+                )
+
+            val result = command.execute(
+                RegisterPreAuthorizedCodeArgs(
+                    basicAuthClientId = "issuer-client",
+                    basicAuthClientSecret = "issuer-secret",
+                    code = "preauth-overflow",
+                    sessionId = "sess-overflow",
+                    credentialConfigurationIds = listOf("config-1"),
+                    expiresAtEpochSeconds = Long.MAX_VALUE,
+                ),
+            )
+
+            assertTrue(result.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
+            assertEquals(null, storage.stored)
         }
 }

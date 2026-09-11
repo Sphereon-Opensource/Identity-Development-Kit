@@ -17,17 +17,28 @@
 
 package com.sphereon.crypto.key.persistence.sqlite
 
+import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.asJdbcDriver
 import com.sphereon.core.api.model.Origin
 import com.sphereon.crypto.core.ManagedKeyReferenceFilter
+import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
+import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
+import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -40,6 +51,7 @@ import kotlin.uuid.Uuid
 class SqliteKeyReferenceStoreImplTest {
     private lateinit var store: SqliteKeyReferenceStoreImpl
     private lateinit var dataSource: HikariDataSource
+    private lateinit var driver: SqlDriver
 
     @BeforeAll
     fun setup() {
@@ -49,7 +61,7 @@ class SqliteKeyReferenceStoreImplTest {
                 maximumPoolSize = 1
             }
         dataSource = HikariDataSource(config)
-        val driver = dataSource.asJdbcDriver()
+        driver = dataSource.asJdbcDriver()
         KeyReferenceDatabaseSqlite.Schema.create(driver)
         val database = KeyReferenceDatabaseSqlite(driver)
         store = SqliteKeyReferenceStoreImpl(database)
@@ -65,6 +77,7 @@ class SqliteKeyReferenceStoreImplTest {
         alias: String = "test-key",
         providerId: String = "software-provider",
         kid: String? = "kid-123",
+        controlMode: ResourceControlMode = ResourceControlMode.PLATFORM_MANAGED,
     ) = KeyReferenceRecord(
         id = Uuid.random().toString(),
         tenantId = tenantId,
@@ -72,8 +85,489 @@ class SqliteKeyReferenceStoreImplTest {
         kid = kid,
         providerId = providerId,
         origin = Origin.MANAGED,
+        controlMode = controlMode,
         createdAt = Clock.System.now(),
         updatedAt = Clock.System.now(),
+    )
+
+    @Test
+    fun supportsDurableAllMatchOwnershipHistoryAcrossProviders() =
+        runTest {
+            val tenantId = "all-match-tenant-${Uuid.random()}"
+            val alias = "all-match-alias-${Uuid.random()}"
+            val kid = "all-match-kid-${Uuid.random()}"
+            val first = testRecord(tenantId, alias, "provider-a-${Uuid.random()}", kid)
+            val second = testRecord(tenantId, alias, "provider-b-${Uuid.random()}", kid)
+
+            assertEquals(KeyReferenceHistoryCapability.UNSUPPORTED, store.ownershipHistoryCapability)
+            assertTrue(store.save(first).isOk)
+            assertTrue(store.save(second).isOk)
+            assertEquals(setOf(first.id, second.id), store.findAllActiveByAlias(tenantId, alias).value.map { it.id }.toSet())
+            assertEquals(setOf(first.id, second.id), store.findAllActiveByKid(tenantId, kid).value.map { it.id }.toSet())
+
+            assertTrue(store.delete(first.tenantId, first.alias, first.providerId).value)
+            assertTrue(store.delete(second.tenantId, second.alias, second.providerId).value)
+            assertEquals(
+                setOf(first.id, second.id),
+                store.findAllByAliasIncludingDeleted(tenantId, alias).value.map { it.id }.toSet(),
+            )
+            assertEquals(
+                setOf(first.id, second.id),
+                store.findAllByKidIncludingDeleted(tenantId, kid).value.map { it.id }.toSet(),
+            )
+            assertTrue(store.findAllByAliasIncludingDeleted("other-tenant", alias).value.isEmpty())
+        }
+
+    @Test
+    fun upsertCanonicalKidConstraintConflictHasStableRegistrationCode() =
+        runTest {
+            val tenantId = "constraint-tenant-${Uuid.random()}"
+            val providerId = "constraint-provider-${Uuid.random()}"
+            val kid = "constraint-kid-${Uuid.random()}"
+            assertTrue(store.save(testRecord(tenantId, "constraint-alias-a", providerId, kid)).isOk)
+
+            val result = store.upsert(testRecord(tenantId, "constraint-alias-b", providerId, kid))
+
+            assertTrue(result.isErr)
+            assertEquals(KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT, result.error.code)
+        }
+
+    @Test
+    fun concurrentCanonicalKidUpsertsProduceOneSuccessAndOneStableConflict() =
+        runTest {
+            val databaseFile = Files.createTempFile("key-reference-race-", ".sqlite")
+            val jdbcUrl = "jdbc:sqlite:${databaseFile.toAbsolutePath()}"
+            fun newSource() =
+                HikariDataSource(
+                    HikariConfig().apply {
+                        this.jdbcUrl = jdbcUrl
+                        maximumPoolSize = 1
+                    },
+                )
+
+            try {
+                newSource().use { firstSource ->
+                    newSource().use { secondSource ->
+                        val firstDriver = firstSource.asJdbcDriver()
+                        val secondDriver = secondSource.asJdbcDriver()
+                        firstDriver.execute(null, "PRAGMA busy_timeout = 5000", 0)
+                        secondDriver.execute(null, "PRAGMA busy_timeout = 5000", 0)
+                        KeyReferenceDatabaseSqlite.Schema.create(firstDriver)
+                        val firstStore = SqliteKeyReferenceStoreImpl(KeyReferenceDatabaseSqlite(firstDriver))
+                        val secondStore = SqliteKeyReferenceStoreImpl(KeyReferenceDatabaseSqlite(secondDriver))
+                        val tenantId = "race-tenant-${Uuid.random()}"
+                        val providerId = "race-provider-${Uuid.random()}"
+                        val canonicalKid = "race-kid-${Uuid.random()}"
+                        val ready = CountDownLatch(2)
+                        val start = CountDownLatch(1)
+
+                        val results =
+                            coroutineScope {
+                                val deferred =
+                                    listOf(
+                                        async(Dispatchers.IO) {
+                                            ready.countDown()
+                                            check(start.await(10, TimeUnit.SECONDS))
+                                            firstStore.upsert(testRecord(tenantId, "race-alias-a", providerId, canonicalKid))
+                                        },
+                                        async(Dispatchers.IO) {
+                                            ready.countDown()
+                                            check(start.await(10, TimeUnit.SECONDS))
+                                            secondStore.upsert(testRecord(tenantId, "race-alias-b", providerId, canonicalKid))
+                                        },
+                                    )
+                                check(ready.await(10, TimeUnit.SECONDS))
+                                start.countDown()
+                                deferred.awaitAll()
+                            }
+
+                        assertEquals(1, results.count { it.isOk })
+                        val conflict = results.single { it.isErr }.error
+                        assertEquals(KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT, conflict.code)
+                    }
+                }
+            } finally {
+                Files.deleteIfExists(databaseFile)
+            }
+        }
+
+    @Test
+    fun unrelatedUpsertConstraintFailureRemainsUnknownError() =
+        runTest {
+            val first = testRecord(alias = "primary-id-a-${Uuid.random()}", kid = "primary-kid-a-${Uuid.random()}")
+            assertTrue(store.save(first).isOk)
+
+            val result =
+                store.upsert(
+                    testRecord(alias = "primary-id-b-${Uuid.random()}", kid = "primary-kid-b-${Uuid.random()}").copy(id = first.id),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("UNKNOWN_ERROR", result.error.code)
+        }
+
+    @Test
+    fun externallyManagedRoundTripsThroughSaveUpsertAliasKidAndList() =
+        runTest {
+            val tenantId = "external-round-trip-tenant-${Uuid.random()}"
+            val alias = "external-round-trip-${Uuid.random()}"
+            val providerId = "external-round-trip-provider-${Uuid.random()}"
+            val originalKid = "external-round-trip-original-kid-${Uuid.random()}"
+            val updatedKid = "external-round-trip-updated-kid-${Uuid.random()}"
+            val platformManaged = testRecord(
+                tenantId = tenantId,
+                alias = alias,
+                providerId = providerId,
+                kid = originalKid,
+            )
+
+            assertTrue(store.save(platformManaged).isOk)
+            val externallyManaged = platformManaged.copy(
+                id = Uuid.random().toString(),
+                kid = updatedKid,
+                controlMode = ResourceControlMode.EXTERNALLY_MANAGED,
+                updatedAt = Clock.System.now(),
+            )
+            assertTrue(store.upsert(externallyManaged).isOk)
+
+            assertEquals(
+                "externally_managed",
+                scalar("SELECT control_mode FROM key_reference WHERE id = '${platformManaged.id}'"),
+            )
+            val byAlias = store.findByAlias(tenantId, alias, providerId).value
+            assertNotNull(byAlias)
+            assertEquals(updatedKid, byAlias.kid)
+            assertEquals(
+                ResourceControlMode.EXTERNALLY_MANAGED,
+                byAlias.controlMode,
+            )
+            assertNull(store.findByKid(tenantId, originalKid, providerId).value)
+            val byKid = store.findByKid(tenantId, updatedKid, providerId).value
+            assertNotNull(byKid)
+            assertEquals(
+                ResourceControlMode.EXTERNALLY_MANAGED,
+                byKid.controlMode,
+            )
+            val listed = store.findAll(tenantId).value.single { it.alias == alias }
+            assertEquals(updatedKid, listed.kid)
+            assertEquals(ResourceControlMode.EXTERNALLY_MANAGED, listed.controlMode)
+        }
+
+    @Test
+    fun upsertCannotRelabelAnExistingWalletUnitOwner() =
+        runTest {
+            val tenantId = "immutable-owner-tenant-${Uuid.random()}"
+            val alias = "immutable-owner-alias-${Uuid.random()}"
+            val providerId = "immutable-owner-provider-${Uuid.random()}"
+            val original =
+                testRecord(
+                    tenantId = tenantId,
+                    alias = alias,
+                    providerId = providerId,
+                ).copy(walletUnitId = "wallet-owner-a")
+            assertTrue(store.save(original).isOk)
+
+            val attemptedRelabel =
+                store.upsert(
+                    original.copy(
+                        id = Uuid.random().toString(),
+                        walletUnitId = "wallet-owner-b",
+                        updatedAt = Clock.System.now(),
+                    ),
+                )
+
+            assertTrue(attemptedRelabel.isOk)
+            assertEquals("wallet-owner-a", attemptedRelabel.value.walletUnitId)
+            val persisted = store.findByAlias(tenantId, alias, providerId).value
+            assertNotNull(persisted)
+            assertEquals("wallet-owner-a", persisted.walletUnitId)
+        }
+
+    @Test
+    fun includeDeletedLookupsAreTenantAndProviderScoped() =
+        runTest {
+            val record = testRecord(
+                tenantId = "history-tenant-${Uuid.random()}",
+                alias = "history-alias-${Uuid.random()}",
+                providerId = "history-provider-${Uuid.random()}",
+                kid = "history-kid-${Uuid.random()}",
+                controlMode = ResourceControlMode.EXTERNALLY_MANAGED,
+            )
+            assertTrue(store.save(record).isOk)
+            assertTrue(store.delete(record.tenantId, record.alias, record.providerId).value)
+
+            val byAlias = store.findLatestByAliasIncludingDeleted(record.tenantId, record.alias).value
+            val byKid = store.findLatestByKidIncludingDeleted(record.tenantId, record.kid!!).value
+            assertNotNull(byAlias)
+            assertNotNull(byKid)
+            assertEquals(record.id, byAlias.id)
+            assertEquals(record.id, byKid.id)
+            assertEquals(ResourceControlMode.EXTERNALLY_MANAGED, byAlias.controlMode)
+            assertNotNull(byAlias.deletedAt)
+            assertNull(store.findLatestByAliasIncludingDeleted("other-tenant", record.alias).value)
+            assertNull(store.findLatestByAliasIncludingDeleted(record.tenantId, record.alias, "other-provider").value)
+        }
+
+    @Test
+    fun fileBackedStoreSurvivesCloseAndReopenWithExternalOwnershipHistory() =
+        runTest {
+            val databaseFile = Files.createTempFile("key-reference-restart-", ".sqlite")
+            Files.deleteIfExists(databaseFile)
+            val jdbcUrl = "jdbc:sqlite:${databaseFile.toAbsolutePath()}"
+            val record =
+                testRecord(
+                    tenantId = "restart-tenant-${Uuid.random()}",
+                    alias = "restart-alias-${Uuid.random()}",
+                    providerId = "restart-provider-${Uuid.random()}",
+                    kid = "restart-kid-${Uuid.random()}",
+                    controlMode = ResourceControlMode.EXTERNALLY_MANAGED,
+                )
+
+            fun open(): Pair<HikariDataSource, SqliteKeyReferenceStoreImpl> {
+                val source =
+                    HikariDataSource(
+                        HikariConfig().apply {
+                            this.jdbcUrl = jdbcUrl
+                            maximumPoolSize = 1
+                        },
+                    )
+                val driver = source.asJdbcDriver()
+                KeyReferenceDatabaseSqlite.Schema.create(driver)
+                return source to
+                    SqliteKeyReferenceStoreImpl(
+                        KeyReferenceDatabaseSqlite(driver),
+                        KeyReferenceHistoryCapability.DURABLE,
+                    )
+            }
+
+            try {
+                val (firstSource, firstStore) = open()
+                assertEquals(KeyReferenceHistoryCapability.DURABLE, firstStore.ownershipHistoryCapability)
+                assertTrue(firstStore.save(record).isOk)
+                assertTrue(firstStore.delete(record.tenantId, record.alias, record.providerId).value)
+                firstSource.close()
+
+                val (reopenedSource, reopenedStore) = open()
+                try {
+                    assertEquals(KeyReferenceHistoryCapability.DURABLE, reopenedStore.ownershipHistoryCapability)
+                    val history = reopenedStore.findLatestByAliasIncludingDeleted(record.tenantId, record.alias, record.providerId).value
+                    assertNotNull(history)
+                    assertEquals(ResourceControlMode.EXTERNALLY_MANAGED, history.controlMode)
+                    assertNotNull(history.deletedAt)
+                    assertEquals(record.id, history.id)
+                } finally {
+                    reopenedSource.close()
+                }
+            } finally {
+                Files.deleteIfExists(databaseFile)
+            }
+        }
+
+    @Test
+    fun unknownStoredControlModeFailsLoudly() =
+        runTest {
+            val record = testRecord(tenantId = "unknown-control-mode-tenant", alias = "unknown-control-mode")
+            assertTrue(store.save(record).isOk)
+            driver.execute(
+                null,
+                "UPDATE key_reference SET control_mode = 'corrupted_mode' WHERE id = '${record.id}'",
+                0,
+            )
+
+            val result = store.findByAlias(record.tenantId, record.alias, record.providerId)
+            assertTrue(result.isErr, "unknown persisted control_mode must not default silently")
+        }
+
+    @Test
+    fun everySupportedMigrationStartConvergesWithFreshSchema() =
+        runTest {
+            val freshShape = withIsolatedSqliteDatabase("fresh") { source, isolatedDriver ->
+                KeyReferenceDatabaseSqlite.Schema.create(isolatedDriver)
+                keyReferenceSchemaShape(source)
+            }
+
+            listOf(0L, 1L).forEach { startVersion ->
+                val upgradedShape = withIsolatedSqliteDatabase("upgrade_$startVersion") { source, isolatedDriver ->
+                    if (startVersion == 1L) {
+                        KeyReferenceDatabaseSqlite.Schema.migrate(isolatedDriver, oldVersion = 0, newVersion = 1)
+                        insertLegacyRow(isolatedDriver, "legacy-v1")
+                    }
+                    KeyReferenceDatabaseSqlite.Schema.migrate(
+                        isolatedDriver,
+                        oldVersion = startVersion,
+                        newVersion = KeyReferenceDatabaseSqlite.Schema.version,
+                    )
+                    if (startVersion == 1L) {
+                        assertEquals(
+                            "platform_managed",
+                            scalar(source, "SELECT control_mode FROM key_reference WHERE id = 'legacy-v1'"),
+                        )
+                    }
+                    keyReferenceSchemaShape(source)
+                }
+
+                assertEquals(
+                    freshShape,
+                    upgradedShape,
+                    "SQLite schema migrated from version $startVersion must match fresh schema in column and index order",
+                )
+            }
+        }
+
+    private fun scalar(sql: String): String? =
+        scalar(dataSource, sql)
+
+    private fun scalar(source: HikariDataSource, sql: String): String? =
+        source.connection.use { connection ->
+            connection.createStatement().executeQuery(sql).use { resultSet ->
+                if (resultSet.next()) resultSet.getString(1) else null
+            }
+        }
+
+    private fun insertLegacyRow(isolatedDriver: SqlDriver, id: String) {
+        isolatedDriver.execute(
+            null,
+            """
+            INSERT INTO key_reference(
+                id, tenant_id, alias, kid, provider_id, origin,
+                key_type, signature_algorithm, key_visibility, key_encoding,
+                created_at, created_by_id, updated_at, updated_by_id
+            ) VALUES (
+                '$id', 'legacy-tenant', 'legacy-alias', 'legacy-kid', 'legacy-provider', 'managed',
+                NULL, NULL, NULL, NULL,
+                '2026-01-01T00:00:00Z', NULL, '2026-01-01T00:00:00Z', NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+    }
+
+    private fun <T> withIsolatedSqliteDatabase(
+        label: String,
+        block: (HikariDataSource, SqlDriver) -> T,
+    ): T {
+        val isolatedConfig = HikariConfig().apply {
+            jdbcUrl = "jdbc:sqlite:file:keyref_${label}_${Uuid.random()}?mode=memory&cache=shared"
+            maximumPoolSize = 1
+        }
+        return HikariDataSource(isolatedConfig).use { source ->
+            block(source, source.asJdbcDriver())
+        }
+    }
+
+    private fun keyReferenceSchemaShape(source: HikariDataSource): SqliteSchemaShape =
+        source.connection.use { connection ->
+            val columns = connection.createStatement().use { statement ->
+                statement.executeQuery("PRAGMA table_xinfo(key_reference)").use { resultSet ->
+                    buildList {
+                        while (resultSet.next()) {
+                            add(
+                                SqliteColumnShape(
+                                    ordinal = resultSet.getInt("cid"),
+                                    name = resultSet.getString("name"),
+                                    type = resultSet.getString("type"),
+                                    nullable = resultSet.getInt("notnull") == 0,
+                                    defaultValue = resultSet.getString("dflt_value"),
+                                    primaryKeyPosition = resultSet.getInt("pk"),
+                                    hidden = resultSet.getInt("hidden"),
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            data class IndexHeader(
+                val name: String,
+                val unique: Boolean,
+                val origin: String,
+                val partial: Boolean,
+            )
+            val headers = connection.createStatement().use { statement ->
+                statement.executeQuery("PRAGMA index_list(key_reference)").use { resultSet ->
+                    buildList {
+                        while (resultSet.next()) {
+                            add(
+                                IndexHeader(
+                                    name = resultSet.getString("name"),
+                                    unique = resultSet.getInt("unique") == 1,
+                                    origin = resultSet.getString("origin"),
+                                    partial = resultSet.getInt("partial") == 1,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            val indexes = headers.map { header ->
+                val indexColumns = connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA index_xinfo('${header.name}')").use { resultSet ->
+                        buildList {
+                            while (resultSet.next()) {
+                                if (resultSet.getInt("key") == 1) {
+                                    add(
+                                        SqliteIndexColumnShape(
+                                            ordinal = resultSet.getInt("seqno"),
+                                            name = resultSet.getString("name"),
+                                            descending = resultSet.getInt("desc") == 1,
+                                            collation = resultSet.getString("coll"),
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                val definition = connection.prepareStatement(
+                    "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+                ).use { statement ->
+                    statement.setString(1, header.name)
+                    statement.executeQuery().use { resultSet ->
+                        if (resultSet.next()) normalizeSql(resultSet.getString("sql")) else null
+                    }
+                }
+                SqliteIndexShape(
+                    name = header.name,
+                    unique = header.unique,
+                    origin = header.origin,
+                    partial = header.partial,
+                    columns = indexColumns,
+                    definition = definition,
+                )
+            }
+            SqliteSchemaShape(columns = columns, indexes = indexes.sortedBy { it.name })
+        }
+
+    private fun normalizeSql(value: String?): String? = value?.trim()?.replace(Regex("\\s+"), " ")?.lowercase()
+
+    private data class SqliteSchemaShape(
+        val columns: List<SqliteColumnShape>,
+        val indexes: List<SqliteIndexShape>,
+    )
+
+    private data class SqliteColumnShape(
+        val ordinal: Int,
+        val name: String,
+        val type: String,
+        val nullable: Boolean,
+        val defaultValue: String?,
+        val primaryKeyPosition: Int,
+        val hidden: Int,
+    )
+
+    private data class SqliteIndexShape(
+        val name: String,
+        val unique: Boolean,
+        val origin: String,
+        val partial: Boolean,
+        val columns: List<SqliteIndexColumnShape>,
+        val definition: String?,
+    )
+
+    private data class SqliteIndexColumnShape(
+        val ordinal: Int,
+        val name: String?,
+        val descending: Boolean,
+        val collation: String?,
     )
 
     // -- save --

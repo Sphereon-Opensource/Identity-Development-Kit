@@ -2,7 +2,6 @@ package com.sphereon.crypto.kms.rest.server.service
 
 import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.crypto.core.KeyInfo
-import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.ManagedKeyReferenceFilter
@@ -14,6 +13,7 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.kms.ManagedKeyStoreService
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.crypto.core.x509.certificateChainFromX5c
 import com.sphereon.di.session.SessionScope
@@ -32,7 +32,11 @@ import kotlin.native.ObjCName
 @ObjCName("KmsRestServiceImpl", exact = true)
 class KmsRestServiceImpl(
     private val kms: KeyManagerService,
+    private val managedKeyStore: ManagedKeyStoreService,
 ) : KmsRestService {
+    /** Retains the original public constructor and JVM descriptor. */
+    constructor(kms: KeyManagerService) : this(kms = kms, managedKeyStore = kms)
+
     override suspend fun getKey(
         aliasOrKid: String,
         providerId: String?,
@@ -51,6 +55,11 @@ class KmsRestServiceImpl(
                 else -> throw exception
             }
         }
+
+    override suspend fun getKeyReference(
+        aliasOrKid: String,
+        providerId: String?,
+    ): ManagedKeyReference? = managedKeyStore.findRegisteredKeyReference(aliasOrKid, providerId)
 
     override suspend fun listKeys(providerId: String?): Array<ManagedKeyReference> {
         if (providerId != null) {
@@ -106,17 +115,7 @@ class KmsRestServiceImpl(
     override suspend fun deleteKey(
         aliasOrKid: String,
         providerId: String?,
-    ): Boolean {
-        val key = getKey(aliasOrKid, providerId)
-        val keyInfo: KeyInfoType<Jwk> =
-            KeyInfo(
-                kid = key.kid,
-                alias = key.alias,
-                providerId = key.providerId,
-            )
-
-        return kms.deleteKey(keyInfo)
-    }
+    ): Boolean = managedKeyStore.deleteKey(KeyInfo<Jwk>(alias = aliasOrKid, providerId = providerId))
 
     @ContributesTo(SessionScope::class)
     interface Graph {

@@ -1,0 +1,376 @@
+{
+  "vct": "urn:eudi:pid:1",
+  "name": "ds002 - Person Identification Data (PID) – SD-JWT VC payload",
+  "description": "Schema for the SD-JWT VC payload of a PID as defined in the ds002 PID Rulebook (Chapter 4). This models the JSON claims set prior to SD-JWT disclosure/packing.",
+  "display": [
+    {
+      "locale": "en-US",
+      "name": "Person Identification Data (PID)",
+      "description": "Schema for the SD-JWT VC payload of a PID as defined in the ds002 PID Rulebook (Chapter 4). This models the JSON claims set prior to SD-JWT disclosure/packing."
+    }
+  ],
+  "claims": [
+    {
+      "path": [
+        "issuing_country"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Issuing Country"
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "path": [
+        "issuing_jurisdiction"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Issuing Jurisdiction"
+        }
+      ]
+    },
+    {
+      "path": [
+        "nationalities"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Nationalities"
+        }
+      ],
+      "description": "Array of alpha-2 nationality codes.",
+      "mandatory": true
+    },
+    {
+      "path": [
+        "birthdate"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Birthdate"
+        }
+      ],
+      "description": "Date of birth in ISO 8601-1 YYYY-MM-DD format.",
+      "mandatory": true
+    },
+    {
+      "path": [
+        "phone_number"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Phone Number"
+        }
+      ],
+      "description": "Mobile phone number starting with '+, and OICD / E.164 format compliant"
+    },
+    {
+      "path": [
+        "attestation_legal_category"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Attestation Legal Category"
+        }
+      ],
+      "description": "Indication of the attestation legal category, one of QEAA, PUB-EAA or EAA. as required by  ARB_25 in Topic 12 of Annex 2 of the ARF.",
+      "mandatory": true
+    },
+    {
+      "path": [
+        "address",
+        "formatted"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Formatted"
+        }
+      ]
+    },
+    {
+      "path": [
+        "address",
+        "street_address"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Street Address"
+        }
+      ]
+    },
+    {
+      "path": [
+        "address",
+        "locality"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Locality"
+        }
+      ]
+    },
+    {
+      "path": [
+        "address",
+        "region"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Region"
+        }
+      ]
+    },
+    {
+      "path": [
+        "address",
+        "postal_code"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Postal Code"
+        }
+      ]
+    },
+    {
+      "path": [
+        "address",
+        "country"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Country"
+        }
+      ]
+    },
+    {
+      "path": [
+        "address"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Address"
+        }
+      ],
+      "description": "OIDC-style address object."
+    },
+    {
+      "path": [
+        "family_name"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Family Name"
+        }
+      ],
+      "description": "Current last name(s) of the user.",
+      "mandatory": true
+    },
+    {
+      "path": [
+        "place_of_birth",
+        "locality"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Locality"
+        }
+      ]
+    },
+    {
+      "path": [
+        "place_of_birth",
+        "country"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Country"
+        }
+      ],
+      "description": "Alpha-2 country code"
+    },
+    {
+      "path": [
+        "place_of_birth",
+        "region"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Region"
+        }
+      ]
+    },
+    {
+      "path": [
+        "place_of_birth"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Place Of Birth"
+        }
+      ],
+      "description": "Place of birth object as per EKYC: at least one of country, region, locality.",
+      "mandatory": true
+    },
+    {
+      "path": [
+        "birth_family_name"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Birth Family Name"
+        }
+      ]
+    },
+    {
+      "path": [
+        "issuing_authority"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Issuing Authority"
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "path": [
+        "birth_given_name"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Birth Given Name"
+        }
+      ]
+    },
+    {
+      "path": [
+        "picture"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Picture"
+        }
+      ],
+      "description": "Data URL with base64-encoded JPEG portrait."
+    },
+    {
+      "path": [
+        "personal_administrative_number"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Personal Administrative Number"
+        }
+      ]
+    },
+    {
+      "path": [
+        "document_number"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Document Number"
+        }
+      ]
+    },
+    {
+      "path": [
+        "trust_anchor"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Trust Anchor"
+        }
+      ],
+      "description": "URL of machine‑readable trust anchor as per Annex V/VII point h)."
+    },
+    {
+      "path": [
+        "given_name"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Given Name"
+        }
+      ],
+      "description": "Current first name(s) of the user.",
+      "mandatory": true
+    },
+    {
+      "path": [
+        "email"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Email"
+        }
+      ]
+    },
+    {
+      "path": [
+        "sex"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Sex"
+        }
+      ],
+      "description": "Sex code per rulebook: 0,1,2,3,4,5,6,9."
+    },
+    {
+      "path": [
+        "date_of_expiry"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Date Of Expiry"
+        }
+      ],
+      "description": "Administrative expiry date in YYYY-MM-DD format.",
+      "mandatory": true
+    },
+    {
+      "path": [
+        "date_of_issuance"
+      ],
+      "display": [
+        {
+          "locale": "en-US",
+          "label": "Date Of Issuance"
+        }
+      ],
+      "description": "Administrative issuance date in YYYY-MM-DD format."
+    }
+  ]
+}

@@ -237,6 +237,10 @@ class HttpClientFactoryIosImpl(
                 }
 
                 additionalConfig?.invoke(this)
+
+                // Keep the caller-selected option last so an arbitrary additionalConfig cannot
+                // silently re-enable auto-follow for a governed (false) client.
+                followRedirects = options.followRedirects
             }.also { client ->
                 val validationPolicy = urlValidation
                 if (validationPolicy != null) {
@@ -260,6 +264,16 @@ class HttpClientFactoryIosImpl(
     override fun isSupportedOptions(options: HttpClientOptions): Boolean {
         if (!getEngineTypesSupported().contains(options.engine ?: getEngineTypeDefault())) {
             log.error("Http client engine type ${options.engine} not supported on iOS/Darwin")
+            return false
+        }
+        // Darwin currently cannot install the execution-scoped TrustDomain anchors into the
+        // URLSession server-trust challenge.  Refusing custom trust here is deliberate: falling
+        // back to the platform roots would turn a governed connector trust decision into a
+        // silent fail-open.  The JVM OkHttp implementation consumes these anchors directly.
+        if (options.sslConfig.server.ca.additionalCAs.isNotEmpty() ||
+            options.sslConfig.server.ca.additionalCertificatePems.isNotEmpty()
+        ) {
+            log.error("Custom connector server trust is not supported by the Darwin HTTP engine")
             return false
         }
         return true
@@ -1006,9 +1020,9 @@ class HttpClientFactoryIosImpl(
      * Handles server trust validation challenge.
      * Validates server certificate against platform trust store and/or additional CAs.
      *
-     * Note: Custom server CA validation on iOS requires access to serverTrust property which
-     * is not directly exposed in Kotlin/Native interop. For now, we log a warning and use
-     * default handling. Full implementation would require additional platform-specific bindings.
+     * Custom server CA validation is rejected by [isSupportedOptions] until the Darwin engine can
+     * install the execution-scoped TrustDomain anchors. This handler therefore only handles the
+     * platform-trust path and never downgrades a governed trust decision to it.
      */
     @OptIn(ExperimentalForeignApi::class)
     private fun handleServerTrustChallenge(
@@ -1017,12 +1031,8 @@ class HttpClientFactoryIosImpl(
         serverTrustAnchors: List<SecCertificateRef>?,
         completion: (NSURLSessionAuthChallengeDisposition, NSURLCredential?) -> Unit,
     ) {
-        // If we have additional CAs configured, log a warning as custom validation is not fully supported
-        if (!serverTrustAnchors.isNullOrEmpty()) {
-            log.warn(
-                "Custom server CA validation requested but not fully supported on iOS platform - using default handling. " +
-                    "Additional CAs configured: ${caOpts.additionalCAs.size}",
-            )
+        check(serverTrustAnchors.isNullOrEmpty()) {
+            "Custom server trust must be rejected before a Darwin HTTP client is constructed"
         }
 
         // Use platform default handling

@@ -25,8 +25,8 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.json.jcs.Jcs
 import com.sphereon.crypto.core.KeyInfo
-import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
@@ -50,6 +50,8 @@ import com.sphereon.identity.matching.protection.IdentifierProtector
 import com.sphereon.identity.matching.protection.normalizeIdentifier
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -85,6 +87,9 @@ class KmsBackedIdentifierProtector(
     private val providerId: String? = null,
     private val keyVersion: String = "v1",
 ) : IdentifierProtector {
+    private val keyReferenceCacheMutex = Mutex()
+    private val keyReferenceCache = mutableMapOf<TenantKeyCacheKey, ManagedKeyReference>()
+
     private companion object {
         const val BI_KEY_PREFIX = "idfr:bi:"
         const val ENC_KEY_PREFIX = "idfr:enc:"
@@ -103,7 +108,12 @@ class KmsBackedIdentifierProtector(
          * second write can make blind indexes or ciphertext created with the first key unreadable after
          * the in-process key cache is lost on restart.
          */
-        val tenantKeyProvisioningMutex = Mutex()
+        // Blind-index and encryption keys are independent aliases. Keep their first-use
+        // provisioning separate so a searchable identifier can create both keys in parallel.
+        // Each lock remains process-wide, preserving the no-replacement guarantee for its
+        // corresponding alias family across session-scoped protector instances.
+        val blindIndexKeyProvisioningMutex = Mutex()
+        val encryptionKeyProvisioningMutex = Mutex()
     }
 
     override suspend fun protect(
@@ -166,13 +176,21 @@ class KmsBackedIdentifierProtector(
         mode: IdentifierProtectionMode,
         scope: String,
     ): IdkResult<ProtectedIdentifierValue, IdkError> {
-        val hmac =
-            computeBlindIndex(tenantId, type, normalized, scope)
-                .let { it.getOrNull() ?: return Err(it.errorOrNull() ?: unknown("blind index failed")) }
-
-        val ciphertext =
-            encrypt(tenantId, identityId, type, normalized)
-                .let { it.getOrNull() ?: return Err(it.errorOrNull() ?: unknown("encryption failed")) }
+        // Validate both selected aliases before either branch is allowed to create a key. This
+        // keeps an invalid/ambiguous blind-index lookup from causing an unrelated encryption-key
+        // mutation, while still allowing valid independent provisioning to overlap below.
+        val preflight = preflightSearchableKeys(tenantId).getOrElse { return Err(it) }
+        // These operations use distinct tenant keys and have no data dependency. Running them
+        // together removes one full routed KMS leg from the cold searchable-identifier path.
+        // Both results are awaited before returning, so a failure remains fail-closed.
+        val (blindIndexResult, encryptionResult) =
+            coroutineScope {
+                val blindIndex = async { computeBlindIndex(tenantId, type, normalized, scope, preflight[BI_KEY_PREFIX + tenantId]) }
+                val encryption = async { encrypt(tenantId, identityId, type, normalized, preflight[ENC_KEY_PREFIX + tenantId]) }
+                blindIndex.await() to encryption.await()
+            }
+        val hmac = blindIndexResult.getOrNull() ?: return Err(blindIndexResult.errorOrNull() ?: unknown("blind index failed"))
+        val ciphertext = encryptionResult.getOrNull() ?: return Err(encryptionResult.errorOrNull() ?: unknown("encryption failed"))
 
         return Ok(
             ProtectedIdentifierValue(
@@ -185,6 +203,34 @@ class KmsBackedIdentifierProtector(
                 hmacKeyVersion = keyVersion,
             ),
         )
+    }
+
+    private suspend fun preflightSearchableKeys(tenantId: String): IdkResult<Map<String, TenantKeyLookup>, IdkError> {
+        val aliases =
+            listOf(
+                BI_KEY_PREFIX + tenantId to "blind-index",
+                ENC_KEY_PREFIX + tenantId to "encryption",
+            )
+        val unresolved = aliases.filter { (alias, _) ->
+            cachedKeyReference(TenantKeyCacheKey(tenantId, providerId, alias)) == null
+        }
+        if (unresolved.isEmpty()) return Ok(emptyMap())
+
+        val outcomes =
+            coroutineScope {
+                unresolved.map { (alias, label) ->
+                    async { Triple(alias, label, lookupTenantKey(alias, label, tenantId)) }
+                }.map { it.await() }
+            }
+        val resolved = mutableMapOf<String, TenantKeyLookup>()
+        for ((alias, _, result) in outcomes) {
+            val outcome = result.getOrNull() ?: return Err(result.errorOrNull() ?: unknown("identifier key preflight failed"))
+            resolved[alias] = outcome
+            if (outcome is TenantKeyLookup.Found) {
+                cacheKeyReference(TenantKeyCacheKey(tenantId, providerId, alias), outcome.keyInfo)
+            }
+        }
+        return Ok(resolved)
     }
 
     override suspend fun blindIndex(
@@ -221,8 +267,11 @@ class KmsBackedIdentifierProtector(
      * derive blind indexes without a separate provisioning step. Idempotent and concurrency-tolerant:
      * a key created by a racing caller is treated as success.
      */
-    private suspend fun ensureBlindIndexKey(tenantId: String): IdkResult<KeyInfoType<*>, IdkError> =
-        ensureTenantKey(BI_KEY_PREFIX + tenantId, "blind-index", tenantId) { alias ->
+    private suspend fun ensureBlindIndexKey(
+        tenantId: String,
+        knownLookup: TenantKeyLookup? = null,
+    ): IdkResult<ManagedKeyReference, IdkError> =
+        ensureTenantKey(BI_KEY_PREFIX + tenantId, "blind-index", tenantId, blindIndexKeyProvisioningMutex, knownLookup) { alias ->
             GenerateKeyArgs(
                 providerId = providerId,
                 alias = alias,
@@ -240,60 +289,133 @@ class KmsBackedIdentifierProtector(
         alias: String,
         label: String,
         tenantId: String,
+        provisioningMutex: Mutex,
+        knownLookup: TenantKeyLookup? = null,
         generate: (alias: String) -> GenerateKeyArgs,
-    ): IdkResult<KeyInfoType<*>, IdkError> {
-        resolveTenantKey(alias, label, tenantId).getOrNull()?.let { return Ok(it) }
+    ): IdkResult<ManagedKeyReference, IdkError> {
+        val cacheKey = TenantKeyCacheKey(tenantId = tenantId, providerId = providerId, alias = alias)
+        cachedKeyReference(cacheKey)?.let { return Ok(it) }
 
-        return tenantKeyProvisioningMutex.withLock {
-            // Another session may have provisioned the alias while this caller waited.
-            resolveTenantKey(alias, label, tenantId).getOrNull()?.let { return@withLock Ok(it) }
+        return provisioningMutex.withLock {
+            cachedKeyReference(cacheKey)?.let { return@withLock Ok(it) }
+
+            val lookup = knownLookup?.let(::Ok) ?: lookupTenantKey(alias, label, tenantId)
+            if (lookup.isErr) return@withLock Err(lookup.error)
+            when (val outcome = lookup.value) {
+                is TenantKeyLookup.Found -> {
+                    cacheKeyReference(cacheKey, outcome.keyInfo)
+                    return@withLock Ok(outcome.keyInfo)
+                }
+
+                TenantKeyLookup.Missing -> Unit
+            }
 
             val generated = generateKeyCommand.execute(generate(alias))
-            resolveTenantKey(alias, label, tenantId).fold(
-                success = { Ok(it) },
-                failure = {
-                    Err(generated.errorOrNull() ?: it)
-                },
-            )
+            if (generated.isOk) {
+                val reference = generated.value.keyReference
+                    ?: return@withLock Err(unknown("$label key generation returned no metadata receipt for tenant $tenantId"))
+                val validated = validateGeneratedKeyReference(reference, alias, label, tenantId)
+                    .getOrElse { return@withLock Err(it) }
+                cacheKeyReference(cacheKey, validated)
+                return@withLock Ok(validated)
+            }
+
+            // A different process may have created the same tenant alias after our exact lookup.
+            // Reconcile that one explicit conflict case with one exact re-read; unrelated command
+            // failures remain the authoritative error and never trigger provider/default guessing.
+            val reconciliation = lookupTenantKey(alias, label, tenantId)
+            val found = reconciliation.getOrNull() as? TenantKeyLookup.Found
+            if (found != null) {
+                cacheKeyReference(cacheKey, found.keyInfo)
+                Ok(found.keyInfo)
+            } else {
+                Err(generated.error)
+            }
         }
     }
 
     /**
-     * Resolve [alias] to the provider that actually owns the key. Listing returns metadata-only
-     * references, so the caller learns the provider selection needed for the next routed command
-     * without receiving symmetric key material.
+     * Resolve [alias] to the provider that actually owns the key. The request carries the exact
+     * alias to the owning KMS so persistent stores can select one metadata row rather than return
+     * the full tenant key catalog. No symmetric key material crosses the command boundary.
      */
     private suspend fun resolveTenantKey(
         alias: String,
         label: String,
         tenantId: String,
-    ): IdkResult<KeyInfoType<*>, IdkError> {
-        val lookup = listKeysCommand.execute(ListKeysArgs(providerId))
+    ): IdkResult<ManagedKeyReference, IdkError> {
+        val cacheKey = TenantKeyCacheKey(tenantId = tenantId, providerId = providerId, alias = alias)
+        cachedKeyReference(cacheKey)?.let { return Ok(it) }
+        val lookup = lookupTenantKey(alias, label, tenantId)
+        if (lookup.isErr) return Err(lookup.error)
+        return when (val outcome = lookup.value) {
+            is TenantKeyLookup.Found -> {
+                cacheKeyReference(cacheKey, outcome.keyInfo)
+                Ok(outcome.keyInfo)
+            }
+
+            TenantKeyLookup.Missing -> Err(unknown("$label key resolution failed for tenant $tenantId"))
+        }
+    }
+
+    private suspend fun lookupTenantKey(
+        alias: String,
+        label: String,
+        tenantId: String,
+    ): IdkResult<TenantKeyLookup, IdkError> {
+        val lookup = listKeysCommand.execute(ListKeysArgs(providerId = providerId, alias = alias))
         val references =
             lookup.getOrNull()?.keys
                 ?: return Err(
                     lookup.errorOrNull()
                         ?: unknown("$label key resolution failed for tenant $tenantId"),
                 )
-        val matching =
-            references.filter { reference ->
-                reference.alias == alias && (providerId == null || reference.providerId == providerId)
-            }
-        val resolved =
-            matching.singleOrNull()
-                ?: return Err(
-                    unknown(
-                        if (matching.isEmpty()) {
-                            "$label key resolution failed for tenant $tenantId"
-                        } else {
-                            "$label key provider resolution was ambiguous for tenant $tenantId"
-                        },
-                    ),
-                )
+        if (references.any { reference -> reference.alias != alias || (providerId != null && reference.providerId != providerId) }) {
+            return Err(unknown("$label exact key resolution returned an unrelated reference for tenant $tenantId"))
+        }
+        if (references.isEmpty()) return Ok(TenantKeyLookup.Missing)
+        val resolved = references.singleOrNull()
+            ?: return Err(unknown("$label key provider resolution was ambiguous for tenant $tenantId"))
         if (resolved.providerId.isBlank()) {
             return Err(unknown("$label key provider resolution failed for tenant $tenantId"))
         }
-        return Ok(resolved)
+        return Ok(TenantKeyLookup.Found(resolved))
+    }
+
+    private fun validateGeneratedKeyReference(
+        reference: ManagedKeyReference,
+        alias: String,
+        label: String,
+        tenantId: String,
+    ): IdkResult<ManagedKeyReference, IdkError> {
+        if (reference.alias != alias) {
+            return Err(unknown("$label key generation returned an unexpected alias for tenant $tenantId"))
+        }
+        if (reference.providerId.isNullOrBlank() || (providerId != null && reference.providerId != providerId)) {
+            return Err(unknown("$label key generation returned an unexpected provider for tenant $tenantId"))
+        }
+        return Ok(reference)
+    }
+
+    private suspend fun cachedKeyReference(key: TenantKeyCacheKey): ManagedKeyReference? =
+        keyReferenceCacheMutex.withLock { keyReferenceCache[key] }
+
+    private suspend fun cacheKeyReference(
+        key: TenantKeyCacheKey,
+        reference: ManagedKeyReference,
+    ) {
+        keyReferenceCacheMutex.withLock { keyReferenceCache[key] = reference }
+    }
+
+    private data class TenantKeyCacheKey(
+        val tenantId: String,
+        val providerId: String?,
+        val alias: String,
+    )
+
+    private sealed interface TenantKeyLookup {
+        data class Found(val keyInfo: ManagedKeyReference) : TenantKeyLookup
+        data object Missing : TenantKeyLookup
     }
 
     /**
@@ -305,6 +427,7 @@ class KmsBackedIdentifierProtector(
         type: IdentifierType,
         normalized: String,
         scope: String,
+        knownLookup: TenantKeyLookup? = null,
     ): IdkResult<String, IdkError> {
         val keyAlias = BI_KEY_PREFIX + tenantId
         val message =
@@ -320,7 +443,7 @@ class KmsBackedIdentifierProtector(
                 ),
             )
 
-        val resolvedKeyInfo = ensureBlindIndexKey(tenantId).getOrElse { return Err(it) }
+        val resolvedKeyInfo = ensureBlindIndexKey(tenantId, knownLookup).getOrElse { return Err(it) }
         // A null providerId means that the managed key store may search across multiple
         // configured providers. Carry the provider discovered by the successful key lookup into
         // the local MAC call so an upgraded multi-provider registry cannot select a new default.
@@ -355,8 +478,11 @@ class KmsBackedIdentifierProtector(
      * software provider then mints the generic 256-bit oct key required by AES-GCM.
      * Idempotent and concurrency-tolerant: a key created by a racing caller is treated as success.
      */
-    private suspend fun ensureEncryptionKey(tenantId: String): IdkResult<KeyInfoType<*>, IdkError> =
-        ensureTenantKey(ENC_KEY_PREFIX + tenantId, "encryption", tenantId) { alias ->
+    private suspend fun ensureEncryptionKey(
+        tenantId: String,
+        knownLookup: TenantKeyLookup? = null,
+    ): IdkResult<ManagedKeyReference, IdkError> =
+        ensureTenantKey(ENC_KEY_PREFIX + tenantId, "encryption", tenantId, encryptionKeyProvisioningMutex, knownLookup) { alias ->
             GenerateKeyArgs(
                 providerId = providerId,
                 alias = alias,
@@ -375,8 +501,9 @@ class KmsBackedIdentifierProtector(
         identityId: String?,
         type: IdentifierType,
         normalized: String,
+        knownLookup: TenantKeyLookup? = null,
     ): IdkResult<String, IdkError> {
-        val keyInfo = ensureEncryptionKey(tenantId).getOrElse { return Err(it) }
+        val keyInfo = ensureEncryptionKey(tenantId, knownLookup).getOrElse { return Err(it) }
         val aad = encryptionAad(tenantId, identityId, type)
 
         val result =

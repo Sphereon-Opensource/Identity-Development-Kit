@@ -22,8 +22,11 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.model.Origin
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ManagedKeyInfoType
+import com.sphereon.crypto.core.ResourceControlMode
+import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
+import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -31,8 +34,12 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 
 class ManagedKeyReferenceRegistrarTest {
     private lateinit var store: KeyReferenceStore
@@ -42,6 +49,7 @@ class ManagedKeyReferenceRegistrarTest {
     @BeforeEach
     fun setup() {
         store = mockk(relaxed = true)
+        every { store.ownershipHistoryCapability } returns KeyReferenceHistoryCapability.DURABLE
         execution =
             mockk {
                 every { sessionContext } returns
@@ -84,6 +92,20 @@ class ManagedKeyReferenceRegistrarTest {
             every { this@mockk.providerId } returns providerId
         }
 
+    private fun tenantExecution(id: String): SessionExecution =
+        mockk {
+            every { sessionContext } returns
+                mockk {
+                    every { context } returns
+                        mockk {
+                            every { tenant } returns
+                                mockk {
+                                    every { tenantId } returns id
+                                }
+                        }
+                }
+        }
+
     // -- indexManagedKey --
 
     @Test
@@ -109,6 +131,40 @@ class ManagedKeyReferenceRegistrarTest {
                     },
                 )
             }
+        }
+
+    @Test
+    fun twoTenantsIndexAndReadOnlyTheirOwnManagedKeyReferences() =
+        runTest {
+            every { store.isAvailable } returns true
+            val persisted = mutableListOf<KeyReferenceRecord>()
+            coEvery { store.upsert(any()) } answers {
+                val record = firstArg<KeyReferenceRecord>()
+                persisted.removeIf { it.tenantId == record.tenantId && it.alias == record.alias && it.providerId == record.providerId }
+                persisted += record
+                Ok(record)
+            }
+            coEvery { store.findAll(any(), any()) } answers {
+                Ok(persisted.filter { it.tenantId == firstArg<String>() })
+            }
+            coEvery { store.findByAlias(any(), any(), any()) } answers {
+                val tenantId = firstArg<String>()
+                val alias = secondArg<String>()
+                val providerId = thirdArg<String?>()
+                Ok(persisted.firstOrNull { it.tenantId == tenantId && it.alias == alias && (providerId == null || it.providerId == providerId) })
+            }
+
+            val tenantARegistrar = ManagedKeyReferenceRegistrar(store, tenantExecution("tenant-a"))
+            val tenantBRegistrar = ManagedKeyReferenceRegistrar(store, tenantExecution("tenant-b"))
+            tenantARegistrar.indexManagedKey(mockManagedKey(alias = "tenant-a-key", kid = "kid-a", providerId = "shared-azure"))
+            tenantBRegistrar.indexManagedKey(mockManagedKey(alias = "tenant-b-key", kid = "kid-b", providerId = "shared-azure"))
+
+            val tenantA = store.findAll("tenant-a").getOrElse { error("tenant-a listing failed: ${it.message}") }
+            val tenantB = store.findAll("tenant-b").getOrElse { error("tenant-b listing failed: ${it.message}") }
+            assertEquals(listOf("tenant-a-key"), tenantA.map { it.alias })
+            assertEquals(listOf("tenant-b-key"), tenantB.map { it.alias })
+            assertNull(store.findByAlias("tenant-a", "tenant-b-key", "shared-azure").value)
+            assertNull(store.findByAlias("tenant-b", "tenant-a-key", "shared-azure").value)
         }
 
     @Test
@@ -157,6 +213,8 @@ class ManagedKeyReferenceRegistrarTest {
     fun registerKeyReferenceCreatesRecord() =
         runTest {
             every { store.isAvailable } returns true
+            coEvery { store.findByAlias("test-tenant", "ext-alias", "ext-provider") } returns Ok(null)
+            coEvery { store.findByKid("test-tenant", "ext-kid", "ext-provider") } returns Ok(null)
             coEvery { store.upsert(any()) } answers {
                 Ok(firstArg<KeyReferenceRecord>())
             }
@@ -176,10 +234,150 @@ class ManagedKeyReferenceRegistrarTest {
                             record.alias == "ext-alias" &&
                             record.kid == "ext-kid" &&
                             record.providerId == "ext-provider" &&
-                            record.origin == Origin.MANAGED
+                            record.origin == Origin.EXTERNAL &&
+                            record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
                     },
                 )
             }
+        }
+
+    @Test
+    fun registerKeyReferencePersistsOnlySuppliedPublicMaterial() =
+        runTest {
+            every { store.isAvailable } returns true
+            coEvery { store.findByAlias("test-tenant", "ext-alias", "ext-provider") } returns Ok(null)
+            coEvery { store.findByKid("test-tenant", "ext-kid", "ext-provider") } returns Ok(null)
+            coEvery { store.upsert(any()) } answers { Ok(firstArg<KeyReferenceRecord>()) }
+
+            val result =
+                registrar.registerKeyReference(
+                    providerId = "ext-provider",
+                    alias = "ext-alias",
+                    kid = "ext-kid",
+                    publicKeyJwk = "{\"kty\":\"EC\",\"x\":\"public\"}",
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("{\"kty\":\"EC\",\"x\":\"public\"}", result.value.publicKeyJwk)
+            val persistedPublicKeyJwk = result.value.publicKeyJwk
+            assertNotNull(persistedPublicKeyJwk)
+            assertFalse(persistedPublicKeyJwk.contains("\"d\""))
+            assertFalse(persistedPublicKeyJwk.contains("\"k\""))
+        }
+
+    @Test
+    fun reRegistrationReclassifiesExistingReferenceAsExternal() =
+        runTest {
+            every { store.isAvailable } returns true
+            coEvery { store.findByAlias("test-tenant", "ext-alias", "ext-provider") } returns
+                Ok(
+                    KeyReferenceRecord(
+                        id = "existing",
+                        tenantId = "test-tenant",
+                        alias = "ext-alias",
+                        kid = "ext-kid",
+                        providerId = "ext-provider",
+                        origin = Origin.MANAGED,
+                        createdAt = Clock.System.now(),
+                        updatedAt = Clock.System.now(),
+                    ),
+                )
+            coEvery { store.findByKid("test-tenant", "ext-kid", "ext-provider") } returns
+                Ok(
+                    KeyReferenceRecord(
+                        id = "existing",
+                        tenantId = "test-tenant",
+                        alias = "ext-alias",
+                        kid = "ext-kid",
+                        providerId = "ext-provider",
+                        origin = Origin.MANAGED,
+                        createdAt = Clock.System.now(),
+                        updatedAt = Clock.System.now(),
+                    ),
+                )
+            coEvery { store.upsert(any()) } answers { Ok(firstArg<KeyReferenceRecord>()) }
+
+            val result =
+                registrar.registerKeyReference(
+                    providerId = "ext-provider",
+                    alias = "ext-alias",
+                    kid = "ext-kid",
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(Origin.EXTERNAL, result.value.origin)
+            assertEquals(ResourceControlMode.EXTERNALLY_MANAGED, result.value.controlMode)
+            coVerify {
+                store.upsert(
+                    match {
+                        it.id == "existing" &&
+                            it.origin == Origin.EXTERNAL &&
+                            it.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
+                    },
+                )
+            }
+        }
+
+    @Test
+    fun reRegistrationRejectsIdentityConflictBeforeUpsert() =
+        runTest {
+            every { store.isAvailable } returns true
+            coEvery { store.findByAlias("test-tenant", "ext-alias", "ext-provider") } returns
+                Ok(
+                    KeyReferenceRecord(
+                        id = "existing",
+                        tenantId = "test-tenant",
+                        alias = "ext-alias",
+                        kid = "different-kid",
+                        providerId = "ext-provider",
+                        origin = Origin.MANAGED,
+                        createdAt = Clock.System.now(),
+                        updatedAt = Clock.System.now(),
+                    ),
+                )
+
+            val result =
+                registrar.registerKeyReference(
+                    providerId = "ext-provider",
+                    alias = "ext-alias",
+                    kid = "requested-kid",
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("KMS_EXTERNAL_KEY_REGISTRATION_CONFLICT", result.error.code)
+            coVerify(exactly = 0) { store.upsert(any()) }
+        }
+
+    @Test
+    fun registrationRejectsCanonicalKidOwnedByAnotherActiveAlias() =
+        runTest {
+            every { store.isAvailable } returns true
+            coEvery { store.findByAlias("test-tenant", "new-alias", "ext-provider") } returns Ok(null)
+            coEvery { store.findByKid("test-tenant", "canonical-kid", "ext-provider") } returns
+                Ok(
+                    KeyReferenceRecord(
+                        id = "other-alias",
+                        tenantId = "test-tenant",
+                        alias = "other-alias",
+                        kid = "canonical-kid",
+                        providerId = "ext-provider",
+                        origin = Origin.EXTERNAL,
+                        controlMode = ResourceControlMode.EXTERNALLY_MANAGED,
+                        createdAt = Clock.System.now(),
+                        updatedAt = Clock.System.now(),
+                    ),
+                )
+
+            val result =
+                registrar.registerKeyReference(
+                    providerId = "ext-provider",
+                    alias = "new-alias",
+                    kid = "canonical-kid",
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("KMS_EXTERNAL_KEY_REGISTRATION_CONFLICT", result.error.code)
+            coVerify(exactly = 0) { store.upsert(any()) }
         }
 
     @Test
@@ -195,6 +393,26 @@ class ManagedKeyReferenceRegistrarTest {
                 )
 
             assertTrue(result.isErr)
+            coVerify(exactly = 0) { store.upsert(any()) }
+        }
+
+    @Test
+    fun registerKeyReferenceFailsClosedWhenDurableHistoryIsUnsupported() =
+        runTest {
+            every { store.isAvailable } returns true
+            every { store.ownershipHistoryCapability } returns KeyReferenceHistoryCapability.UNSUPPORTED
+
+            val result =
+                registrar.registerKeyReference(
+                    providerId = "ext-provider",
+                    alias = "ext-alias",
+                    kid = "ext-kid",
+                )
+
+            assertTrue(result.isErr)
+            assertEquals(KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED, result.error.code)
+            coVerify(exactly = 0) { store.findByAlias(any(), any(), any()) }
+            coVerify(exactly = 0) { store.findByKid(any(), any(), any()) }
             coVerify(exactly = 0) { store.upsert(any()) }
         }
 

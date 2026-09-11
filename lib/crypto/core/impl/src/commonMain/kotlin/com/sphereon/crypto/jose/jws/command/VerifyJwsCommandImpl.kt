@@ -221,6 +221,33 @@ class VerifyJwsCommandImpl(
 
                 val identifierOptsOrResult = identifierResult.value
 
+                // X.509 key extraction is not trust establishment. A verifier-admitted x5c
+                // source must have performed enabled, successful chain validation; in particular
+                // a disabled result (which intentionally reports error=false for extraction)
+                // must never reach signature verification as trusted material.
+                if (identifierOptsOrResult is ExternalIdentifierResult.X5c) {
+                    val verification = identifierOptsOrResult.verificationResult
+                    val validationSucceeded =
+                        identifierOptsOrResult.identifierOpts.verify != false &&
+                            !verification.error &&
+                            !verification.critical &&
+                            verification.message != "X509 verification has been disabled" &&
+                            verification.publicKey != null
+                    if (!validationSucceeded) {
+                        errorMessages.add("Signature $index: X.509 chain validation was not successfully established")
+                        anyResolutionFailed = true
+                        continue
+                    }
+                }
+
+                if (identifierOptsOrResult is ExternalIdentifierResult.Did &&
+                    identifierOptsOrResult.didResolutionResult.didDocumentMetadata?.get("deactivated").toString().equals("true", ignoreCase = true)
+                ) {
+                    errorMessages.add("Signature $index: DID is deactivated")
+                    anyResolutionFailed = true
+                    continue
+                }
+
                 // Extract keyInfo from either managed or external result
                 var keyInfo =
                     when (identifierOptsOrResult) {
@@ -239,30 +266,22 @@ class VerifyJwsCommandImpl(
                         }
                     }
 
-                // Update keyInfo with algorithm from JWT header if needed
-                // This is a fallback in case the identifier resolution didn't set it correctly
-                if (algValue != null && keyInfo.signatureAlgorithm == null) {
-                    // Map JWT alg value to SignatureAlgorithm
-                    try {
-                        val jwaAlg = JwaAlgorithm.fromValue(algValue)
-                        val signatureAlg = SignatureAlgorithm.fromJose(jwaAlg)
-
-                        // Update the keyInfo with the algorithm from the JWT header
-                        // NOTE: The identifier resolution service should have already set the correct algorithm,
-                        // so this code path should not normally be reached. Keeping as a fallback.
-                        keyInfo =
-                            when (keyInfo) {
-                                is ResolvedKeyInfo -> {
-                                    keyInfo.copy(signatureAlgorithm = signatureAlg)
-                                }
-
-                                else -> {
-                                    keyInfo
-                                }
-                            }
-                    } catch (_: Exception) {
-                        // If algorithm is not recognized, continue without setting it
-                    }
+                // The identifier/provider choice does not override the protected-header
+                // algorithm.  Enforce the resolved key's family, curve, use/key_ops and any
+                // explicit algorithm constraint before both provider-backed and local crypto.
+                keyInfo.jwsAlgorithmCompatibilityFailure(algValue)?.let { failure ->
+                    errorMessages.add("Signature $index: $failure")
+                    anyCryptoFailed = true
+                    signaturesWithIdentifiers.add(
+                        JwsJsonSignatureWithIdentifier(
+                            protected = signature.protected,
+                            parsedProtectedHeader = protectedHeader,
+                            header = signature.header,
+                            signature = signature.signature,
+                            identifier = identifierOptsOrResult,
+                        ),
+                    )
+                    continue
                 }
 
                 // Create signing input
@@ -371,10 +390,9 @@ class VerifyJwsCommandImpl(
             val opts =
                 ExternalIdentifierX5cOpts(
                     identifier = x5c,
-                    // Resolve the leaf key here; issuer trust is a separate caller policy.
-                    // OID4VP applies that policy uniformly through Trust Domains for SD-JWT,
-                    // JWT/W3C, and mdoc credentials after cryptographic verification.
-                    verify = false,
+                    // A header-provided chain is an admitted verifier trust input, so chain
+                    // validation must be enabled before its leaf key can be trusted.
+                    verify = true,
                 )
             val result = identifierService.resolve(opts)
             return if (result.isErr) {
@@ -411,36 +429,13 @@ class VerifyJwsCommandImpl(
         val kid = protectedHeader["kid"]?.jsonPrimitive?.content
 
         if (kid != null) {
-            // Extract algorithm from JWT header to provide as a hint for key resolution
-            val algValue = protectedHeader["alg"]?.jsonPrimitive?.content
-            val signatureAlg =
-                algValue?.let {
-                    try {
-                        val jwaAlg = JwaAlgorithm.fromValue(it)
-                        SignatureAlgorithm.fromJose(jwaAlg)
-                    } catch (_: Exception) {
-                        null
-                    }
-                }
-
             val opts: IdentifierOptsOrResult =
                 if (kid.startsWith("did:")) {
                     ExternalIdentifierDidOpts(identifier = kid)
                 } else {
-                    // Managed key kid
-                    // Pass algorithm hint via the lookup KeyInfo if available
-                    val lookup =
-                        if (signatureAlg != null) {
-                            KeyInfo<KeyType>(
-                                kid = kid,
-                                signatureAlgorithm = signatureAlg,
-                            )
-                        } else {
-                            KeyInfo<KeyType>(
-                                kid = kid,
-                            )
-                        }
-                    ManagedOptsKid(identifier = kid, lookup = lookup)
+                    // Managed key kid. The protected alg is evaluated only after resolution;
+                    // it must never become an input to provider key selection.
+                    ManagedOptsKid(identifier = kid, lookup = managedKidLookup(kid))
                 }
             val result = identifierService.resolve(opts)
             return if (result.isErr) {
@@ -482,3 +477,6 @@ class VerifyJwsCommandImpl(
     }
 
 }
+
+/** Build the managed selector without copying any untrusted protected-header algorithm. */
+internal fun managedKidLookup(kid: String): KeyInfo<KeyType> = KeyInfo(kid = kid)

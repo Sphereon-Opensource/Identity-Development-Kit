@@ -49,6 +49,9 @@ interface FederationSessionStore {
 
     suspend fun retrievePendingFederation(state: String,): IdkResult<PendingFederation?, FederationSessionStoreError>
 
+    /** Atomically claims an unexpired callback state. Exactly one concurrent caller can succeed. */
+    suspend fun consumePendingFederation(state: String): IdkResult<PendingFederation?, FederationSessionStoreError>
+
     suspend fun findCompletedPendingBySession(sessionId: String,): IdkResult<PendingFederation?, FederationSessionStoreError>
 
     /**
@@ -66,6 +69,7 @@ interface FederationSessionStore {
         claimsTtl: Duration,
         upstreamAcr: String? = null,
         upstreamAmr: List<String>? = null,
+        evidence: com.sphereon.oauth2.server.authorization.model.NormalizedAuthenticationEvidence,
     ): IdkResult<Unit, FederationSessionStoreError>
 
     suspend fun removePendingFederation(state: String,): IdkResult<Boolean, FederationSessionStoreError>

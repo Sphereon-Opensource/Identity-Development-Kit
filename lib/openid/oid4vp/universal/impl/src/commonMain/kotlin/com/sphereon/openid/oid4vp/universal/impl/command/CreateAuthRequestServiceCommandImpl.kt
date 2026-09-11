@@ -22,6 +22,8 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.crypto.core.generic.DigestAlg
+import com.sphereon.crypto.core.generic.hash
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.events.SessionEventService
@@ -63,6 +65,44 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.random.Random
+
+internal const val SUPPORTED_RESPONSE_TYPE: String = "vp_token"
+
+internal fun validateCreateAuthResponseType(responseType: String?): IdkError? {
+    val requested = responseType?.takeIf { it.isNotBlank() } ?: return null
+    return if (requested.equals(SUPPORTED_RESPONSE_TYPE, ignoreCase = true)) {
+        null
+    } else {
+        IdkError.ILLEGAL_ARGUMENT_ERROR(
+            message = "Unsupported response_type '$requested'. Supported: $SUPPORTED_RESPONSE_TYPE",
+        )
+    }
+}
+
+internal fun resolveSessionCorrelationId(
+    correlationId: String?,
+    state: String?,
+    generateId: () -> String,
+): IdkResult<String, IdkError> {
+    val requestedCorrelationId = correlationId?.takeIf { it.isNotBlank() }
+    val requestedState = state?.takeIf { it.isNotBlank() }
+    if (requestedCorrelationId != null && requestedState != null && requestedCorrelationId != requestedState) {
+        return Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                message = "correlation_id and state must match when both are provided",
+            ),
+        )
+    }
+    return Ok(requestedCorrelationId ?: requestedState ?: generateId())
+}
+
+internal fun com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession.withUniversalResponseBehavior(
+    callback: AuthorizationSessionCallbackConfig?,
+    directPostResponseRedirectUri: String?,
+) = copy(
+    callback = callback,
+    directPostResponseRedirectUri = directPostResponseRedirectUri,
+)
 
 /**
  * Typed service command implementation for creating authorization requests.
@@ -128,6 +168,11 @@ class CreateAuthRequestServiceCommandImpl(
             )
         }
 
+        // The verifier only builds `vp_token` requests today (id_token has no holder-side or
+        // response-validation support here). Reject anything else rather than accept a value and
+        // silently build a vp_token request.
+        validateCreateAuthResponseType(input.responseType)?.let { return Err(it) }
+
         // 2. Resolve DCQL query (via the resolver SPI for a stored query_id, or inline)
         val resolvedQuery =
             if (inputQueryId != null) {
@@ -157,9 +202,22 @@ class CreateAuthRequestServiceCommandImpl(
         // the wallet echoes the JWK's kid in the JWE header; the response endpoint then
         // uses JWE.kid → correlationId for a direct session lookup (no secondary index in
         // the session store needed).
-        val correlationId =
-            input.state?.takeIf { it.isNotBlank() }
-                ?: ByteArray(16).also { Random.nextBytes(it) }.encodeToBase64Url()
+        //
+        // The response endpoint uses the wallet-echoed state as the session key. A caller may
+        // supply either the Universal API correlation_id or the state extension, but distinct
+        // values cannot both be represented without silently replacing one of them.
+        val operationId = input.operationId
+        if (operationId != null && (operationId.isBlank() || input.correlationId != null || input.state != null)) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Claimed verification requires a nonblank operation_id and server-derived correlation"))
+        }
+        val operationFingerprint = operationId?.let {
+            hash(kotlinx.serialization.json.Json.encodeToString(CreateAuthorizationRequestInput.serializer(), input).encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()
+        }
+        val correlationId = operationId?.let {
+            AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX + hash(it.encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()
+        } ?: resolveSessionCorrelationId(input.correlationId, input.state) {
+                ByteArray(16).also { Random.nextBytes(it) }.encodeToBase64Url()
+            }.getOrElse { return Err(it) }
 
         // Resolve the requested client-identifier scheme first — when set, the signing
         // config returns a binding whose JOSE header / prefix match. Same KMS alias /
@@ -259,7 +317,7 @@ class CreateAuthRequestServiceCommandImpl(
                         ?: return Err(
                             IdkError.UNKNOWN_ERROR(message = ResponseEncryptionKeyConfig.RESPONSE_ENCRYPTION_KEY_UNAVAILABLE),
                         )
-                val publicJwk = CoseJoseKeyMappingService.toJoseJwk(publicKeyInfo.key).copy(d = null)
+                val publicJwk = CoseJoseKeyMappingService.toJoseJwk(publicKeyInfo.key).toPublicKey()
 
                 // Pull the capabilities of the provider the resolved key actually lives in, so the
                 // metadata advertises only what the verifier can decrypt. Hardcoding alg/enc lists
@@ -327,7 +385,17 @@ class CreateAuthRequestServiceCommandImpl(
                 dcqlQueryVersion = resolvedQuery?.version,
                 verifierId = input.verifierId,
                 templateId = input.templateId,
+                // OID4VP §7.2 post-completion destination. Lands on the session, not in the
+                // request object: for direct_post the wallet gets `response_uri` and the two
+                // parameters are mutually exclusive on the wire.
+                directPostResponseRedirectUri = input.directPostResponseRedirectUri?.takeIf { it.isNotBlank() },
+                // Session lifetime is decided here, at creation, so the stored `expiresAt` and
+                // the store's own TTL agree — a caller TTL must not depend on whether a callback
+                // was configured.
+                ttlSeconds = input.ttlSeconds,
                 credentialStatusPolicies = input.credentialStatusPolicies,
+                operationFingerprint = operationFingerprint,
+                templateRevision = input.templateRevision,
             )
 
         val created =
@@ -351,20 +419,24 @@ class CreateAuthRequestServiceCommandImpl(
                     ),
                 )
 
-        // 8. Persist response-endpoint behavior that is intentionally not part of the
-        // authorization request. `direct_post_response_redirect_uri` tells this verifier
-        // what to return after successful processing; it is not the wallet-facing OAuth
-        // authorization request `redirect_uri`.
+        // 8. Update the session with the callback config when one was supplied.
+        // `direct_post_response_redirect_uri` and the TTL already landed on the session at
+        // creation (see createArgs above), which is what makes a caller TTL independent of
+        // whether a callback was configured. Both are repeated here because `put` rewrites the
+        // whole store entry and would otherwise drop the redirect and reset the expiry to the
+        // store default.
         val inputCallback = input.callback
         val directPostResponseRedirectUri = input.directPostResponseRedirectUri?.takeIf { it.isNotBlank() }
         if (inputCallback != null || directPostResponseRedirectUri != null) {
             persistedSession =
-                persistedSession.copy(
+                persistedSession.withUniversalResponseBehavior(
                     callback =
                         inputCallback?.let {
                             AuthorizationSessionCallbackConfig(
                                 url = it.url,
                                 statuses = it.statuses,
+                                secretRef = it.secretRef,
+                                signing = it.signing,
                             )
                         },
                     directPostResponseRedirectUri = directPostResponseRedirectUri,
@@ -470,6 +542,7 @@ class CreateAuthRequestServiceCommandImpl(
                 requestUri = requestUri,
                 statusUri = "/oid4vp/backend/auth/requests/$sessionId",
                 qrUri = qrUri,
+                verificationBinding = com.sphereon.openid.oid4vp.universal.VerificationSessionBinding(persistedSession.instanceId, persistedSession.templateId, persistedSession.templateRevision, persistedSession.dcqlQueryId, persistedSession.dcqlQueryVersion, persistedSession.createdAt, persistedSession.expiresAt),
             )
 
         return Ok(output)
@@ -512,6 +585,14 @@ class CreateAuthRequestServiceCommandImpl(
                         issuerAuthAlgValuesSupported = listOf(-7),
                         deviceAuthAlgValuesSupported = listOf(-7),
                     ),
+                "jwt_vc_json" to
+                    com.sphereon.openid.oid4vp.common.VpFormatInfo(
+                        algValuesSupported = listOf("ES256"),
+                    ),
+                "jwt_vc_json-ld" to
+                    com.sphereon.openid.oid4vp.common.VpFormatInfo(
+                        algValuesSupported = listOf("ES256"),
+                    ),
             )
         return com.sphereon.openid.oid4vp.common.ClientMetadata(
             jwks =
@@ -553,6 +634,12 @@ class CreateAuthRequestServiceCommandImpl(
         if (result.isErr) return null
         return result.value.capabilities[providerId]
     }
+
+    private companion object {
+        /** The only OAuth2 `response_type` this verifier builds requests for (OID4VP §5.1). */
+        const val SUPPORTED_RESPONSE_TYPE: String = "vp_token"
+    }
+
 
     /**
      * Build the request URI for an OID4VP authorization request.

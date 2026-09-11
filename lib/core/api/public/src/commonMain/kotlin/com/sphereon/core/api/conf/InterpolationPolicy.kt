@@ -66,6 +66,16 @@ fun interface InterpolationPolicyProvider {
 @CoverageExcludedDataClass
 data class InterpolationPolicyCatalog(
     val exactPolicies: Map<String, InterpolationPolicy> = emptyMap(),
+    val patternPolicies: List<InterpolationPolicyPattern> = emptyList(),
+)
+
+@JsExportCompat
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("InterpolationPolicyPattern", exact = true)
+@CoverageExcludedDataClass
+data class InterpolationPolicyPattern(
+    val normalizedKeyRegex: String,
+    val policy: InterpolationPolicy,
 )
 
 /**
@@ -76,18 +86,22 @@ data class InterpolationPolicyCatalog(
  * environment reference is therefore possible only when its exact normalized key is explicitly
  * mapped to [InterpolationPolicy.APP_ENVIRONMENT].
  */
-class DefaultInterpolationPolicyProvider(
-    explicitPolicies: Map<String, InterpolationPolicy> = emptyMap(),
+class DefaultInterpolationPolicyProvider private constructor(
+    explicitPolicies: Map<String, InterpolationPolicy>,
+    patternPolicies: List<InterpolationPolicyPattern>,
 ) : InterpolationPolicyProvider {
-    constructor(catalog: InterpolationPolicyCatalog) : this(catalog.exactPolicies)
+    constructor(explicitPolicies: Map<String, InterpolationPolicy> = emptyMap()) : this(explicitPolicies, emptyList())
+
+    constructor(catalog: InterpolationPolicyCatalog) : this(catalog.exactPolicies, catalog.patternPolicies)
 
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
     private val normalizedPolicies = explicitPolicies.mapKeys { (key, _) -> keyNormalizer.normalize(key) }
+    private val normalizedPatternPolicies = patternPolicies.map { Regex(it.normalizedKeyRegex) to it.policy }
     override val cacheIdentity: String =
-        if (normalizedPolicies.isEmpty()) {
+        if (normalizedPolicies.isEmpty() && normalizedPatternPolicies.isEmpty()) {
             DEFAULT_INTERPOLATION_POLICY_CACHE_IDENTITY
         } else {
-            "interpolation-policy:v1:catalog:${stablePolicyDigest(normalizedPolicies)}"
+            "interpolation-policy:v1:catalog:${stablePolicyDigest(normalizedPolicies, patternPolicies)}"
         }
 
     override fun policyFor(
@@ -95,14 +109,17 @@ class DefaultInterpolationPolicyProvider(
         sourceScope: ConfigLevel,
     ): InterpolationPolicy {
         val normalizedKey = keyNormalizer.normalize(propertyKey)
-        normalizedPolicies[normalizedKey]?.let { configuredPolicy ->
+        val configuredPolicy =
+            normalizedPolicies[normalizedKey]
+                ?: normalizedPatternPolicies.firstOrNull { (pattern, _) -> pattern.matches(normalizedKey) }?.second
+        configuredPolicy?.let {
             return if (
-                configuredPolicy == InterpolationPolicy.APP_ENVIRONMENT &&
+                it == InterpolationPolicy.APP_ENVIRONMENT &&
                 sourceScope != ConfigLevel.APP
             ) {
                 InterpolationPolicy.DENY
             } else {
-                configuredPolicy
+                it
             }
         }
         return if (isSecuritySensitiveInterpolationKey(normalizedKey)) {
@@ -126,13 +143,16 @@ class FixedInterpolationPolicyProvider(
 
 const val DEFAULT_INTERPOLATION_POLICY_CACHE_IDENTITY: String = "interpolation-policy:v1:default-empty"
 
-private fun stablePolicyDigest(policies: Map<String, InterpolationPolicy>): String {
+private fun stablePolicyDigest(
+    policies: Map<String, InterpolationPolicy>,
+    patternPolicies: List<InterpolationPolicyPattern>,
+): String {
     var hash = 0xcbf29ce484222325UL
-    policies
-        .toList()
-        .sortedBy { (key, _) -> key }
-        .forEach { (key, policy) ->
-            "$key=${policy.name}\n".encodeToByteArray().forEach { byte ->
+    buildList {
+        addAll(policies.map { (key, policy) -> "exact:$key=${policy.name}" }.sorted())
+        addAll(patternPolicies.mapIndexed { index, policy -> "pattern:$index:${policy.normalizedKeyRegex}=${policy.policy.name}" })
+    }.forEach { entry ->
+            "$entry\n".encodeToByteArray().forEach { byte ->
                 hash = (hash xor byte.toUByte().toULong()) * 0x100000001b3UL
             }
         }

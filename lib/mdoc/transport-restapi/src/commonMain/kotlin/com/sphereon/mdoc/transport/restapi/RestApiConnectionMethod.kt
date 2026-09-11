@@ -17,12 +17,14 @@
 
 package com.sphereon.mdoc.transport.restapi
 
+import com.sphereon.ktor.http.client.provider.UrlValidationPolicy
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethod
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethodType
 import com.sphereon.mdoc.transfer.device.RestApiOptions
 import com.sphereon.mdoc.transport.ConnectionMethod
 import com.sphereon.mdoc.transport.ConnectionMethodBase
 import com.sphereon.mdoc.transport.TransportType
+import io.ktor.http.Url
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -70,6 +72,9 @@ data class RestApiConnectionMethod(
         require(options.uri.startsWith("https://", ignoreCase = true)) {
             "REST API URI must use HTTPS, got: ${options.uri}"
         }
+        // ReaderEngagement is untrusted input. Apply the same SSRF policy here
+        // as the managed HTTP client so injected/custom clients cannot bypass it.
+        UrlValidationPolicy.BLOCK_PRIVATE.validate(Url(options.uri))
     }
 
     override fun toDeviceRetrievalMethod(): DeviceRetrievalMethod =

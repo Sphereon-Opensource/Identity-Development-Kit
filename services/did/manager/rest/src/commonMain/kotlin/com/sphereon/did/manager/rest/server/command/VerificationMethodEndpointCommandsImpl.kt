@@ -17,8 +17,8 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.requireJsonBody
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.response.jsonResponse
@@ -38,14 +38,16 @@ import com.sphereon.did.manager.command.VerificationMethodResponse
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.JsonObject
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ListVerificationMethodsEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListVerificationMethodsEndpointCommand.COMMAND_ID)
 class ListVerificationMethodsEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: ListVerificationMethodsServiceCommand,
@@ -67,8 +69,8 @@ class ListVerificationMethodsEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<AddVerificationMethodEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(AddVerificationMethodEndpointCommand.COMMAND_ID)
 class AddVerificationMethodEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: AddVerificationMethodServiceCommand,
@@ -92,8 +94,8 @@ class AddVerificationMethodEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetVerificationMethodEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetVerificationMethodEndpointCommand.COMMAND_ID)
 class GetVerificationMethodEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: GetVerificationMethodServiceCommand,
@@ -117,8 +119,8 @@ class GetVerificationMethodEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<UpdateVerificationMethodEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(UpdateVerificationMethodEndpointCommand.COMMAND_ID)
 class UpdateVerificationMethodEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: UpdateVerificationMethodServiceCommand,
@@ -146,8 +148,8 @@ class UpdateVerificationMethodEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<RemoveVerificationMethodEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(RemoveVerificationMethodEndpointCommand.COMMAND_ID)
 class RemoveVerificationMethodEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: RemoveVerificationMethodServiceCommand,

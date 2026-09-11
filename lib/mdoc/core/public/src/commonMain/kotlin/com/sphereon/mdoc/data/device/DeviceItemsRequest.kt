@@ -103,6 +103,7 @@ data class DeviceItemsRequest(
      */
     val requestInfo: Map<String, Any>? = null,
     val original: ByteArray? = null,
+    val docRequestInfo: DocRequestInfo? = null,
 ) {
     fun getNameSpaces(): Array<NameSpace> = nameSpaces.keys.toTypedArray()
 
@@ -125,6 +126,9 @@ data class DeviceItemsRequest(
         if (requestInfo != other.requestInfo) {
             return false
         }
+        if (docRequestInfo != other.docRequestInfo) {
+            return false
+        }
 
         return true
     }
@@ -133,10 +137,13 @@ data class DeviceItemsRequest(
         var result = docType.hashCode()
         result = 31 * result + nameSpaces.hashCode()
         result = 31 * result + (requestInfo?.hashCode() ?: 0)
+        result = 31 * result + (docRequestInfo?.hashCode() ?: 0)
         return result
     }
 
-    override fun toString(): String = "DeviceItemsRequest(docType=$docType, nameSpaces=${stringify(nameSpaces)}, requestInfo=${stringify(requestInfo)})"
+    override fun toString(): String =
+        "DeviceItemsRequest(docType=$docType, nameSpaces=${stringify(nameSpaces)}, requestInfo=${stringify(requestInfo)}, " +
+            "docRequestInfo=$docRequestInfo)"
 
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("Builder", exact = true)
@@ -144,6 +151,7 @@ data class DeviceItemsRequest(
         var docRequestBuilder: DocRequest.Builder? = null,
         private var docType: DocType? = null,
         private var requestInfo: Map<String, Any>? = null,
+        private var docRequestInfo: DocRequestInfo? = null,
     ) {
         private val nameSpaceBuilders: MutableMap<NameSpace, DeviceRequestNameSpace.Builder> = mutableMapOf()
 
@@ -156,6 +164,9 @@ data class DeviceItemsRequest(
         fun withDocType(docType: DocType) = apply { this.docType = docType }
 
         fun withRequestInfo(requestInfo: Map<String, Any>?) = apply { this.requestInfo = requestInfo }
+
+        /** Sets the ISO 18013-5 second-edition DocRequestInfo map. */
+        fun withDocRequestInfo(docRequestInfo: DocRequestInfo?) = apply { this.docRequestInfo = docRequestInfo }
 
         fun nameSpace(nameSpace: NameSpace): DeviceRequestNameSpace.Builder {
             val builder = DeviceRequestNameSpace.Builder(this, nameSpace)
@@ -202,7 +213,12 @@ data class DeviceItemsRequest(
                         it.value.dataElements,
                     )
                 }
-            return DeviceItemsRequest(docType!!, mutableMapOf(*nameSpacePairs.toTypedArray()))
+            return DeviceItemsRequest(
+                docType = docType!!,
+                nameSpaces = mutableMapOf(*nameSpacePairs.toTypedArray()),
+                requestInfo = requestInfo,
+                docRequestInfo = docRequestInfo,
+            )
         }
 
         fun buildDocRequest(): DocRequest = docRequestBuilder?.build() ?: throw IllegalArgumentException("Cannot build document as builder is null")

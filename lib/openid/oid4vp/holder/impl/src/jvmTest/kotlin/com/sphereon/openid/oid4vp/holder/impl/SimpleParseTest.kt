@@ -40,6 +40,7 @@ import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.ktor.http.client.FetchRequestUriCommandImpl
 import com.sphereon.ktor.http.client.ParseUriQueryCommandImpl
 import com.sphereon.oauth2.client.JarService
+import com.sphereon.openid.oid4vp.common.impl.UnavailableOid4vpRequestTrustMaterialProvider
 import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
@@ -129,6 +130,7 @@ class SimpleParseTest {
                     httpClientFactory = httpClientFactory,
                     externalIdentifierService = mockExternalIdentifierService,
                     jwtService = jwtService,
+                    requestTrustMaterialProvider = UnavailableOid4vpRequestTrustMaterialProvider(),
                 )
 
             // Simple test - use longer nonce (min 8 chars)

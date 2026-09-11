@@ -35,6 +35,15 @@ interface KmsRestService {
         providerId: String? = null,
     ): ManagedKeyInfoType<*>
 
+    /**
+     * Returns persisted lifecycle metadata for a registered key when it exists.
+     * Provider inventory without a persisted provenance record returns null.
+     */
+    suspend fun getKeyReference(
+        aliasOrKid: String,
+        providerId: String? = null,
+    ): ManagedKeyReference? = null
+
     suspend fun listKeys(providerId: String? = null): Array<ManagedKeyReference>
 
     suspend fun storeKey(

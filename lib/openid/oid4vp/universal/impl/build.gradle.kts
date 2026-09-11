@@ -111,6 +111,15 @@ kotlin {
                 implementation(projects.libOauth2CommonImpl)
                 implementation(projects.libOauth2ClientImpl)
                 implementation(projects.libOpenidOid4vpHolderImpl)
+                implementation(projects.libWalletInteractionPublic)
+                // Universal OID4VP tests define final Metro graph roots for every
+                // enabled KMP target. Holder Data Integrity presentations require
+                // the command implementation and all supported cryptosuite bindings.
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
+                implementation(project(":lib-openid-oid4vp-verifier-vcdm-impl"))
                 implementation(projects.libSdjwtImpl)
                 // mdoc + trust bindings required by VerifyHolderBindingCommandImpl
                 // (transitively pulled in via verifier-impl on the test classpath).
@@ -145,6 +154,11 @@ kotlin {
                 implementation(projects.libOauth2CommonImpl)
                 implementation(projects.libOauth2ClientImpl)
                 implementation(projects.libOpenidOid4vpHolderImpl)
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
+                implementation(project(":lib-openid-oid4vp-verifier-vcdm-impl"))
                 implementation(projects.libSdjwtImpl)
                 implementation(projects.libMdocCoreImpl)
                 implementation(projects.libCborImpl)

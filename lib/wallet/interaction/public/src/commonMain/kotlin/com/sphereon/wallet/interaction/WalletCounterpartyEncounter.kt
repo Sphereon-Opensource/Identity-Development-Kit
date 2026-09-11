@@ -10,6 +10,7 @@
 
 package com.sphereon.wallet.interaction
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -49,6 +50,7 @@ data class WalletCounterpartyAssociationRequest(
 @Serializable
 sealed interface WalletCounterpartyAssociationDecision {
     @Serializable
+    @SerialName("keep_separate")
     data class KeepSeparate(val displayName: String) : WalletCounterpartyAssociationDecision {
         init {
             require(displayName.isNotBlank()) { "wallet_counterparty_display_name_blank" }
@@ -56,6 +58,7 @@ sealed interface WalletCounterpartyAssociationDecision {
     }
 
     @Serializable
+    @SerialName("associate_existing")
     data class AssociateExisting(val partyId: String) : WalletCounterpartyAssociationDecision {
         init {
             require(partyId.isNotBlank()) { "wallet_counterparty_association_target_blank" }

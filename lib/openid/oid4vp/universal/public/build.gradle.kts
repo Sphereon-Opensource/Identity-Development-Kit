@@ -14,6 +14,10 @@ plugins {
 metro {
 }
 
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("sphereon.test.idkRoot", rootProject.projectDir.absolutePath)
+}
+
 kotlin {
     jvm()
     run {
@@ -71,6 +75,11 @@ kotlin {
             dependencies {
                 implementation(sphereonlib.org.jetbrains.kotlin.test)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+            }
+        }
+        val jvmTest by getting {
+            dependencies {
+                implementation(projects.libConfYaml)
             }
         }
     }

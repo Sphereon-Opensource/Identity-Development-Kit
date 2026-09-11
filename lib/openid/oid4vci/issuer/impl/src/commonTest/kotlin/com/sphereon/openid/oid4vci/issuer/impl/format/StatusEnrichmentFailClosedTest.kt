@@ -41,16 +41,23 @@ import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
 import com.sphereon.statuslist.StatusListBinding
 import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusListToken
+import com.sphereon.statuslist.StatusProofFormat
+import com.sphereon.statuslist.MdocStatusListProfile
 import com.sphereon.statuslist.impl.driver.InMemoryStatusListDriver
 import com.sphereon.statuslist.impl.driver.InMemoryStatusListStore
 import com.sphereon.statuslist.impl.enrich.CredentialStatusEnricherImpl
 import com.sphereon.statuslist.spi.CredentialStatusEnricher
+import com.sphereon.statuslist.spi.ReservedStatus
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
+import com.sphereon.statuslist.spi.StatusClaimMergeTarget
+import com.sphereon.statuslist.spi.StatusEnrichmentContext
 import com.sphereon.statuslist.spi.StatusListSigner
+import com.sphereon.statuslist.spi.StatusReservationHandle
 import dev.zacsweers.metro.Provider
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -179,6 +186,53 @@ class StatusEnrichmentFailClosedTest {
         }
 
     @Test
+    fun reservedStatusEntryIsBoundToTheIssuedCredentialId() =
+        runTest {
+            val enricher = RecordingStatusEnricher()
+
+            val result = handler(enricher).issueCredential(CredentialRequest(format = "jwt_vc_json"), makeContext(binding))
+
+            assertTrue(result.isOk)
+            val credentialId = assertNotNull(recordingJwtService.lastPayload?.get("jti")?.jsonPrimitive?.content)
+            assertTrue(credentialId.startsWith("urn:uuid:"))
+            assertEquals(
+                credentialId,
+                recordingJwtService.lastPayload?.get("vc")?.jsonObject?.get("id")?.jsonPrimitive?.content,
+            )
+            assertEquals(credentialId, enricher.boundCredentialId)
+            assertEquals(enricher.reservedHandle, enricher.boundHandle)
+        }
+
+    @Test
+    fun signingFailureCancelsTheReservationAndPreservesTheSigningError() =
+        runTest {
+            val enricher = RecordingStatusEnricher()
+            recordingJwtService.failSigning = true
+            try {
+                val result = handler(enricher).issueCredential(CredentialRequest(format = "jwt_vc_json"), makeContext(binding))
+
+                assertTrue(result.isErr)
+                assertEquals("STATUSLIST_SIGNING_FAILED", result.error.code)
+                assertEquals(enricher.reservedHandle, enricher.cancelledHandle)
+            } finally {
+                recordingJwtService.failSigning = false
+            }
+        }
+
+    @Test
+    fun bindingFailureCancelsTheReservationAndPreservesTheBindError() =
+        runTest {
+            val enricher = RecordingStatusEnricher()
+            enricher.failBind = true
+
+            val result = handler(enricher).issueCredential(CredentialRequest(format = "jwt_vc_json"), makeContext(binding))
+
+            assertTrue(result.isErr)
+            assertEquals("STATUSLIST_BIND_FAILED", result.error.code)
+            assertEquals(enricher.reservedHandle, enricher.cancelledHandle)
+        }
+
+    @Test
     fun formatWithoutStatusSupportRejectsConfiguredBinding() {
         val mdocConfig = CredentialConfigurationSupported(format = "mso_mdoc", doctype = "eu.europa.ec.eudi.pid.1")
         val context = makeContext(binding).copy(credentialConfiguration = mdocConfig)
@@ -190,18 +244,65 @@ class StatusEnrichmentFailClosedTest {
         assertNull(unsupportedStatusListBinding(makeContext(statusListBinding = null)), "no binding means no rejection")
     }
 
+    @Test
+    fun msoMdocRejectsAStatusBindingThatIsNotAnMdocCwtProfile() =
+        runTest {
+            val mdocConfig = CredentialConfigurationSupported(format = "mso_mdoc", doctype = "eu.europa.ec.eudi.pid.1")
+            val context =
+                makeContext(
+                    StatusListBinding(
+                        statusListCorrelationId = "eupid-revocation",
+                        spec = StatusListSpec.TOKEN_STATUS_LIST,
+                        mdocProfile = MdocStatusListProfile.STATUS_LIST,
+                        proofFormat = StatusProofFormat.JWT,
+                    ),
+                ).copy(credentialConfiguration = mdocConfig)
+
+            val result = reserveCredentialStatus(RecordingStatusEnricher(), context)
+
+            assertTrue(result.isErr)
+            assertEquals("status_configuration_unsupported", result.error.code)
+            assertTrue("CWT" in result.error.message.defaultMessage)
+        }
+
+    @Test
+    fun nonMdocCredentialRejectsAnIsoMdocStatusProfile() =
+        runTest {
+            val context =
+                makeContext(
+                    StatusListBinding(
+                        statusListCorrelationId = "eupid-revocation",
+                        spec = StatusListSpec.TOKEN_STATUS_LIST,
+                        mdocProfile = MdocStatusListProfile.IDENTIFIER_LIST,
+                        proofFormat = StatusProofFormat.CWT,
+                    ),
+                )
+
+            val result = reserveCredentialStatus(RecordingStatusEnricher(), context)
+
+            assertTrue(result.isErr)
+            assertEquals("STATUSLIST_MDOC_PROFILE_UNSUPPORTED_FORMAT", result.error.code)
+            assertTrue("jwt_vc_json" in result.error.message.defaultMessage)
+        }
+
     /**
      * JwtService recording the last signed payload so tests can assert what was (not) signed.
      * Produces a structurally valid compact JWT.
      */
     private class RecordingJwtService : JwtService {
         var lastPayload: kotlinx.serialization.json.JsonObject? = null
+        var failSigning: Boolean = false
 
         override val commands: JwtService.Commands
             get() = throw UnsupportedOperationException("not used in tests")
 
         override suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError> {
             lastPayload = args.payload as? kotlinx.serialization.json.JsonObject
+            if (failSigning) {
+                return com.sphereon.core.api.Err(
+                    IdkError.fromString(code = "STATUSLIST_SIGNING_FAILED", message = "test signing failure"),
+                )
+            }
             return Ok(JwtCompactResult(jwt = "eyJhbGciOiJFUzI1NiJ9.eyJ2YyI6e319.fakesignature"))
         }
 
@@ -227,5 +328,46 @@ class StatusEnrichmentFailClosedTest {
             prepared: PreparedJwsObject,
             signatureBytes: ByteArray,
         ) = throw UnsupportedOperationException("not used in tests")
+    }
+
+    private class RecordingStatusEnricher : CredentialStatusEnricher {
+        val reservedHandle = StatusReservationHandle(statusListId = "status-list-1", statusListIndex = 7)
+        var boundHandle: StatusReservationHandle? = null
+        var boundCredentialId: String? = null
+        var cancelledHandle: StatusReservationHandle? = null
+        var failBind: Boolean = false
+
+        override suspend fun reserve(context: StatusEnrichmentContext): IdkResult<ReservedStatus, IdkError> =
+            Ok(
+                ReservedStatus(
+                    handle = reservedHandle,
+                    claim = kotlinx.serialization.json.buildJsonObject {
+                        put("id", JsonPrimitive("https://status.example/status-list/1#7"))
+                        put("type", JsonPrimitive("StatusListEntry"))
+                        put("statusListIndex", JsonPrimitive("7"))
+                    },
+                    mergeTarget = StatusClaimMergeTarget.VC_CREDENTIAL_STATUS,
+                ),
+            )
+
+        override suspend fun bind(
+            handle: StatusReservationHandle,
+            credentialId: String?,
+            credentialHash: String?,
+        ): IdkResult<Unit, IdkError> {
+            boundHandle = handle
+            boundCredentialId = credentialId
+            if (failBind) {
+                return com.sphereon.core.api.Err(
+                    IdkError.fromString(code = "STATUSLIST_BIND_FAILED", message = "test bind failure"),
+                )
+            }
+            return Ok(Unit)
+        }
+
+        override suspend fun cancel(handle: StatusReservationHandle): IdkResult<Unit, IdkError> {
+            cancelledHandle = handle
+            return Ok(Unit)
+        }
     }
 }

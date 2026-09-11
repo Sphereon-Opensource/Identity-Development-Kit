@@ -32,6 +32,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.logout.CreateLogoutTokenArgs
 import com.sphereon.oauth2.server.authorization.command.logout.CreateLogoutTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.asSigningProtectedHeader
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -107,10 +108,7 @@ class CreateLogoutTokenCommandImpl(
                 )
             }
 
-        val header =
-            buildJsonObject {
-                put("typ", LOGOUT_TOKEN_TYP)
-            }
+        val header = asSigningProtectedHeader(LOGOUT_TOKEN_TYP, serverIdentifier)
 
         val jwsArgs =
             CreateJwsArgs(

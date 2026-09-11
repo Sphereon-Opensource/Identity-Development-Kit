@@ -332,21 +332,10 @@ oid4vci:
             # proofs without one. When enabled, `key-storage` / `user-authentication` are
             # the minimum-acceptable ISO 18045 attack-potential-resistance levels.
             #
-            # `key-attester-trust` is part of the same group — only meaningful when
-            # attestations are enabled. Its `jwks` is a JSON array of JWK objects (the OIDF
-            # conformance plan publishes its attester JWKS in this exact shape under
-            # `vci_key_attestation_jwks`). When unset and the policy is on, only `x5c`-
-            # bound attestations validated against the global lib/trust/x509 anchors are
-            # accepted.
             key-attestations:
               enabled: "${env:OID4VCI_EUPID_KEY_ATTESTATIONS_REQUIRED:false}"
               key-storage: "${env:OID4VCI_EUPID_KEY_ATTESTATIONS_KEY_STORAGE:iso_18045_moderate}"
               user-authentication: "${env:OID4VCI_EUPID_KEY_ATTESTATIONS_USER_AUTH:iso_18045_moderate}"
-              key-attester-trust:
-                jwks: "${env:OID4VCI_EUPID_KEY_ATTESTER_JWKS:}"
-                # VDX Wallet Unit/TS03 persistence and certification evidence is a stricter,
-                # operator-selected profile beyond generic OID4VCI key attestation.
-                require-wallet-unit-evidence: "${env:OID4VCI_EUPID_REQUIRE_WALLET_UNIT_EVIDENCE:false}"
         claims:
           "[family_name]":
             mandatory: true
@@ -853,9 +842,6 @@ oid4vci:
               enabled: "${env:OID4VCI_MDL_KEY_ATTESTATIONS_REQUIRED:false}"
               key-storage: "${env:OID4VCI_MDL_KEY_ATTESTATIONS_KEY_STORAGE:iso_18045_moderate}"
               user-authentication: "${env:OID4VCI_MDL_KEY_ATTESTATIONS_USER_AUTH:iso_18045_moderate}"
-              key-attester-trust:
-                jwks: "${env:OID4VCI_MDL_KEY_ATTESTER_JWKS:}"
-                require-wallet-unit-evidence: "${env:OID4VCI_MDL_REQUIRE_WALLET_UNIT_EVIDENCE:false}"
         # Bracket notation per the convention noted at the top of `credentials:` —
         # ensures dotted claim keys are treated as a single map key (namespace +
         # element id) rather than a nested path by the YAML/property loader.

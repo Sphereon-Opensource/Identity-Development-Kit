@@ -30,12 +30,12 @@ import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.common.impl.attestation.WalletProviderTrustMechanismRegistry
 import com.sphereon.openid.oid4vci.common.model.KeyAttestationsRequired
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
-import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
+import com.sphereon.openid.oid4vci.issuer.config.ResolvedWalletProviderTrust
 import com.sphereon.openid.oid4vci.issuer.proof.KeyAttestationEvidenceEnforcementRequest
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
-import com.sphereon.trust.x509.X509TrustAnchorLoader
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
@@ -65,19 +65,16 @@ import com.sphereon.openid.oid4vci.issuer.proof.KeyAttestationEvidenceEnforcer a
  * Trust resolution (in priority order):
  *  1. `x5c` header → validate chain via the IDK `x509` resolver, anchored at the global
  *     `lib/trust/x509` anchors.
- *  2. `kid` / `jwk` header → match against [KeyAttesterTrustConfig.trustedJwks].
- *  3. When [KeyAttesterTrustConfig.trustedIssuers] is non-empty, also enforce that the
- *     JWT's `iss` claim is in the list.
+ *  2. `kid` / `jwk` header → match against typed persisted JWK material.
+ *  3. Typed persisted issuer material constrains the JWT's `iss` claim.
  *
- * Per-config X.509 anchor paths on [KeyAttesterTrustConfig.x509TrustAnchorPaths] are
- * loaded in addition to global and runtime-managed anchors.
+ * X.509 anchors are exact public material from the persisted attachment; no global fallback is used.
  */
 @Inject
 @SingleIn(SessionScope::class)
 class KeyAttestationVerifier(
     private val verifyJwsCommand: VerifyJwsCommand,
     private val externalIdentifierResolver: MultiExternalIdentifierService,
-    private val x509TrustAnchorLoader: X509TrustAnchorLoader,
     private val persistedEvidenceEnforcer: PersistedKeyAttestationEvidenceEnforcer? = null,
 ) {
     private val evidenceEnforcer = KeyAttestationEvidenceEnforcer()
@@ -86,8 +83,7 @@ class KeyAttestationVerifier(
      * Verify a single key-attestation JWT.
      *
      * @param keyAttestationJwt The compact JWS — `header.payload.signature`.
-     * @param trustConfig Per-credential trust override. `null` falls back to global X.509
-     *   anchors only (i.e. only `x5c`-bound attestations can succeed).
+     * @param walletProviderTrust Exact persisted admission policy and public verifier material.
      * @param policy `key_attestations_required` from the credential configuration. When
      *   non-null, the attestation's `key_storage` and `user_authentication` claim arrays
      *   MUST be supersets of the policy's required levels.
@@ -98,7 +94,7 @@ class KeyAttestationVerifier(
     @Suppress("LongMethod", "ReturnCount")
     suspend fun verify(
         keyAttestationJwt: String,
-        trustConfig: KeyAttesterTrustConfig?,
+        walletProviderTrust: ResolvedWalletProviderTrust,
         policy: KeyAttestationsRequired?,
         expectedNonce: String? = null,
         clockSkewSeconds: Long = DEFAULT_CLOCK_SKEW_SECONDS,
@@ -122,35 +118,34 @@ class KeyAttestationVerifier(
                     if (el is JsonPrimitive) JsonArray(listOf(el)) else null
                 }
         val kid = headerJson["kid"]?.jsonPrimitive?.contentOrNull
+        val mechanismRegistry = WalletProviderTrustMechanismRegistry.from(walletProviderTrust)
 
-        val mode =
-            trustConfig?.mode?.lowercase()
-                ?: return invalidProof("key attester trust mode is not configured (expected 'x5c' or 'jwks')")
-        val pinnedJwks = trustConfig.trustedJwks?.takeIf { it.isNotEmpty() }
         val trustedJwks: JsonObject =
-            when (mode) {
-                "x5c" -> {
-                    if (x5cHeader == null || x5cHeader.isEmpty()) {
-                        return invalidProof("key attestation trust mode 'x5c' requires a non-empty x5c header")
+            when {
+                x5cHeader != null -> {
+                    if (x5cHeader.isEmpty()) {
+                        return invalidProof("key attestation x5c header must not be empty")
                     }
+                    val presentedRoot = (x5cHeader.lastOrNull() as? JsonPrimitive)?.contentOrNull
+                    val anchors = mechanismRegistry.x509AnchorPemCertificates(presentedRoot)
+                    if (anchors.isEmpty()) return invalidProof("key attestation x5c signer is not admitted by resolved trust")
                     resolveAttesterViaX5c(
                         x5c = x5cHeader,
                         kid = kid,
-                        additionalTrustAnchorPaths = trustConfig.x509TrustAnchorPaths.orEmpty(),
+                        trustedAnchorCertificates = anchors,
                     ).getOrElse { return Err(it) }
                 }
 
-                "jwks" -> {
-                    if (pinnedJwks == null) {
-                        return invalidProof("key attestation trust mode 'jwks' requires configured attester JWKS")
-                    }
-                    pinAttesterJwks(pinnedJwks, kid)
+                else -> {
+                    val presentedJwkJson = headerJson["jwk"] as? JsonObject ?: JsonObject(emptyMap())
+                    val presentedJwk = runCatching { Jwk.fromJsonObject(presentedJwkJson) }.getOrNull()
+                    val candidateJwks = mechanismRegistry.jwkCandidates(presentedJwk, presentedJwkJson)
+                    if (candidateJwks.isEmpty()) return invalidProof("key attestation signer is not admitted by resolved trust")
+                    pinAttesterJwks(candidateJwks, kid)
                         ?: return invalidProof(
-                            "key attestation kid '$kid' does not match any pinned attester JWK",
+                            "key attestation kid '$kid' does not match resolved attester material",
                         )
                 }
-
-                else -> return invalidProof("unsupported key attester trust mode '$mode' (expected 'x5c' or 'jwks')")
             }
 
         // 3. Cryptographic signature verification, pinned to the resolved attester JWKS.
@@ -195,7 +190,7 @@ class KeyAttestationVerifier(
         val attestationNonce =
             claims["c_nonce"]?.jsonPrimitive?.contentOrNull
                 ?: claims["nonce"]?.jsonPrimitive?.contentOrNull
-        val requireWalletUnitEvidence = trustConfig?.requireWalletUnitEvidence == true
+        val requireWalletUnitEvidence = walletProviderTrust.requireWalletUnitEvidence
         if (expectedNonce != null && requireWalletUnitEvidence && attestationNonce == null) {
             return invalidProof("production key attestation must carry 'c_nonce' matching the credential proof nonce")
         }
@@ -206,8 +201,8 @@ class KeyAttestationVerifier(
         // 5. iss allow-list (only when the operator pinned one). The attestation MAY omit
         //    `iss` per §7.2; we only enforce membership when both sides supply a value.
         val issClaim = claims["iss"]?.jsonPrimitive?.contentOrNull
-        val trustedIssuers = trustConfig?.trustedIssuers
-        if (!trustedIssuers.isNullOrEmpty() && (issClaim == null || issClaim !in trustedIssuers)) {
+        val trustedIssuers = mechanismRegistry.issuers
+        if (trustedIssuers.isNotEmpty() && (issClaim == null || issClaim !in trustedIssuers)) {
             return invalidProof(
                 "key attestation 'iss' '$issClaim' is not in the configured trusted-issuer allow-list",
             )
@@ -263,19 +258,18 @@ class KeyAttestationVerifier(
     private suspend fun resolveAttesterViaX5c(
         x5c: JsonArray,
         kid: String?,
-        additionalTrustAnchorPaths: List<String>,
+        trustedAnchorCertificates: List<String>,
     ): IdkResult<JsonObject, IdkError> {
         val x5cStrings =
             x5c.map { entry ->
                 (entry as? JsonPrimitive)?.contentOrNull
                     ?: return invalidProof("key attestation x5c entries must be strings")
             }
-        val trustedAnchors = x509TrustAnchorLoader.loadTrustedCerts(additionalTrustAnchorPaths)
         val opts =
             ExternalIdentifierX5cOpts(
                 identifier = x5cStrings,
                 verify = true,
-                trustAnchors = trustedAnchors,
+                trustAnchors = trustedAnchorCertificates,
             )
         val resolved =
             externalIdentifierResolver.resolve(opts).getOrElse {

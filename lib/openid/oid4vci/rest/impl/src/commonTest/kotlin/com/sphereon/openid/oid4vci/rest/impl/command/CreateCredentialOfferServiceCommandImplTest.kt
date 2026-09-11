@@ -54,6 +54,9 @@ import com.sphereon.openid.oid4vci.common.model.CredentialOffer
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
 import com.sphereon.openid.oid4vci.issuer.command.CreatedCredentialOffer
+import com.sphereon.openid.oid4vci.issuer.authorization.*
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerSpecProfile
+import com.sphereon.openid.oid4vci.issuer.impl.authorization.Oid4vciAuthorizationServerSelector
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferInput
@@ -77,6 +80,7 @@ import kotlin.test.assertTrue
  * the caller-supplied correlation id, so the two would only match if the wiring collapsed them.
  */
 class CreateCredentialOfferServiceCommandImplTest {
+    private val issuerInstanceId = "00000000-0000-4000-8000-000000000001"
     private val protocolSessionId = "protocol-session-distinct-from-correlation"
     private val callerCorrelationId = "caller-supplied-correlation-id"
 
@@ -85,7 +89,7 @@ class CreateCredentialOfferServiceCommandImplTest {
         runTest {
             val createdOffer =
                 CreatedCredentialOffer(
-                    instanceId = "issuer-instance-wiring-test",
+                    instanceId = issuerInstanceId,
                     offerId = "offer-wiring-test",
                     sessionId = protocolSessionId,
                     offer =
@@ -97,17 +101,21 @@ class CreateCredentialOfferServiceCommandImplTest {
                 )
             val sessionStore = RecordingCredentialOfferSessionStore()
             val sessionEventService = RecordingSessionEventService()
+            val authorizationPolicyProvider = ActiveAuthorizationPolicyProvider()
+            val createCommand = FakeCreateCredentialOfferCommand(Ok(createdOffer))
 
             val command =
                 CreateCredentialOfferServiceCommandImpl(
-                    execution = TestSessionExecution(),
-                    createCredentialOfferCommand = FakeCreateCredentialOfferCommand(Ok(createdOffer)),
+                    sessionExecution = TestSessionExecution(),
+                    createCredentialOfferCommand = createCommand,
                     credentialOfferSessionStore = sessionStore,
                     qrCodeService = NoOpQrCodeService(),
                     configProvider = FixedOid4vciRestConfigProvider(),
                     issuerConfigProvider = FixedOid4vciIssuerConfigProvider(),
                     instanceIdProvider = FixedOid4vciIssuerInstanceIdProvider(),
                     sessionEventService = sessionEventService,
+                    authorizationPolicyProvider = authorizationPolicyProvider,
+                    authorizationServerSelector = Oid4vciAuthorizationServerSelector(),
                 )
 
             val result =
@@ -135,6 +143,9 @@ class CreateCredentialOfferServiceCommandImplTest {
             )
 
             assertEquals(1, sessionStore.created.size)
+            assertEquals(issuerInstanceId, authorizationPolicyProvider.lastIssuerInstanceId)
+            assertEquals(issuerInstanceId, createCommand.lastArgs?.instanceId)
+            assertEquals(issuerInstanceId, sessionStore.created.first().instanceId)
             assertEquals(protocolSessionId, sessionStore.created.first().issuanceSessionId)
             assertEquals(1, sessionEventService.emitted.size, "the real doExecute path should emit exactly one session-created event")
             val eventPayload = sessionEventService.emitted.single().payload
@@ -144,6 +155,100 @@ class CreateCredentialOfferServiceCommandImplTest {
                 eventPayload["creationSnapshot"]?.jsonObject?.get("templateId")?.jsonPrimitive?.content,
             )
         }
+
+    @Test
+    fun executeRejectsMissingIssuerUuidSelectorBeforeCreatingOffer() =
+        runTest {
+            val fixture = commandFixture(instanceId = null)
+
+            val result = fixture.command.execute(CreateCredentialOfferInput(credentialConfigurationIds = listOf("PID")))
+
+            assertTrue(result.isErr)
+            assertEquals(null, fixture.createCommand.lastArgs)
+        }
+
+    @Test
+    fun executeRejectsNonUuidIssuerSelectorBeforeCreatingOffer() =
+        runTest {
+            val fixture = commandFixture(instanceId = "default")
+
+            val result = fixture.command.execute(CreateCredentialOfferInput(credentialConfigurationIds = listOf("PID")))
+
+            assertTrue(result.isErr)
+            assertEquals(null, fixture.createCommand.lastArgs)
+        }
+
+    private fun commandFixture(instanceId: String?): OfferCommandFixture {
+        val createdOffer =
+            CreatedCredentialOffer(
+                instanceId = issuerInstanceId,
+                offerId = "offer-selector-test",
+                sessionId = protocolSessionId,
+                offer =
+                    CredentialOffer(
+                        credentialIssuer = "https://issuer.example.com/oid4vci",
+                        credentialConfigurationIds = listOf("PID"),
+                    ),
+                offerUri = "openid-credential-offer://?credential_offer_uri=https://issuer.example.com/offer",
+            )
+        val createCommand = FakeCreateCredentialOfferCommand(Ok(createdOffer))
+        return OfferCommandFixture(
+            command =
+                CreateCredentialOfferServiceCommandImpl(
+                    sessionExecution = TestSessionExecution(),
+                    createCredentialOfferCommand = createCommand,
+                    credentialOfferSessionStore = RecordingCredentialOfferSessionStore(),
+                    qrCodeService = NoOpQrCodeService(),
+                    configProvider = FixedOid4vciRestConfigProvider(),
+                    issuerConfigProvider = FixedOid4vciIssuerConfigProvider(),
+                    instanceIdProvider = FixedOid4vciIssuerInstanceIdProvider(instanceId),
+                    sessionEventService = RecordingSessionEventService(),
+                    authorizationPolicyProvider = ActiveAuthorizationPolicyProvider(),
+                    authorizationServerSelector = Oid4vciAuthorizationServerSelector(),
+                ),
+            createCommand = createCommand,
+        )
+    }
+}
+
+private data class OfferCommandFixture(
+    val command: CreateCredentialOfferServiceCommandImpl,
+    val createCommand: FakeCreateCredentialOfferCommand,
+)
+
+@OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+private class ActiveAuthorizationPolicyProvider : Oid4vciIssuerAuthorizationPolicyProvider {
+    private val issuerId = kotlin.uuid.Uuid.parse("00000000-0000-4000-8000-000000000001")
+    private val serverId = kotlin.uuid.Uuid.parse("00000000-0000-4000-8000-000000000002")
+    var lastIssuerInstanceId: String? = null
+
+    override suspend fun resolve(tenantId: String, issuerInstanceId: String): Oid4vciIssuerAuthorizationPolicy {
+        lastIssuerInstanceId = issuerInstanceId
+        return Oid4vciIssuerAuthorizationPolicy(
+            tenantId = tenantId,
+            issuerId = issuerId,
+            issuerCapabilityId = issuerId,
+            authorizationServers = listOf(
+                Oid4vciBoundAuthorizationServer(
+                    id = serverId,
+                    tenantId = tenantId,
+                    issuerIdentifier = "https://as.example.com",
+                    enabled = true,
+                    default = true,
+                    lifecycle = Oid4vciAuthorizationServerLifecycle.ACTIVE,
+                    deployment = Oid4vciAuthorizationServerDeployment.HOSTED,
+                    credentialIssuancePurpose = true,
+                    allowedGrants = setOf(Oid4vciAuthorizationGrant.AUTHORIZATION_CODE, Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE),
+                    authorizationEndpoint = "https://as.example.com/authorize",
+                    tokenEndpoint = "https://as.example.com/token",
+                    discoveryCurrent = true,
+                    bindingRevision = 0,
+                ),
+            ),
+            profile = Oid4vciIssuerSpecProfile.OID4VCI_1_0_FINAL,
+            profileRevision = 0,
+        )
+    }
 }
 
 /** Fake [CreateCredentialOfferCommand] that returns a canned [CreatedCredentialOffer]. */
@@ -201,7 +306,7 @@ private class FixedOid4vciIssuerConfigProvider(
 }
 
 private class FixedOid4vciIssuerInstanceIdProvider(
-    private val instanceId: String? = "issuer-instance-wiring-test",
+    private val instanceId: String? = "00000000-0000-4000-8000-000000000001",
 ) : Oid4vciIssuerInstanceIdProvider {
     override fun currentInstanceId(): String? = instanceId
 }

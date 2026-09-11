@@ -17,19 +17,17 @@
 package com.sphereon.openid.oid4vci.issuer.config
 
 import com.sphereon.core.compat.JsExportCompat
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Root config namespace under which per-instance OID4VCI issuer configuration lives:
- * `oid4vci.issuers.<issuerInstanceId>.*`. The singular, single-issuer deployment namespace
- * (`oid4vci.issuer.*`, see `ConfigDrivenOid4vciIssuerConfigProvider.NAMESPACE`) is the fallback
- * when no instance id is resolved for the current request.
+ * `oid4vci.issuers.<issuerInstanceId>.*`. The instance id is always a canonical resource UUID.
+ * An unresolved request fails closed instead of reading the retired singular issuer namespace.
  *
  * Mirrors the OAuth2 AS `oauth2.servers.<asId>.*` instance keyspace.
  */
 const val INSTANCES_NAMESPACE: String = "oid4vci.issuers"
-
-/** Stable persistence identity for the singular, config-only issuer deployment. */
-const val DEFAULT_OID4VCI_ISSUER_INSTANCE_ID: String = "default"
 
 /**
  * Per-request seam exposing the active OID4VCI issuer instance id.
@@ -40,9 +38,7 @@ const val DEFAULT_OID4VCI_ISSUER_INSTANCE_ID: String = "default"
  * `${INSTANCES_NAMESPACE}.<issuerInstanceId>`. Collaborators read it via [currentInstanceId]
  * without taking the id as a method argument.
  *
- * `null` means no issuer instance has been resolved for the current request, e.g. the request hit
- * an entry point that does not need per-instance routing or the resolution step has not run yet.
- * Consumers fall back to the singular issuer config namespace in that case.
+ * `null` means no issuer instance has been resolved and must be rejected by every routed consumer.
  *
  * Twin of the OAuth2 `OAuth2ServerInstanceIdProvider`.
  */
@@ -51,9 +47,32 @@ interface Oid4vciIssuerInstanceIdProvider {
     fun currentInstanceId(): String?
 }
 
-/** Resolve the routed instance or the canonical identity of the singular issuer deployment. */
-fun Oid4vciIssuerInstanceIdProvider.currentInstanceIdOrDefault(): String =
-    currentInstanceId()?.trim()?.takeIf(String::isNotEmpty) ?: DEFAULT_OID4VCI_ISSUER_INSTANCE_ID
+/**
+ * Validates and returns a canonical OID4VCI issuer resource UUID.
+ *
+ * Slugs, aliases, empty selectors, and non-canonical UUID spellings are rejected. This function is
+ * shared by HTTP and service-command boundaries so no non-HTTP entry point can regain the retired
+ * singular issuer fallback.
+ */
+@OptIn(ExperimentalUuidApi::class)
+fun requireCanonicalOid4vciIssuerInstanceId(selector: String?): String {
+    val value = selector?.takeIf(String::isNotEmpty)
+        ?: throw IllegalArgumentException("A canonical UUID OID4VCI issuer instance selector is required")
+    if (value != value.trim()) {
+        throw IllegalArgumentException("OID4VCI issuer instance selector must be a canonical UUID")
+    }
+    val parsed = runCatching { Uuid.parse(value) }.getOrElse {
+        throw IllegalArgumentException("OID4VCI issuer instance selector must be a canonical UUID")
+    }
+    if (parsed.toString() != value) {
+        throw IllegalArgumentException("OID4VCI issuer instance selector must be a canonical UUID")
+    }
+    return value
+}
+
+/** Returns the mandatory canonical issuer UUID currently bound to this request. */
+fun Oid4vciIssuerInstanceIdProvider.requireCurrentInstanceId(): String =
+    requireCanonicalOid4vciIssuerInstanceId(currentInstanceId())
 
 /**
  * Mutable counterpart of [Oid4vciIssuerInstanceIdProvider]. The HTTP adapter (or any other request

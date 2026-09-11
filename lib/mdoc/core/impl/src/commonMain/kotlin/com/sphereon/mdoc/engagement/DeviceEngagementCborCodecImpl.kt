@@ -436,7 +436,7 @@ private fun decodeDeviceEngagementSecurity(
     val deviceKey = coseKeyCodec.decode(encodedDeviceKey.value.taggedItem.value).getOrThrow().value as CoseKeyType
 
     return DeviceEngagementSecurity(
-        cipherSuite = structure.required<CborUInt>(0).value.toUInt(),
+        cipherSuite = toUIntExact(structure.required<CborUInt>(0).value, "DeviceEngagementSecurity.cipherSuite"),
         eDeviceKeyBytes = encodedDeviceKey.copy(deviceKey),
     )
 }
@@ -453,8 +453,8 @@ private fun decodeDeviceRetrievalMethods(items: CborArray<CborItem<*>>): Array<D
 
 private fun decodeDeviceRetrievalMethod(structure: CborArray<CborItem<*>>): DeviceRetrievalMethod {
     val typeItem = structure.required<CborUInt>(0)
-    val type = DeviceRetrievalMethodType.entries.first { it.type == typeItem.value.toUInt() }
-    val version = DeviceRetrievalMethodVersion(structure.required<CborUInt>(1).value.toUInt())
+    val type = DeviceRetrievalMethodType.entries.first { it.type == toUIntExact(typeItem.value, "DeviceRetrievalMethod.type") }
+    val version = DeviceRetrievalMethodVersion(toUIntExact(structure.required<CborUInt>(1).value, "DeviceRetrievalMethod.version"))
     val optionsMap = requireNumberLabelMap(structure.required(2), "DeviceRetrievalOptions")
 
     return DeviceRetrievalMethod(
@@ -476,12 +476,12 @@ private fun decodeDeviceRetrievalOptions(
                     requireUInt(
                         structure.value[NfcOptions.MAX_COMMAND_DATA_FIELD_LENGTH],
                         "NfcOptions.maxCommandDataFieldLength",
-                    ).value.toUInt(),
+                    ).value.let { toUIntExact(it, "NfcOptions.maxCommandDataFieldLength") },
                 maxResponseDataFieldLength =
                     requireUInt(
                         structure.value[NfcOptions.MAX_RESPONSE_DATA_FIELD_LENGTH],
                         "NfcOptions.maxResponseDataFieldLength",
-                    ).value.toUInt(),
+                    ).value.let { toUIntExact(it, "NfcOptions.maxResponseDataFieldLength") },
             )
         }
 
@@ -498,8 +498,8 @@ private fun decodeDeviceRetrievalOptions(
         DeviceRetrievalMethodType.WIFI_WARE -> {
             WifiAwareOptions(
                 passPhrase = (structure.value[WifiAwareOptions.PASS_PHRASE] as? CborString)?.value,
-                channelInfoOperatingClass = (structure.value[WifiAwareOptions.CHANNEL_INFO_OPERATING_CLASS] as? CborUInt)?.value?.toUInt(),
-                channelInfoChannelNumber = (structure.value[WifiAwareOptions.CHANNEL_INFO_CHANNEL_NUMBER] as? CborUInt)?.value?.toUInt(),
+                channelInfoOperatingClass = (structure.value[WifiAwareOptions.CHANNEL_INFO_OPERATING_CLASS] as? CborUInt)?.value?.let { toUIntExact(it, "WifiAwareOptions.channelInfoOperatingClass") },
+                channelInfoChannelNumber = (structure.value[WifiAwareOptions.CHANNEL_INFO_CHANNEL_NUMBER] as? CborUInt)?.value?.let { toUIntExact(it, "WifiAwareOptions.channelInfoChannelNumber") },
                 supportedBands = (structure.value[WifiAwareOptions.SUPPORTED_BANDS] as? CborByteString)?.value,
             )
         }
@@ -529,7 +529,7 @@ private fun decodeServerRetrievalMethods(structure: CborMap<StringLabel, CborIte
 
 private fun decodeServerRetrievalInfo(structure: CborArray<CborItem<*>>): ServerRetrievalInfo =
     ServerRetrievalInfo(
-        version = structure.required<CborUInt>(0).value.toUInt(),
+        version = toUIntExact(structure.required<CborUInt>(0).value, "ServerRetrievalInfo.version"),
         issuerUrl = requireString(structure.value.getOrNull(1), "ServerRetrievalInfo.issuerUrl").value,
         serverRetrievalToken = requireString(structure.value.getOrNull(2), "ServerRetrievalInfo.serverRetrievalToken").value,
     )
@@ -546,8 +546,8 @@ private fun decodeOriginInfo(structure: CborMap<StringLabel, CborItem<*>>): Orig
         }
 
     return OriginInfo(
-        cat = OriginInfoCategory(requireUInt(structure.value[OriginInfo.CAT], "OriginInfo.cat").value.toUInt()),
-        type = OriginInfoType(requireUInt(structure.value[OriginInfo.TYPE], "OriginInfo.type").value.toUInt()),
+        cat = OriginInfoCategory(toUIntExact(requireUInt(structure.value[OriginInfo.CAT], "OriginInfo.cat").value, "OriginInfo.cat")),
+        type = OriginInfoType(toUIntExact(requireUInt(structure.value[OriginInfo.TYPE], "OriginInfo.type").value, "OriginInfo.type")),
         details = details,
         original = null,
     )
@@ -560,7 +560,17 @@ private fun decodeCapabilities(structure: CborMap<NumberLabel, CborItem<*>>): Ca
         handoverSessionEstablishmentSupport = (structure.value[Capabilities.HANDOVER_SESSION_ESTABLISHMENT_SUPPORT] as? CborBool)?.value,
         readerAuthAllSupport = (structure.value[Capabilities.READER_AUTH_ALL_SUPPORT] as? CborBool)?.value,
         extendedRequestSupport = (structure.value[Capabilities.EXTENDED_REQUEST_SUPPORT] as? CborBool)?.value,
-        additionalItems = structure,
+        additionalItems =
+            extractAdditionalItems(
+                structure,
+                setOf(
+                    Capabilities.MAC_KEYS_SUPPORT,
+                    Capabilities.MAC_KEY_CURVES,
+                    Capabilities.HANDOVER_SESSION_ESTABLISHMENT_SUPPORT,
+                    Capabilities.READER_AUTH_ALL_SUPPORT,
+                    Capabilities.EXTENDED_REQUEST_SUPPORT,
+                ),
+            ),
     )
 
 private fun decodeCurves(item: CborItem<*>?): Array<CoseCurve>? =
@@ -683,7 +693,23 @@ private fun requireIntValue(
     fieldName: String,
 ): Int =
     when (item) {
-        is CborInt -> item.value.toInt()
-        is CborUInt -> item.value.toInt()
+        is CborInt -> toIntExact(item.value, fieldName)
+        is CborUInt -> toIntExact(item.value, fieldName)
         else -> throw IllegalArgumentException("$fieldName must be encoded as a CBOR integer")
     }
+
+private fun toIntExact(
+    value: Long,
+    field: String,
+): Int {
+    require(value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) { "$field is outside the Int range" }
+    return value.toInt()
+}
+
+private fun toUIntExact(
+    value: Long,
+    field: String,
+): UInt {
+    require(value in 0..UInt.MAX_VALUE.toLong()) { "$field is outside the UInt range" }
+    return value.toUInt()
+}

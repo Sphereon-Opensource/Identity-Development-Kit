@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.log.Log
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.x509.x5cWithoutTerminalSelfSignedRoot
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
@@ -50,11 +51,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * Default [StatusListSigner]: builds the spec envelope and signs it with the issuer's key via the
- * shared [JwtService]. Token Status List → `statuslist+jwt`; W3C Bitstring → `vc+jwt`. CWT/COSE is
- * not yet wired (returns an unsupported-format error).
+ * shared [JwtService]. Token Status List → `statuslist+jwt`; W3C Bitstring → `vc+jwt`; generic and
+ * ISO/IEC 18013-5 mdoc CWTs use the dedicated COSE signers.
  *
  * The JOSE key-reference header is built to MATCH how the credentials that reference the list are
  * signed (`signingKeyMode`), because many wallets reject a status list whose trust mechanism or
@@ -74,11 +77,22 @@ class JwsStatusListSigner(
     private val didProviderRegistry: DidProviderRegistry,
     private val didResolverRegistry: DidResolverRegistry,
     private val cwtSigner: CwtStatusListSigner,
+    /** Required in every deployed graph: an mdoc profile must never silently downgrade to generic CWT. */
+    private val mdocCwtSigner: MdocCwtStatusListSigner,
 ) : StatusListSigner {
+    private val log = Log.app().withTag("JwsStatusListSigner")
+
     override suspend fun signStatusListToken(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> {
         // This signer signs with a KMS key, so the server must have resolved one. A missing name is
         // refused outright: it is never substituted, defaulted, or derived from the list identity.
         // The CWT branch guards itself, since it is also reachable directly.
+        if (args.mdocProfile != null) {
+            if (args.spec != StatusListSpec.TOKEN_STATUS_LIST || args.proofFormat != StatusProofFormat.CWT) {
+                return Err(StatusListErrors.unsupportedProofFormat(args.spec, args.proofFormat))
+            }
+            return mdocCwtSigner?.sign(args)
+                ?: Err(StatusListErrors.unsupportedProofFormat(args.spec, args.proofFormat))
+        }
         if (args.spec == StatusListSpec.TOKEN_STATUS_LIST && args.proofFormat == StatusProofFormat.CWT) {
             return cwtSigner.sign(args)
         }
@@ -137,8 +151,8 @@ class JwsStatusListSigner(
     /**
      * Resolve the JOSE key-reference header for [args]'s [SignStatusListTokenArgs.signingKeyMode],
      * returning the (possibly DID-rooted) args plus the header fragment to merge (or null to let the
-     * KMS attach the identifier). Resolution failures fall back to the KMS default rather than failing
-     * the whole list, mirroring the credential issuance handlers.
+     * KMS attach the identifier). DID and x5c resolution failures fail closed and never switch the
+     * trust mechanism selected by the credential configuration.
      */
     private suspend fun resolveKeyReference(
         args: SignStatusListTokenArgs,
@@ -147,21 +161,7 @@ class JwsStatusListSigner(
         val mode = args.signingKeyMode ?: return Ok(args to null)
         return when {
             mode.startsWith("did:") -> {
-                val vmId =
-                    resolveDidKid(args, keyName, mode.removePrefix("did:"))
-                        // SECURITY: never silently fall back to another trust mechanism (x5c / KMS
-                        // default) when a DID kid can't be resolved — that would issue the list under
-                        // an x509 cert instead of the DID. Fail loudly. did:web/did:webvh kids are not
-                        // derivable from the key, so configure `verification-method-id` for the list.
-                        ?: return Err(
-                            IdkError.fromString(
-                                code = "statuslist_did_kid_unresolved",
-                                message =
-                                    "Cannot resolve a '$mode' kid for status-list signing key '$keyName'. " +
-                                        "Set the list's 'verification-method-id' (did:web/did:webvh kids are not derivable " +
-                                        "from the key). Refusing to fall back to x5c or any other trust mechanism.",
-                            ),
-                        )
+                val vmId = resolveDidKid(args, keyName, mode.removePrefix("did:")).getOrElse { return Err(it) }
                 val did = vmId.substringBefore('#')
                 Ok(args.copy(issuer = did) to buildJsonObject { put("kid", JsonPrimitive(vmId)) })
             }
@@ -188,8 +188,8 @@ class JwsStatusListSigner(
     }
 
     /**
-     * DID verification-method id ("`<did>#<fragment>`") used as the token `kid`, or `null` if it
-     * cannot be resolved. Priority: an explicit configured [SignStatusListTokenArgs.signingVerificationMethodId]
+     * DID verification-method id ("`<did>#<fragment>`") used as the token `kid`, or a stage-specific
+     * error if it cannot be resolved. Priority: an explicit configured [SignStatusListTokenArgs.signingVerificationMethodId]
      * (required form for did:web/webvh), else for web/webvh `did:web:<host>#<keyName>` (host from
      * the list's hosting URI), else the key-derived id for did:jwk/did:key.
      */
@@ -197,21 +197,88 @@ class JwsStatusListSigner(
         args: SignStatusListTokenArgs,
         keyName: String,
         method: String,
-    ): String? {
+    ): IdkResult<String, IdkError> {
+        val totalStarted = TimeSource.Monotonic.markNow()
+        val publicKeyStarted = TimeSource.Monotonic.markNow()
         // A configured kid MUST be a full absolute DID URL (`did:<method>:...#<fragment>`) — never a
         // hostname or a bare fragment. Anything else is ignored in favour of the derived absolute kid.
-        val jwk = publicJwk(args, keyName) ?: return null
+        val jwk =
+            publicJwk(args, keyName)
+                ?: return didKidFailure(
+                    code = "statuslist_did_public_key_unavailable",
+                    message = "The exact status-list signing key has no resolvable public JWK.",
+                    method = method,
+                    totalStarted = totalStarted,
+                    publicKeyMs = publicKeyStarted.elapsedNow().inWholeMilliseconds,
+                )
+        val publicKeyMs = publicKeyStarted.elapsedNow().inWholeMilliseconds
         args.signingVerificationMethodId?.let { configuredId ->
             val did = configuredId.substringBefore('#')
             if (!configuredId.startsWith("did:") || '#' !in configuredId || did.substringAfter("did:").substringBefore(':') != method) {
-                return null
+                return didKidFailure(
+                    code = "statuslist_did_verification_method_invalid",
+                    message = "The configured status-list verification-method ID is not an absolute did:$method URL.",
+                    method = method,
+                    totalStarted = totalStarted,
+                    publicKeyMs = publicKeyMs,
+                )
             }
-            val resolution = didResolverRegistry.resolve(did).getOrNull() ?: return null
-            return findStatusListAssertionMethodId(resolution, jwk, requiredId = configuredId)
+            val didResolutionStarted = TimeSource.Monotonic.markNow()
+            val resolutionResult = didResolverRegistry.resolve(did)
+            val didResolutionMs = didResolutionStarted.elapsedNow().inWholeMilliseconds
+            if (resolutionResult.isErr) {
+                return didKidFailure(
+                    code = "statuslist_did_resolution_failed",
+                    message = "The configured status-list DID could not be resolved (${resolutionResult.error.code}).",
+                    method = method,
+                    totalStarted = totalStarted,
+                    publicKeyMs = publicKeyMs,
+                    didResolutionMs = didResolutionMs,
+                    diagnostic = resolutionResult.error.message.defaultMessage,
+                )
+            }
+            val matchStarted = TimeSource.Monotonic.markNow()
+            val match = matchStatusListAssertionMethod(resolutionResult.value, jwk, requiredId = configuredId)
+            val matchMs = matchStarted.elapsedNow().inWholeMilliseconds
+            val vmId = match.id
+            if (vmId == null) {
+                return didKidFailure(
+                    code = "statuslist_did_assertion_method_mismatch",
+                    message =
+                        "The configured status-list verification method '$configuredId' is not the unique assertionMethod " +
+                            "bound to the exact signing key in the resolved DID document " +
+                            "(assertionMethods=${match.assertionMethodCount}, keyMatches=${match.keyMatchCount}).",
+                    method = method,
+                    totalStarted = totalStarted,
+                    publicKeyMs = publicKeyMs,
+                    didResolutionMs = didResolutionMs,
+                    matchMs = matchMs,
+                    assertionMethodCount = match.assertionMethodCount,
+                    keyMatchCount = match.keyMatchCount,
+                )
+            }
+            didKidSuccess(
+                method = method,
+                totalStarted = totalStarted,
+                publicKeyMs = publicKeyMs,
+                didResolutionMs = didResolutionMs,
+                matchMs = matchMs,
+                assertionMethodCount = match.assertionMethodCount,
+                keyMatchCount = match.keyMatchCount,
+            )
+            return Ok(vmId)
         }
-        val provider = didProviderRegistry.getProvider(method) ?: return null
+        val provider =
+            didProviderRegistry.getProvider(method)
+                ?: return didKidFailure(
+                    code = "statuslist_did_provider_unavailable",
+                    message = "No DID provider is registered for status-list signing method '$method'.",
+                    method = method,
+                    totalStarted = totalStarted,
+                    publicKeyMs = publicKeyMs,
+                )
         val webMethod = method in WEB_RESOLVED_METHODS
-        val created =
+        val createdResult =
             provider
                 .create(
                     DidCreateOptions(
@@ -221,9 +288,108 @@ class JwsStatusListSigner(
                         purposes = if (webMethod) listOf(VerificationPurpose.ASSERTION_METHOD) else null,
                         verificationMethodId = if (webMethod) keyName else null,
                     ),
-                ).getOrNull() ?: return null
-        val resolution = didResolverRegistry.resolve(created.did).getOrNull() ?: return null
-        return findStatusListAssertionMethodId(resolution, jwk)
+                )
+        if (createdResult.isErr) {
+            return didKidFailure(
+                code = "statuslist_did_creation_failed",
+                message = "The status-list signing DID could not be created: ${createdResult.error.code}.",
+                method = method,
+                totalStarted = totalStarted,
+                publicKeyMs = publicKeyMs,
+            )
+        }
+        val didResolutionStarted = TimeSource.Monotonic.markNow()
+        val resolutionResult = didResolverRegistry.resolve(createdResult.value.did)
+        val didResolutionMs = didResolutionStarted.elapsedNow().inWholeMilliseconds
+        if (resolutionResult.isErr) {
+            return didKidFailure(
+                code = "statuslist_did_resolution_failed",
+                message = "The status-list signing DID could not be resolved: ${resolutionResult.error.code}.",
+                method = method,
+                totalStarted = totalStarted,
+                publicKeyMs = publicKeyMs,
+                didResolutionMs = didResolutionMs,
+            )
+        }
+        val matchStarted = TimeSource.Monotonic.markNow()
+        val match = matchStatusListAssertionMethod(resolutionResult.value, jwk)
+        val matchMs = matchStarted.elapsedNow().inWholeMilliseconds
+        val vmId =
+            match.id
+                ?: return didKidFailure(
+                    code = "statuslist_did_assertion_method_mismatch",
+                    message =
+                        "The resolved DID document does not contain one unique assertionMethod bound to the exact " +
+                            "status-list signing key (assertionMethods=${match.assertionMethodCount}, " +
+                            "keyMatches=${match.keyMatchCount}).",
+                    method = method,
+                    totalStarted = totalStarted,
+                    publicKeyMs = publicKeyMs,
+                    didResolutionMs = didResolutionMs,
+                    matchMs = matchMs,
+                    assertionMethodCount = match.assertionMethodCount,
+                    keyMatchCount = match.keyMatchCount,
+                )
+        didKidSuccess(
+            method = method,
+            totalStarted = totalStarted,
+            publicKeyMs = publicKeyMs,
+            didResolutionMs = didResolutionMs,
+            matchMs = matchMs,
+            assertionMethodCount = match.assertionMethodCount,
+            keyMatchCount = match.keyMatchCount,
+        )
+        return Ok(vmId)
+    }
+
+    private suspend fun didKidFailure(
+        code: String,
+        message: String,
+        method: String,
+        totalStarted: TimeMark,
+        publicKeyMs: Long,
+        didResolutionMs: Long = 0L,
+        matchMs: Long = 0L,
+        assertionMethodCount: Int = 0,
+        keyMatchCount: Int = 0,
+        diagnostic: String? = null,
+    ): IdkResult<String, IdkError> {
+        val diagnosticSuffix =
+            diagnostic
+                ?.replace('\n', ' ')
+                ?.replace('\r', ' ')
+                ?.take(500)
+                ?.let { " diagnostic=$it" }
+                .orEmpty()
+        log.warn(
+            "VDX_STATUSLIST_DID_KID_RESOLUTION outcome=failure reason=$code method=$method " +
+                "publicKeyMs=$publicKeyMs didResolutionMs=$didResolutionMs matchMs=$matchMs " +
+                "assertionMethods=$assertionMethodCount keyMatches=$keyMatchCount " +
+                "durationMs=${totalStarted.elapsedNow().inWholeMilliseconds}$diagnosticSuffix",
+        )
+        return Err(
+            IdkError.fromString(
+                code = code,
+                message = "$message Refusing to fall back to another trust mechanism.",
+            ),
+        )
+    }
+
+    private suspend fun didKidSuccess(
+        method: String,
+        totalStarted: TimeMark,
+        publicKeyMs: Long,
+        didResolutionMs: Long,
+        matchMs: Long,
+        assertionMethodCount: Int,
+        keyMatchCount: Int,
+    ) {
+        log.info(
+            "VDX_STATUSLIST_DID_KID_RESOLUTION outcome=success method=$method " +
+                "publicKeyMs=$publicKeyMs didResolutionMs=$didResolutionMs matchMs=$matchMs " +
+                "assertionMethods=$assertionMethodCount keyMatches=$keyMatchCount " +
+                "durationMs=${totalStarted.elapsedNow().inWholeMilliseconds}",
+        )
     }
 
     private companion object {
@@ -286,13 +452,27 @@ internal fun findStatusListAssertionMethodId(
     resolution: DidResolutionResult,
     signingKey: Jwk,
     requiredId: String? = null,
-): String? {
-    if (!resolution.isSuccess()) return null
-    val did = resolution.didDocument?.id?.takeIf { it.startsWith("did:") } ?: return null
+): String? = matchStatusListAssertionMethod(resolution, signingKey, requiredId).id
+
+internal data class StatusListAssertionMethodMatch(
+    val id: String?,
+    val assertionMethodCount: Int,
+    val keyMatchCount: Int,
+)
+
+internal fun matchStatusListAssertionMethod(
+    resolution: DidResolutionResult,
+    signingKey: Jwk,
+    requiredId: String? = null,
+): StatusListAssertionMethodMatch {
+    if (!resolution.isSuccess()) return StatusListAssertionMethodMatch(null, 0, 0)
+    val did =
+        resolution.didDocument?.id?.takeIf { it.startsWith("did:") }
+            ?: return StatusListAssertionMethodMatch(null, 0, 0)
     val expected = signingKey.publicMaterial()
+    val assertionMethods = resolution.getAssertionMethods()
     val matches =
-        resolution
-            .getAssertionMethods()
+        assertionMethods
             .filter { it.publicKeyJwk?.publicMaterial() == expected }
             .mapNotNull { method ->
                 when {
@@ -301,7 +481,8 @@ internal fun findStatusListAssertionMethodId(
                     else -> null
                 }
             }.distinct()
-    return matches.singleOrNull()?.takeIf { requiredId == null || it == requiredId }
+    val id = matches.singleOrNull()?.takeIf { requiredId == null || it == requiredId }
+    return StatusListAssertionMethodMatch(id, assertionMethods.size, matches.size)
 }
 
 private fun Jwk.publicMaterial(): JsonObject {

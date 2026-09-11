@@ -23,7 +23,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.data.link.nfc"
         compileSdk = 35
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }

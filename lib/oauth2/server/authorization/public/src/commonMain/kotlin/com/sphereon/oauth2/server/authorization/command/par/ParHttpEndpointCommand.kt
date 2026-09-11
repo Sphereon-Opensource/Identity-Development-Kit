@@ -35,6 +35,7 @@ interface ParHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "pushedAuthorizationRequest",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("par"),
                 summary = "RFC 9126 Pushed Authorization Requests",
             )

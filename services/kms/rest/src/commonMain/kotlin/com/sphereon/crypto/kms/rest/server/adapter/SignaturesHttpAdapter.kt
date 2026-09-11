@@ -36,7 +36,8 @@ import com.sphereon.crypto.kms.rest.api.mapper.toSdk
 import com.sphereon.crypto.kms.rest.server.service.SignatureRestService
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -53,7 +54,8 @@ import kotlinx.serialization.json.Json
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(SignaturesHttpAdapter.ID)
 class SignaturesHttpAdapter(
     private val signatureService: SignatureRestService,
 ) : RoutedHttpAdapter() {
@@ -74,12 +76,14 @@ class SignaturesHttpAdapter(
         httpRoutes {
             post("/raw/create") {
                 operationId("createRawSignature")
+                handlerCommandId("kms.signatures.create-raw")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleCreateRawSignature(req) }
             }
             post("/raw/verify") {
                 operationId("verifyRawSignature")
+                handlerCommandId("kms.signatures.verify-raw")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleVerifyRawSignature(req) }

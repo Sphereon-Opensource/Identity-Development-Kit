@@ -49,12 +49,12 @@ class WalletInteractionPolicyDefaultsTest {
                 gate.authorize(
                     WalletSecurityGateRequest(
                         operationId = "op-1",
-                        operation = WalletSecurityOperation.PRESENTATION_SHARING,
+                        operation = WalletSecurityOperation.PRESENT_CREDENTIALS,
                     ),
                 )
 
             val challenge = (result as WalletSecurityGateResult.ChallengeRequired).challenge
             assertEquals("wallet.interaction.security.wallet_unit_policy", challenge.reasonKey)
-            assertEquals("PRESENTATION_SHARING", challenge.arguments["operation"])
+            assertEquals("PRESENT_CREDENTIALS", challenge.arguments["operation"])
         }
 }

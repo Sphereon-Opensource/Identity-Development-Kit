@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+
 package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
@@ -32,6 +34,10 @@ import com.sphereon.openid.oid4vci.holder.Oid4vciHolder
 import com.sphereon.openid.oid4vci.holder.ParseCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ConsumePreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerSpecProfile
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestArgs
@@ -43,6 +49,23 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.uuid.Uuid
+
+/** Explicit immutable authorization decision used by direct issuer-command test fixtures. */
+internal val OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT = Oid4vciAuthorizationPolicySnapshot(
+    issuerId = Uuid.parse(OID4VCI_TEST_ISSUER_INSTANCE_ID),
+    authorizationServerId = Uuid.parse("00000000-0000-4000-8000-000000000002"),
+    authorizationServerIssuer = OID4VCI_TEST_ISSUER_URL,
+    authorizationServerDeployment = Oid4vciAuthorizationServerDeployment.HOSTED,
+    authorizationServerRuntimeKey = "default",
+    authorizationServerTokenEndpoint = "$OID4VCI_TEST_ISSUER_URL/token",
+    authorizationServerJwksUri = "$OID4VCI_TEST_ISSUER_URL/.well-known/jwks.json",
+    applicableGrants = setOf(Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE),
+    profile = Oid4vciIssuerSpecProfile.OID4VCI_1_0_FINAL,
+    profileRevision = 7,
+    authorizationServerRevision = 11,
+    bindingRevision = 13,
+)
 
 /**
  * Graph interface to access OID4VCI + OAuth2 services from the session graph.
@@ -104,10 +127,11 @@ class Oid4vciIssuanceE2ETest {
             val result =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vci-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
 
@@ -150,10 +174,11 @@ class Oid4vciIssuanceE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vci-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
             assertTrue(offerResult.isOk, "Offer creation should succeed")
@@ -324,10 +349,11 @@ class Oid4vciIssuanceE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vci-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
             assertTrue(offerResult.isOk, "Offer creation should succeed")
@@ -454,10 +480,11 @@ class Oid4vciIssuanceE2ETest {
             val result =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vci-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                         txCodeRequired = true,
                     ),
                 )
@@ -486,10 +513,11 @@ class Oid4vciIssuanceE2ETest {
             val result =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vci-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = emptyList(),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
 
@@ -564,10 +592,11 @@ class Oid4vciIssuanceE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vci-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
             assertTrue(offerResult.isOk)

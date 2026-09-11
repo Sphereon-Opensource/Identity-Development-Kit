@@ -20,7 +20,7 @@ class Oid4vciIssuanceLaunchOptionsTest {
     fun appliesPerInteractionProtocolOptionsWithoutReplacingKeyOwnership() {
         val baseline =
             Oid4vciHolderIssuanceOptions(
-                signingKeyId = "wallet-unit-owned-key",
+                signingKeyIds = listOf("wallet-unit-owned-key"),
                 operationBinding = "attended-operation",
                 clientId = "default-client",
             )
@@ -37,7 +37,7 @@ class Oid4vciIssuanceLaunchOptionsTest {
                 ),
             )
 
-        assertEquals("wallet-unit-owned-key", applied.signingKeyId)
+        assertEquals(listOf("wallet-unit-owned-key"), applied.signingKeyIds)
         assertEquals("attended-operation", applied.operationBinding)
         assertEquals("module-client", applied.clientId)
         assertEquals("https://suite.example/callback", applied.redirectUri)
@@ -50,7 +50,7 @@ class Oid4vciIssuanceLaunchOptionsTest {
     @Test
     fun rejectsAmbiguousParAttribute() {
         assertFailsWith<IllegalArgumentException> {
-            Oid4vciHolderIssuanceOptions(signingKeyId = "key").withLaunchAttributes(
+            Oid4vciHolderIssuanceOptions(signingKeyIds = listOf("key")).withLaunchAttributes(
                 mapOf(Oid4vciInteractionLaunchAttributes.USE_PAR to "sometimes"),
             )
         }
@@ -60,7 +60,7 @@ class Oid4vciIssuanceLaunchOptionsTest {
     fun rejectsNonPositiveOrNonNumericBatchSize() {
         listOf("0", "-1", "two").forEach { value ->
             assertFailsWith<IllegalArgumentException> {
-                Oid4vciHolderIssuanceOptions(signingKeyId = "key").withLaunchAttributes(
+                Oid4vciHolderIssuanceOptions(signingKeyIds = listOf("key")).withLaunchAttributes(
                     mapOf(Oid4vciInteractionLaunchAttributes.CREDENTIAL_BATCH_SIZE to value),
                 )
             }

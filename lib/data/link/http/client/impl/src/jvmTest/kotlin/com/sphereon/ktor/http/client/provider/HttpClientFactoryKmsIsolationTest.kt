@@ -11,6 +11,7 @@ import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KeyStoreManager
 import com.sphereon.di.context.PrincipalType
 import com.sphereon.ktor.http.client.createJvmHttpClientTestAppGraph
+import dev.zacsweers.metro.Provider
 import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -28,14 +29,14 @@ class HttpClientFactoryKmsIsolationTest {
         var kmsCalls = 0
         var keyStoreManagerCalls = 0
         val kms =
-            proxy<KeyManagerService> { methodName ->
+            Provider<KeyManagerService> {
                 kmsCalls += 1
-                error("Default HTTP client creation must not call KeyManagerService.$methodName")
+                error("Default HTTP client creation must not resolve KeyManagerService")
             }
         val keyStoreManager =
-            proxy<KeyStoreManager> { methodName ->
+            Provider<KeyStoreManager> {
                 keyStoreManagerCalls += 1
-                error("Default HTTP client creation must not call KeyStoreManager.$methodName")
+                error("Default HTTP client creation must not resolve KeyStoreManager")
             }
 
         HttpClientFactoryJvmImpl(

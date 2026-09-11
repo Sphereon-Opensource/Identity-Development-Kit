@@ -18,6 +18,8 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.bridge
 
+import com.sphereon.oauth2.server.authorization.model.FederationTokenMetadata
+
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -30,13 +32,19 @@ import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
-import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
+import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
+import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
+import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
 import com.sphereon.oauth2.server.authorization.command.GetUserInfoArgs
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
+import com.sphereon.oauth2.server.authorization.service.InternalClientRoleResolver
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
+import com.sphereon.oauth2.server.authorization.command.token.validatePreAuthorizedCodeExpiry
 import com.sphereon.openid.oid4vci.issuer.bridge.AugmentAsMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.AuthorizationContextRef
 import com.sphereon.openid.oid4vci.issuer.bridge.ConsumePreAuthCodeArgs
@@ -65,7 +73,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlin.time.Clock
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -74,7 +81,8 @@ private const val ISSUER_INTERNAL_CLIENT_ROLE = "issuer"
 /**
  * AS bridge for the embedded Sphereon OAuth2 AS (same-process).
  *
- * - Pre-authorized code management via [PreAuthorizedCodeStorage]
+ * - Pre-authorized code registration via [PreAuthorizedCodeStorage] and
+ *   consumption through the authorization-server verifier
  * - Token validation via [AuthorizationServerService.introspectToken]
  */
 @Inject
@@ -84,10 +92,32 @@ class SphereonAsBridge(
     private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage,
     private val authorizationServerService: AuthorizationServerService,
     private val verifyDpopProofCommand: VerifyDpopProofCommand,
-    private val oauth2ConfigProvider: OAuth2ServersConfigProvider? = null,
+    private val internalClientRoleResolver: InternalClientRoleResolver,
     private val execution: SessionExecution,
+    private val asInstanceIdProvider: MutableOAuth2ServerInstanceIdProvider = object : MutableOAuth2ServerInstanceIdProvider {
+        private var current: String? = null
+        override fun currentAsInstanceId(): String? = current
+        override fun setCurrentAsInstanceId(asInstanceId: String) { current = asInstanceId }
+        override fun clearCurrentAsInstanceId() { current = null }
+    },
+    private val verifyJwtCommand: VerifyJwtCommand? = null,
+    private val clock: Clock = Clock.System,
 ) : Oid4vciAuthorizationServerBridge {
     override suspend fun registerPreAuthorizedCode(args: RegisterPreAuthCodeArgs): IdkResult<RegisteredPreAuthCode, IdkError> {
+        if (args.authorizationServer.deployment == Oid4vciAuthorizationServerDeployment.EXTERNAL) {
+            return Err(
+                IdkError.fromString(
+                    code = "unsupported_operation",
+                    message = "External authorization servers do not support issuer-side pre-authorized-code registration",
+                ),
+            )
+        }
+        val expiry = validatePreAuthorizedCodeExpiry(args.expiresAtEpochSeconds, clock.now()).getOrElse { return Err(it) }
+        val runtimeKey = args.authorizationServer.runtimeServerKey?.takeIf { it.isNotBlank() }
+            ?: return Err(IdkError.INVALID_STATE(message = "Hosted authorization-server snapshot has no runtime key"))
+        val previous = asInstanceIdProvider.currentAsInstanceId()
+        asInstanceIdProvider.setCurrentAsInstanceId(runtimeKey)
+        try {
         val code = CryptographyRandom.nextBytes(32).encodeToBase64Url()
         val txCode =
             if (args.txCodeRequired) {
@@ -100,7 +130,7 @@ class SphereonAsBridge(
                 hash(it.encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()
             }
 
-        val now = Clock.System.now()
+        val now = clock.now()
         val data =
             PreAuthorizedCodeData(
                 sessionId = args.sessionId,
@@ -110,7 +140,7 @@ class SphereonAsBridge(
                 issuerIdentifier = args.issuerIdentifier,
                 useCredentialIdentifiers = args.useCredentialIdentifiers,
                 createdAt = now,
-                expiresAt = now + 10.minutes,
+                expiresAt = expiry,
             )
 
         preAuthorizedCodeStorage.storePreAuthorizedCode(code, data).getOrElse {
@@ -118,6 +148,10 @@ class SphereonAsBridge(
         }
 
         return Ok(RegisteredPreAuthCode(code = code, txCode = txCode))
+        } finally {
+            if (previous == null) asInstanceIdProvider.clearCurrentAsInstanceId()
+            else asInstanceIdProvider.setCurrentAsInstanceId(previous)
+        }
     }
 
     /**
@@ -125,20 +159,21 @@ class SphereonAsBridge(
      * is handled by [VerifyPreAuthorizedCodeGrantCommand], not duplicated here.
      */
     override suspend fun consumePreAuthorizedCode(args: ConsumePreAuthCodeArgs): IdkResult<ConsumedPreAuthCode, IdkError> {
-        val data =
-            preAuthorizedCodeStorage.consumePreAuthorizedCode(args.code).getOrElse {
-                return Err(IdkError.UNKNOWN_ERROR(message = "Failed to consume pre-authorized code: ${it.details}"))
-            }
-
-        if (data == null) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Invalid or already used pre-authorized code"))
-        }
+        val verified =
+            authorizationServerService
+                .verifyPreAuthorizedCodeGrant(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = args.code,
+                        txCode = args.txCode,
+                        clientId = args.clientId,
+                    ),
+                ).getOrElse { return Err(it) }
 
         return Ok(
             ConsumedPreAuthCode(
-                sessionId = data.sessionId,
-                subject = data.subject,
-                credentialConfigurationIds = data.credentialConfigurationIds,
+                sessionId = verified.sessionId,
+                subject = verified.subject,
+                credentialConfigurationIds = verified.credentialConfigurationIds,
             ),
         )
     }
@@ -147,12 +182,17 @@ class SphereonAsBridge(
         Ok(AuthorizationContextRef(issuerState = args.issuerState, sessionId = args.issuerState))
 
     override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult<ValidatedTokenContext, IdkError> {
+        if (args.authorizationServer.deployment == Oid4vciAuthorizationServerDeployment.EXTERNAL) {
+            return validateExternalAccessToken(args)
+        }
+        val runtimeKey = args.authorizationServer.runtimeServerKey?.takeIf { it.isNotBlank() }
+            ?: return Err(IdkError.INVALID_STATE(message = "Hosted authorization-server snapshot has no runtime key"))
+        val previous = asInstanceIdProvider.currentAsInstanceId()
+        asInstanceIdProvider.setCurrentAsInstanceId(runtimeKey)
+        try {
         val introspectingClientId =
-            oauth2ConfigProvider
-                ?.serverConfig
-                ?.internalClients
-                ?.get(ISSUER_INTERNAL_CLIENT_ROLE)
-                ?.clientId
+            internalClientRoleResolver
+                .resolveClientId(ISSUER_INTERNAL_CLIENT_ROLE)
                 .orEmpty()
 
         // Introspect the access token via the AS service
@@ -249,16 +289,21 @@ class SphereonAsBridge(
                 Instant.fromEpochSeconds(epochSeconds)
             }
 
-        // upstream_sub / upstream_iss are populated by the upstream federation flow; null for local auth.
-        val upstreamSubject = additionalClaims["upstream_sub"]?.jsonPrimitive?.content
-        val upstreamIssuer = additionalClaims["upstream_iss"]?.jsonPrimitive?.content
+        val federation = FederationTokenMetadata.read(additionalClaims)
+        val upstreamSubject = federation?.upstreamSubject
+        val upstreamIssuer = federation?.upstreamIssuer
 
         val userinfoClaims =
-            resolveUserinfoClaims(additionalClaims, upstreamIssuer)
-                ?: resolveLocalUserinfoClaims(args.accessToken)
+            if (FederationTokenMetadata.isFederated(additionalClaims)) {
+                resolveUserinfoClaims(federation?.userinfo.orEmpty(), upstreamIssuer)
+            } else {
+                resolveLocalUserinfoClaims(args.accessToken)
+            }
 
         return Ok(
             ValidatedTokenContext(
+                authorizationServerId = args.authorizationServer.id,
+                authorizationServerIssuer = args.authorizationServer.issuer,
                 tokenId = tokenId,
                 expiresAtEpochSeconds = introspection.exp,
                 subject = subject,
@@ -277,7 +322,73 @@ class SphereonAsBridge(
                 walletInstanceAttestation = parseWalletInstanceAttestation(additionalClaims),
             ),
         )
+        } finally {
+            if (previous == null) asInstanceIdProvider.clearCurrentAsInstanceId()
+            else asInstanceIdProvider.setCurrentAsInstanceId(previous)
+        }
 
+    }
+
+    private suspend fun validateExternalAccessToken(args: ValidateAccessTokenArgs): IdkResult<ValidatedTokenContext, IdkError> {
+        val jwksUri = args.authorizationServer.jwksUri?.takeIf { it.isNotBlank() }
+            ?: return Err(IdkError.INVALID_STATE(message = "External authorization-server snapshot has no JWKS URI"))
+        val verifier = verifyJwtCommand
+            ?: return Err(IdkError.INVALID_STATE(message = "External JWT verification is unavailable"))
+        val verified = verifier.execute(
+            VerifyJwtArgs(
+                jwt = args.accessToken,
+                authorizationServer = args.authorizationServer.issuer,
+                expectedAudience = args.expectedAudience,
+                jwksUri = jwksUri,
+            ),
+        ).getOrElse { return Err(it) }
+        val cnfJkt = verified.dpopJkt
+        if (cnfJkt != null) {
+            val proof = args.dpopProof
+                ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "DPoP proof required for DPoP-bound access token (RFC 9449 §7.1)"))
+            val httpUrl = args.httpUrl
+                ?: return Err(IdkError.UNKNOWN_ERROR(message = "Resource endpoint did not propagate request URL for DPoP verification"))
+            val httpMethod = args.httpMethod
+                ?: return Err(IdkError.UNKNOWN_ERROR(message = "Resource endpoint did not propagate request method for DPoP verification"))
+            verifyDpopProofCommand.execute(
+                VerifyDpopProofOptions(
+                    dpopProof = proof,
+                    httpMethod = httpMethod,
+                    httpUrl = httpUrl,
+                    accessToken = args.accessToken,
+                    expectedJwkThumbprint = cnfJkt,
+                ),
+            ).getOrElse { return Err(IdkError.UNAUTHORIZED_ERROR(message = "Invalid DPoP proof: ${it.message.defaultMessage}")) }
+        }
+        val authorizationDetails = verified.additionalClaims["authorization_details"]?.runCatching { jsonArray }?.getOrNull()
+        val configurationIds = authorizationDetails?.mapNotNull {
+            it.jsonObject["credential_configuration_id"]?.jsonPrimitive?.contentOrNull
+        }.orEmpty()
+        val identifiers = authorizationDetails?.flatMap {
+            it.jsonObject["credential_identifiers"]?.jsonArray?.mapNotNull { value -> value.jsonPrimitive.contentOrNull }.orEmpty()
+        }.orEmpty()
+        val mappings = authorizationDetails?.flatMap {
+            val objectValue = it.jsonObject
+            val configId = objectValue["credential_configuration_id"]?.jsonPrimitive?.contentOrNull
+            if (configId == null) emptyList()
+            else objectValue["credential_identifiers"]?.jsonArray?.mapNotNull { value -> value.jsonPrimitive.contentOrNull?.let { id -> id to configId } }.orEmpty()
+        }?.toMap().orEmpty()
+        return Ok(
+            ValidatedTokenContext(
+                authorizationServerId = args.authorizationServer.id,
+                authorizationServerIssuer = verified.iss,
+                subject = verified.sub,
+                clientId = verified.clientId.orEmpty(),
+                scope = verified.scope,
+                credentialConfigurationIds = configurationIds,
+                credentialIdentifiers = identifiers.ifEmpty { null },
+                credentialIdentifierMappings = mappings,
+                issuerState = verified.additionalClaims[INTERNAL_OID4VCI_ISSUER_STATE_CLAIM]?.jsonPrimitive?.contentOrNull,
+                cnfJkt = cnfJkt,
+                tokenId = verified.jti?.takeIf { it.isNotBlank() && it.length <= MAX_TOKEN_ID_LENGTH },
+                expiresAtEpochSeconds = verified.exp.epochSeconds,
+            ),
+        )
     }
 
     /**
@@ -304,10 +415,7 @@ class SphereonAsBridge(
         if (!surfaceUserinfo) {
             return null
         }
-        // The token's additionalClaims carry whatever the AS stored at token minting time.
-        // Surface the full map minus the protocol claims already modeled as dedicated fields
-        // so callers don't need to double-read.
-        return additionalClaims.filterKeys { it !in PROTOCOL_CLAIM_KEYS }.takeIf { it.isNotEmpty() }
+        return FederationTokenMetadata.filterUserinfo(additionalClaims).takeIf { it.isNotEmpty() }
     }
 
     /**

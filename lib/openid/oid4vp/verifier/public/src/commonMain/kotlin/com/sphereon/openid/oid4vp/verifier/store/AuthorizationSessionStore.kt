@@ -41,6 +41,8 @@ interface AuthorizationSessionStore : Oid4vpStore<String, AuthorizationSession> 
          * Default session TTL: 10 minutes.
          */
         const val DEFAULT_TTL_SECONDS: Long = 600
+        /** Reserved namespace for atomically claimed, durable operations. */
+        const val CLAIMED_CORRELATION_PREFIX: String = "oid4vp-claim:"
     }
 
     /**
@@ -55,6 +57,15 @@ interface AuthorizationSessionStore : Oid4vpStore<String, AuthorizationSession> 
         args: AuthorizationSessionCreateArgs,
         ttlSeconds: Long = DEFAULT_TTL_SECONDS,
     ): IdkResult<AuthorizationSession, IdkError>
+
+    /** Atomically create once or return the original request for the same operation fingerprint. */
+    suspend fun createClaimedSession(
+        session: AuthorizationSession,
+        fingerprint: String,
+        ttlSeconds: Long = DEFAULT_TTL_SECONDS,
+    ): IdkResult<AuthorizationSession, IdkError> = com.sphereon.core.api.Err(
+        IdkError.INVALID_STATE(message = "Durable claimed authorization sessions are not supported by this store"),
+    )
 
     /**
      * Retrieve a session by correlation id.

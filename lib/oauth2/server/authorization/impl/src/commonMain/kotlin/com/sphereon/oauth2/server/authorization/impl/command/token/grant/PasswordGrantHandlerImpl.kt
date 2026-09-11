@@ -24,22 +24,28 @@ import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
+import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseCommand
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.clientauth.toVerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.binding
 
 /**
@@ -52,12 +58,17 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<GrantHandler>())
+@ContributesIntoMap(SessionScope::class, binding = binding<GrantHandler>())
+@StringKey(GrantHandlerKeys.PASSWORD)
 class PasswordGrantHandlerImpl(
     private val clientRegistry: ClientRegistry,
     private val userAuthenticationProvider: UserAuthenticationProvider,
+    private val createAccessToken: CreateAccessTokenCommand,
+    private val createRefreshToken: Lazy<CreateRefreshTokenCommand>,
+    private val createIdToken: Lazy<CreateIdTokenCommand>,
+    private val createTokenResponse: CreateTokenResponseCommand,
 ) : GrantHandler {
-    override val grantType: String = GrantType.PASSWORD.value
+    override val grantType: String = GrantHandlerKeys.PASSWORD
 
     override fun supports(params: GrantParameters): Boolean = params is GrantParameters.Password
 
@@ -80,7 +91,6 @@ class PasswordGrantHandlerImpl(
         val passwordParams = params as GrantParameters.Password
         val tokenRequest = context.tokenRequest
         val applied = context.applied
-        val commands = context.commands
         val proofJkt = context.proofJkt
         val certThumbprint = context.certThumbprintS256
         val authenticatedClientAuthorization = clientAuthorization
@@ -138,7 +148,7 @@ class PasswordGrantHandlerImpl(
         val subject = authenticatedUser.userId
 
         val accessToken =
-            commands.createAccessToken
+            createAccessToken
                 .execute(
                     CreateAccessTokenArgs(
                         subject = subject,
@@ -155,7 +165,7 @@ class PasswordGrantHandlerImpl(
 
         val refreshToken =
             if (GrantType.REFRESH_TOKEN in client.grantTypes) {
-                commands.createRefreshToken
+                createRefreshToken.value
                     .execute(
                         CreateRefreshTokenArgs(
                             subject = subject,
@@ -191,7 +201,7 @@ class PasswordGrantHandlerImpl(
                             )
                         }
 
-                commands.createIdToken
+                createIdToken.value
                     .execute(
                         CreateIdTokenArgs(
                             subject = subject,
@@ -209,7 +219,7 @@ class PasswordGrantHandlerImpl(
                 null
             }
 
-        return commands.createTokenResponse.execute(
+        return createTokenResponse.execute(
             CreateTokenResponseArgs(
                 accessToken = accessToken.value,
                 tokenType = tokenTypeFor(proofJkt),

@@ -12,7 +12,17 @@ import com.sphereon.mdoc.data.device.DocType
 import com.sphereon.mdoc.data.device.Document
 import com.sphereon.mdoc.data.device.DocumentWithKeyAlias
 import com.sphereon.mdoc.data.device.IssuerSignedCborCodec
+import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodec
+import com.sphereon.mdoc.data.mso.Status
 import com.sphereon.mdoc.transfer.DocumentProvider
+import com.sphereon.statuslist.CredentialStatusInput
+import com.sphereon.statuslist.CredentialStatusMetadata
+import com.sphereon.statuslist.CredentialStatusReference
+import com.sphereon.statuslist.CredentialStatusDecision
+import com.sphereon.statuslist.CredentialStatusPolicy
+import com.sphereon.statuslist.MdocCredentialStatusMetadata
+import com.sphereon.statuslist.evaluateCredentialStatus
+import com.sphereon.statuslist.spi.CredentialStatusVerifier
 import com.sphereon.wallet.credential.CredentialFormat
 import com.sphereon.wallet.credential.CredentialInstance
 import com.sphereon.wallet.credential.CredentialLifecycleState
@@ -30,6 +40,9 @@ import kotlin.time.Instant
 class WalletStoreIso18013DocumentProviderResolver(
     private val credentialStore: WalletCredentialStore,
     private val issuerSignedCborCodec: IssuerSignedCborCodec,
+    private val mobileSecurityObjectCborCodec: MobileSecurityObjectCborCodec,
+    private val credentialStatusVerifiers: Set<CredentialStatusVerifier> = emptySet(),
+    private val credentialStatusPolicy: CredentialStatusPolicy = CredentialStatusPolicy(requireStatus = true),
 ) : Iso18013DocumentProviderResolver {
     override suspend fun resolve(
         context: WalletInteractionContext,
@@ -39,6 +52,9 @@ class WalletStoreIso18013DocumentProviderResolver(
             credentialStore = credentialStore,
             walletUnitId = context.walletUnitId,
             issuerSignedCborCodec = issuerSignedCborCodec,
+            mobileSecurityObjectCborCodec = mobileSecurityObjectCborCodec,
+            credentialStatusVerifiers = credentialStatusVerifiers,
+            credentialStatusPolicy = credentialStatusPolicy,
         )
 }
 
@@ -46,6 +62,9 @@ class WalletStoreIso18013DocumentProvider(
     private val credentialStore: WalletCredentialStore,
     private val walletUnitId: String,
     private val issuerSignedCborCodec: IssuerSignedCborCodec,
+    private val mobileSecurityObjectCborCodec: MobileSecurityObjectCborCodec,
+    private val credentialStatusVerifiers: Set<CredentialStatusVerifier> = emptySet(),
+    private val credentialStatusPolicy: CredentialStatusPolicy = CredentialStatusPolicy(requireStatus = true),
 ) : DocumentProvider {
     override suspend fun getDocuments(selectorData: Any?): Set<DocumentWithKeyAlias> {
         val requestedDocTypes = (selectorData as? Iso18013DocumentSelectorData)?.requestedDocTypes.orEmpty()
@@ -115,6 +134,17 @@ class WalletStoreIso18013DocumentProvider(
                 .getOrElse { throw it.toException() }
                 .value
 
+        // Every ISO presentation candidate must cross the authenticated MSO boundary. Persisted
+        // claims or a status snapshot are not substitutes for signed MSO metadata, so the codec is
+        // a required construction dependency rather than an optional runtime fallback.
+        val payload = issuerSigned.issuerAuth.payload?.value ?: return null
+        val mobileSecurityObject = mobileSecurityObjectCborCodec.decode(payload).getOrNull()?.value ?: return null
+
+        // A reference in the authenticated MSO is a live holder-policy input, not an ordinary
+        // disclosed claim. Require an installed verifier and fail closed on missing, malformed,
+        // or unacceptable status resolution.
+        if (!mobileSecurityObject.status.allowsPresentation()) return null
+
         return WalletStoreIso18013Document(
             providerId = "",
             keyAlias = instance.holderKeyRef?.alias.orEmpty(),
@@ -127,6 +157,49 @@ class WalletStoreIso18013DocumentProvider(
                 ),
         )
     }
+
+    private suspend fun Status?.allowsPresentation(): Boolean {
+        if (this == null) return true
+        if (credentialStatusVerifiers.isEmpty()) return false
+        val evaluation =
+            evaluateCredentialStatus(
+                verifiers = credentialStatusVerifiers,
+                input = CredentialStatusInput(metadata = toCredentialStatusMetadata()),
+                // An MSO status reference must be recognized by at least one configured verifier;
+                // a generic policy's optional-status default is not safe for this authenticated
+                // ISO status mechanism.
+                policy = credentialStatusPolicy.copy(requireStatus = true),
+            )
+        return evaluation.decision == CredentialStatusDecision.ACCEPT
+    }
+}
+
+/** Adapt the authenticated MSO status structure without flattening it into wallet claims. */
+private fun Status.toCredentialStatusMetadata(): CredentialStatusMetadata {
+    val references = buildList {
+        statusList?.let { reference ->
+            add(
+                CredentialStatusReference(
+                    mechanism = "mdoc_status",
+                    uri = reference.uri,
+                    index = reference.idx.toInt(),
+                    certificate = reference.certificate,
+                ),
+            )
+        }
+        identifierList?.let { reference ->
+            add(
+                CredentialStatusReference(
+                    mechanism = "mdoc_status",
+                    uri = reference.uri,
+                    index = 0,
+                    identifier = reference.id,
+                    certificate = reference.certificate,
+                ),
+            )
+        }
+    }
+    return CredentialStatusMetadata(MdocCredentialStatusMetadata(references))
 }
 
 private fun CredentialMetadata.isPresentationCandidate(): Boolean =
@@ -139,7 +212,11 @@ private fun CredentialInstance.isPresentableMdoc(now: Instant): Boolean =
     format.isMdoc &&
         lifecycleState == CredentialLifecycleState.ACTIVE &&
         validity.stateAt(now) != CredentialValidityState.NOT_YET_VALID &&
-        validity.stateAt(now) != CredentialValidityState.EXPIRED
+        validity.stateAt(now) != CredentialValidityState.EXPIRED &&
+        // A status refresh persists the live decision separately from the lifecycle projection.
+        // Never present a credential whose known status is anything other than valid, even if a
+        // stale store/metadata read still reports the instance as active.
+        status.let { snapshot -> snapshot == null || snapshot.status.equals("valid", ignoreCase = true) }
 
 private data class WalletStoreIso18013Document(
     override val providerId: String,

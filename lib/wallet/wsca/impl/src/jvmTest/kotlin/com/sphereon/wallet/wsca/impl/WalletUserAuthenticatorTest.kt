@@ -146,11 +146,11 @@ class WalletUserAuthenticatorTest {
                     WalletUserAuthenticator { request ->
                         Ok(
                             ActivationProof(
-                                ActivationProofKind.LOCAL_USER_AUTH,
-                                "test-token",
-                                request.digestBinding,
-                                request.nonce,
-                                mapOf("factor" to "pin"),
+                                kind = ActivationProofKind.LOCAL_USER_AUTH,
+                                token = "test-token",
+                                digestBinding = request.digestBinding,
+                                nonce = request.nonce,
+                                evidence = mapOf("factor" to "pin"),
                             ),
                         )
                     },
@@ -181,6 +181,7 @@ class WalletUserAuthenticatorTest {
             walletUnitId = "wu-personal",
             operationType = "wallet.test",
             operationBinding = "test:wallet-operation",
+            operationKeyRef = null,
             digestBinding = "sha256:operation",
             nonce = "nonce",
         )

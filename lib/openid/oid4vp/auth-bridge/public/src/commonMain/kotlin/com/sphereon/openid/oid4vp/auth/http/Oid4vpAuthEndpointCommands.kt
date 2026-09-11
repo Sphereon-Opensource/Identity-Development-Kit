@@ -47,6 +47,7 @@ interface CreateOid4vpAuthSessionCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "createOid4vpAuthSession",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp-auth"),
                 summary = "Create a new OID4VP authentication session",
             )
@@ -73,6 +74,7 @@ interface GetOid4vpAuthStatusCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getOid4vpAuthSessionStatus",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp-auth"),
                 summary = "Get OID4VP authentication session status",
             )
@@ -99,6 +101,7 @@ interface CompleteOid4vpAuthCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "completeOid4vpAuth",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp-auth"),
                 summary = "Complete OID4VP authentication and resolve user identity",
             )

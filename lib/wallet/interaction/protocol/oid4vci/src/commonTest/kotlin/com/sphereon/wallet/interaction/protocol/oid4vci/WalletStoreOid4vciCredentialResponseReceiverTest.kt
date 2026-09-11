@@ -12,7 +12,10 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.binary.TypeToken
+import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.log.AsyncLogService
 import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.LogService
@@ -30,9 +33,16 @@ import com.sphereon.core.events.impl.EventHubImpl
 import com.sphereon.crypto.core.cose.CoseAlgorithm
 import com.sphereon.crypto.core.cose.CoseCurve
 import com.sphereon.crypto.core.cose.CoseHeaderCbor
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.cose.CoseKeyJson
 import com.sphereon.crypto.core.cose.CoseKeyTypeEnum
 import com.sphereon.crypto.core.cose.CoseSign1
+import com.sphereon.crypto.dataintegrity.model.ProofPurpose
+import com.sphereon.crypto.jose.jws.JwsCompact
+import com.sphereon.crypto.jose.jws.JwsJsonGeneralWithIdentifiers
+import com.sphereon.crypto.jose.jws.JwsValidationResult
+import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
+import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
 import com.sphereon.data.store.blob.BlobStore
 import com.sphereon.data.store.blob.DefaultTempUrlPolicy
 import com.sphereon.data.store.blob.InMemoryBlobStoreConfig
@@ -62,6 +72,7 @@ import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodecImpl
 import com.sphereon.mdoc.data.mso.MsoVersion
 import com.sphereon.mdoc.data.mso.ValidityInfo
 import com.sphereon.openid.oid4vc.common.DisplayProperties
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmProfiles
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
@@ -72,6 +83,9 @@ import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
 import com.sphereon.openid.oid4vci.common.model.PreAuthorizedCodeOfferGrant
 import com.sphereon.openid.oid4vci.holder.ResolvedCredentialOffer
+import com.sphereon.openid.oid4vp.verifier.VcdmDataIntegrityVerificationArgs
+import com.sphereon.openid.oid4vp.verifier.VcdmDataIntegrityVerificationResult
+import com.sphereon.openid.oid4vp.verifier.VcdmDataIntegrityVerifier
 import com.sphereon.sdjwt.vc.command.VerifySdJwtVcCommand
 import com.sphereon.wallet.credential.BodyStorageKind
 import com.sphereon.wallet.credential.BodyStorageRef
@@ -94,6 +108,9 @@ import com.sphereon.wallet.credential.RefreshPolicy
 import com.sphereon.wallet.credential.RefreshState
 import com.sphereon.wallet.credential.SecretRef
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
+import com.sphereon.wallet.WalletHolderVerificationMethodResolver
+import com.sphereon.wallet.credential.WalletHolderIdentifierKind
+import com.sphereon.wallet.credential.WalletHolderVerificationMethod
 import com.sphereon.wallet.credential.store.BlobWalletCredentialStore
 import com.sphereon.wallet.credential.store.WalletCredentialBodyProtector
 import com.sphereon.wallet.credential.store.WalletCredentialProtectedDocumentRole
@@ -107,9 +124,13 @@ import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletProtocol
+import com.sphereon.wallet.interaction.WalletIssuerAuthenticationProvenance
+import com.sphereon.wallet.interaction.WalletIssuerAuthenticationResult
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -127,6 +148,12 @@ internal fun buildTestSdJwt(payloadJson: String): String {
     val header = """{"alg":"ES256","typ":"dc+sd-jwt"}""".encodeToByteArray().encodeToBase64Url()
     val payload = payloadJson.encodeToByteArray().encodeToBase64Url()
     return "$header.$payload.fakesig~"
+}
+
+internal fun buildTestCompactJwt(payloadJson: String): String {
+    val header = """{"alg":"ES256","typ":"vc+jwt"}""".encodeToByteArray().encodeToBase64Url()
+    val payload = payloadJson.encodeToByteArray().encodeToBase64Url()
+    return "$header.$payload.fakesig"
 }
 
 /**
@@ -188,12 +215,41 @@ internal fun buildTestMdocCredential(doctype: String): String {
  * [TestPassThroughWalletIdentityResolver], plus a caller-supplied verification command which
  * defaults to an always-accepting fake.
  */
-private fun testAcceptance(verify: VerifySdJwtVcCommand = FakeVerifySdJwtVcCommand(accept = true)): Oid4vciIssuedCredentialAcceptance =
+private fun testAcceptance(
+    verify: VerifySdJwtVcCommand = FakeVerifySdJwtVcCommand(accept = true),
+    verifyJws: VerifyJwsCommand = ReceiverVerifyJwsCommand,
+    vcdmDataIntegrityVerifier: VcdmDataIntegrityVerifier? = null,
+): Oid4vciIssuedCredentialAcceptance =
     Oid4vciIssuedCredentialAcceptance(
         verifySdJwtVcCommand = verify,
+        verifyJwsCommand = verifyJws,
         subjectExtractor = CredentialSubjectExtractorImpl(),
         identityResolver = TestPassThroughWalletIdentityResolver,
+        vcdmDataIntegrityVerifier = vcdmDataIntegrityVerifier,
     )
+
+/** Controlled cryptographic seam for receiver unit tests; compact-JWS shape alone is not trusted. */
+private object ReceiverVerifyJwsCommand : VerifyJwsCommand {
+    override val commandId: String = VerifyJwsCommand.COMMAND_ID
+    override val inputTypeToken: TypeToken<VerifyJwsArgs> = typeToken<VerifyJwsArgs>()
+    override val outputTypeToken: TypeToken<JwsValidationResult> = typeToken<JwsValidationResult>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is VerifyJwsArgs
+
+    override suspend fun execute(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> {
+        val compact = args.jws as? JwsCompact ?: return IdkResult.err(IdkError.fromString("compact JWS required"))
+        val payload = compact.value.split(".").getOrNull(1)?.decodeFromBase64Url()?.decodeToString()
+            ?: return IdkResult.err(IdkError.fromString("payload required"))
+        return Ok(
+            JwsValidationResult(
+                jws = JwsJsonGeneralWithIdentifiers(payload = "", signatures = emptyList()),
+                isValid = true,
+                parsedPayload = Json.parseToJsonElement(payload).jsonObject,
+            ),
+        )
+    }
+}
 
 class WalletStoreOid4vciCredentialResponseReceiverTest {
     /**
@@ -202,6 +258,188 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
      */
     private fun oid4vciStateValues(state: Oid4vciPrivateSessionState): Map<String, String> =
         mapOf("state" to Json.encodeToString(Oid4vciPrivateSessionState.serializer(), state))
+
+    @Test
+    fun receiverRoutesVcdm20WireFormatToDistinctWalletFormatAndPreservesRootCredential() =
+        runTest {
+            val credentialStore =
+                BlobWalletCredentialStore(
+                    blobService = createOid4vciReceiverTestBlobService(),
+                    credentialBodyProtector = ReceiverTestCredentialBodyProtector,
+                )
+            val receiver =
+                WalletStoreOid4vciCredentialResponseReceiver(
+                    credentialStore,
+                    FakeWalletIssuanceSessionStore(),
+                    testAcceptance(),
+                    WalletHolderVerificationMethodResolver { _, keyRef ->
+                        if (keyRef.alias == "wallet-holder-key-vcdm20") {
+                            WalletHolderVerificationMethod(
+                                value = "https://wallet.example/jwks#holder-vcdm20",
+                                controller = "https://wallet.example/holders/vcdm20",
+                                kind = WalletHolderIdentifierKind.JWKS_KID,
+                                signingAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                            )
+                        } else {
+                            null
+                        }
+                    },
+                )
+            val privateStore = ReceiverTestPrivateSessionStore()
+            val sessionId = WalletInteractionSessionId("oid4vci-receiver-vcdm20-route-test")
+            privateStore.put(
+                sessionId,
+                WalletInteractionPrivateSessionData(
+                    namespace = Oid4vciWalletInteractionProtocolAdapter.ADAPTER_ID,
+                    values =
+                        oid4vciStateValues(
+                            Oid4vciPrivateSessionState(
+                                credentialConfigurationId = CREDENTIAL_CONFIGURATION_ID,
+                                holderKeyAliases = listOf("wallet-holder-key-vcdm20"),
+                            ),
+                        ),
+                ),
+            )
+            val context =
+                WalletInteractionContext(
+                    sessionId = sessionId,
+                    walletUnitId = WALLET_UNIT_ID,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
+                    privateSessionStore = privateStore,
+                )
+            val state =
+                WalletInteractionState(
+                    sessionId = sessionId,
+                    walletUnitId = WALLET_UNIT_ID,
+                    status = WalletInteractionStatus.Completed,
+                    flowKind = WalletInteractionFlowKind.CredentialReceive,
+                    protocol = WalletProtocol.OID4VCI,
+                    adapterId = Oid4vciWalletInteractionProtocolAdapter.ADAPTER_ID,
+                    issuerAuthentication =
+                        WalletIssuerAuthenticationResult(
+                            issuer = "https://issuer.example",
+                            trustedJwks = Json.parseToJsonElement("""{"keys":[{"kty":"EC","crv":"P-256","x":"x","y":"y","kid":"issuer-vcdm20"}]}""").jsonObject,
+                            provenance = listOf(WalletIssuerAuthenticationProvenance("test", "vcdm20")),
+                        ),
+                )
+            val rawCredential =
+                buildTestCompactJwt(
+                    """{"@context":["https://www.w3.org/ns/credentials/v2"],"type":["VerifiableCredential","EmployeeCredential"],"issuer":"https://issuer.example","validFrom":"2026-01-01T00:00:00Z","credentialSubject":{"id":"did:example:v2-holder","degree":"BSc"}}""",
+                )
+
+            val previews =
+                receiver.receiveCredentialResponse(
+                    context = context,
+                    state = state,
+                    resolvedOffer = resolvedVcdm20Offer(),
+                    credentialResponse =
+                        CredentialResponse(
+                            credentials = listOf(CredentialResponseItem(credential = JsonPrimitive(rawCredential))),
+                        ),
+                )
+
+            assertEquals(1, previews.size)
+            assertEquals(CredentialFormat.JWT_VC_JSON_LD.value, previews.single().format)
+            val metadata = credentialStore.listMetadata(WALLET_UNIT_ID, CredentialMetadataFilter(credentialConfigurationId = CREDENTIAL_CONFIGURATION_ID)).getOrThrow().single()
+            assertEquals(CredentialFormat.JWT_VC_JSON_LD, metadata.format)
+            assertTrue(metadata.credentialTypeRefs.any { it.value == "EmployeeCredential" && it.format == CredentialFormat.JWT_VC_JSON_LD })
+            val stored = credentialStore.getCredential(WALLET_UNIT_ID, metadata.credentialRecordId).getOrThrow()
+            assertNotNull(stored)
+            assertEquals(rawCredential, stored.instances.single().raw)
+            assertEquals(listOf("did:example:v2-holder"), stored.subjectRefs.map { it.value })
+        }
+
+    @Test
+    fun receiverAcceptsRawLdpVcObjectVerifiesBeforeStorageAndPreservesLdpVcMetadata() =
+        runTest {
+            val credentialStore =
+                BlobWalletCredentialStore(
+                    blobService = createOid4vciReceiverTestBlobService(),
+                    credentialBodyProtector = ReceiverTestCredentialBodyProtector,
+                )
+            val verifier = ReceiverRecordingVcdmDataIntegrityVerifier()
+            val receiver =
+                WalletStoreOid4vciCredentialResponseReceiver(
+                    credentialStore,
+                    FakeWalletIssuanceSessionStore(),
+                    testAcceptance(vcdmDataIntegrityVerifier = verifier),
+                    WalletHolderVerificationMethodResolver { _, keyRef ->
+                        if (keyRef.alias == "wallet-holder-key-ldp-vc") {
+                            WalletHolderVerificationMethod(
+                                value = "https://wallet.example/jwks#holder-1",
+                                controller = "https://wallet.example/holders/1",
+                                kind = WalletHolderIdentifierKind.JWKS_KID,
+                                signingAlgorithm = SignatureAlgorithm.ED25519,
+                            )
+                        } else {
+                            null
+                        }
+                    },
+                )
+            val privateStore = ReceiverTestPrivateSessionStore()
+            val sessionId = WalletInteractionSessionId("oid4vci-receiver-ldp-vc-test")
+            privateStore.put(
+                sessionId,
+                WalletInteractionPrivateSessionData(
+                    namespace = Oid4vciWalletInteractionProtocolAdapter.ADAPTER_ID,
+                    values =
+                        oid4vciStateValues(
+                            Oid4vciPrivateSessionState(
+                                credentialConfigurationId = CREDENTIAL_CONFIGURATION_ID,
+                                holderKeyAliases = listOf("wallet-holder-key-ldp-vc"),
+                            ),
+                        ),
+                ),
+            )
+            val context =
+                WalletInteractionContext(
+                    sessionId = sessionId,
+                    walletUnitId = WALLET_UNIT_ID,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
+                    privateSessionStore = privateStore,
+                )
+            val state =
+                WalletInteractionState(
+                    sessionId = sessionId,
+                    walletUnitId = WALLET_UNIT_ID,
+                    status = WalletInteractionStatus.Completed,
+                    flowKind = WalletInteractionFlowKind.CredentialReceive,
+                    protocol = WalletProtocol.OID4VCI,
+                    adapterId = Oid4vciWalletInteractionProtocolAdapter.ADAPTER_ID,
+                )
+            val rawCredential: JsonObject =
+                Json.parseToJsonElement(
+                    """{"@context":["https://www.w3.org/ns/credentials/v2"],"type":["VerifiableCredential","EmployeeCredential"],"issuer":"https://issuer.example","validFrom":"2026-01-01T00:00:00Z","credentialSubject":{"id":"https://holder.example/subject","degree":"BSc"},"proof":{"type":"DataIntegrityProof","cryptosuite":"eddsa-jcs-2022","proofPurpose":"assertionMethod","verificationMethod":"https://issuer.example/keys#assertion","created":"2026-08-26T10:00:00Z","proofValue":"zvalid"}}""",
+                ).jsonObject
+
+            val previews =
+                receiver.receiveCredentialResponse(
+                    context = context,
+                    state = state,
+                    resolvedOffer = resolvedLdpVcOffer(),
+                    credentialResponse =
+                        CredentialResponse(
+                            credentials = listOf(CredentialResponseItem(credential = rawCredential)),
+                        ),
+                )
+
+            assertEquals(1, previews.size)
+            assertEquals(CredentialFormat.LDP_VC.value, previews.single().format)
+            assertEquals(rawCredential, verifier.lastArgs?.document)
+            assertEquals(ProofPurpose.ASSERTION_METHOD, verifier.lastArgs?.expectedProofPurpose)
+            val metadata =
+                credentialStore
+                    .listMetadata(WALLET_UNIT_ID, CredentialMetadataFilter(credentialConfigurationId = CREDENTIAL_CONFIGURATION_ID))
+                    .getOrThrow()
+                    .single()
+            assertEquals(CredentialFormat.LDP_VC, metadata.format)
+            assertTrue(metadata.credentialTypeRefs.any { it.value == "EmployeeCredential" && it.format == CredentialFormat.LDP_VC })
+            val stored = credentialStore.getCredential(WALLET_UNIT_ID, metadata.credentialRecordId).getOrThrow()
+            val nonNullStored = assertNotNull(stored)
+            assertEquals(rawCredential, Json.parseToJsonElement(assertNotNull(nonNullStored.instances.single().raw)).jsonObject)
+            assertEquals("https://wallet.example/jwks#holder-1", nonNullStored.instances.single().holderKeyRef?.kid)
+            assertEquals(listOf("https://holder.example/subject"), nonNullStored.subjectRefs.map { it.value })
+        }
 
     @Test
     fun receiverStoresCredentialResponseInWalletStoreWithoutPuttingBodyInMetadata() =
@@ -1151,6 +1389,237 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
             assertEquals(emptyList(), stored.issuanceProvenance?.diagnostics)
         }
 
+    @Test
+    fun receiverRefreshesBatchByExactAliasAndPreservesUntargetedActiveSibling() =
+        runTest {
+            val credentialStore =
+                BlobWalletCredentialStore(
+                    blobService = createOid4vciReceiverTestBlobService(),
+                    credentialBodyProtector = ReceiverTestCredentialBodyProtector,
+                )
+            val issuanceSessionStore = FakeWalletIssuanceSessionStore()
+            val receiver = WalletStoreOid4vciCredentialResponseReceiver(credentialStore, issuanceSessionStore, testAcceptance())
+            val now = Clock.System.now()
+            val recordId = "refresh-targeted-record"
+            val first = refreshReceiverInstance(recordId, "instance-a", "wallet-key-a", "did:example:a")
+            val sibling = refreshReceiverInstance(recordId, "instance-b", "wallet-key-b", "did:example:b")
+            val untargeted = refreshReceiverInstance(recordId, "instance-c", "wallet-key-c", "did:example:c")
+            val existing = refreshReceiverRecord(recordId, listOf(first, sibling, untargeted), now)
+            credentialStore.putCredential(WALLET_UNIT_ID, existing)
+            val sessionId = WalletInteractionSessionId("oid4vci-receiver-targeted-refresh-test")
+            val privateStore = ReceiverTestPrivateSessionStore()
+            privateStore.put(
+                sessionId,
+                WalletInteractionPrivateSessionData(
+                    namespace = Oid4vciWalletInteractionProtocolAdapter.ADAPTER_ID,
+                    values =
+                        oid4vciStateValues(
+                            Oid4vciPrivateSessionState(
+                                credentialConfigurationId = CREDENTIAL_CONFIGURATION_ID,
+                                holderKeyAliases = listOf("wallet-key-a", "wallet-key-b"),
+                                refreshTargetCredentialRecordId = recordId,
+                                refreshTargetCredentialInstanceIds = listOf("instance-a", "instance-b"),
+                                tokens = Oid4vciPrivateSessionState.TokenLeg(accessToken = "access", refreshToken = "rotated"),
+                            ),
+                        ),
+                ),
+            )
+            val context =
+                WalletInteractionContext(
+                    sessionId = sessionId,
+                    walletUnitId = WALLET_UNIT_ID,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
+                    privateSessionStore = privateStore,
+                )
+            val state = receiverTestState(sessionId)
+            val refreshedRaw = buildTestSdJwt("""{"iss":"https://issuer.example","sub":"did:example:a","vct":"$EMPLOYEE_VCT","credential_id":"refreshed-a"}""")
+            val refreshedSiblingRaw = buildTestSdJwt("""{"iss":"https://issuer.example","sub":"did:example:b","vct":"$EMPLOYEE_VCT","credential_id":"refreshed-b"}""")
+
+            receiver.receiveCredentialResponse(
+                context = context,
+                state = state,
+                resolvedOffer = resolvedOffer(),
+                credentialResponse =
+                    CredentialResponse(
+                        credentials =
+                            listOf(
+                                CredentialResponseItem(credential = JsonPrimitive(refreshedRaw)),
+                                CredentialResponseItem(credential = JsonPrimitive(refreshedSiblingRaw)),
+                            ),
+                    ),
+            )
+
+            val stored = assertNotNull(credentialStore.getCredential(WALLET_UNIT_ID, recordId).getOrThrow())
+            assertEquals(CredentialLifecycleState.SUPERSEDED, stored.instances.single { it.id == "instance-a" }.lifecycleState)
+            assertEquals(CredentialLifecycleState.SUPERSEDED, stored.instances.single { it.id == "instance-b" }.lifecycleState)
+            assertEquals(CredentialLifecycleState.ACTIVE, stored.instances.single { it.id == "instance-c" }.lifecycleState)
+            val replacementA = stored.instances.single { it.raw == refreshedRaw }
+            val replacementB = stored.instances.single { it.raw == refreshedSiblingRaw }
+            assertEquals("wallet-key-a", replacementA.holderKeyRef?.alias)
+            assertEquals("instance-a", replacementA.replacesInstanceId)
+            assertEquals("wallet-key-b", replacementB.holderKeyRef?.alias)
+            assertEquals("instance-b", replacementB.replacesInstanceId)
+        }
+
+    @Test
+    fun receiverRejectsPartialRefreshResponseWithoutMutatingRecordOrRefreshToken() =
+        runTest {
+            val credentialStore =
+                BlobWalletCredentialStore(
+                    blobService = createOid4vciReceiverTestBlobService(),
+                    credentialBodyProtector = ReceiverTestCredentialBodyProtector,
+                )
+            val issuanceSessionStore = FakeWalletIssuanceSessionStore()
+            val receiver = WalletStoreOid4vciCredentialResponseReceiver(credentialStore, issuanceSessionStore, testAcceptance())
+            val now = Clock.System.now()
+            val recordId = "refresh-partial-record"
+            val first = refreshReceiverInstance(recordId, "instance-a", "wallet-key-a", "did:example:a")
+            val sibling = refreshReceiverInstance(recordId, "instance-b", "wallet-key-b", "did:example:b")
+            val existing = refreshReceiverRecord(recordId, listOf(first, sibling), now)
+            credentialStore.putCredential(WALLET_UNIT_ID, existing)
+            val sessionId = WalletInteractionSessionId("oid4vci-receiver-partial-refresh-test")
+            val privateStore = ReceiverTestPrivateSessionStore()
+            privateStore.put(
+                sessionId,
+                WalletInteractionPrivateSessionData(
+                    namespace = Oid4vciWalletInteractionProtocolAdapter.ADAPTER_ID,
+                    values =
+                        oid4vciStateValues(
+                            Oid4vciPrivateSessionState(
+                                credentialConfigurationId = CREDENTIAL_CONFIGURATION_ID,
+                                holderKeyAliases = listOf("wallet-key-a", "wallet-key-b"),
+                                refreshTargetCredentialRecordId = recordId,
+                                refreshTargetCredentialInstanceIds = listOf("instance-a", "instance-b"),
+                                tokens = Oid4vciPrivateSessionState.TokenLeg(accessToken = "access", refreshToken = "must-not-store"),
+                            ),
+                        ),
+                ),
+            )
+            val context =
+                WalletInteractionContext(
+                    sessionId = sessionId,
+                    walletUnitId = WALLET_UNIT_ID,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
+                    privateSessionStore = privateStore,
+                )
+
+            assertFailsWith<IllegalStateException> {
+                receiver.receiveCredentialResponse(
+                    context = context,
+                    state = receiverTestState(sessionId),
+                    resolvedOffer = resolvedOffer(),
+                    credentialResponse = CredentialResponse(credentials = listOf(CredentialResponseItem(credential = JsonPrimitive("only-one")))),
+                )
+            }
+            val stored = assertNotNull(credentialStore.getCredential(WALLET_UNIT_ID, recordId).getOrThrow())
+            assertEquals(existing.instances.map { it.id to it.lifecycleState }, stored.instances.map { it.id to it.lifecycleState })
+            assertEquals(emptyMap(), issuanceSessionStore.storedRefreshTokens)
+        }
+
+    @Test
+    fun receiverFailsClosedWhenRotatedRefreshTokenCannotBePersisted() =
+        runTest {
+            val credentialStore =
+                BlobWalletCredentialStore(
+                    blobService = createOid4vciReceiverTestBlobService(),
+                    credentialBodyProtector = ReceiverTestCredentialBodyProtector,
+                )
+            val issuanceSessionStore = FakeWalletIssuanceSessionStore(failRefreshTokenPersistence = true)
+            val receiver = WalletStoreOid4vciCredentialResponseReceiver(credentialStore, issuanceSessionStore, testAcceptance())
+            val now = Clock.System.now()
+            val recordId = "refresh-token-persistence-failure-record"
+            val original = refreshReceiverInstance(recordId, "instance-a", "wallet-key-a", "did:example:a")
+            val existing = refreshReceiverRecord(recordId, listOf(original), now)
+            assertTrue(credentialStore.putCredential(WALLET_UNIT_ID, existing).isOk)
+            val sessionId = WalletInteractionSessionId("oid4vci-receiver-refresh-token-persistence-failure-test")
+            val privateStore = ReceiverTestPrivateSessionStore()
+            privateStore.put(
+                sessionId,
+                WalletInteractionPrivateSessionData(
+                    namespace = Oid4vciWalletInteractionProtocolAdapter.ADAPTER_ID,
+                    values =
+                        oid4vciStateValues(
+                            Oid4vciPrivateSessionState(
+                                credentialConfigurationId = CREDENTIAL_CONFIGURATION_ID,
+                                holderKeyAliases = listOf("wallet-key-a"),
+                                refreshTargetCredentialRecordId = recordId,
+                                refreshTargetCredentialInstanceIds = listOf("instance-a"),
+                                tokens = Oid4vciPrivateSessionState.TokenLeg(accessToken = "access", refreshToken = "rotated"),
+                            ),
+                        ),
+                ),
+            )
+            val context =
+                WalletInteractionContext(
+                    sessionId = sessionId,
+                    walletUnitId = WALLET_UNIT_ID,
+                    executionOwner = ProtocolExecutionOwner.WALLET_BACKEND,
+                    privateSessionStore = privateStore,
+                )
+            val refreshedRaw =
+                buildTestSdJwt("""{"iss":"https://issuer.example","sub":"did:example:a","vct":"$EMPLOYEE_VCT","credential_id":"refreshed"}""")
+
+            assertFailsWith<IllegalStateException> {
+                receiver.receiveCredentialResponse(
+                    context = context,
+                    state = receiverTestState(sessionId),
+                    resolvedOffer = resolvedOffer(),
+                    credentialResponse = CredentialResponse(credentials = listOf(CredentialResponseItem(credential = JsonPrimitive(refreshedRaw)))),
+                )
+            }
+
+            val stored = assertNotNull(credentialStore.getCredential(WALLET_UNIT_ID, recordId).getOrThrow())
+            assertEquals(existing.instances.map { it.id to it.lifecycleState }, stored.instances.map { it.id to it.lifecycleState })
+            assertEquals(emptyMap(), issuanceSessionStore.storedRefreshTokens)
+        }
+
+    private fun refreshReceiverInstance(recordId: String, instanceId: String, alias: String, subject: String): CredentialInstance =
+        CredentialInstance(
+            id = instanceId,
+            walletUnitId = WALLET_UNIT_ID,
+            credentialRecordId = recordId,
+            format = CredentialFormat.SD_JWT_VC,
+            raw = "existing-$instanceId-$subject",
+            bodyStorageRef = BodyStorageRef(kind = BodyStorageKind.WALLET_STORE, path = "placeholder/$instanceId"),
+            holderKeyRef = KeyRef(alias = alias),
+            lifecycleState = CredentialLifecycleState.ACTIVE,
+            storedAt = Clock.System.now(),
+            updatedAt = Clock.System.now(),
+        )
+
+    private fun refreshReceiverRecord(recordId: String, instances: List<CredentialInstance>, now: kotlin.time.Instant): CredentialRecord =
+        CredentialRecord(
+            id = recordId,
+            walletUnitId = WALLET_UNIT_ID,
+            issuerRef = IdentifierRef(type = IdentifierType("https"), value = "https://issuer.example"),
+            format = CredentialFormat.SD_JWT_VC,
+            credentialTypeRefs =
+                setOf(
+                    CredentialTypeRef(
+                        format = CredentialFormat.SD_JWT_VC,
+                        kind = CredentialTypeRefKind.SD_JWT_VCT,
+                        value = EMPLOYEE_VCT,
+                        source = CredentialTypeRefSource.CREDENTIAL_PAYLOAD,
+                        primary = true,
+                    ),
+                ),
+            instances = instances,
+            issuanceProvenance = IssuanceProvenance(credentialIssuerUrl = "https://issuer.example", credentialConfigurationId = CREDENTIAL_CONFIGURATION_ID, issuedAt = now),
+            refreshState = RefreshState(refreshMethod = CredentialRefreshMethod.OID4VCI_REISSUANCE),
+            createdAt = now,
+            updatedAt = now,
+        )
+
+    private fun receiverTestState(sessionId: WalletInteractionSessionId): WalletInteractionState =
+        WalletInteractionState(
+            sessionId = sessionId,
+            walletUnitId = WALLET_UNIT_ID,
+            status = WalletInteractionStatus.Completed,
+            flowKind = WalletInteractionFlowKind.CredentialReceive,
+            protocol = WalletProtocol.OID4VCI,
+            adapterId = Oid4vciWalletInteractionProtocolAdapter.ADAPTER_ID,
+        )
+
     private fun resolvedOffer(): ResolvedCredentialOffer =
         ResolvedCredentialOffer(
             offer =
@@ -1194,6 +1663,48 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
                 ),
         )
 
+    private fun resolvedVcdm20Offer(): ResolvedCredentialOffer {
+        val base = resolvedOffer()
+        val baseConfiguration = base.issuerMetadata.credentialConfigurationsSupported.getValue(CREDENTIAL_CONFIGURATION_ID)
+        return base.copy(
+            issuerMetadata =
+                base.issuerMetadata.copy(
+                    credentialConfigurationsSupported =
+                        mapOf(
+                            CREDENTIAL_CONFIGURATION_ID to
+                                baseConfiguration.copy(
+                                    format = CredentialFormat.JWT_VC_JSON_LD.value,
+                                    vct = null,
+                                    credentialDefinition = CredentialDefinition(type = listOf("VerifiableCredential", "EmployeeCredential")),
+                                ),
+                        ),
+                ),
+        )
+    }
+
+    private fun resolvedLdpVcOffer(): ResolvedCredentialOffer {
+        val base = resolvedOffer()
+        val baseConfiguration = base.issuerMetadata.credentialConfigurationsSupported.getValue(CREDENTIAL_CONFIGURATION_ID)
+        return base.copy(
+            issuerMetadata =
+                base.issuerMetadata.copy(
+                    credentialConfigurationsSupported =
+                        mapOf(
+                            CREDENTIAL_CONFIGURATION_ID to
+                                baseConfiguration.copy(
+                                    format = CredentialFormat.LDP_VC.value,
+                                    vct = null,
+                                    credentialDefinition =
+                                        CredentialDefinition(
+                                            type = listOf("VerifiableCredential", "EmployeeCredential"),
+                                            context = listOf(VcdmProfiles.V2_0_CONTEXT),
+                                        ),
+                                ),
+                        ),
+                ),
+        )
+    }
+
     private fun resolvedMdocOffer(): ResolvedCredentialOffer =
         ResolvedCredentialOffer(
             offer =
@@ -1230,6 +1741,17 @@ class WalletStoreOid4vciCredentialResponseReceiverTest {
         const val EMPLOYEE_VCT = "https://credentials.example.com/employee"
         const val MDOC_CREDENTIAL_CONFIGURATION_ID = "MobileDrivingLicence"
         const val MDOC_DOCTYPE = "org.iso.18013.5.1.mDL"
+    }
+}
+
+private class ReceiverRecordingVcdmDataIntegrityVerifier : VcdmDataIntegrityVerifier {
+    var lastArgs: VcdmDataIntegrityVerificationArgs? = null
+
+    override suspend fun verify(
+        args: VcdmDataIntegrityVerificationArgs,
+    ): IdkResult<VcdmDataIntegrityVerificationResult, IdkError> {
+        lastArgs = args
+        return Ok(VcdmDataIntegrityVerificationResult(verifiedDocument = JsonObject(args.document - "proof"), proofCount = 1))
     }
 }
 
@@ -1334,7 +1856,9 @@ private object ReceiverTestCredentialBodyProtector : WalletCredentialBodyProtect
  * [storeRefreshToken] in [storedRefreshTokens] and returns a stable [SecretRef]; every other method is
  * unsupported/no-op since the receiver under test does not exercise them.
  */
-private class FakeWalletIssuanceSessionStore : WalletIssuanceSessionStore {
+private class FakeWalletIssuanceSessionStore(
+    private val failRefreshTokenPersistence: Boolean = false,
+) : WalletIssuanceSessionStore {
     val storedRefreshTokens: MutableMap<String, String> = mutableMapOf()
 
     override suspend fun putSession(
@@ -1368,6 +1892,9 @@ private class FakeWalletIssuanceSessionStore : WalletIssuanceSessionStore {
         credentialRecordId: String,
         refreshToken: String,
     ): IdkResult<SecretRef, IdkError> {
+        if (failRefreshTokenPersistence) {
+            return Err(IdkError.fromString(code = "FAKE_REFRESH_TOKEN_PERSISTENCE_FAILED", message = "Refresh token persistence failed"))
+        }
         storedRefreshTokens[credentialRecordId] = refreshToken
         return Ok(SecretRef(id = "secret:test"))
     }

@@ -39,6 +39,9 @@ import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryToke
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.AuthorizationCodeData
+import com.sphereon.oauth2.server.authorization.model.RefreshTokenData
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -331,6 +334,29 @@ class TokenEndpointFlowTest {
         }
 
     @Test
+    fun refreshFederationMetadataSurvivesSerializedStorageAndVerification() = runTest {
+        val tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
+        val metadata = """{"upstream_iss":"https://idp.example.test","upstream_sub":"idp-42","userinfo":{"given_name":"Ada"}}"""
+        val created = CreateRefreshTokenCommandImpl(execution, tokenStorage, configProvider, defaultSecureRandom())
+            .execute(CreateRefreshTokenArgs(subject = "local-user", clientId = "wallet", federationClaims = metadata))
+        assertTrue(created.isOk)
+        val token = created.value.value
+        val stored = assertNotNull(tokenStorage.getRefreshToken(token).value)
+        assertEquals(metadata, stored.federationClaims)
+        val serialized = Json.encodeToString(RefreshTokenData.serializer(), stored)
+        val restored = Json.decodeFromString(RefreshTokenData.serializer(), serialized)
+        assertEquals(metadata, restored.federationClaims)
+        assertTrue(tokenStorage.storeRefreshToken(token, restored).isOk)
+        val verified = VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider)
+            .execute(VerifyRefreshTokenGrantArgs(refreshToken = token, clientId = "wallet"))
+        assertTrue(verified.isOk)
+        assertEquals(metadata, verified.value.federationClaims)
+
+        val oldRow = JsonObject((Json.parseToJsonElement(serialized) as JsonObject).filterKeys { it != "federationClaims" })
+        assertEquals(null, Json.decodeFromString(RefreshTokenData.serializer(), oldRow.toString()).federationClaims)
+    }
+
+    @Test
     fun `test refresh token with broader scope than original fails`() =
         runTest {
             val storage = InMemoryOAuth2BackingStorageImpl()
@@ -550,7 +576,7 @@ class TokenEndpointFlowTest {
         }
 
     @Test
-    fun `client credentials rejects unregistered and multiple audiences`() =
+    fun `client credentials rejects unregistered audiences and grants several registered ones`() =
         runTest {
             val storage = InMemoryOAuth2BackingStorageImpl()
             val clientRegistry = InMemoryClientRegistryImpl(storage)
@@ -577,11 +603,20 @@ class TokenEndpointFlowTest {
                     requestedAudience = listOf("enterprise-tenant-kms", "enterprise-wallet-interaction"),
                 ),
             )
+            val partlyUnregistered = command.execute(
+                VerifyClientCredentialsGrantArgs(
+                    clientId = client.clientId,
+                    requestedScope = "read",
+                    requestedAudience = listOf("enterprise-tenant-kms", "enterprise-wallet-unit"),
+                ),
+            )
 
             assertTrue(unregistered.isErr)
             assertEquals("invalid_target", unregistered.error.code)
-            assertTrue(multiple.isErr)
-            assertEquals("invalid_target", multiple.error.code)
+            assertTrue(multiple.isOk)
+            assertEquals(listOf("enterprise-tenant-kms", "enterprise-wallet-interaction"), multiple.value.audience)
+            assertTrue(partlyUnregistered.isErr)
+            assertEquals("invalid_target", partlyUnregistered.error.code)
         }
 
     @Test

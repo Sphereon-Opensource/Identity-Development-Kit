@@ -17,8 +17,8 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.optionalQueryParam
 import com.sphereon.core.api.http.command.requireJsonBody
 import com.sphereon.core.api.http.command.requirePathParam
@@ -37,13 +37,15 @@ import com.sphereon.did.models.VerificationPurpose
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ListVerificationRelationshipsEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListVerificationRelationshipsEndpointCommand.COMMAND_ID)
 class ListVerificationRelationshipsEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: ListVerificationRelationshipsServiceCommand,
@@ -81,8 +83,8 @@ class ListVerificationRelationshipsEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<AddVerificationRelationshipEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(AddVerificationRelationshipEndpointCommand.COMMAND_ID)
 class AddVerificationRelationshipEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: AddVerificationRelationshipServiceCommand,
@@ -107,8 +109,8 @@ class AddVerificationRelationshipEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<RemoveVerificationRelationshipEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(RemoveVerificationRelationshipEndpointCommand.COMMAND_ID)
 class RemoveVerificationRelationshipEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: RemoveVerificationRelationshipServiceCommand,

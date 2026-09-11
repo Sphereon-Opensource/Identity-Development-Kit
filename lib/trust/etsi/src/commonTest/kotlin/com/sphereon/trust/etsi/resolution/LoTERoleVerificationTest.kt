@@ -18,7 +18,10 @@
 package com.sphereon.trust.etsi.resolution
 
 import com.sphereon.trust.core.model.TrustStatus
+import com.sphereon.trust.core.TrustDiagnosticReasonCodes
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.trust.etsi.lote.model.EidasRole
+import com.sphereon.trust.etsi.lote.model.LoTLServiceType
 import com.sphereon.trust.etsi.lote.model.LoTEServiceType
 import com.sphereon.trust.etsi.lote.model.LoTEType
 import com.sphereon.trust.etsi.lote.model.MultiLangString
@@ -27,8 +30,10 @@ import com.sphereon.trust.etsi.model.ETSILoTE
 import com.sphereon.trust.etsi.model.ETSIOtherLoTEPointer
 import com.sphereon.trust.etsi.model.ETSIServiceStatus
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -40,13 +45,121 @@ import kotlin.time.Instant
  * Uses [RoleVerificationTestHelpers] to test internal logic without DI.
  */
 class LoTERoleVerificationTest {
+
+    @Test
+    fun roleVerificationRequestCarriesConfiguredSignerRoots() {
+        val roots = listOf(byteArrayOf(1, 2, 3))
+        val request =
+            RoleVerificationRequest(
+                certificate = KeyInfo<Nothing>(x5c = arrayOf("AAAA")),
+                role = EidasRole.PID_PROVIDER,
+                trustedSignerRoots = roots,
+            )
+
+        assertContentEquals(roots.single(), request.trustedSignerRoots!!.single())
+    }
+
+    @Test
+    fun missingPointerAndCertificateNotFoundHaveDistinctReasonCodes() {
+        assertEquals("TRUST_LIST_POINTER_MISSING", TrustDiagnosticReasonCodes.TRUST_LIST_POINTER_MISSING)
+        assertEquals("CERTIFICATE_NOT_FOUND", TrustDiagnosticReasonCodes.CERTIFICATE_NOT_FOUND)
+    }
+
+    @Test
+    fun freshnessPolicyRejectsExpiredAndRolledBackTrustLists() {
+        val now = Instant.parse("2026-08-20T10:00:00Z")
+
+        assertEquals(
+            TrustDiagnosticReasonCodes.TRUST_LIST_NEXT_UPDATE_EXPIRED,
+            TrustListFreshnessPolicy.failureReason(
+                sequenceNumber = 5,
+                nextUpdate = Instant.parse("2026-08-20T09:59:59Z"),
+                previousSequenceNumber = 4,
+                now = now,
+            ),
+        )
+        assertEquals(
+            TrustDiagnosticReasonCodes.TRUST_LIST_SEQUENCE_ROLLBACK,
+            TrustListFreshnessPolicy.failureReason(
+                sequenceNumber = 3,
+                nextUpdate = Instant.parse("2026-08-20T11:00:00Z"),
+                previousSequenceNumber = 4,
+                now = now,
+            ),
+        )
+        assertNull(
+            TrustListFreshnessPolicy.failureReason(
+                sequenceNumber = 5,
+                nextUpdate = Instant.parse("2026-08-20T11:00:00Z"),
+                previousSequenceNumber = 4,
+                now = now,
+            ),
+        )
+    }
+    @Test
+    fun productionRoutingDoesNotUseLoTEPointersForQeaa() {
+        val lotl = buildLotlWith602Pointers()
+
+        val result = LoTERoleTrustListRouting.findPointersForRole(lotl, EidasRole.QEAA_PROVIDER, null)
+
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun productionRoutingDoesNotFallbackToOtherTerritories() {
+        val lotl = buildLotlWith602Pointers()
+
+        val result = LoTERoleTrustListRouting.findPointersForRole(lotl, EidasRole.PID_ISSUER, "NL")
+
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun productionServiceFilterExcludesRevocationOnlyServices() {
+        assertEquals(
+            listOf(LoTEServiceType.PID_ISSUANCE),
+            LoTERoleTrustListRouting.buildServiceTypeFilter(EidasRole.PID_PROVIDER),
+        )
+        assertEquals(
+            listOf(LoTLServiceType.QEAA_ISSUANCE),
+            LoTERoleTrustListRouting.buildServiceTypeFilter(EidasRole.QEAA_PROVIDER),
+        )
+    }
+
+    @Test
+    fun productionStatusPolicyFailsClosedForUnknownAndRevocation() {
+        assertEquals(
+            false to TrustStatus.UNKNOWN,
+            LoTERoleTrustListStatusPolicy.evaluate("http://unknown/status"),
+        )
+        assertEquals(
+            false to TrustStatus.REVOKED,
+            LoTERoleTrustListStatusPolicy.evaluate(ETSIServiceStatus.REVOKED),
+        )
+    }
+
+    @Test
+    fun productionStatusPolicyAcceptsActiveOnlyAndRejectsEveryInactiveCategory() {
+        listOf(
+            ETSIServiceStatus.GRANTED to true,
+            ETSIServiceStatus.RECOGNISED_NATIONAL_LEVEL to true,
+            ETSIServiceStatus.WITHDRAWN to false,
+            ETSIServiceStatus.SUSPENDED to false,
+            ETSIServiceStatus.REVOKED to false,
+            "" to false,
+            "malformed-status" to false,
+        ).forEach { (status, accepted) ->
+            assertEquals(accepted, LoTERoleTrustListStatusPolicy.evaluate(status).first, status)
+        }
+    }
+
     // -- findPointersForRole tests (602 format) --
 
     @Test
     fun findPointers602FormatFiltersByLoTEType() {
         val lotl = buildLotlWith602Pointers()
 
-        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_ISSUER, null)
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_PROVIDER, null)
 
         assertEquals(1, result.size)
         assertEquals("https://example.com/pid-providers.xml", result[0].location)
@@ -73,21 +186,19 @@ class LoTERoleVerificationTest {
                     ),
             )
 
-        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_ISSUER, "NL")
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_PROVIDER, "NL")
 
         assertEquals(1, result.size)
         assertEquals("https://nl.example.com/pid.xml", result[0].location)
     }
 
     @Test
-    fun findPointers602FormatTerritoryFilterFallsBackToAll() {
+    fun findPointers602FormatTerritoryFilterDoesNotFallback() {
         val lotl = buildLotlWith602Pointers()
 
-        // Territory "NL" doesn't match any 602 pointer territory (they have "EU"),
-        // but since 602 pointers exist, fallback returns all 602 pointers for that role
-        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_ISSUER, "NL")
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_PROVIDER, "NL")
 
-        assertEquals(1, result.size) // Falls back to all PID pointers
+        assertTrue(result.isEmpty())
     }
 
     // -- findPointersForRole tests (612 format) --
@@ -96,7 +207,7 @@ class LoTERoleVerificationTest {
     fun findPointers612FormatFiltersByTerritory() {
         val lotl = buildLotlWith612Pointers()
 
-        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_ISSUER, "NL")
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.QEAA_PROVIDER, "NL")
 
         assertEquals(1, result.size)
         assertEquals("https://nl.example.com/tl.xml", result[0].location)
@@ -106,20 +217,77 @@ class LoTERoleVerificationTest {
     fun findPointers612FormatReturnsAllWithoutTerritory() {
         val lotl = buildLotlWith612Pointers()
 
-        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_ISSUER, null)
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.QEAA_PROVIDER, null)
 
         assertEquals(2, result.size)
     }
 
     @Test
-    fun findPointers602FallsBackToAllWhenNoRoleMatch() {
+    fun findPointers602QualifierIsRecognizedAfterOrdinary612Metadata() {
+        val pointer =
+            ETSIOtherLoTEPointer(
+                schemeOperatorName = listOf(MultiLangString("en", "PID Authority")),
+                schemeTerritory = "EU",
+                location = "https://example.com/pid-providers.xml",
+                additionalInformation =
+                    ETSIAdditionalInformation(
+                        otherInformation =
+                            listOf(
+                                "http://uri.etsi.org/TrstSvc/TrustedList/TSLType/TrustedList",
+                                LoTEType.EU_PID_PROVIDERS,
+                            ),
+                    ),
+            )
+        val lotl = buildLotlWith602Pointers(pointers = listOf(pointer))
+
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_PROVIDER, null)
+
+        assertEquals(listOf(pointer), result)
+    }
+
+    @Test
+    fun ambiguous602QualifiersAreRejected() {
+        val pointer =
+            build602Pointer(LoTEType.EU_PID_PROVIDERS, "EU", "https://example.com/ambiguous.xml").copy(
+                additionalInformation =
+                    ETSIAdditionalInformation(
+                        otherInformation = listOf(LoTEType.EU_PID_PROVIDERS, LoTEType.EU_WALLET_PROVIDERS),
+                    ),
+            )
+        val lotl = buildLotlWith602Pointers(pointers = listOf(pointer))
+
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_PROVIDER, null)
+
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun malformedCrossProfileQualifierIsRejected() {
+        val pointer =
+            build602Pointer(LoTEType.EU_PID_PROVIDERS, "EU", "https://example.com/malformed.xml").copy(
+                additionalInformation =
+                    ETSIAdditionalInformation(
+                        otherInformation =
+                            listOf(
+                                LoTEType.EU_PID_PROVIDERS,
+                                "http://uri.etsi.org/19602/LoTEType/Unknown",
+                            ),
+                    ),
+            )
+        val lotl = buildLotlWith602Pointers(pointers = listOf(pointer))
+
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_PROVIDER, null)
+
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun findPointers602DoesNotFallbackWhenNoRoleMatch() {
         val lotl = buildLotlWith602Pointers()
 
-        // REGISTRAR has no 602 pointers, so falls back to 612 behavior (all pointers)
-        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.REGISTRAR, null)
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.REGISTRATION_CERTIFICATE_PROVIDER, null)
 
-        // Without 602 match and without territory filter, all pointers are returned
-        assertEquals(2, result.size)
+        assertTrue(result.isEmpty())
     }
 
     @Test
@@ -127,7 +295,7 @@ class LoTERoleVerificationTest {
         val lotl = buildLotlWith612Pointers()
 
         // Territory "XX" doesn't match any pointer
-        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_ISSUER, "XX")
+        val result = RoleVerificationTestHelpers.findPointersForRole(lotl, EidasRole.PID_PROVIDER, "XX")
 
         assertTrue(result.isEmpty())
     }
@@ -135,12 +303,11 @@ class LoTERoleVerificationTest {
     // -- buildServiceTypeFilter tests --
 
     @Test
-    fun serviceTypeFilterIncludesIssuanceAndRevocation() {
-        val filter = RoleVerificationTestHelpers.buildServiceTypeFilter(EidasRole.PID_ISSUER)
+    fun serviceTypeFilterUsesIssuanceOnly() {
+        val filter = RoleVerificationTestHelpers.buildServiceTypeFilter(EidasRole.PID_PROVIDER)
 
         assertTrue(filter.contains(LoTEServiceType.PID_ISSUANCE))
-        assertTrue(filter.contains(LoTEServiceType.PID_REVOCATION))
-        assertEquals(2, filter.size)
+        assertEquals(listOf(LoTEServiceType.PID_ISSUANCE), filter)
     }
 
     @Test
@@ -148,26 +315,22 @@ class LoTERoleVerificationTest {
         val filter = RoleVerificationTestHelpers.buildServiceTypeFilter(EidasRole.WALLET_PROVIDER)
 
         assertTrue(filter.contains(LoTEServiceType.WALLET_ISSUANCE))
-        assertTrue(filter.contains(LoTEServiceType.WALLET_REVOCATION))
-        assertEquals(2, filter.size)
+        assertEquals(listOf(LoTEServiceType.WALLET_ISSUANCE), filter)
     }
 
     @Test
-    fun serviceTypeFilterIncludesLegacyTypes() {
-        val filter = RoleVerificationTestHelpers.buildServiceTypeFilter(EidasRole.QEAA_ISSUER)
+    fun qeaaFilterUsesOnlyMemberStateIssuanceType() {
+        val filter = RoleVerificationTestHelpers.buildServiceTypeFilter(EidasRole.QEAA_PROVIDER)
 
-        assertTrue(filter.contains(LoTEServiceType.PUB_EAA_ISSUANCE))
-        assertTrue(filter.contains(LoTEServiceType.PUB_EAA_REVOCATION))
-        assertTrue(filter.contains("http://uri.etsi.org/TrstSvc/Svctype/CA/QC"))
-        assertEquals(3, filter.size)
+        assertEquals(listOf(LoTLServiceType.QEAA_ISSUANCE), filter)
     }
 
     @Test
-    fun serviceTypeFilterRegistrarHasNoRevocation() {
-        val filter = RoleVerificationTestHelpers.buildServiceTypeFilter(EidasRole.REGISTRAR)
+    fun registrationCertificateProviderFilterHasNoRevocation() {
+        val filter = RoleVerificationTestHelpers.buildServiceTypeFilter(EidasRole.REGISTRATION_CERTIFICATE_PROVIDER)
 
         assertEquals(1, filter.size)
-        assertTrue(filter.contains(LoTEServiceType.REGISTER))
+        assertTrue(filter.contains(LoTEServiceType.WRPRC_ISSUANCE))
     }
 
     // -- evaluateServiceStatus tests --
@@ -246,7 +409,7 @@ class LoTERoleVerificationTest {
         val result =
             RoleVerificationResult(
                 verified = false,
-                role = EidasRole.PID_ISSUER,
+                role = EidasRole.PID_PROVIDER,
                 trustStatus = TrustStatus.UNTRUSTED,
                 matchedEntity = null,
                 trustListInfo = null,
@@ -256,7 +419,7 @@ class LoTERoleVerificationTest {
 
         assertFalse(result.verified)
         assertEquals(null, result.matchedEntity)
-        assertEquals(EidasRole.PID_ISSUER, result.role)
+        assertEquals(EidasRole.PID_PROVIDER, result.role)
     }
 
     @Test
@@ -358,11 +521,27 @@ class LoTERoleVerificationTest {
                         schemeOperatorName = listOf(MultiLangString("en", "NL Authority")),
                         schemeTerritory = "NL",
                         location = "https://nl.example.com/tl.xml",
+                        additionalInformation =
+                            ETSIAdditionalInformation(
+                                otherInformation =
+                                    listOf(
+                                        "http://uri.etsi.org/TrstSvc/TrustedList/TSLType/TrustedList",
+                                        "NL",
+                                    ),
+                            ),
                     ),
                     ETSIOtherLoTEPointer(
                         schemeOperatorName = listOf(MultiLangString("en", "BE Authority")),
                         schemeTerritory = "BE",
                         location = "https://be.example.com/tl.xml",
+                        additionalInformation =
+                            ETSIAdditionalInformation(
+                                otherInformation =
+                                    listOf(
+                                        "http://uri.etsi.org/TrstSvc/TrustedList/TSLType/TrustedList",
+                                        "BE",
+                                    ),
+                            ),
                     ),
                 ),
         )
@@ -377,57 +556,11 @@ internal object RoleVerificationTestHelpers {
         lotl: ETSILoTE,
         role: EidasRole,
         territory: String?,
-    ): List<ETSIOtherLoTEPointer> {
-        // 602 navigation: look for pointers with matching LoTEType qualifier
-        val loteTypePointers =
-            lotl.pointersToOtherLoTE.filter { pointer ->
-                val qualifierLoTEType = pointer.additionalInformation?.otherInformation?.firstOrNull()
-                qualifierLoTEType == role.loTEType
-            }
-
-        if (loteTypePointers.isNotEmpty()) {
-            return if (territory != null) {
-                loteTypePointers
-                    .filter { it.schemeTerritory.equals(territory, ignoreCase = true) }
-                    .ifEmpty { loteTypePointers }
-            } else {
-                loteTypePointers
-            }
-        }
-
-        // 612 fallback: filter by territory
-        return if (territory != null) {
-            lotl.pointersToOtherLoTE.filter { pointer ->
-                pointer.schemeTerritory.equals(territory, ignoreCase = true)
-            }
-        } else {
-            lotl.pointersToOtherLoTE
-        }
-    }
+    ): List<ETSIOtherLoTEPointer> = LoTERoleTrustListRouting.findPointersForRole(lotl, role, territory)
 
     fun buildServiceTypeFilter(role: EidasRole): List<String> =
-        buildList {
-            add(role.issuanceServiceType)
-            role.revocationServiceType?.let { add(it) }
-            addAll(role.legacyServiceTypes)
-        }
+        LoTERoleTrustListRouting.buildServiceTypeFilter(role)
 
     fun evaluateServiceStatus(serviceStatus: String): Pair<Boolean, TrustStatus> =
-        when (serviceStatus) {
-            ETSIServiceStatus.NOTIFIED -> true to TrustStatus.TRUSTED
-
-            ETSIServiceStatus.WITHDRAWN_602 -> false to TrustStatus.UNTRUSTED
-
-            ETSIServiceStatus.GRANTED,
-            ETSIServiceStatus.RECOGNISED_NATIONAL_LEVEL,
-            -> true to TrustStatus.TRUSTED
-
-            ETSIServiceStatus.REVOKED -> false to TrustStatus.REVOKED
-
-            ETSIServiceStatus.WITHDRAWN,
-            ETSIServiceStatus.SUSPENDED,
-            -> false to TrustStatus.UNTRUSTED
-
-            else -> false to TrustStatus.UNKNOWN
-        }
+        LoTERoleTrustListStatusPolicy.evaluate(serviceStatus)
 }

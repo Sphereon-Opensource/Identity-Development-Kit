@@ -19,6 +19,7 @@ package com.sphereon.statuslist.impl.enrich
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.statuslist.AllocateEntryArgs
@@ -28,6 +29,7 @@ import com.sphereon.statuslist.StatusListErrors
 import com.sphereon.statuslist.StatusListRef
 import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusPurpose
+import com.sphereon.statuslist.MdocStatusListProfile
 import com.sphereon.statuslist.spi.CredentialStatusEnricher
 import com.sphereon.statuslist.spi.ReservedStatus
 import com.sphereon.statuslist.spi.StatusClaimMergeTarget
@@ -42,6 +44,8 @@ import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Default [CredentialStatusEnricher]: pre-sign, allocates an entry (random-unused) in the
@@ -51,6 +55,7 @@ import kotlinx.serialization.json.putJsonObject
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<CredentialStatusEnricher>())
+@OptIn(ExperimentalUuidApi::class)
 class CredentialStatusEnricherImpl(
     private val driver: StatusListDriver,
     private val definitionsProvider: Provider<StatusListDefinitionsProvider>? = null,
@@ -64,6 +69,21 @@ class CredentialStatusEnricherImpl(
         val list =
             driver.getStatusList(listRef).getOrElse { return Err(it) }
                 ?: return Err(StatusListErrors.listNotFound(context.statusListCorrelationId))
+        if (context.mdocProfile != null && context.mdocProfile != list.mdocProfile) {
+            return Err(StatusListErrors.bindingDefinitionMismatch(context.statusListCorrelationId, "mdocProfile"))
+        }
+        if (context.proofFormat != null && context.proofFormat != list.proofFormat) {
+            return Err(StatusListErrors.bindingDefinitionMismatch(context.statusListCorrelationId, "proofFormat"))
+        }
+        if (context.mdocProfile != null && context.spec != list.spec) {
+            return Err(StatusListErrors.bindingDefinitionMismatch(context.statusListCorrelationId, "spec"))
+        }
+        val mdocIdentifier =
+            if (context.format.contains("mdoc", ignoreCase = true) && list.mdocProfile == MdocStatusListProfile.IDENTIFIER_LIST) {
+                Uuid.random().toString().encodeToByteArray()
+            } else {
+                null
+            }
 
         val entry =
             driver
@@ -73,21 +93,31 @@ class CredentialStatusEnricherImpl(
                         purpose = context.purposes.firstOrNull() ?: StatusPurpose.REVOCATION,
                         entryCorrelationId = context.entryCorrelationId,
                         credentialId = context.credentialId,
+                        identifier = mdocIdentifier,
                     ),
                 ).getOrElse { return Err(it) }
 
         val uri = list.statusListUri
         val index = entry.statusListIndex
         val purpose = (context.purposes.firstOrNull() ?: StatusPurpose.REVOCATION).value
-
         val (claim, mergeTarget) =
             when (context.spec) {
                 StatusListSpec.TOKEN_STATUS_LIST -> {
                     val claim =
-                        buildJsonObject {
-                            putJsonObject("status_list") {
-                                put("idx", index)
-                                put("uri", uri)
+                        if (mdocIdentifier != null) {
+                            buildJsonObject {
+                                putJsonObject("identifier_list") {
+                                    put("id", mdocIdentifier.encodeToBase64Url())
+                                    put("uri", uri)
+                                }
+                            }
+                        } else {
+                            buildJsonObject {
+                                putJsonObject("status_list") {
+                                    put("idx", index)
+                                    put("uri", uri)
+                                    if (context.aggregationUri != null) put("aggregation_uri", context.aggregationUri)
+                                }
                             }
                         }
                     val target =
@@ -117,6 +147,7 @@ class CredentialStatusEnricherImpl(
                 handle = StatusReservationHandle(statusListId = entry.statusListId, statusListIndex = index),
                 claim = claim,
                 mergeTarget = mergeTarget,
+                identifier = mdocIdentifier,
             ),
         )
     }
@@ -128,6 +159,12 @@ class CredentialStatusEnricherImpl(
     ): IdkResult<Unit, IdkError> {
         val ref = EntryRef(statusListId = handle.statusListId, statusListIndex = handle.statusListIndex)
         driver.bindCredential(ref, credentialId, credentialHash).getOrElse { return Err(it) }
+        return Ok(Unit)
+    }
+
+    override suspend fun cancel(handle: StatusReservationHandle): IdkResult<Unit, IdkError> {
+        val ref = EntryRef(statusListId = handle.statusListId, statusListIndex = handle.statusListIndex)
+        driver.releaseEntry(ref).getOrElse { return Err(it) }
         return Ok(Unit)
     }
 }

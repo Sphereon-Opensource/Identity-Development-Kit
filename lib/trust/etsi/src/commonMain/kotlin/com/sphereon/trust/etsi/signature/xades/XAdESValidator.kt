@@ -27,7 +27,10 @@ import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.x509.X509VerificationRequest
+import com.sphereon.crypto.core.x509.X509VerifyService
 import com.sphereon.di.session.SessionScope
+import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import com.sphereon.trust.etsi.signature.xmldsig.ReferenceValidator
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -86,6 +89,7 @@ data class XAdESValidationResult(
     val referenceResults: List<ReferenceValidator.ReferenceResult> = emptyList(),
     val errors: List<String> = emptyList(),
     val warnings: List<String> = emptyList(),
+    val reasonCodes: List<String> = emptyList(),
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) {
@@ -129,6 +133,9 @@ data class XAdESValidationResult(
         if (errors != other.errors) {
             return false
         }
+        if (reasonCodes != other.reasonCodes) {
+            return false
+        }
         return true
     }
 
@@ -139,6 +146,7 @@ data class XAdESValidationResult(
         result = 31 * result + referencesValid.hashCode()
         result = 31 * result + xadesPresent.hashCode()
         result = 31 * result + (signingCertificate?.contentHashCode() ?: 0)
+        result = 31 * result + reasonCodes.hashCode()
         return result
     }
 }
@@ -148,6 +156,7 @@ data class XAdESValidationResult(
 @ContributesBinding(SessionScope::class, binding = binding<XAdESValidator>())
 class XAdESValidatorImpl(
     private val keyManagerService: KeyManagerService,
+    private val x509VerifyService: X509VerifyService,
     private val execution: SessionExecution,
 ) : XAdESValidator {
     private companion object {
@@ -192,6 +201,7 @@ class XAdESValidatorImpl(
     ): XAdESValidationResult {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
+        val reasonCodes = mutableListOf<String>()
 
         try {
             val document =
@@ -249,6 +259,33 @@ class XAdESValidatorImpl(
             }
 
             val signingCertDer = certStrings.first().decodeFrom(Encoding.BASE64)
+
+            var signerChainTrusted = true
+            if (options.validateCertificateChain) {
+                val trustedRoots = options.trustedCertificates
+                when {
+                    trustedRoots.isNullOrEmpty() -> {
+                        signerChainTrusted = false
+                        errors.add("No configured signer root certificates were provided")
+                        reasonCodes.add(TrustDiagnosticReasonCodes.SIGNER_ROOT_NOT_CONFIGURED)
+                    }
+                    trustedRoots.any { it.contentEquals(signingCertDer) } -> Unit
+                    else -> {
+                        val chainResult =
+                            x509VerifyService.verifyCertificateChain(
+                                X509VerificationRequest(
+                                    chainDER = chainBytes?.toTypedArray(),
+                                    trustedCerts = trustedRoots.map(::derToPem).toTypedArray(),
+                                ),
+                            )
+                        if (chainResult.error) {
+                            signerChainTrusted = false
+                            errors.add("Signer certificate chain validation failed: ${chainResult.message ?: "unknown error"}")
+                            reasonCodes.add(TrustDiagnosticReasonCodes.SIGNER_CHAIN_INVALID)
+                        }
+                    }
+                }
+            }
 
             // 1. Canonicalize SignedInfo and verify cryptographic signature
             val canonMethod = firstChild(signedInfo, XMLDSIG_NS, "CanonicalizationMethod")
@@ -348,6 +385,7 @@ class XAdESValidatorImpl(
 
             val overallValid =
                 signatureValid && referencesValid &&
+                    signerChainTrusted &&
                     (signingCertValid != false) &&
                     (!options.requireXAdESProperties || xadesPresent)
 
@@ -365,6 +403,7 @@ class XAdESValidatorImpl(
                 referenceResults = referenceResults,
                 errors = errors,
                 warnings = warnings,
+                reasonCodes = reasonCodes,
             )
         } catch (expected: Exception) {
             logger.error("XAdES validation failed", exception = expected)
@@ -414,6 +453,9 @@ class XAdESValidatorImpl(
         val computed = hash(certDer, digestAlg)
         return computed.contentEquals(certDigest.digestValue)
     }
+
+    private fun derToPem(der: ByteArray): String =
+        "-----BEGIN CERTIFICATE-----\n${der.encodeTo(Encoding.BASE64)}\n-----END CERTIFICATE-----"
 
     private fun extractCertificates(signatureElement: Element): Pair<List<String>, List<ByteArray>?> {
         val keyInfoEl = firstChild(signatureElement, XMLDSIG_NS, "KeyInfo") ?: return Pair(emptyList(), null)

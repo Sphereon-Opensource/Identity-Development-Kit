@@ -24,6 +24,11 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.interop.toKeyInfoJwk
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.jose.jws.JwsJsonGeneral
@@ -32,10 +37,15 @@ import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsJsonGeneralCommand
 import com.sphereon.crypto.jose.jws.command.PrepareJwsCommand
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierKeyResult
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -72,6 +82,20 @@ class CreateJwsJsonGeneralCommandImpl(
         }
 
         val prepared = prepareResult.value
+        val resolvedKey = (prepared.identifier as ManagedIdentifierKeyResult).keyInfo
+        val headerAlgorithm = prepared.jws.protectedHeader?.get("alg")?.jsonPrimitive?.contentOrNull
+        val managedSelection =
+            try {
+                managedSigningSelector(appliedArgs.issuer, resolvedKey).also { selector ->
+                    if (selector != null) {
+                        resolvedKey.jwsSigningAlgorithmCompatibilityFailure(headerAlgorithm)?.let { failure ->
+                            throw IllegalArgumentException(failure)
+                        }
+                    }
+                }
+            } catch (expected: IllegalArgumentException) {
+                return IdkResult.err(IdkError.fromString("Invalid managed signing selection: ${expected.message}", exception = expected))
+            }
 
         // Sign the input
         // Execute through the public KMS command binding. That binding resolves via the
@@ -82,7 +106,7 @@ class CreateJwsJsonGeneralCommandImpl(
             try {
                 createRawSignatureCommand.execute(
                     CreateRawSignatureArgs(
-                        keyInfo = (prepared.identifier as ManagedIdentifierKeyResult).keyInfo,
+                        keyInfo = managedSelection ?: resolvedKey,
                         input = prepared.signingInput,
                         requireX5Chain = false,
                     ),
@@ -100,6 +124,77 @@ class CreateJwsJsonGeneralCommandImpl(
                 )
             }.signature
 
+        if (managedSelection != null) {
+            // The managed signer may be remote or non-exportable. Its output must still match
+            // the public material used to prepare this JWS; an alias changing between lookup
+            // and signing must never return a token signed by a different key.
+            val matchesPreparedKey =
+                try {
+                    verifyManagedJwsSigningResult(
+                        keyInfo = resolvedKey,
+                        headerAlg = headerAlgorithm,
+                        input = prepared.signingInput,
+                        signature = signatureBytes,
+                    )
+                } catch (expected: Exception) {
+                    return IdkResult.err(IdkError.fromString("Managed signature verification failed: ${expected.message}", exception = expected))
+                }
+            if (!matchesPreparedKey) {
+                return IdkResult.err(IdkError.fromString("Managed signature does not match the prepared public key"))
+            }
+        }
+
         return prepared.assembleGeneral(signatureBytes).asOkResult()
     }
+}
+
+/** Keep a caller's explicit managed selector separate from the public JWS projection. */
+private fun managedSigningSelector(
+    issuer: ManagedIdentifierOptsOrResult?,
+    resolved: KeyInfoType<*>,
+): KeyInfoType<*>? {
+    val requested = when (issuer) {
+        is ManagedOptsAlias -> {
+            require(issuer.lookup.key == null) { "Managed alias lookup cannot include inline key material" }
+            require(issuer.lookup.alias == null || issuer.lookup.alias == issuer.identifier) {
+                "Managed alias lookup identity conflict"
+            }
+            KeyInfo<KeyType>(
+                alias = issuer.identifier,
+                kid = issuer.lookup.kid,
+                opts = issuer.lookup.opts,
+                keyVisibility = KeyVisibility.PRIVATE,
+                signatureAlgorithm = issuer.lookup.signatureAlgorithm,
+                providerId = issuer.lookup.providerId,
+                keyType = issuer.lookup.keyType,
+                keyEncoding = issuer.lookup.keyEncoding,
+                noCache = issuer.lookup.noCache,
+            )
+        }
+        is ManagedOptsKeyInfo -> issuer.identifier
+        else -> return null
+    }
+    // Supplied material, including public-only material, remains authoritative. Never turn it
+    // into a keystore selector simply because it also contains an alias or provider label.
+    if (requested.key != null) return null
+    require(requested.providerId == null || requested.providerId == resolved.providerId) { "Provider identity conflict" }
+    require(requested.alias == null || requested.alias == resolved.alias) { "Managed key alias conflict" }
+    // Preserve the protocol kid selected by the caller/AS signing-key store. It is a provider
+    // identity, not necessarily the JWK thumbprint: Azure Key Vault, software stores and other
+    // providers are allowed to expose a stable alias-native kid for the same public key. The
+    // signing provider validates an alias+kid compound selector before cryptographic work, so
+    // retaining that kid both preserves the wire-visible identity and still fails closed on a
+    // contradictory pair.
+    val canonicalJwkKid = toKeyInfoJwk(resolved).key?.kid?.takeIf { it.isNotBlank() }
+    val selectorKid = requested.kid ?: resolved.kid ?: canonicalJwkKid
+    require(!resolved.alias.isNullOrBlank() || selectorKid != null) { "Resolved managed key has no usable selector" }
+    return KeyInfo<KeyType>(
+        kid = selectorKid,
+        alias = resolved.alias,
+        providerId = resolved.providerId,
+        keyVisibility = KeyVisibility.PRIVATE,
+        signatureAlgorithm = requested.signatureAlgorithm ?: resolved.signatureAlgorithm,
+        keyType = resolved.keyType,
+        opts = resolved.opts,
+    )
 }

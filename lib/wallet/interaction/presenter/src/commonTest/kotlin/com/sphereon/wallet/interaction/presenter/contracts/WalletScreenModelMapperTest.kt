@@ -15,6 +15,7 @@ import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletCredentialBranding
+import com.sphereon.wallet.interaction.WalletCredentialOfferSummary
 import com.sphereon.wallet.interaction.WalletCredentialPreview
 import com.sphereon.wallet.interaction.WalletCounterpartyEncounterResult
 import com.sphereon.wallet.interaction.WalletCounterpartyRole
@@ -295,6 +296,48 @@ class WalletScreenModelMapperTest {
         val result = assertIs<WalletInteractionScreenProjection.Result>(model.projection)
 
         assertEquals(emptyList(), result.receivedCredentials)
+    }
+
+    @Test
+    fun terminalCredentialReceiveRetainsTheSafeTranscriptForResultRouteReattachment() {
+        val issuer =
+            WalletCounterpartySummary(
+                role = WalletCounterpartyRole.ISSUER,
+                identifier = "https://issuer.example",
+                partyId = "party-issuer",
+                displayName = "Example issuer",
+            )
+        val terminal =
+            state(WalletInteractionStatus.Failed, terminal = true).copy(
+                counterparty = issuer,
+                trust =
+                    WalletCounterpartyTrustSummary(
+                        counterparty = issuer,
+                        status = WalletTrustStatus.TRUSTED,
+                        policyAction = WalletTrustPolicyAction.ALLOW,
+                    ),
+                counterpartyEncounter =
+                    WalletCounterpartyEncounterResult(
+                        counterparty = issuer,
+                        resolved = true,
+                        organizationCreated = true,
+                        firstInteraction = true,
+                    ),
+                credentialOffer =
+                    WalletCredentialOfferSummary(
+                        issuer = issuer,
+                        credentialConfigurationIds = listOf("pid"),
+                        branding = listOf(WalletCredentialBranding(credentialConfigurationId = "pid", name = "Person identification data")),
+                    ),
+            )
+
+        val result = assertIs<WalletInteractionScreenProjection.Result>(WalletScreenModelMapper.map(terminal).projection)
+        val context = requireNotNull(result.receiveContext)
+
+        assertEquals("party-issuer", context.issuer.partyId)
+        assertEquals("party-issuer", context.offer.issuer?.partyId)
+        assertEquals(listOf("pid"), context.offer.offeredCredentials.map { it.configurationId })
+        assertEquals(0, context.encounter.previousInteractionCount)
     }
 
     @Test

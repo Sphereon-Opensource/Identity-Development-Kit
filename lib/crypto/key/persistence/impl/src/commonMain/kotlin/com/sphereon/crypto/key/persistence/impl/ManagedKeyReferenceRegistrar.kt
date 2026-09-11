@@ -25,8 +25,11 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.model.Origin
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ManagedKeyInfoType
+import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
+import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
+import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -68,7 +71,7 @@ class ManagedKeyReferenceRegistrar(
     }
 
     /**
-     * Register a provider key reference for platform use (onboarding).
+     * Register an externally-owned provider key reference (onboarding).
      * Called from the `POST /keys/register` endpoint to bring an existing provider key
      * into the managed reference store.
      *
@@ -82,29 +85,79 @@ class ManagedKeyReferenceRegistrar(
         signatureAlgorithm: com.sphereon.crypto.core.generic.SignatureAlgorithm? = null,
         keyVisibility: com.sphereon.crypto.core.KeyVisibility? = null,
         keyEncoding: com.sphereon.crypto.core.KeyEncoding? = null,
+        publicKeyJwk: String? = null,
     ): IdkResult<KeyReferenceRecord, IdkError> {
         if (!keyReferenceStore.isAvailable) {
             return Err(
                 IdkError.UNKNOWN_ERROR(message = "No key reference store available. Add a persistence module (SQLite, PostgreSQL, or MySQL) to the classpath."),
             )
         }
+        if (keyReferenceStore.ownershipHistoryCapability != KeyReferenceHistoryCapability.DURABLE) {
+            return Err(
+                IdkError.fromString(
+                    code = KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
+                    message = "External key registration requires a durable key reference ownership history store",
+                ),
+            )
+        }
+        val existing =
+            keyReferenceStore
+                .findByAlias(tenantId, alias, providerId)
+                .getOrElse { error -> return Err(error) }
+
+        if (existing != null && existing.kid != null && kid != null && existing.kid != kid) {
+            return Err(
+                IdkError.fromString(
+                    code = KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT,
+                    message = "The key reference identity conflicts with the existing registration",
+                ),
+            )
+        }
+        if (existing != null && existing.publicKeyJwk != null && publicKeyJwk != null && existing.publicKeyJwk != publicKeyJwk) {
+            return Err(
+                IdkError.fromString(
+                    code = KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT,
+                    message = "The key reference public material conflicts with the existing registration",
+                ),
+            )
+        }
+
+        if (kid != null) {
+            val existingKid =
+                keyReferenceStore
+                    .findByKid(tenantId, kid, providerId)
+                    .getOrElse { error -> return Err(error) }
+            if (existingKid != null && existingKid.id != existing?.id) {
+                return Err(
+                    IdkError.fromString(
+                        code = KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT,
+                        message = "The canonical provider key identifier is already registered under another alias",
+                    ),
+                )
+            }
+        }
+
         val now = Clock.System.now()
         val record =
             KeyReferenceRecord(
-                id = generateId(),
+                id = existing?.id ?: generateId(),
                 tenantId = tenantId,
                 alias = alias,
-                kid = kid,
+                kid = kid ?: existing?.kid,
                 providerId = providerId,
-                origin = Origin.MANAGED,
+                origin = Origin.EXTERNAL,
+                controlMode = ResourceControlMode.EXTERNALLY_MANAGED,
                 keyType = keyType,
                 signatureAlgorithm = signatureAlgorithm,
                 keyVisibility = keyVisibility,
                 keyEncoding = keyEncoding,
-                createdAt = now,
-                createdById = principalId,
+                publicKeyJwk = publicKeyJwk ?: existing?.publicKeyJwk,
+                createdAt = existing?.createdAt ?: now,
+                createdById = existing?.createdById ?: principalId,
                 updatedAt = now,
                 updatedById = principalId,
+                deletedAt = null,
+                deletedById = null,
             )
         return keyReferenceStore.upsert(record)
     }

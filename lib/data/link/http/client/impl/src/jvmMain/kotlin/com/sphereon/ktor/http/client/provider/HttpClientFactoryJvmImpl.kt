@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Â© 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import com.sphereon.ktor.http.client.config.LegacyJvmSslProviderImpl
 import com.sphereon.ktor.http.client.config.SslConfig
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
@@ -43,10 +44,16 @@ import io.ktor.client.plugins.logging.Logging
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.runBlocking
 import java.security.KeyStore
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import java.io.ByteArrayInputStream
+import java.security.MessageDigest
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509KeyManager
 import javax.net.ssl.X509TrustManager
+import okhttp3.ConnectionSpec
+import okhttp3.TlsVersion
 import io.ktor.client.plugins.logging.LogLevel as KtorLogLevel
 
 @Inject
@@ -54,8 +61,8 @@ import io.ktor.client.plugins.logging.LogLevel as KtorLogLevel
 @ContributesBinding(SessionScope::class)
 class HttpClientFactoryJvmImpl(
     private val execution: SessionExecution,
-    val kms: KeyManagerService,
-    private val keyStoreManager: KeyStoreManager,
+    private val kms: Provider<KeyManagerService>,
+    private val keyStoreManager: Provider<KeyStoreManager>,
 ) : HttpClientFactory {
     val keyStores: MutableSet<com.sphereon.crypto.core.kms.KeyStore> = mutableSetOf()
 
@@ -77,16 +84,17 @@ class HttpClientFactoryJvmImpl(
             val engine =
                 when (engine ?: getEngineTypeDefault()) {
                     HttpClientEngineType.CIO -> TODO("CIO engine is only supported via LegacyHttpClientFactory at present")
-                    HttpClientEngineType.OKHTTP -> createOkHttpEngine(options.sslConfig)
+                    HttpClientEngineType.OKHTTP -> createOkHttpEngine(options)
                     HttpClientEngineType.DARWIN -> TODO("Jvm darwin not supported yet. Please use native, or CIO/OKHTTP with Jvm on MacOs")
                     HttpClientEngineType.JS -> TODO("JS engine is not supported on JVM, use CIO or OKHTTP")
                 }
 
             return HttpClient(engine) {
+                followRedirects = options.followRedirects
                 // install cache if requested
                 if (enableHttpCache) {
                     install(HttpCache) {
-                        // apply user‐supplied cache config, if any
+                        // apply userâ€supplied cache config, if any
                         httpCacheConfig?.invoke(this)
                     }
                 }
@@ -110,6 +118,10 @@ class HttpClientFactoryJvmImpl(
                 }
 
                 additionalConfig?.invoke(this)
+
+                // Keep the caller-selected option last so an arbitrary additionalConfig cannot
+                // silently re-enable auto-follow for a governed (false) client.
+                followRedirects = options.followRedirects
             }.also { client ->
                 // Install URL validation for SSRF protection via request pipeline
                 val validationPolicy = urlValidation
@@ -173,13 +185,13 @@ class HttpClientFactoryJvmImpl(
 
     private suspend fun buildTrustManagers(caOpts: CaOpts): Set<X509TrustManager> {
         // only platform defaults, no additional CAs
-        if (caOpts.includePlatformDefaults && caOpts.additionalCAs.isEmpty()) {
+        if (caOpts.includePlatformDefaults && !caOpts.hasCustomTrust()) {
             val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
             tmf.init(null as KeyStore?) // use system defaults
             return tmf.trustManagers.filterIsInstance<X509TrustManager>().toSet()
         }
 
-        // Otherwise, we’re building a custom or combined trust store
+        // Otherwise, weâ€™re building a custom or combined trust store
         if (caOpts.additionalCAs.isNotEmpty()) {
             addConfiguredKeystores()
             addProviderKeystores()
@@ -201,6 +213,29 @@ class HttpClientFactoryJvmImpl(
             val keyStore = getSupportedKeyStore(ca.keyStoreId).platformKeyStore
             val cert = keyStore.getCertificate(ca.certificateAlias) ?: error("Certificate alias ${ca.certificateAlias} not found in ${ca.keyStoreId}")
             trustStore.setCertificateEntry(ca.certificateAlias, cert)
+        }
+
+        // TrustDomain resolution returns public CA material directly. Parse it into this
+        // execution-only JVM trust store; it is never persisted in connector descriptors.
+        val certificateFactory = CertificateFactory.getInstance("X.509")
+        for (ca in caOpts.resolvedCertificates) {
+            val certificate = ByteArrayInputStream(ca.certificatePem.encodeToByteArray()).use { input ->
+                certificateFactory.generateCertificate(input) as X509Certificate
+            }
+            val normalizedFingerprint = ca.certificateFingerprint.filter { it.isLetterOrDigit() }.lowercase()
+            val (fingerprintAlgorithm, expectedFingerprint) = when {
+                normalizedFingerprint.startsWith("sha256") -> "SHA-256" to normalizedFingerprint.removePrefix("sha256")
+                normalizedFingerprint.startsWith("sha1") -> "SHA-1" to normalizedFingerprint.removePrefix("sha1")
+                normalizedFingerprint.length == SHA1_HEX_LENGTH -> "SHA-1" to normalizedFingerprint
+                else -> "SHA-256" to normalizedFingerprint
+            }
+            val actualFingerprint = MessageDigest.getInstance(fingerprintAlgorithm)
+                .digest(certificate.encoded)
+                .joinToString("") { "%02x".format(it) }
+            require(actualFingerprint == expectedFingerprint) {
+                "Resolved CA certificate '${ca.certificateAlias}' fingerprint does not match its public material"
+            }
+            trustStore.setCertificateEntry("resolved-${ca.certificateAlias}", certificate)
         }
 
         val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
@@ -247,14 +282,31 @@ class HttpClientFactoryJvmImpl(
      * @param sslConfig the SSL configuration options used to set up the engine
      * @return A [HttpClientEngine]
      */
-    private fun createOkHttpEngine(sslConfig: SslConfig): HttpClientEngine =
+    private fun createOkHttpEngine(options: HttpClientOptions): HttpClientEngine =
         runBlocking {
+            val sslConfig = options.sslConfig
             val trustManagers = buildTrustManagers(sslConfig.server.ca)
             val sslContext = buildClientSslContext(sslConfig, trustManagers)
             val httpClientEngine =
                 OkHttp.create {
                     config {
                         sslSocketFactory(sslContext.socketFactory, CompositeTrustManager(trustManagers))
+                        followRedirects(options.followRedirects)
+                        followSslRedirects(options.followRedirects)
+                        val versions = when (sslConfig.client.minimumTlsVersion) {
+                            HttpMinimumTlsVersion.TLS_1_2 -> arrayOf(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
+                            HttpMinimumTlsVersion.TLS_1_3 -> arrayOf(TlsVersion.TLS_1_3)
+                        }
+                        connectionSpecs(
+                            listOf(
+                                ConnectionSpec.Builder(ConnectionSpec.RESTRICTED_TLS)
+                                    .tlsVersions(*versions)
+                                    .build(),
+                                // Preserve the legacy generic HTTP-client surface. Governed request
+                                // contexts reject non-HTTPS destinations before this factory is called.
+                                ConnectionSpec.CLEARTEXT,
+                            ),
+                        )
                     }
                 }
             httpClientEngine
@@ -263,9 +315,14 @@ class HttpClientFactoryJvmImpl(
     private fun addConfiguredKeystores() {
         if (configuredKeyStoresLoaded) return
         configuredKeyStoresLoaded = true
-        keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.conf(ConfigLevel.APP)))
-        keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.conf(ConfigLevel.TENANT)))
-        keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.conf(ConfigLevel.PRINCIPAL)))
+        val manager = keyStoreManager()
+        keyStores.addAll(manager.createFromProperties(execution.conf.conf(ConfigLevel.APP)))
+        keyStores.addAll(manager.createFromProperties(execution.conf.conf(ConfigLevel.TENANT)))
+        keyStores.addAll(manager.createFromProperties(execution.conf.conf(ConfigLevel.PRINCIPAL)))
+    }
+
+    private companion object {
+        const val SHA1_HEX_LENGTH: Int = 40
     }
 
     /**
@@ -275,8 +332,9 @@ class HttpClientFactoryJvmImpl(
     private suspend fun addProviderKeystores() {
         if (providerKeyStoresLoaded) return
         providerKeyStoresLoaded = true
-        for (providerId in kms.getProviderIds()) {
-            val provider = kms.getProviderById(providerId)
+        val manager = kms()
+        for (providerId in manager.getProviderIds()) {
+            val provider = manager.getProviderById(providerId)
             if (provider is HasKeyStoreService && provider.keyStore is SoftwareKeyStoreService) {
                 keyStores.add(provider.keyStore as SoftwareKeyStoreService)
             }

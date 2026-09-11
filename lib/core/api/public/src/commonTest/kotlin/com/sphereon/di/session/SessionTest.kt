@@ -19,6 +19,7 @@ package com.sphereon.di.session
 import com.sphereon.di.context.AnonymousContext
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.NoOpSessionContext
+import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.UserContext
@@ -49,10 +50,41 @@ class SessionContextIsAnonymousTest {
     }
 
     @Test
-    fun sessionContextWithNonAnonymousSessionIdIsNotAnonymous() {
+    fun anonymousPrincipalWithARequestSessionIdRemainsAnonymous() {
         val ctx = createAnonymousSessionContext("non-anonymous-session", "non-anonymous-session-correlation")
-        assertFalse(ctx.isAnonymous())
+        assertTrue(ctx.isAnonymous())
     }
+
+    @Test
+    fun anonymousPrincipalTypeCannotAuthenticateThroughTenantSessionOrPrincipalRepresentations() {
+        for (tenantId in listOf("acme-tenant", IdentityConstants.ANONYMOUS_TENANT_ID)) {
+            for (sessionId in listOf("http-request-42", IdentityConstants.ANONYMOUS_SESSION_ID)) {
+                for (principal in listOf(null, IdentityConstants.ANONYMOUS_PRINCIPAL_ID, "anonymous-placeholder")) {
+                    val ctx = classifiedSession(PrincipalType.ANONYMOUS, tenantId, sessionId, principal)
+                    assertTrue(ctx.isAnonymous(), "Anonymous classification must survive tenant=$tenantId, session=$sessionId, principal=$principal")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun authenticatedUserWorkloadAndServiceContextsRemainNonAnonymous() {
+        for (type in listOf(PrincipalType.USER, PrincipalType.WORKLOAD, PrincipalType.SERVICE)) {
+            assertFalse(classifiedSession(type, "acme-tenant", "http-request-42", "principal-42").isAnonymous())
+        }
+    }
+
+    private fun classifiedSession(type: PrincipalType, tenantId: String, requestId: String, principalId: String?): SessionContext =
+        object : SessionContext {
+            override val sessionId = requestId
+            override val context = object : UserContext {
+                override val id = "request-user-context"
+                override val tenant = object : TenantContextData { override val tenantId = tenantId }
+                override val principal = principalId
+                override val principalType = type
+                override val secureDetails: SecuredTenantContextDetails? = null
+            }
+        }
 
     @Test
     fun sessionContextWithNonAnonymousTenantIsNotAnonymous() {

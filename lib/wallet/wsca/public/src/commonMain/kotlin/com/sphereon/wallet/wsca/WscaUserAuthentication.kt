@@ -37,6 +37,9 @@ import kotlinx.serialization.Serializable
  * @property operationBinding stable identifier of the attended wallet operation. Every WSCA
  *   sub-operation covered by one passkey assertion carries this same value; another interaction
  *   cannot reuse that assertion.
+ * @property operationKeyRef exact WSCD key reference authorized by this operation when the
+ *   ceremony is remote and key-scoped. Local-only ceremonies may leave it absent because they do
+ *   not cross a routed WSCD boundary; remote implementations fail closed when it is absent.
  * @property walletAccountId the wallet account performing the operation, when the ceremony backend
  *   is account-scoped.
  * @property digestBinding `"<digest-alg>:<hex-digest>"` of the exact bytes the resulting
@@ -51,6 +54,7 @@ data class WscaUserAuthRequest(
     val walletUnitId: String,
     val operationType: String,
     val operationBinding: String,
+    val operationKeyRef: String?,
     val walletAccountId: String? = null,
     val digestBinding: String? = null,
     val nonce: String? = null,
@@ -58,6 +62,7 @@ data class WscaUserAuthRequest(
 ) {
     init {
         require(operationBinding.isNotBlank()) { "wallet_user_authentication_operation_binding_blank" }
+        require(operationKeyRef == null || operationKeyRef.isNotBlank()) { "wallet_user_authentication_operation_key_ref_blank" }
     }
 }
 

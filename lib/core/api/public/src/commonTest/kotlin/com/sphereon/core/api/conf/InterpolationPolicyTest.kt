@@ -121,4 +121,67 @@ class InterpolationPolicyTest {
             explicit.policyFor("oauth.client-id", ConfigLevel.APP),
         )
     }
+
+    @Test
+    fun patternPoliciesSupportIndexedKeysAndRemainAppOnly() {
+        val provider =
+            DefaultInterpolationPolicyProvider(
+                InterpolationPolicyCatalog(
+                    patternPolicies =
+                        listOf(
+                            InterpolationPolicyPattern(
+                                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+]\\.audience$",
+                                policy = InterpolationPolicy.APP_ENVIRONMENT,
+                            ),
+                        ),
+                ),
+            )
+
+        assertEquals(
+            InterpolationPolicy.APP_ENVIRONMENT,
+            provider.policyFor("oauth2.clients.[17].audience", ConfigLevel.APP),
+        )
+        assertEquals(
+            InterpolationPolicy.DENY,
+            provider.policyFor("oauth2.clients.[17].audience", ConfigLevel.TENANT),
+        )
+        assertEquals(
+            InterpolationPolicy.DENY,
+            provider.policyFor("oauth2.clients.[17].secret", ConfigLevel.APP),
+        )
+    }
+
+    @Test
+    fun exactPoliciesWinAndPatternOrderChangesCacheIdentity() {
+        val allow =
+            InterpolationPolicyPattern(
+                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+]\\.audience$",
+                policy = InterpolationPolicy.APP_ENVIRONMENT,
+            )
+        val deny =
+            InterpolationPolicyPattern(
+                normalizedKeyRegex = "^oauth2\\.clients\\.\\[\\d+]\\..+$",
+                policy = InterpolationPolicy.DENY,
+            )
+        val allowThenDeny =
+            DefaultInterpolationPolicyProvider(
+                InterpolationPolicyCatalog(
+                    exactPolicies = mapOf("oauth2.clients.[7].audience" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                    patternPolicies = listOf(allow, deny),
+                ),
+            )
+        val denyThenAllow =
+            DefaultInterpolationPolicyProvider(
+                InterpolationPolicyCatalog(
+                    exactPolicies = mapOf("oauth2.clients.[7].audience" to InterpolationPolicy.PROPERTY_REFERENCES_ONLY),
+                    patternPolicies = listOf(deny, allow),
+                ),
+            )
+
+        assertEquals(
+            InterpolationPolicy.PROPERTY_REFERENCES_ONLY,
+            allowThenDeny.policyFor("oauth2.clients.[7].audience", ConfigLevel.APP),
+        )
+        assertNotEquals(allowThenDeny.cacheIdentity, denyThenAllow.cacheIdentity)
+    }
 }

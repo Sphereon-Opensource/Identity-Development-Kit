@@ -31,6 +31,7 @@ import com.sphereon.mdoc.data.device.DeviceRequest
 import com.sphereon.mdoc.data.device.DeviceResponse
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
+import com.sphereon.mdoc.data.device.MacKeys
 import com.sphereon.mdoc.engagement.EngagementInstance
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.mdoc.transport.IncomingDataChannel
@@ -271,6 +272,7 @@ interface TransferManager :
      * @param unprotectedHeader Optional COSE unprotected header
      * @param protectedHeader Optional COSE protected header
      * @param requireDeviceX5Chain Whether to require x5chain in device signature
+     * @param macKeys Reader-advertised keys used for second-edition COSE_Mac0 device authentication
      * @return The signed Document with DeviceSigned data and signature
      * @throws IllegalStateException if session transcript not initialized
      * @throws IllegalArgumentException if request docType doesn't match document docType
@@ -284,6 +286,7 @@ interface TransferManager :
         unprotectedHeader: CoseHeaderCbor? = null,
         protectedHeader: CoseHeaderCbor? = null,
         requireDeviceX5Chain: Boolean = false,
+        macKeys: MacKeys? = null,
     ): Document
 
     /**

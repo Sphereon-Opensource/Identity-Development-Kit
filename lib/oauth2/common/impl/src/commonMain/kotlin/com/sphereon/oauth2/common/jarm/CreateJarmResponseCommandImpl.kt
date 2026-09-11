@@ -24,6 +24,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.jose.jwe.CreateJweCompactArgs
+import com.sphereon.crypto.jose.jwe.CreateJweOpts
 import com.sphereon.crypto.jose.jwe.JweService
 import com.sphereon.crypto.jose.jwe.PrepareJweArgs
 import com.sphereon.crypto.jose.jws.JwtService
@@ -195,6 +196,7 @@ class CreateJarmResponseCommandImpl(
                 recipient = args.encryptionRecipient,
                 keyEncryptionAlg = encAlg,
                 contentEncryptionAlg = contentEncAlg,
+                opts = CreateJweOpts(protectedHeaderOverrides = args.protectedHeaderOverrides),
             )
 
         val preparedJwe =
@@ -259,6 +261,7 @@ class CreateJarmResponseCommandImpl(
                 recipient = args.encryptionRecipient,
                 keyEncryptionAlg = encAlg,
                 contentEncryptionAlg = contentEncAlg,
+                opts = CreateJweOpts(protectedHeaderOverrides = args.protectedHeaderOverrides),
             )
 
         val preparedJwe =

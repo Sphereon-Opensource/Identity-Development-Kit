@@ -24,6 +24,9 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.cose.CoseKeyDTOType
+import com.sphereon.crypto.core.cose.CoseKeyJsonDTOType
 import com.sphereon.crypto.core.cose.CoseAlgorithm
 import com.sphereon.crypto.core.cose.CoseCurve
 import com.sphereon.crypto.core.cose.CoseKeyOperations
@@ -680,7 +683,9 @@ sealed class SignatureAlgorithm(
         /**
          * A list of supported algorithm mappings used for COSE and JOSE algorithm conversions.
          *
-         * This list includes various algorithms such as EdDSA, ES256K, ES256, ES384, ES512, HS256, HS384, HS512, PS256, PS384, and PS512.
+         * This list includes both EdDSA curve variants (Ed25519 and Ed448), ES256K, ES256, ES384,
+         * ES512, HS256, HS384, HS512, PS256, PS384, and PS512.  JOSE/COSE EdDSA lookup remains
+         * family-ambiguous unless [tryFromJoseForKey] or [tryFromCoseForKey] is used.
          * It is utilized by functions to map between different cryptographic algorithm standards.
          */
         @JsStatic
@@ -688,6 +693,7 @@ sealed class SignatureAlgorithm(
             get() =
                 listOf(
                     ED25519,
+                    ED448,
                     ES256K,
                     ECDSA_SHA256,
                     ECDSA_SHA384,
@@ -783,6 +789,150 @@ sealed class SignatureAlgorithm(
                 .find { it.coseAlgorithm == cose || it.coseAlgorithm.toString() == cose.toString() }
                 ?.let { Ok(it) }
                 ?: Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "COSE algorithm $cose not found"))
+        }
+
+        /**
+         * Resolves a JOSE algorithm against already-resolved key metadata.
+         *
+         * JOSE EdDSA is a family identifier: it does not identify whether an OKP key is
+         * Ed25519 or Ed448.  The legacy [tryFromJose] mapping intentionally remains generic for
+         * callers that do not have a key.  Security-sensitive signing and verification callers
+         * must use this resolver so that resolved key material always supplies the curve; only a
+         * metadata-only provider result with an explicit OKP type may use an authoritative
+         * Ed25519/Ed448 algorithm, and contradictory metadata is rejected.
+         */
+        @JsStatic
+        @JvmStatic
+        fun tryFromJoseForKey(
+            jose: JwaAlgorithm?,
+            keyInfo: KeyInfoType<*>?,
+        ): IdkResult<SignatureAlgorithm, IdkError> {
+            if (jose == null) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JOSE algorithm is null"))
+            }
+            if (jose != JwaAlgorithm.EdDSA) {
+                return tryFromJose(jose)
+            }
+            return tryResolveEdDsaForKey(keyInfo)
+        }
+
+        /** Resolves COSE EdDSA (-8) using the resolved OKP curve, never by list order. */
+        @JsStatic
+        @JvmStatic
+        fun tryFromCoseForKey(
+            cose: CoseAlgorithm?,
+            keyInfo: KeyInfoType<*>?,
+        ): IdkResult<SignatureAlgorithm, IdkError> {
+            if (cose == null) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "COSE algorithm is null"))
+            }
+            if (cose != CoseAlgorithm.EdDSA) {
+                return tryFromCose(cose)
+            }
+            return tryResolveEdDsaForKey(keyInfo)
+        }
+
+        private fun tryResolveEdDsaForKey(keyInfo: KeyInfoType<*>?): IdkResult<SignatureAlgorithm, IdkError> {
+            if (keyInfo == null) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "EdDSA is ambiguous without resolved OKP curve or authoritative signature algorithm",
+                    ),
+                )
+            }
+
+            val key = keyInfo.key
+            val actualKeyType = key?.let { runCatching { it.getKeyType() }.getOrNull() }
+            val declaredKeyType = keyInfo.keyType
+            if (actualKeyType != null && declaredKeyType != null && actualKeyType != declaredKeyType) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "resolved key type '$actualKeyType' contradicts declared key type '$declaredKeyType'",
+                    ),
+                )
+            }
+            if ((actualKeyType != null && actualKeyType != KeyTypeMapping.OKP) ||
+                (actualKeyType == null && declaredKeyType != null && declaredKeyType != KeyTypeMapping.OKP)
+            ) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "EdDSA requires an OKP key"))
+            }
+            if (key == null && declaredKeyType != KeyTypeMapping.OKP) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "metadata-only EdDSA requires resolved key type OKP",
+                    ),
+                )
+            }
+
+            val contradictsEdDsa = when (key) {
+                is com.sphereon.crypto.core.jose.JwkType -> {
+                    val jwkAlgorithm = key.alg
+                    jwkAlgorithm != null && jwkAlgorithm != JwaAlgorithm.EdDSA
+                }
+                is CoseKeyJsonDTOType -> {
+                    val coseAlgorithm = key.alg
+                    coseAlgorithm != null && coseAlgorithm != CoseAlgorithm.EdDSA
+                }
+                is CoseKeyDTOType -> {
+                    val coseAlgorithm = key.alg
+                    coseAlgorithm?.let { algorithm -> algorithm.value.toInt() != CoseAlgorithm.EdDSA.value } == true
+                }
+                else -> false
+            }
+            if (contradictsEdDsa) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "resolved key algorithm contradicts EdDSA",
+                    ),
+                )
+            }
+
+            val curve = key?.let {
+                runCatching {
+                    when (it) {
+                        is com.sphereon.crypto.core.jose.JwkType -> it.crv?.let(Curve::fromJose)
+                        is CoseKeyJsonDTOType -> it.crv?.let(Curve::fromCose)
+                        is CoseKeyDTOType -> it.crv?.let { c -> Curve.fromCose(com.sphereon.crypto.core.cose.CoseCurve.fromValue(c.value.toInt())) }
+                        else -> null
+                    }
+                }.getOrElse {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid resolved EdDSA curve: ${it.message}"))
+                }
+            }
+            val byCurve = when (curve) {
+                Curve.Ed25519 -> SignatureAlgorithm.ED25519
+                Curve.Ed448 -> SignatureAlgorithm.ED448
+                null -> null
+                else -> return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "EdDSA requires Ed25519 or Ed448, resolved '$curve'"))
+            }
+            if (key != null && byCurve == null) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "resolved EdDSA key material must declare an Ed25519 or Ed448 curve",
+                    ),
+                )
+            }
+            val authoritative = keyInfo.signatureAlgorithm
+            if (authoritative != null && authoritative != SignatureAlgorithm.ED25519 && authoritative != SignatureAlgorithm.ED448) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "resolved signature algorithm '$authoritative' contradicts EdDSA",
+                    ),
+                )
+            }
+            if (byCurve != null && authoritative != null && byCurve != authoritative) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "resolved EdDSA curve '$curve' contradicts authoritative signature algorithm '$authoritative'",
+                    ),
+                )
+            }
+            return (byCurve ?: authoritative)?.let(::Ok)
+                ?: Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "EdDSA is ambiguous without resolved OKP curve or authoritative signature algorithm",
+                    ),
+                )
         }
 
         /**
@@ -936,6 +1086,17 @@ sealed class SignatureAlgorithm(
                 throw IllegalArgumentException(it.message.defaultMessage)
             }
 
+        /** Resolves JOSE EdDSA against the resolved key's curve or authoritative algorithm. */
+        @JsStatic
+        @JvmStatic
+        fun fromJoseForKey(
+            jose: JwaAlgorithm?,
+            keyInfo: KeyInfoType<*>?,
+        ) =
+            tryFromJoseForKey(jose, keyInfo).getOrElse {
+                throw IllegalArgumentException(it.message.defaultMessage)
+            }
+
         /**
          * Converts a given COSE algorithm to its corresponding internal representation.
          *
@@ -946,6 +1107,17 @@ sealed class SignatureAlgorithm(
         @JvmStatic
         fun fromCose(cose: CoseAlgorithm?) =
             tryFromCose(cose).getOrElse {
+                throw IllegalArgumentException(it.message.defaultMessage)
+            }
+
+        /** Resolves COSE EdDSA (-8) against the resolved key's curve or authoritative algorithm. */
+        @JsStatic
+        @JvmStatic
+        fun fromCoseForKey(
+            cose: CoseAlgorithm?,
+            keyInfo: KeyInfoType<*>?,
+        ) =
+            tryFromCoseForKey(cose, keyInfo).getOrElse {
                 throw IllegalArgumentException(it.message.defaultMessage)
             }
 

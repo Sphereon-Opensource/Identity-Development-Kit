@@ -32,6 +32,7 @@ import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.jar.StubVerifyRequestObjectCommand
 import com.sphereon.oauth2.server.authorization.impl.command.orchestration.StubAuthorizationServerService
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
+import com.sphereon.oauth2.server.authorization.impl.testutil.StubAuthenticationRoutePlanner
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
@@ -183,6 +184,14 @@ class StandardAuthorizeRequestCommandImplTest {
             pendingAuthorizationSessionStore = FakePendingAuthorizationSessionStore(),
             loginSessionStore = NoOpLoginSessionStore(),
             loginSessionIdProvider = NoOpLoginSessionIdProvider(),
+            authenticationRoutePlanner = StubAuthenticationRoutePlanner {
+                com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteDecision(
+                    route = com.sphereon.oauth2.server.authorization.routing.AuthenticationRoute.LOCAL_LOGIN,
+                    hostedAuthorizationServerId = "11111111-1111-4111-8111-111111111111",
+                    hostedAuthorizationServerRevision = 0,
+                    localLoginAllowed = true,
+                )
+            },
             verifyRequestObjectCommand = StubVerifyRequestObjectCommand(ctx.execution),
             clock = FixedClock(Instant.fromEpochSeconds(1_700_000_000)),
         )

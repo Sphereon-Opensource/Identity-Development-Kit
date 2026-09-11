@@ -84,6 +84,10 @@ ktlint_standard_enum-entry-name-case = disabled
 [**/IdentifierMethod.kt]
 ktlint_standard_enum-entry-name-case = disabled
 
+# TS 11 / ISO 18045 catalog wire values (iso_18045_high, claim, aki, ...)
+[**/catalog/**/AttestationCatalogModels.kt]
+ktlint_standard_enum-entry-name-case = disabled
+
 [**/CryptoLibsEcdsaKeySupport.kt]
 ktlint_standard_property-naming = disabled
 

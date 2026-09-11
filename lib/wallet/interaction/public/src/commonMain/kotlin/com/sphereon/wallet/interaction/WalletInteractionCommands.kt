@@ -40,6 +40,21 @@ interface StartCapturedWalletInteractionCommand : ServiceCommand<CapturedInterac
     }
 }
 
+/**
+ * Resolves the authoritative wallet view of a protocol counterparty through the authority selected
+ * by the runtime plan. WALLET_APP remains the protocol interpreter: this command accepts the
+ * already-classified counterparty summary and never receives the captured protocol payload.
+ */
+interface ResolveWalletCounterpartyEncounterCommand :
+    ServiceCommand<WalletCounterpartyEncounterRequest, WalletCounterpartyEncounterResult, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+    override val actionType: ActionType get() = ActionType.CREATE
+
+    companion object {
+        const val COMMAND_ID: String = "wallet.interaction.resolve-counterparty-encounter"
+    }
+}
+
 interface ResumeWalletInteractionCommand : ServiceCommand<ResumeWalletInteractionArgs, WalletInteractionSession, IdkError> {
     override val commandId: String get() = COMMAND_ID
     override val actionType: ActionType get() = ActionType.READ
@@ -223,6 +238,11 @@ interface ConsumeWalletInteractionCompletionHandoffCommand :
 }
 
 @Serializable
+data class ConsumeWalletInteractionHandoffRequest(
+    val ref: WalletInteractionSensitiveInputRef,
+)
+
+@Serializable
 data class ConsumeWalletInteractionHandoffArgs(
     val walletUnitId: String,
     val sessionId: WalletInteractionSessionId,
@@ -256,6 +276,13 @@ interface WalletInteractionCommandBindings {
     fun startCapturedWalletInteraction(registry: SessionScopedCommandRegistry): StartCapturedWalletInteractionCommand =
         registry.get(StartCapturedWalletInteractionCommand.COMMAND_ID) as? StartCapturedWalletInteractionCommand
             ?: error("No binding for ${StartCapturedWalletInteractionCommand.COMMAND_ID}")
+
+    @Provides
+    fun resolveWalletCounterpartyEncounter(
+        registry: SessionScopedCommandRegistry,
+    ): ResolveWalletCounterpartyEncounterCommand =
+        registry.get(ResolveWalletCounterpartyEncounterCommand.COMMAND_ID) as? ResolveWalletCounterpartyEncounterCommand
+            ?: error("No binding for ${ResolveWalletCounterpartyEncounterCommand.COMMAND_ID}")
 
     @Provides
     fun resumeWalletInteraction(registry: SessionScopedCommandRegistry): ResumeWalletInteractionCommand =

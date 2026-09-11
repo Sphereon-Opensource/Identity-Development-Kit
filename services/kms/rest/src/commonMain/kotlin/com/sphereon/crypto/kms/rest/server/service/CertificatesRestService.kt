@@ -17,12 +17,28 @@ import com.sphereon.crypto.kms.rest.api.generated.models.IssueCertificateFromCsr
 import com.sphereon.crypto.kms.rest.api.generated.models.IssueCertificateRequest
 import com.sphereon.crypto.kms.rest.api.generated.models.StoreCertificateChainRequest
 import com.sphereon.crypto.kms.rest.api.generated.models.StoreCertificateRequest
+import com.sphereon.crypto.kms.rest.api.command.CertificateReferenceResponse
+import com.sphereon.crypto.kms.rest.api.command.CertificateReferenceMetadataResponse
+import com.sphereon.crypto.kms.rest.api.command.CertificateReferencesResponse
+import com.sphereon.crypto.certificate.persistence.CertificateReferenceKind
+import com.sphereon.crypto.certificate.persistence.CertificateReferenceSource
+import com.sphereon.crypto.kms.rest.api.command.RegisterCertificateReferenceInput
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("CertificatesRestService", exact = true)
 interface CertificatesRestService {
+    suspend fun registerCertificateReference(request: RegisterCertificateReferenceInput): CertificateReferenceResponse
+
+    suspend fun listCertificateReferences(
+        providerId: String? = null,
+        kind: CertificateReferenceKind? = null,
+        source: CertificateReferenceSource? = null,
+    ): CertificateReferencesResponse
+
+    suspend fun getCertificateReference(id: String): CertificateReferenceMetadataResponse
+
     suspend fun generateCsr(request: GenerateCertificateSigningRequestRequest): CertificateSigningRequestResponse
 
     suspend fun issueCertificate(request: IssueCertificateRequest): CertificateResponse

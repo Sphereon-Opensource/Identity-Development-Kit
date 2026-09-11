@@ -245,87 +245,6 @@ class ConfigBackedUserAuthenticationProvider(
         return null
     }
 
-    private fun findAccountByWebAuthnCredential(assertion: UserCredentials.WebAuthnAssertion): String? {
-        val hintedAccounts =
-            listOfNotNull(assertion.userIdHint, assertion.userHandle)
-                .mapNotNull { resolveUsername(it) }
-                .distinct()
-        for (account in hintedAccounts) {
-            if (assertion.credentialId in configuredWebAuthnCredentialIds(account)) return account
-        }
-        return listConfiguredAccounts().firstOrNull { account ->
-            assertion.credentialId in configuredWebAuthnCredentialIds(account)
-        }
-    }
-
-    private fun configuredWebAuthnCredentialIds(username: String): Set<String> =
-        configService
-            .getPropertyAsString(accountKey(username, ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF))
-            ?.split(',')
-            ?.mapNotNullTo(mutableSetOf()) { it.trim().takeIf(String::isNotEmpty) }
-            ?: emptySet()
-
-    private fun configuredWebAuthnPolicy(): ConfigBackedWebAuthnPolicy? {
-        val rpId = configService.getPropertyAsString(WEBAUTHN_RP_ID_KEY)?.trim()?.takeIf(String::isNotEmpty) ?: return null
-        val allowedOrigins =
-            configService
-                .getPropertyAsString(WEBAUTHN_ALLOWED_ORIGINS_KEY)
-                ?.split(',')
-                ?.mapNotNullTo(mutableSetOf()) { it.trim().takeIf(String::isNotEmpty) }
-                ?.takeIf { it.isNotEmpty() }
-                ?: return null
-        val userVerification =
-            configService
-                .getPropertyAsString(WEBAUTHN_USER_VERIFICATION_KEY, "required")
-                ?.trim()
-                ?.lowercase()
-                ?: "required"
-        if (userVerification !in setOf("required", "preferred", "discouraged")) return null
-        val attestationPolicy =
-            configService
-                .getPropertyAsString(WEBAUTHN_ATTESTATION_POLICY_KEY, "none")
-                ?.trim()
-                ?.lowercase()
-                ?: "none"
-        if (attestationPolicy !in setOf("none", "indirect", "direct", "enterprise")) return null
-        val allowedTransports =
-            configService
-                .getPropertyAsString(WEBAUTHN_ALLOWED_TRANSPORTS_KEY)
-                ?.split(',')
-                ?.mapNotNullTo(mutableSetOf()) { it.trim().takeIf(String::isNotEmpty) }
-                ?: emptySet()
-        val backupPolicy =
-            configService
-                .getPropertyAsString(WEBAUTHN_BACKUP_STATE_POLICY_KEY, "allow-any")
-                ?.trim()
-                ?.lowercase()
-                ?: "allow-any"
-        if (backupPolicy !in setOf("allow-any", "require-backup-eligible", "require-backed-up", "forbid-backed-up")) return null
-        val challengeTtlSeconds =
-            configService
-                .getPropertyAsString(WEBAUTHN_CHALLENGE_TTL_SECONDS_KEY, "300")
-                ?.toLongOrNull()
-                ?.takeIf { it > 0 }
-                ?: return null
-        val prfEnabled =
-            configService
-                .getPropertyAsString(WEBAUTHN_LEVEL3_PRF_ENABLED_KEY, "false")
-                ?.toBooleanStrictOrNull()
-                ?: false
-        if (rpId.startsWith("http://") || rpId.startsWith("https://") || rpId.contains('/')) return null
-        if (allowedOrigins.any { !it.startsWith("https://") && !it.startsWith("http://localhost") && !it.startsWith("http://127.0.0.1") }) return null
-        return ConfigBackedWebAuthnPolicy(
-            rpId = rpId,
-            allowedOrigins = allowedOrigins,
-            userVerification = userVerification,
-            attestationPolicy = attestationPolicy,
-            allowedTransports = allowedTransports,
-            backupPolicy = backupPolicy,
-            challengeTtlSeconds = challengeTtlSeconds,
-            level3PrfEnabled = prfEnabled,
-        )
-    }
-
     /**
      * Discover configured account names by scanning property keys under `oauth2.users.accounts`.
      * Returns the unique first segment after the prefix for every property under the account
@@ -371,20 +290,10 @@ class ConfigBackedUserAuthenticationProvider(
         private const val ACCOUNTS_PREFIX_NO_DOT: String = "oauth2.users.accounts"
 
         const val ACCOUNT_PASSWORD_LEAF: String = "password"
-        const val ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF: String = "webauthn.credential-ids"
         const val ACCOUNT_SUB_LEAF: String = "sub"
         const val ACCOUNT_EMAIL_LEAF: String = "email"
         const val ACCOUNT_EMAIL_VERIFIED_LEAF: String = "email-verified"
         const val ACCOUNT_CLAIMS_LEAF: String = "claims"
-
-        const val WEBAUTHN_RP_ID_KEY: String = "oauth2.users.webauthn.rp-id"
-        const val WEBAUTHN_ALLOWED_ORIGINS_KEY: String = "oauth2.users.webauthn.allowed-origins"
-        const val WEBAUTHN_ATTESTATION_POLICY_KEY: String = "oauth2.users.webauthn.attestation-policy"
-        const val WEBAUTHN_USER_VERIFICATION_KEY: String = "oauth2.users.webauthn.user-verification"
-        const val WEBAUTHN_ALLOWED_TRANSPORTS_KEY: String = "oauth2.users.webauthn.allowed-transports"
-        const val WEBAUTHN_BACKUP_STATE_POLICY_KEY: String = "oauth2.users.webauthn.backup-state-policy"
-        const val WEBAUTHN_CHALLENGE_TTL_SECONDS_KEY: String = "oauth2.users.webauthn.challenge-ttl-seconds"
-        const val WEBAUTHN_LEVEL3_PRF_ENABLED_KEY: String = "oauth2.users.webauthn.level3.prf-enabled"
 
         const val DEFAULT_ITERATIONS: Int = 210_000
 
@@ -429,42 +338,5 @@ class ConfigBackedUserAuthenticationProvider(
             username: String,
             leaf: String,
         ): String = "${accountPrefix(username)}$leaf"
-    }
-}
-
-private data class ConfigBackedWebAuthnPolicy(
-    val rpId: String,
-    val allowedOrigins: Set<String>,
-    val userVerification: String,
-    val attestationPolicy: String,
-    val allowedTransports: Set<String>,
-    val backupPolicy: String,
-    val challengeTtlSeconds: Long,
-    val level3PrfEnabled: Boolean,
-) {
-    fun validate(assertion: UserCredentials.WebAuthnAssertion): Result<Unit> {
-        if (assertion.assertionEvidenceRef.isNullOrBlank()) return Result.failure(IllegalArgumentException("Missing verified WebAuthn assertion evidence"))
-        if (assertion.rpId != rpId) return Result.failure(IllegalArgumentException("WebAuthn RP ID mismatch"))
-        val origin = assertion.origin ?: return Result.failure(IllegalArgumentException("Missing WebAuthn origin"))
-        if (origin !in allowedOrigins) return Result.failure(IllegalArgumentException("WebAuthn origin mismatch"))
-        if (userVerification == "required" && assertion.userVerified != true) {
-            return Result.failure(IllegalArgumentException("WebAuthn user verification is required"))
-        }
-        val transport = assertion.transport
-        if (allowedTransports.isNotEmpty() && transport != null && transport !in allowedTransports) {
-            return Result.failure(IllegalArgumentException("WebAuthn transport is not allowed"))
-        }
-        when (backupPolicy) {
-            "require-backup-eligible" ->
-                if (assertion.backupEligible != true) return Result.failure(IllegalArgumentException("WebAuthn backup eligibility is required"))
-            "require-backed-up" ->
-                if (assertion.backupState != true) return Result.failure(IllegalArgumentException("WebAuthn backed-up state is required"))
-            "forbid-backed-up" ->
-                if (assertion.backupState == true) return Result.failure(IllegalArgumentException("WebAuthn backed-up state is not allowed"))
-        }
-        if (assertion.prfCapable && !level3PrfEnabled) {
-            return Result.failure(IllegalArgumentException("WebAuthn PRF capability is not enabled"))
-        }
-        return Result.success(Unit)
     }
 }

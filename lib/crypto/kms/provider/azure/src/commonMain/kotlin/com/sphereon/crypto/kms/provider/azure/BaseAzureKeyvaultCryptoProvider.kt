@@ -62,6 +62,10 @@ abstract class BaseAzureKeyvaultCryptoProvider(
     KeyStoreService {
     override val id: String = config.applicationId
 
+    /** True only when the platform implementation has a usable certificate client. */
+    protected open val supportsProviderCertificateReferenceReads: Boolean
+        get() = false
+
     override val settings: KeyProviderSettings?
         get() = throw UnsupportedOperationException("Azure Key Vault settings requires a platform-specific implementation")
 
@@ -89,6 +93,11 @@ abstract class BaseAzureKeyvaultCryptoProvider(
                         operation = KmsProviderOperation.IMPORT_KEY,
                         supported = true,
                         notes = "Supports importing EC and RSA keys",
+                    ),
+                    OperationCapability(
+                        operation = KmsProviderOperation.REGISTER_KEY_REFERENCE,
+                        supported = true,
+                        notes = "Inspects an existing Azure Key Vault key and registers only its public reference",
                     ),
                     OperationCapability(
                         operation = KmsProviderOperation.EXPORT_KEY,
@@ -251,7 +260,18 @@ abstract class BaseAzureKeyvaultCryptoProvider(
                         operation = KmsProviderOperation.ATTESTATION,
                         supported = false,
                     ),
-                ),
+                ) +
+                    if (supportsProviderCertificateReferenceReads) {
+                        arrayOf(
+                            OperationCapability(
+                                operation = KmsProviderOperation.GET_CERTIFICATE,
+                                supported = true,
+                                notes = "Reads public provider-native certificate material",
+                            ),
+                        )
+                    } else {
+                        emptyArray()
+                    },
             // Key type support - EC for signing, RSA for key wrapping/encryption
             supportedKeyTypes = arrayOf(KeyTypeMapping.EC, KeyTypeMapping.RSA),
             supportedCurves = arrayOf(Curve.P_256, Curve.Secp256k1, Curve.P_384, Curve.P_521),

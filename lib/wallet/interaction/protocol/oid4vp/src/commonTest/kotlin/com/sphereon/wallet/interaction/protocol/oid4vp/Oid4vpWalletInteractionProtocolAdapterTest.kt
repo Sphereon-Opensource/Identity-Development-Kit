@@ -10,11 +10,14 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
+import com.sphereon.openid.oid4vp.common.VpFormatInfo
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
@@ -26,6 +29,7 @@ import com.sphereon.openid.oid4vp.dcql.w3cVcMeta
 import com.sphereon.openid.oid4vp.holder.JarmOptions
 import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
+import com.sphereon.openid.oid4vp.holder.PreparedPresentation
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
 import com.sphereon.openid.oid4vp.holder.SubmissionResult
@@ -46,7 +50,12 @@ import com.sphereon.wallet.credential.CredentialValidityWindow
 import com.sphereon.wallet.credential.IdentifierRef
 import com.sphereon.wallet.credential.KeyRef
 import com.sphereon.wallet.credential.WalletCredentialStore
+import com.sphereon.wallet.credential.WalletHolderIdentifierKind
+import com.sphereon.wallet.credential.WalletHolderVerificationMethod
+import com.sphereon.wallet.WalletHolderIdentityResolver
+import com.sphereon.wallet.WalletHolderVerificationMethodResolver
 import com.sphereon.wallet.interaction.WalletClaimDescriptor
+import com.sphereon.wallet.interaction.WalletFailureDisposition
 import com.sphereon.wallet.interaction.WalletCounterpartyAssociationCandidate
 import com.sphereon.wallet.interaction.WalletCounterpartyAssociationDecision
 import com.sphereon.wallet.interaction.WalletCounterpartyAssociationRequest
@@ -82,6 +91,7 @@ import com.sphereon.wallet.interaction.WalletProtocolExecutionRequest
 import com.sphereon.wallet.interaction.WalletProtocolExecutor
 import com.sphereon.wallet.interaction.WalletProtocolMatchStrength
 import com.sphereon.wallet.interaction.WalletSecurityAssurance
+import com.sphereon.wallet.interaction.WalletAttendedAuthorizationRegistry
 import com.sphereon.wallet.interaction.WalletSecurityChallenge
 import com.sphereon.wallet.interaction.WalletSecurityChallengeKind
 import com.sphereon.wallet.interaction.WalletSecurityGate
@@ -89,6 +99,8 @@ import com.sphereon.wallet.interaction.WalletSecurityGateRequest
 import com.sphereon.wallet.interaction.WalletSecurityGateResult
 import com.sphereon.wallet.interaction.WalletSecurityGrant
 import com.sphereon.wallet.interaction.WalletSecurityOperation
+import com.sphereon.wallet.interaction.WalletAttributeSourceKind
+import com.sphereon.wallet.interaction.emittedAttributeSources
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
 import com.sphereon.wallet.interaction.WalletTrustPolicy
 import com.sphereon.wallet.interaction.WalletTrustStatus
@@ -101,6 +113,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -118,6 +131,233 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             val match = adapter.canHandle(WalletEntryPoint.rawQr("openid4vp://?client_id=verifier&response_type=vp_token"))
 
             assertEquals(WalletProtocolMatchStrength.STRONG, match.strength)
+        }
+
+    @Test
+    fun `a self-asserted verifier display name is not promoted`() =
+        runTest {
+            val holder =
+                RecordingOid4vpHolderService(
+                    resolvedRequest =
+                        resolvedRequest().copy(
+                            verifierInfo =
+                                VerifierInfo(
+                                    clientId = "https://rp.example",
+                                    clientIdScheme = ClientIdScheme.OPENID_FEDERATION,
+                                    displayName = "Acme Relying Party",
+                                    trustRoot = "https://ta.example",
+                                ),
+                        ),
+                )
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = holder,
+                )
+            val state =
+                adapter
+                    .start(
+                        WalletInteractionContext(
+                            sessionId = WalletInteractionSessionId("self-asserted-not-promoted"),
+                            walletUnitId = "wallet",
+                            executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                            trustPolicy = WalletTrustPolicy.allow,
+                        ),
+                        WalletEntryPoint.rawQr("openid4vp://?client_id=https://rp.example"),
+                    ).state
+            val counterparty = requireNotNull(state.counterparty)
+            assertEquals("Acme Relying Party", counterparty.displayName)
+            assertEquals(WalletAttributeSourceKind.SELF_ASSERTED, counterparty.displayNameSource?.kind)
+            assertNull(counterparty.displayNameSource?.authority, "display metadata is the party's own claim")
+            assertNull(counterparty.detail, "VerifierInfo has no DCR contacts, federation legal name, or certificate subject")
+            assertEquals("OPENID_FEDERATION", counterparty.metadata["client_id_scheme"])
+        }
+
+    @Test
+    fun `x509 client_id_scheme does not mint an access-certificate legal name`() =
+        runTest {
+            val holder =
+                RecordingOid4vpHolderService(
+                    resolvedRequest =
+                        resolvedRequest().copy(
+                            verifierInfo =
+                                VerifierInfo(
+                                    clientId = "rp.example.org",
+                                    clientIdScheme = ClientIdScheme.X509_SAN_DNS,
+                                    displayName = "Acme Relying Party",
+                                ),
+                        ),
+                )
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = holder,
+                )
+            val state =
+                adapter
+                    .start(
+                        WalletInteractionContext(
+                            sessionId = WalletInteractionSessionId("x509-not-promoted"),
+                            walletUnitId = "wallet",
+                            executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                            trustPolicy = WalletTrustPolicy.allow,
+                        ),
+                        WalletEntryPoint.rawQr("openid4vp://?client_id=rp.example.org"),
+                    ).state
+            val counterparty = requireNotNull(state.counterparty)
+            assertEquals(WalletAttributeSourceKind.SELF_ASSERTED, counterparty.displayNameSource?.kind)
+            assertNull(counterparty.detail)
+            assertNull(counterparty.detail?.legalName)
+            assertEquals("X509_SAN_DNS", counterparty.metadata["client_id_scheme"])
+        }
+
+    @Test
+    fun `a DCR contact is self-asserted, not promoted by arriving on a richer protocol`() =
+        runTest {
+            val holder =
+                RecordingOid4vpHolderService(
+                    resolvedRequest =
+                        resolvedRequest().copy(
+                            request =
+                                AuthorizationRequest(
+                                    clientId = "https://rp.example",
+                                    responseType = "vp_token",
+                                    state = "state",
+                                    additionalParameters =
+                                        mapOf(
+                                            "client_metadata" to
+                                                buildJsonObject {
+                                                    put("client_name", JsonPrimitive("Acme Relying Party"))
+                                                    put("client_uri", JsonPrimitive("https://rp.example"))
+                                                    put("policy_uri", JsonPrimitive("https://rp.example/privacy"))
+                                                    put("contacts", JsonArray(listOf(JsonPrimitive("rp@example.com"))))
+                                                },
+                                        ),
+                                ),
+                            verifierInfo =
+                                VerifierInfo(
+                                    clientId = "https://rp.example",
+                                    clientIdScheme = ClientIdScheme.OPENID_FEDERATION,
+                                    displayName = "Acme Relying Party",
+                                    trustRoot = "https://ta.example",
+                                ),
+                        ),
+                )
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = holder,
+                )
+            val state =
+                adapter
+                    .start(
+                        WalletInteractionContext(
+                            sessionId = WalletInteractionSessionId("dcr-not-promoted"),
+                            walletUnitId = "wallet",
+                            executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                            trustPolicy = WalletTrustPolicy.allow,
+                        ),
+                        WalletEntryPoint.rawQr("openid4vp://?client_id=https://rp.example"),
+                    ).state
+            val counterparty = requireNotNull(state.counterparty)
+            val detail = requireNotNull(counterparty.detail)
+            assertEquals("rp@example.com", detail.contactEmail?.value)
+            assertEquals(WalletAttributeSourceKind.SELF_ASSERTED, detail.contactEmail!!.source.kind)
+            assertNull(detail.contactEmail!!.source.authority)
+            assertEquals("https://rp.example", detail.websiteUri?.value)
+            assertEquals(WalletAttributeSourceKind.SELF_ASSERTED, detail.websiteUri?.source?.kind)
+            assertEquals("https://rp.example/privacy", detail.privacyPolicyUri?.value)
+            assertEquals(WalletAttributeSourceKind.SELF_ASSERTED, detail.privacyPolicyUri?.source?.kind)
+            assertNull(detail.legalName, "federation scheme does not invent a superior-attested legal name")
+            assertEquals(WalletAttributeSourceKind.SELF_ASSERTED, counterparty.displayNameSource?.kind)
+            assertEquals("OPENID_FEDERATION", counterparty.metadata["client_id_scheme"])
+        }
+
+    @Test
+    fun `every emitted attested source names an authority`() =
+        runTest {
+            val holder =
+                RecordingOid4vpHolderService(
+                    resolvedRequest =
+                        resolvedRequest().copy(
+                            request =
+                                AuthorizationRequest(
+                                    clientId = "https://rp.example",
+                                    responseType = "vp_token",
+                                    state = "state",
+                                    additionalParameters =
+                                        mapOf(
+                                            "client_metadata" to
+                                                buildJsonObject {
+                                                    put("contacts", JsonArray(listOf(JsonPrimitive("rp@example.com"))))
+                                                    put("client_uri", JsonPrimitive("https://rp.example"))
+                                                },
+                                        ),
+                                ),
+                            verifierInfo =
+                                VerifierInfo(
+                                    clientId = "https://rp.example",
+                                    clientIdScheme = ClientIdScheme.X509_SAN_DNS,
+                                    displayName = "Acme Relying Party",
+                                ),
+                        ),
+                )
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = holder,
+                )
+            val state =
+                adapter
+                    .start(
+                        WalletInteractionContext(
+                            sessionId = WalletInteractionSessionId("emitted-attested-authority"),
+                            walletUnitId = "wallet",
+                            executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                            trustPolicy = WalletTrustPolicy.allow,
+                        ),
+                        WalletEntryPoint.rawQr("openid4vp://?client_id=rp.example.org"),
+                    ).state
+            val counterparty = requireNotNull(state.counterparty)
+            val emitted = counterparty.emittedAttributeSources()
+            assertEquals(
+                setOf(WalletAttributeSourceKind.SELF_ASSERTED),
+                emitted.map { it.kind }.toSet(),
+                "adapters currently emit only SELF_ASSERTED; adding an attested emission is a deliberate edit of this pin, after which the offenders check below is no longer vacuous",
+            )
+            val offenders =
+                emitted.filter {
+                    it.kind != WalletAttributeSourceKind.SELF_ASSERTED && it.authority.isNullOrBlank()
+                }
+            assertEquals(emptyList(), offenders)
+            assertEquals(WalletAttributeSourceKind.SELF_ASSERTED, counterparty.detail?.contactEmail?.source?.kind)
+            assertNull(counterparty.detail?.legalName)
+        }
+
+    @Test
+    fun `identifier fallback is not copied into legalName`() =
+        runTest {
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = RecordingOid4vpHolderService(),
+                )
+            val state =
+                adapter
+                    .start(
+                        WalletInteractionContext(
+                            sessionId = WalletInteractionSessionId("identifier-fallback"),
+                            walletUnitId = "wallet",
+                            executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                            trustPolicy = WalletTrustPolicy.allow,
+                        ),
+                        WalletEntryPoint.rawQr("openid4vp://?client_id=verifier"),
+                    ).state
+            val counterparty = requireNotNull(state.counterparty)
+            assertEquals("verifier", counterparty.displayName)
+            assertNull(counterparty.displayNameSource)
+            assertNull(counterparty.detail)
+            assertNull(counterparty.detail?.legalName)
         }
 
     @Test
@@ -398,7 +638,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         }
 
     @Test
-    fun mdocOpenid4vpAuthorizationRequestsAreStrongOid4vpMatches() =
+    fun iso18013MdocOpenid4vpAuthorizationRequestsAreNotRegularOid4vpMatches() =
         runTest {
             val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
 
@@ -410,7 +650,60 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     ),
                 )
 
-            assertEquals(WalletProtocolMatchStrength.STRONG, match.strength)
+            assertEquals(WalletProtocolMatchStrength.NONE, match.strength)
+        }
+
+    @Test
+    fun regularOid4vpDoesNotClaimInlinePresentationExchangeRequests() =
+        runTest {
+            val adapter = Oid4vpWalletInteractionProtocolAdapter(Oid4vpPresentationExecutor.notConfigured)
+
+            val match =
+                adapter.canHandle(
+                    WalletEntryPoint.link(
+                        "openid4vp://?client_id=verifier.example&response_type=vp_token&" +
+                            "presentation_definition=%7B%22id%22%3A%22mDL%22%2C%22input_descriptors%22%3A%5B%5D%7D",
+                    ),
+                )
+
+            assertEquals(WalletProtocolMatchStrength.NONE, match.strength)
+        }
+
+    @Test
+    fun regularOid4vpFailsClosedWhenAResolvedRequestContainsPresentationExchange() =
+        runTest {
+            val resolved = resolvedRequest()
+            val holder =
+                RecordingOid4vpHolderService(
+                    resolvedRequest =
+                        resolved.copy(
+                            request =
+                                resolved.request.copy(
+                                    additionalParameters =
+                                        mapOf(
+                                            "presentation_definition" to
+                                                buildJsonObject {
+                                                    put("id", JsonPrimitive("mDL"))
+                                                    put("input_descriptors", JsonArray(emptyList()))
+                                                },
+                                        ),
+                                ),
+                        ),
+                )
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = Oid4vpPresentationExecutor.notConfigured,
+                    holder = holder,
+                )
+
+            val session =
+                adapter.start(
+                    walletContext(),
+                    WalletEntryPoint.rawQr("openid4vp://?client_id=verifier&response_type=vp_token"),
+                )
+
+            assertEquals(WalletInteractionStatus.Failed, session.state.status)
+            assertEquals("OID4VP_PRESENTATION_EXCHANGE_UNSUPPORTED", session.state.error?.arguments?.get("providerErrorCode"))
         }
 
     @Test
@@ -426,14 +719,14 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 adapter.start(
                     walletContext(),
                     WalletEntryPoint.link(
-                        "mdoc-openid4vp://?client_id=verifier.example&request_uri=https%3A%2F%2Fverifier.example%2Fexpired",
+                        "openid4vp://?client_id=verifier.example&request_uri=https%3A%2F%2Fverifier.example%2Fexpired",
                     ),
                 )
 
             assertEquals(WalletInteractionStatus.Failed, session.state.status)
             assertEquals("oid4vp.request_uri_expired", session.state.error?.code)
             assertEquals("HTTP_410", session.state.error?.arguments?.get("providerErrorCode"))
-            assertFalse(session.state.error?.retryable ?: true)
+            assertEquals(WalletFailureDisposition.TERMINAL, session.state.error?.disposition)
         }
 
     @Test
@@ -451,12 +744,12 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                 adapter.start(
                     walletContext(),
                     WalletEntryPoint.link(
-                        "mdoc-openid4vp://?client_id=verifier.example&request_uri=https%3A%2F%2Fverifier.example%2Frequest",
+                        "openid4vp://?client_id=verifier.example&request_uri=https%3A%2F%2Fverifier.example%2Frequest",
                     ),
                 )
 
             assertEquals("oid4vp.request_uri_fetch_failed", session.state.error?.code)
-            assertTrue(session.state.error?.retryable == true)
+            assertEquals(WalletFailureDisposition.REPEATABLE, session.state.error?.disposition)
         }
 
     @Test
@@ -560,6 +853,39 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         assertEquals(true, request.satisfiable)
         assertEquals(true, request.requirements.single().multipleAllowed)
         assertEquals(listOf(JsonPrimitive("address"), JsonPrimitive("locality")), request.requirements.single().requiredClaimPaths[1])
+        assertTrue(request.requirements.single().candidateDisclosures.isEmpty(), "ids-only projection cannot compute per-candidate cost")
+    }
+
+    @Test
+    fun dcqlQueryDoesNotCopyRequiredClaimPathsOntoEveryCandidateAsDisclosureCost() {
+        val request =
+            DcqlQuery(
+                credentials =
+                    listOf(
+                        DcqlCredentialQuery(
+                            id = "pid",
+                            format = "dc+sd-jwt",
+                            meta = sdJwtVcMeta("urn:test:pid"),
+                            multiple = true,
+                            claims =
+                                listOf(
+                                    DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("given_name")))),
+                                    DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("family_name")))),
+                                    DcqlClaimQuery(path = ClaimsPathPointer(listOf(JsonPrimitive("address"), JsonPrimitive("street_address")))),
+                                ),
+                        ),
+                    ),
+            ).toCredentialSelectionRequest(
+                candidateCredentialIds = mapOf("pid" to listOf("lean-credential", "rich-credential")),
+            )
+
+        val projected = request.requirements.single()
+        assertEquals(listOf("lean-credential", "rich-credential"), projected.candidateCredentialIds)
+        assertEquals(3, projected.requiredClaimPaths.size)
+        assertTrue(
+            projected.candidateDisclosures.isEmpty(),
+            "empty means not computed; copying requiredClaimPaths onto both candidates would hide lean vs rich",
+        )
     }
 
     @Test
@@ -631,6 +957,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                         id = "employee-record",
                         format = CredentialFormat.JWT_VC_JSON,
                         typeRefs = setOf(credentialTypeRef(CredentialFormat.JWT_VC_JSON, CredentialTypeRefKind.W3C_VC_TYPE, "EmployeeCredential")),
+                        holderKid = "https://holder.example/jwks#key-1",
                     ),
                 )
             val resolver = WalletStoreOid4vpCredentialResolver(store)
@@ -745,8 +1072,146 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             assertEquals(listOf("pid-record"), store.credentialReads)
             assertEquals("identity", selected.single().credentialQueryId)
             assertEquals("pid-record-instance", selected.single().credentialId)
-            assertEquals("raw-pid", selected.single().presentation)
+            assertEquals(JsonPrimitive("raw-pid"), selected.single().presentation)
             assertEquals("holder-pid-record", selected.single().holderKeyRef)
+        }
+
+    @Test
+    fun walletStoreSelectedResolverCarriesExplicitHolderIdentityForVcdmCredential() =
+        runTest {
+            val store =
+                RecordingWalletCredentialStore(
+                    walletCredentialRecord(
+                        id = "employee-record",
+                        format = CredentialFormat.JWT_VC_JSON,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.JWT_VC_JSON, CredentialTypeRefKind.W3C_VC_TYPE, "EmployeeCredential")),
+                        holderKid = "https://holder.example/jwks#key-1",
+                    ),
+                )
+            val resolver =
+                WalletStoreOid4vpCredentialResolver(
+                    credentialStore = store,
+                    holderIdentityResolver =
+                        WalletHolderIdentityResolver { walletUnitId, holderKeyRef ->
+                            assertEquals("wallet", walletUnitId)
+                            assertEquals("holder-employee-record", holderKeyRef.alias)
+                            "did:example:wallet-holder"
+                        },
+                    holderVerificationMethodResolver =
+                        WalletHolderVerificationMethodResolver { _, _ ->
+                            WalletHolderVerificationMethod(
+                                value = "https://holder.example/jwks#key-1",
+                                controller = "did:example:wallet-holder",
+                                kind = WalletHolderIdentifierKind.JWKS_KID,
+                                signingAlgorithm = SignatureAlgorithm.ED25519,
+                            )
+                        },
+                )
+
+            val selected =
+                resolver.resolveSelectedCredentials(
+                    context = walletContext(),
+                    state = credentialSelectionState(WalletCredentialSelectionRequest(emptyList(), satisfiable = true)),
+                    resolvedRequest = resolvedRequest(DcqlCredentialQuery(id = "employee", format = "jwt_vc_json", meta = w3cVcMeta(listOf("EmployeeCredential")))),
+                    selectedCredentialIdsByRequirement = mapOf("employee" to listOf("employee-record")),
+                )
+
+            assertEquals("did:example:wallet-holder", selected.single().holderId)
+            assertEquals(SignatureAlgorithm.ED25519, selected.single().holderSigningAlgorithm)
+        }
+
+    @Test
+    fun walletStoreSelectedResolverChoosesDataIntegritySuiteFromExactKeyAlgorithmAndVerifierMetadata() =
+        runTest {
+            val verificationMethod = "https://holder.example/jwks#p256"
+            val store =
+                RecordingWalletCredentialStore(
+                    walletCredentialRecord(
+                        id = "employee-ldp-record",
+                        format = CredentialFormat.LDP_VC,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.LDP_VC, CredentialTypeRefKind.W3C_VC_TYPE, "EmployeeCredential")),
+                        raw = """{"@context":"https://www.w3.org/ns/credentials/v2","type":["VerifiableCredential","EmployeeCredential"],"issuer":"https://issuer.example","credentialSubject":{"id":"https://holder.example/id"}}""",
+                        holderKid = verificationMethod,
+                    ),
+                )
+            val resolver =
+                WalletStoreOid4vpCredentialResolver(
+                    credentialStore = store,
+                    holderIdentityResolver = WalletHolderIdentityResolver { _, _ -> "https://holder.example/id" },
+                    holderVerificationMethodResolver =
+                        WalletHolderVerificationMethodResolver { _, _ ->
+                            WalletHolderVerificationMethod(
+                                value = verificationMethod,
+                                controller = "https://holder.example/id",
+                                kind = WalletHolderIdentifierKind.JWKS_KID,
+                                signingAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                            )
+                        },
+                )
+            val request =
+                resolvedRequest(DcqlCredentialQuery(id = "employee", format = "ldp_vc", meta = w3cVcMeta(listOf("EmployeeCredential"))))
+                    .copy(
+                        clientMetadata =
+                            ClientMetadata(
+                                vpFormatsSupported =
+                                    mapOf(
+                                        "ldp_vc" to
+                                            VpFormatInfo(
+                                                proofTypeValues = listOf("DataIntegrityProof"),
+                                                cryptosuiteValues = listOf("eddsa-rdfc-2022", "ecdsa-rdfc-2019"),
+                                            ),
+                                    ),
+                            ),
+                    )
+
+            val selected =
+                resolver.resolveSelectedCredentials(
+                    context = walletContext(),
+                    state = credentialSelectionState(WalletCredentialSelectionRequest(emptyList(), satisfiable = true)),
+                    resolvedRequest = request,
+                    selectedCredentialIdsByRequirement = mapOf("employee" to listOf("employee-ldp-record")),
+                ).single()
+
+            assertEquals("ecdsa-rdfc-2019", selected.dataIntegrityCryptosuite)
+            assertEquals(SignatureAlgorithm.ECDSA_SHA256, selected.holderSigningAlgorithm)
+            assertEquals(verificationMethod, selected.holderVerificationMethod)
+        }
+
+    @Test
+    fun walletStoreSelectedResolverFailsClosedWhenVcdmHolderIdentityIsAbsent() =
+        runTest {
+            val store =
+                RecordingWalletCredentialStore(
+                    walletCredentialRecord(
+                        id = "employee-record",
+                        format = CredentialFormat.JWT_VC_JSON_LD,
+                        typeRefs = setOf(credentialTypeRef(CredentialFormat.JWT_VC_JSON_LD, CredentialTypeRefKind.W3C_VC_TYPE, "EmployeeCredential")),
+                        holderKid = "https://holder.example/jwks#key-1",
+                    ),
+                )
+
+            val failure =
+                assertFailsWith<IllegalStateException> {
+                    WalletStoreOid4vpCredentialResolver(
+                        credentialStore = store,
+                        holderVerificationMethodResolver =
+                            WalletHolderVerificationMethodResolver { _, _ ->
+                                WalletHolderVerificationMethod(
+                                    value = "https://holder.example/jwks#key-1",
+                                    controller = "https://holder.example/id",
+                                    kind = WalletHolderIdentifierKind.JWKS_KID,
+                                    signingAlgorithm = SignatureAlgorithm.ED25519,
+                                )
+                            },
+                    ).resolveSelectedCredentials(
+                        context = walletContext(),
+                        state = credentialSelectionState(WalletCredentialSelectionRequest(emptyList(), satisfiable = true)),
+                        resolvedRequest = resolvedRequest(DcqlCredentialQuery(id = "employee", format = "jwt_vc_json-ld", meta = w3cVcMeta(listOf("EmployeeCredential")))),
+                        selectedCredentialIdsByRequirement = mapOf("employee" to listOf("employee-record")),
+                    )
+                }
+
+            assertTrue(failure.message.orEmpty().contains("holder identifier is missing"))
         }
 
     @Test
@@ -794,7 +1259,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     selectedCredentialIdsByRequirement = candidates,
                 )
             assertEquals(listOf("doc-active"), store.credentialReads, "only the active record's body should be opened")
-            assertEquals("raw-doc-active", selected.single().presentation)
+            assertEquals(JsonPrimitive("raw-doc-active"), selected.single().presentation)
         }
 
     @Test
@@ -1167,7 +1632,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
 
             assertEquals(WalletInteractionStatus.CredentialSelection, next.status)
             assertEquals("oid4vp.selection_unsatisfiable", next.error?.code)
-            assertEquals(true, next.error?.retryable)
+            assertEquals(WalletFailureDisposition.RESUMABLE, next.error?.disposition)
             assertEquals(0, securityGate.calls)
         }
 
@@ -1257,7 +1722,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
 
             assertEquals(WalletInteractionStatus.Failed, next.status)
             assertEquals("oid4vp.execution_not_configured", next.error?.code)
-            assertEquals(true, next.error?.retryable)
+            assertEquals(WalletFailureDisposition.TERMINAL, next.error?.disposition)
             assertFalse(next.terminal)
             assertEquals(1, securityGate.calls)
         }
@@ -1319,7 +1784,12 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         runTest {
             val privateStore = RecordingPrivateSessionStore()
             val executor = RecordingPresentationExecutor(Oid4vpPresentationExecutionResult.Submitted())
-            val adapter = Oid4vpWalletInteractionProtocolAdapter(presentationExecutor = executor)
+            val attendedAuthorization = RecordingAttendedAuthorizationRegistry()
+            val adapter =
+                Oid4vpWalletInteractionProtocolAdapter(
+                    presentationExecutor = executor,
+                    attendedAuthorizationRegistry = attendedAuthorization,
+                )
             val context =
                 WalletInteractionContext(
                     sessionId = WalletInteractionSessionId("s1"),
@@ -1366,6 +1836,9 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
 
             assertEquals(WalletInteractionStatus.Completed, next.status)
             assertEquals("grant-secret", privateStore.get(next.sessionId, Oid4vpWalletInteractionProtocolAdapter.ADAPTER_ID)?.values?.get("security_grant_id"))
+            assertEquals("grant-secret", attendedAuthorization.grant?.grantId)
+            assertEquals("wallet", attendedAuthorization.walletUnitId)
+            assertEquals("operation:s1-share", attendedAuthorization.operationBinding)
             assertFalse(encoded.contains("grant-secret"))
         }
 
@@ -1724,6 +2197,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         typeRefs: Set<CredentialTypeRef>,
         raw: String = "raw-$id",
         lifecycleState: CredentialLifecycleState = CredentialLifecycleState.ACTIVE,
+        holderKid: String? = null,
     ): CredentialRecord {
         val now = Clock.System.now()
         return CredentialRecord(
@@ -1741,7 +2215,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                         format = format,
                         raw = raw,
                         bodyStorageRef = BodyStorageRef(kind = BodyStorageKind.WALLET_STORE, path = "wallet/$id/body"),
-                        holderKeyRef = KeyRef(alias = "holder-$id"),
+                        holderKeyRef = KeyRef(alias = "holder-$id", kid = holderKid),
                         lifecycleState = lifecycleState,
                         validity = CredentialValidityWindow(),
                         issuedAt = now,
@@ -1888,6 +2362,7 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
         override suspend fun createAuthorizationResponse(
             request: ResolvedOid4vpRequest,
             selectedCredentials: List<SelectedCredential>,
+            preparedPresentations: List<PreparedPresentation>,
         ): IdkResult<AuthorizationResponse, IdkError> {
             createdSelectedCredentials = selectedCredentials
             return Ok(
@@ -1958,8 +2433,8 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
                     SelectedCredential(
                         credentialQueryId = requirementId,
                         credentialId = credentialId,
-                        presentation = "presentation-$credentialId",
-                        format = "dc+sd-jwt",
+                        presentation = JsonPrimitive("presentation-$credentialId"),
+                        credentialFormat = CredentialFormat.SD_JWT_VC,
                     )
                 }
             }
@@ -2016,4 +2491,25 @@ class Oid4vpWalletInteractionProtocolAdapterTest {
             keys.forEach { records.remove(it) }
         }
     }
+}
+
+private class RecordingAttendedAuthorizationRegistry : WalletAttendedAuthorizationRegistry {
+    var walletUnitId: String? = null
+    var operationBinding: String? = null
+    var grant: WalletSecurityGrant? = null
+
+    override suspend fun authorize(
+        walletUnitId: String,
+        operationBinding: String,
+        grant: WalletSecurityGrant,
+    ) {
+        this.walletUnitId = walletUnitId
+        this.operationBinding = operationBinding
+        this.grant = grant
+    }
+
+    override suspend fun consume(
+        walletUnitId: String,
+        operationBinding: String,
+    ): WalletSecurityGrant? = null
 }

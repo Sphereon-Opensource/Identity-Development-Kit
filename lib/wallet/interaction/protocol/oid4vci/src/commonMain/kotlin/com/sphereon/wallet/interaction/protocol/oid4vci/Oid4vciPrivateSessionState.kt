@@ -34,6 +34,10 @@ data class Oid4vciPrivateSessionState(
     // record by id (supersede semantics) instead of the issuer+credential-configuration heuristic
     // used for normal issuance top-up.
     val refreshTargetCredentialRecordId: String? = null,
+    // Exact existing instance ids selected for this refresh. An empty list means all active
+    // instances in the target record (the default batch refresh). Keeping this mapping in the
+    // private session prevents response ordering from ever being confused with record lookup.
+    val refreshTargetCredentialInstanceIds: List<String> = emptyList(),
     // authorization_* + AS issuer/token endpoint pre-exchange
     val authorization: AuthorizationLeg? = null,
     // iae_* family incl. pending flag

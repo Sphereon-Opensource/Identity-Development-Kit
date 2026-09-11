@@ -22,13 +22,13 @@ import com.sphereon.core.api.http.describe.HttpRoute
 import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.core.compat.JsExportCompat
-
-private const val HTTP_NOT_FOUND = 404
+import com.sphereon.core.compat.JsExportIgnoreCompat
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Base class for adapters that want to avoid duplicating endpoint declarations in:
  * - `describe()` (metadata)
- * - `handleRequest()` (routing)
+ * - `handleResolvedRequest()` (routing)
  *
  * The single source of truth becomes [routes]. Both metadata and runtime dispatch are derived from it.
  *
@@ -41,7 +41,7 @@ private const val HTTP_NOT_FOUND = 404
  * `/api/kms/keys/abc123` (serverPrefix + basePath + route).
  */
 @JsExportCompat
-abstract class RoutedHttpAdapter : RoutableHttpAdapter {
+abstract class RoutedHttpAdapter : HttpAdapter {
     protected abstract val mount: HttpAdapterMount
     protected abstract val routes: List<HttpRoute>
     protected open val openApiHints: OpenApiHints? = null
@@ -77,16 +77,11 @@ abstract class RoutedHttpAdapter : RoutableHttpAdapter {
                     "/$it"
                 }
             }
+        if (pattern == "/") {
+            return basePathPrefix.ifEmpty { "/" }
+        }
         return "$basePathPrefix$pattern".replace("//", "/")
     }
-
-    private fun routePatternMatches(
-        route: HttpRoute,
-        request: GenericHttpRequest,
-    ): Boolean =
-        route.endpoint.pathPatterns.any { pattern ->
-            request.matches(route.endpoint.method.name, fullPath(pattern))
-        }
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
@@ -103,36 +98,36 @@ abstract class RoutedHttpAdapter : RoutableHttpAdapter {
             openApiHints = openApiHints,
         )
 
-    override fun canHandle(request: GenericHttpRequest): Boolean = routes.any { routePatternMatches(it, request) }
-
-    override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
-        val matches = routes.filter { routePatternMatches(it, request) }
-        return when (matches.size) {
-            0 -> {
-                errorResponse(HTTP_NOT_FOUND, "Not found: ${request.method} ${request.path}")
+    @JsExportIgnoreCompat
+    override suspend fun handleResolvedRequest(
+        request: GenericHttpRequest,
+        route: com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch,
+    ): GenericHttpResponse {
+        check(route.adapterId == id && request.method.equals(route.method, ignoreCase = true)) {
+            "Preselected route identity does not belong to runtime adapter '$id'"
+        }
+        val matches =
+            routes.filter { candidate ->
+                candidate.endpoint.handlerCommandId == route.handlerCommandId &&
+                    candidate.endpoint.method.name.equals(route.method, ignoreCase = true) &&
+                    candidate.endpoint.pathPatterns.any { pattern ->
+                        fullPath(pattern) == route.matchedPathPattern
+                    }
             }
+        return when (matches.size) {
+            0 -> error("Preselected HTTP handler '${route.handlerCommandId}' is not declared by adapter '$id'")
 
             1 -> {
                 try {
-                    matches.single().handler(request)
+                    matches.single().handler(request.withExtractedParams(route.matchedPathPattern))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (expected: Exception) {
                     errorResponse(expected)
                 }
             }
 
-            else -> {
-                // For multi-pattern routes, compete on the most specific pattern.
-                val best =
-                    matches.maxByOrNull { route ->
-                        route.endpoint.pathPatterns
-                            .maxOf { CompiledPathPattern.compile(fullPath(it)).specificity }
-                    }!!
-                try {
-                    best.handler(request)
-                } catch (expected: Exception) {
-                    errorResponse(expected)
-                }
-            }
+            else -> error("Adapter '$id' declares multiple runtime handlers for '${route.handlerCommandId}'")
         }
     }
 }

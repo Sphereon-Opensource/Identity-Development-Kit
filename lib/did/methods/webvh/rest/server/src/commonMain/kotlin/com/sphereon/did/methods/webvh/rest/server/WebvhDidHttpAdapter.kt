@@ -19,41 +19,15 @@ package com.sphereon.did.methods.webvh.rest.server
 
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.command.PublicApiHttpAdapter
 import com.sphereon.core.api.http.describe.HttpAdapterMount
-import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
-import com.sphereon.did.methods.webvh.command.CreateWebvhDidServiceCommand
-import com.sphereon.did.methods.webvh.command.CreateWitnessProofServiceCommand
-import com.sphereon.did.methods.webvh.command.DeactivateWebvhDidServiceCommand
-import com.sphereon.did.methods.webvh.command.FetchWebvhLogServiceCommand
-import com.sphereon.did.methods.webvh.command.ReplayWebvhLogServiceCommand
-import com.sphereon.did.methods.webvh.command.UpdateWebvhDidServiceCommand
-import com.sphereon.did.methods.webvh.command.UpdateWitnessFileServiceCommand
-import com.sphereon.did.methods.webvh.command.ValidateWebvhTrustServiceCommand
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-
-/**
- * Bundle of the `did:webvh` service commands the REST adapter dispatches
- * to. Constructor-injected so [WebvhDidHttpAdapter] keeps its parameter list
- * within the IDK convention (≤ 7 params; we use 2 with this bundle).
- */
-@Inject
-@SingleIn(SessionScope::class)
-data class WebvhCommands(
-    val create: CreateWebvhDidServiceCommand,
-    val update: UpdateWebvhDidServiceCommand,
-    val deactivate: DeactivateWebvhDidServiceCommand,
-    val createWitnessProof: CreateWitnessProofServiceCommand,
-    val updateWitnessFile: UpdateWitnessFileServiceCommand,
-    val fetchLog: FetchWebvhLogServiceCommand,
-    val replayLog: ReplayWebvhLogServiceCommand,
-    val validateTrust: ValidateWebvhTrustServiceCommand,
-)
 
 /**
  * Exposes the `did:webvh` lifecycle service commands at `/api/v1/did/webvh`.
@@ -67,11 +41,11 @@ data class WebvhCommands(
  */
 @Inject
 @SingleIn(SessionScope::class)
-@Named(WebvhDidHttpAdapter.ID)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(WebvhDidHttpAdapter.ID)
 class WebvhDidHttpAdapter(
     execution: SessionExecution,
-    commands: WebvhCommands,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
 ) : PublicApiHttpAdapter(
         id = ID,
         sessionExecution = execution,
@@ -80,18 +54,8 @@ class WebvhDidHttpAdapter(
                 serverPrefix = "",
                 adapterBasePath = BASE_PATH,
             ),
+        endpointCommandRegistry = endpointCommandRegistry,
     ) {
-    override val serviceCommands: List<ServiceCommand<*, *, *>> =
-        listOf(
-            commands.create,
-            commands.update,
-            commands.deactivate,
-            commands.createWitnessProof,
-            commands.updateWitnessFile,
-            commands.fetchLog,
-            commands.replayLog,
-            commands.validateTrust,
-        )
 
     companion object {
         const val ID = "did.webvh.http"

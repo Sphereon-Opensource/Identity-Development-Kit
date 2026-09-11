@@ -47,6 +47,7 @@ kotlin {
             dependencies {
                 implementation(sphereonlib.co.touchlab.skie.configuration.annotations)
                 api(projects.libCoreApiPublic)
+                implementation(projects.libCryptoCorePublic)
 
                 // Serialization
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)

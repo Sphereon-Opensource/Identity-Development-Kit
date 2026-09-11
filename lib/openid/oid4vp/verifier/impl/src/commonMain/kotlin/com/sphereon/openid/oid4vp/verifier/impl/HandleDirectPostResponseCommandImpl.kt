@@ -290,6 +290,12 @@ class HandleDirectPostResponseCommandImpl(
                 verifierId = processedArgs.verifierId,
                 dcqlQueryId = processedArgs.dcqlQueryId,
                 templateId = processedArgs.templateId,
+                trustedAuthentications = processedArgs.trustedAuthentications,
+                verificationMethodResolutionPolicy = processedArgs.verificationMethodResolutionPolicy,
+                mdocDocumentResponseDecryptionKey = processedArgs.mdocDocumentResponseDecryptionKey,
+                mdocDocumentResponseEncryptionParameters = processedArgs.mdocDocumentResponseEncryptionParameters,
+                mdocDocumentResponseEncryptionProviders = processedArgs.mdocDocumentResponseEncryptionProviders,
+                iso18013MdocGeneratedNonce = processedArgs.iso18013MdocGeneratedNonce,
             )
 
         val validationResult =

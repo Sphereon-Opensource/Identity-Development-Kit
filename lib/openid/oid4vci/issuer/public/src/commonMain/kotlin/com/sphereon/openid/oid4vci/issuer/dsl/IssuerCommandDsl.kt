@@ -18,6 +18,7 @@ package com.sphereon.openid.oid4vci.issuer.dsl
 
 import com.sphereon.openid.oid4vci.common.dsl.CreateCredentialOfferArgsBuilder
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
 
 // ============================================================================
 // Issuer command DSL entry points
@@ -48,6 +49,7 @@ import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
  */
 fun createOfferArgs(
     instanceId: String,
+    authorizationPolicySnapshot: Oid4vciAuthorizationPolicySnapshot,
     builder: CreateCredentialOfferArgsBuilder.() -> Unit,
 ): CreateCredentialOfferArgs {
     val state = CreateCredentialOfferArgsBuilder().apply(builder).buildState()
@@ -62,5 +64,6 @@ fun createOfferArgs(
         txCodeInputMode = state.txCodeInputMode,
         preSeededAttributes = state.preSeededAttributes,
         offerTtlSeconds = state.offerTtlSeconds,
+        authorizationPolicySnapshot = authorizationPolicySnapshot,
     )
 }

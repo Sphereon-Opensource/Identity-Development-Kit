@@ -16,8 +16,10 @@
 
 package com.sphereon.openid.oid4vci.issuer.store
 
+import com.sphereon.core.api.http.callback.CallbackSigningAlgorithm
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -52,6 +54,8 @@ data class IssuanceSession(
     val instanceId: String,
     val issuerId: String,
     val credentialConfigurationIds: List<String>,
+    /** Exact persisted issuance-template resource used to create the offer. */
+    val issuanceTemplateResourceId: String? = null,
     val issuerState: String? = null,
     val authorizationContextRef: String? = null,
     val status: IssuanceSessionStatus,
@@ -86,6 +90,9 @@ data class IssuanceSession(
     val state: String? = null,
     /** Opaque join key returned by an issuer lifecycle extension. Null in the simple IDK issuer path. */
     val lifecycleCorrelationId: String? = null,
+    /** Immutable AS/grant/profile snapshot retained for the complete authorization transaction. */
+    @JsExportIgnoreCompat
+    val authorizationPolicySnapshot: Oid4vciAuthorizationPolicySnapshot? = null,
     val createdAt: Long,
     val expiresAt: Long,
 ) {
@@ -101,6 +108,9 @@ data class IssuanceSessionCallbackConfig(
     val url: String,
     val statuses: List<IssuanceSessionStatus> = emptyList(),
     val includeIssuanceData: Boolean = false,
+    /** Secret reference used to sign this session's callbacks. Absent means the registry default applies. */
+    val secretRef: String? = null,
+    val signing: CallbackSigningAlgorithm? = null,
 )
 
 @JsExportCompat

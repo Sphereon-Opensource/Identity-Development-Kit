@@ -24,7 +24,6 @@ import com.sphereon.cbor.CborMap
 import com.sphereon.cbor.CborUInt
 import com.sphereon.cbor.NumberLabel
 import com.sphereon.cbor.toCborUIntFromUint
-import com.sphereon.cbor.toUInt
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.CoseKeyCborCodec
 import com.sphereon.crypto.core.cose.CoseKeyType
@@ -48,11 +47,19 @@ data class ReaderEngagementSecurity(
             val eReaderKeyBytes: CborEncodedItem<CoseKeyType> = a.required(1)
             val eReaderKey = coseKeyCborCodec.decode(eReaderKeyBytes.value.taggedItem.value).getOrThrow().value
             return ReaderEngagementSecurity(
-                (a.required(0) as CborUInt).toUInt(),
+                exactUInt(a.required(0) as CborUInt, "ReaderEngagementSecurity.cipherSuite"),
                 eReaderKeyBytes.copy(eReaderKey),
             )
         }
     }
+}
+
+private fun exactUInt(
+    value: CborUInt,
+    field: String,
+): UInt {
+    require(value.value in 0..UInt.MAX_VALUE.toLong()) { "$field is outside the UInt range" }
+    return value.value.toUInt()
 }
 
 internal fun ReaderEngagementSecurity.toCborItem(): CborArray<CborItem<*>> =

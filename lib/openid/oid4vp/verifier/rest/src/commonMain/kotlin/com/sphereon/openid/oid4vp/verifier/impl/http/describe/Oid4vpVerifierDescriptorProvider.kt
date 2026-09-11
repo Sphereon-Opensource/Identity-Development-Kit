@@ -21,6 +21,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.openid.oid4vp.verifier.impl.http.Oid4vpVerifierHttpAdapter
+import com.sphereon.openid.oid4vp.verifier.impl.http.command.GetPresentationInvitePageEndpointCommand
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.DirectPostResponseEndpointCommand
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.GetRequestObjectEndpointCommand
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.PostRequestObjectEndpointCommand
@@ -58,10 +59,12 @@ class Oid4vpVerifierDescriptorProvider : HttpAdapterDescriptorProvider {
                 HttpAdapterMount(
                     serverPrefix = "",
                     adapterBasePath = basePath,
-                    tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 1),
+                    tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
                 ),
             endpoints =
                 listOf(
+                    GetPresentationInvitePageEndpointCommand.ENDPOINT,
+                    GetPresentationInvitePageEndpointCommand.INSTANCE_ENDPOINT,
                     GetRequestObjectEndpointCommand.ENDPOINT,
                     PostRequestObjectEndpointCommand.ENDPOINT,
                     DirectPostResponseEndpointCommand.ENDPOINT,

@@ -19,6 +19,10 @@ package com.sphereon.oauth2.server.authorization.impl.command.federation
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
+import com.sphereon.oauth2.client.model.PkceData
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRoute
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteBinding
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteDecision
 import com.sphereon.oauth2.server.authorization.command.federation.FederatedExchangeResult
 import com.sphereon.oauth2.server.authorization.command.federation.HandleFederationOutcomeArgs
 import com.sphereon.oauth2.server.authorization.config.FederationProviderConfig
@@ -36,6 +40,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -59,18 +64,36 @@ class HandleFederationOutcomeCommandImplTest {
 
     private val pendingFederation =
         PendingFederation(
+            tenantId = "tenant-1",
+            hostedAuthorizationServerId = "11111111-1111-4111-8111-111111111111",
+            hostedAuthorizationServerRevision = 3,
+            federationBindingId = "22222222-2222-4222-8222-222222222222",
+            federationBindingRevision = 5,
+            upstreamAuthorizationServerId = "33333333-3333-4333-8333-333333333333",
+            upstreamAuthorizationServerRevision = 7,
+            upstreamIssuer = "https://idp.example.com",
+            downstreamClientId = "downstream-client",
+            authenticationRoute = AuthenticationRouteDecision(
+                AuthenticationRoute.UPSTREAM_REDIRECT,
+                "11111111-1111-4111-8111-111111111111", 3, false,
+                listOf(AuthenticationRouteBinding("22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "Upstream", "https://idp.example.com", 5, 7, mapOf("email" to "email"))),
+                "22222222-2222-4222-8222-222222222222",
+            ),
             sessionId = "sess-federation-outcome",
             state = "state-abc",
             nonce = "nonce-abc",
-            pkceData = null,
+            pkceData = PkceData("v".repeat(64), "c".repeat(43)),
             metadata =
                 AuthorizationServerMetadata(
-                    issuer = "https://as.example.com",
-                    tokenEndpoint = "https://as.example.com/token",
-                    authorizationEndpoint = "https://as.example.com/authorize",
+                    issuer = "https://idp.example.com",
+                    tokenEndpoint = "https://idp.example.com/token",
+                    authorizationEndpoint = "https://idp.example.com/authorize",
                 ),
             returnUrl = "https://rp.example.com/return",
             callbackRedirectUri = "https://as.example.com/federation/callback",
+            providerId = "22222222-2222-4222-8222-222222222222",
+            createdAt = Instant.fromEpochSeconds(0),
+            expiresAt = Instant.fromEpochSeconds(600),
         )
 
     // Passes claims through unchanged.
@@ -109,6 +132,21 @@ class HandleFederationOutcomeCommandImplTest {
         )
 
     @Test
+    fun authenticationRouteRejectsDuplicateGovernedClaimTargets() {
+        assertFailsWith<IllegalArgumentException> {
+            AuthenticationRouteBinding(
+                bindingId = "22222222-2222-4222-8222-222222222222",
+                upstreamResourceId = "33333333-3333-4333-8333-333333333333",
+                displayName = "Upstream",
+                upstreamIssuer = "https://idp.example.com",
+                bindingRevision = 5,
+                upstreamResourceRevision = 7,
+                claimsMapping = mapOf("mail" to "email", "email_address" to "email"),
+            )
+        }
+    }
+
+    @Test
     fun upstreamIdentityClaimsAreWrittenIntoCachedUserInfo() =
         runTest {
             val clock = FakeClock()
@@ -122,6 +160,9 @@ class HandleFederationOutcomeCommandImplTest {
                     upstreamAcr = "urn:example:acr:high",
                     upstreamAmr = listOf("pwd", "totp"),
                     upstreamSid = null,
+                    upstreamSubject = "upstream-user-99",
+                    upstreamAuthTime = null,
+                    validatedAt = clock.now(),
                 )
 
             val result =
@@ -172,6 +213,9 @@ class HandleFederationOutcomeCommandImplTest {
                     upstreamAcr = null,
                     upstreamAmr = null,
                     upstreamSid = null,
+                    upstreamSubject = "upstream-user-77",
+                    upstreamAuthTime = null,
+                    validatedAt = clock.now(),
                 )
 
             val result =
@@ -198,6 +242,58 @@ class HandleFederationOutcomeCommandImplTest {
             // upstream_acr and upstream_amr are absent when the exchange carried null.
             assertFalse("upstream_acr" in claims.claims, "upstream_acr must be absent when null")
             assertFalse("upstream_amr" in claims.claims, "upstream_amr must be absent when null")
+        }
+
+    @Test
+    fun normalizedEvidenceContainsPinnedProvenanceAndNeverCopiesRawProtocolMaterial() =
+        runTest {
+            val clock = FakeClock()
+            val store = InMemoryFederationSessionStore(clock)
+            val pending = pendingFederation.copy(state = "state-evidence", nonce = "nonce-evidence")
+            store.storePendingFederation(pending, flowConfig.pendingTtl)
+
+            val result =
+                buildCommand(store, clock).execute(
+                    HandleFederationOutcomeArgs(
+                        exchange =
+                            FederatedExchangeResult(
+                                claims =
+                                    upstreamClaims("upstream-user-evidence") +
+                                        mapOf(
+                                            "unrelated" to "must-not-enter-evidence",
+                                            "access_token" to "raw-token",
+                                            "authorization_code" to "raw-code",
+                                            "client_secret" to "raw-secret",
+                                        ),
+                                upstreamAcr = "urn:example:acr:high",
+                                upstreamAmr = listOf("pwd", "totp"),
+                                upstreamSid = "upstream-session",
+                                upstreamSubject = "upstream-user-evidence",
+                                upstreamAuthTime = Instant.fromEpochSeconds(10),
+                                validatedAt = Instant.fromEpochSeconds(20),
+                            ),
+                        state = pending.state,
+                        pending = pending,
+                        providerConfig = providerConfig,
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            val completed = store.retrievePendingFederation(pending.state).value
+            val evidence = assertNotNull(completed?.evidence)
+            assertEquals(pending.hostedAuthorizationServerId, evidence.hostedAuthorizationServerId)
+            assertEquals(pending.federationBindingId, evidence.federationBindingId)
+            assertEquals(pending.upstreamIssuer, evidence.upstreamIssuer)
+            assertEquals("upstream-user-evidence", evidence.upstreamSubject)
+            assertEquals("local-user-42", evidence.localSubject)
+            assertEquals(pending.sessionId, evidence.downstreamTransactionId)
+            assertEquals(pending.state, evidence.upstreamTransactionId)
+            assertEquals(setOf("email"), evidence.governedClaims.keys)
+            assertEquals("email", evidence.governedClaims.getValue("email").sourceClaim)
+            assertFalse(evidence.toString().contains("raw-token"))
+            assertFalse(evidence.toString().contains("raw-code"))
+            assertFalse(evidence.toString().contains("raw-secret"))
+            assertFalse(evidence.toString().contains("must-not-enter-evidence"))
         }
 
     // Minimal Clock implementation for deterministic time in tests.

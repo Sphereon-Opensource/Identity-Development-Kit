@@ -10,6 +10,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.requireJsonBody
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.response.ResponseBuilder
@@ -56,6 +57,8 @@ import com.sphereon.data.credential.definition.http.UpdateCredentialDefinitionEn
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.Serializable
@@ -109,12 +112,13 @@ private data class SetCredentialDefinitionLifecycleBody(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<CreateCredentialDefinitionEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(CreateCredentialDefinitionEndpointCommand.COMMAND_ID)
 class CreateCredentialDefinitionEndpointCommandImpl(
     execution: SessionExecution,
     private val service: CreateCredentialDefinitionServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_CREATE,
+        id = CreateCredentialDefinitionEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = CreateCredentialDefinitionEndpointCommand.ENDPOINT,
     ),
@@ -139,12 +143,13 @@ class CreateCredentialDefinitionEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetCredentialDefinitionEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetCredentialDefinitionEndpointCommand.COMMAND_ID)
 class GetCredentialDefinitionEndpointCommandImpl(
     execution: SessionExecution,
     private val service: GetCredentialDefinitionServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_GET,
+        id = GetCredentialDefinitionEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = GetCredentialDefinitionEndpointCommand.ENDPOINT,
     ),
@@ -163,12 +168,13 @@ class GetCredentialDefinitionEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ListCredentialDefinitionsEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListCredentialDefinitionsEndpointCommand.COMMAND_ID)
 class ListCredentialDefinitionsEndpointCommandImpl(
     execution: SessionExecution,
     private val service: ListCredentialDefinitionsServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_LIST,
+        id = ListCredentialDefinitionsEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = ListCredentialDefinitionsEndpointCommand.ENDPOINT,
     ),
@@ -187,12 +193,13 @@ class ListCredentialDefinitionsEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<UpdateCredentialDefinitionEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(UpdateCredentialDefinitionEndpointCommand.COMMAND_ID)
 class UpdateCredentialDefinitionEndpointCommandImpl(
     execution: SessionExecution,
     private val service: UpdateCredentialDefinitionServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_UPDATE,
+        id = UpdateCredentialDefinitionEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = UpdateCredentialDefinitionEndpointCommand.ENDPOINT,
     ),
@@ -217,12 +224,13 @@ class UpdateCredentialDefinitionEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<DeleteCredentialDefinitionEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(DeleteCredentialDefinitionEndpointCommand.COMMAND_ID)
 class DeleteCredentialDefinitionEndpointCommandImpl(
     execution: SessionExecution,
     private val service: DeleteCredentialDefinitionServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_DELETE,
+        id = DeleteCredentialDefinitionEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = DeleteCredentialDefinitionEndpointCommand.ENDPOINT,
     ),
@@ -241,12 +249,13 @@ class DeleteCredentialDefinitionEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<SetCredentialDefinitionClaimsEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(SetCredentialDefinitionClaimsEndpointCommand.COMMAND_ID)
 class SetCredentialDefinitionClaimsEndpointCommandImpl(
     execution: SessionExecution,
     private val service: SetCredentialDefinitionClaimsServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_SET_CLAIMS,
+        id = SetCredentialDefinitionClaimsEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = SetCredentialDefinitionClaimsEndpointCommand.ENDPOINT,
     ),
@@ -267,12 +276,13 @@ class SetCredentialDefinitionClaimsEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<AddCredentialDefinitionClaimEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(AddCredentialDefinitionClaimEndpointCommand.COMMAND_ID)
 class AddCredentialDefinitionClaimEndpointCommandImpl(
     execution: SessionExecution,
     private val service: AddCredentialDefinitionClaimServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_ADD_CLAIM,
+        id = AddCredentialDefinitionClaimEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = AddCredentialDefinitionClaimEndpointCommand.ENDPOINT,
     ),
@@ -293,12 +303,13 @@ class AddCredentialDefinitionClaimEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<UpdateCredentialDefinitionClaimEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(UpdateCredentialDefinitionClaimEndpointCommand.COMMAND_ID)
 class UpdateCredentialDefinitionClaimEndpointCommandImpl(
     execution: SessionExecution,
     private val service: UpdateCredentialDefinitionClaimServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_UPDATE_CLAIM,
+        id = UpdateCredentialDefinitionClaimEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = UpdateCredentialDefinitionClaimEndpointCommand.ENDPOINT,
     ),
@@ -320,12 +331,13 @@ class UpdateCredentialDefinitionClaimEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<RemoveCredentialDefinitionClaimEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(RemoveCredentialDefinitionClaimEndpointCommand.COMMAND_ID)
 class RemoveCredentialDefinitionClaimEndpointCommandImpl(
     execution: SessionExecution,
     private val service: RemoveCredentialDefinitionClaimServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_REMOVE_CLAIM,
+        id = RemoveCredentialDefinitionClaimEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = RemoveCredentialDefinitionClaimEndpointCommand.ENDPOINT,
     ),
@@ -346,12 +358,13 @@ class RemoveCredentialDefinitionClaimEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<SnapshotCredentialDefinitionVersionEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(SnapshotCredentialDefinitionVersionEndpointCommand.COMMAND_ID)
 class SnapshotCredentialDefinitionVersionEndpointCommandImpl(
     execution: SessionExecution,
     private val service: SnapshotCredentialDefinitionVersionServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_SNAPSHOT_VERSION,
+        id = SnapshotCredentialDefinitionVersionEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = SnapshotCredentialDefinitionVersionEndpointCommand.ENDPOINT,
     ),
@@ -370,12 +383,13 @@ class SnapshotCredentialDefinitionVersionEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<SetCredentialDefinitionLifecycleEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(SetCredentialDefinitionLifecycleEndpointCommand.COMMAND_ID)
 class SetCredentialDefinitionLifecycleEndpointCommandImpl(
     execution: SessionExecution,
     private val service: SetCredentialDefinitionLifecycleServiceCommand,
 ) : HttpEndpointCommandAdapter(
-        id = CommandIds.HTTP_SET_LIFECYCLE,
+        id = SetCredentialDefinitionLifecycleEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = SetCredentialDefinitionLifecycleEndpointCommand.ENDPOINT,
     ),

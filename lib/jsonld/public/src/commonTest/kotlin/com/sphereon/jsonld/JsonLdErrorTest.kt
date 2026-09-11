@@ -68,6 +68,22 @@ class JsonLdErrorTest {
     }
 
     @Test
+    fun documentNotAllowedIsFatalForbidden() {
+        val typed =
+            JsonLdError.DocumentNotAllowed(
+                iri = "https://attacker.example/context",
+                reason = "redirect target is not trusted",
+            )
+        val wrapped = IdkError.fromDTO(typed)
+
+        assertEquals("JSONLD_DOCUMENT_NOT_ALLOWED", wrapped.code)
+        assertEquals(ErrorCategory.FORBIDDEN, wrapped.category)
+        assertEquals(IdkError.Severity.FATAL, wrapped.severity)
+        val recovered = assertNotNull(wrapped.sourceAs<JsonLdError.DocumentNotAllowed>())
+        assertEquals("https://attacker.example/context", recovered.iri)
+    }
+
+    @Test
     fun invalidVocabMappingDefaultsToUntpReason() {
         val typed = JsonLdError.InvalidVocabMapping(location = "$.@context[0]")
         assertEquals(

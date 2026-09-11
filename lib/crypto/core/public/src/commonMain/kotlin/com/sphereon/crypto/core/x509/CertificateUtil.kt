@@ -285,6 +285,13 @@ object CertificateCreationUtils {
                 computeRSASubjectKeyIdentifier(jwk)
             }
 
+            JwaKeyType.OKP -> {
+                // RFC 5280's common SKI method is the SHA-1 digest of the
+                // subjectPublicKey BIT STRING, which is also the stable
+                // representation for RFC 8410 Ed25519/Ed448 keys.
+                sha1Digest(jwk.toSubjectPublicKeyInfo().subjectPublicKey.bitCarryingBytes)
+            }
+
             else -> {
                 when (jwk.alg) {
                     JwaAlgorithm.ES256, JwaAlgorithm.ES384, JwaAlgorithm.ES512 -> computeECSubjectKeyIdentifier(jwk)

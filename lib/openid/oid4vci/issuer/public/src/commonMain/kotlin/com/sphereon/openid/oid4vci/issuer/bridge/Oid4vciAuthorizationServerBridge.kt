@@ -23,6 +23,8 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -52,8 +54,11 @@ interface Oid4vciAuthorizationServerBridge {
 
 @JsExportCompat
 data class RegisterPreAuthCodeArgs(
+    val authorizationServer: Oid4vciAuthorizationServerTarget,
     val sessionId: String,
     val credentialConfigurationIds: List<String>,
+    /** Absolute pre-authorized-code expiry, computed once from the public offer TTL. */
+    val expiresAtEpochSeconds: Long,
     val txCodeRequired: Boolean,
     /** Number of digits/characters to generate for the tx_code (PIN). Null = issuer default. */
     val txCodeLength: Int? = null,
@@ -88,6 +93,7 @@ data class ConsumedPreAuthCode(
 
 @JsExportCompat
 data class CreateAuthContextArgs(
+    val authorizationServer: Oid4vciAuthorizationServerTarget,
     val issuerState: String,
     val credentialConfigurationIds: List<String>,
     val authorizationDetails: List<com.sphereon.openid.oid4vci.common.model.Oid4vciAuthorizationDetail>? = null,
@@ -101,6 +107,9 @@ data class AuthorizationContextRef(
 
 @JsExportCompat
 data class ValidateAccessTokenArgs(
+    val authorizationServer: Oid4vciAuthorizationServerTarget,
+    /** Exact credential-issuer resource audience required for external JWT access tokens. */
+    val expectedAudience: String,
     val accessToken: String,
     val dpopProof: String? = null,
     /**
@@ -139,6 +148,10 @@ data class ValidatedWalletInstanceAttestationEvidence(
 
 @JsExportCompat
 data class ValidatedTokenContext(
+    /** Catalog resource identity whose trust material verified this token. */
+    val authorizationServerId: String = "",
+    /** Exact verified token issuer, pinned to the selected catalog resource. */
+    val authorizationServerIssuer: String = "",
     val subject: String,
     val clientId: String,
     val scope: String?,
@@ -189,3 +202,24 @@ data class ValidatedTokenContext(
 data class AugmentAsMetadataArgs(
     val baseMetadata: JsonObject,
 )
+
+@JsExportCompat
+@kotlinx.serialization.Serializable
+data class Oid4vciAuthorizationServerTarget(
+    val id: String,
+    val issuer: String,
+    val deployment: Oid4vciAuthorizationServerDeployment,
+    val runtimeServerKey: String? = null,
+    val tokenEndpoint: String,
+    val jwksUri: String? = null,
+)
+
+fun Oid4vciAuthorizationPolicySnapshot.authorizationServerTarget(): Oid4vciAuthorizationServerTarget =
+    Oid4vciAuthorizationServerTarget(
+        id = authorizationServerId.toString(),
+        issuer = authorizationServerIssuer,
+        deployment = authorizationServerDeployment,
+        runtimeServerKey = authorizationServerRuntimeKey,
+        tokenEndpoint = authorizationServerTokenEndpoint,
+        jwksUri = authorizationServerJwksUri,
+    )

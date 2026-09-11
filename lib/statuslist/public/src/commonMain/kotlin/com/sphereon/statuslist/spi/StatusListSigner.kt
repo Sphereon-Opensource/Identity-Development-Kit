@@ -22,6 +22,8 @@ import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.StatusPurpose
+import com.sphereon.statuslist.MdocStatusListPayload
+import com.sphereon.statuslist.MdocStatusListProfile
 
 /**
  * Builds and signs the hostable status-list token (envelope construction + JWS/COSE signing) from
@@ -81,4 +83,9 @@ data class SignStatusListTokenArgs(
     val issuedAtEpochSeconds: Long,
     val ttlSeconds: Long? = null,
     val expiresAtEpochSeconds: Long? = null,
+    /** Optional ISO/IEC 18013-5 profile selected by the status-list definition. */
+    val mdocProfile: MdocStatusListProfile? = null,
+    /** Binary/text-keyed payload supplied by the status-list driver for the mdoc signer. */
+    val mdocPayload: MdocStatusListPayload? = null,
+    val aggregationUri: String? = null,
 )

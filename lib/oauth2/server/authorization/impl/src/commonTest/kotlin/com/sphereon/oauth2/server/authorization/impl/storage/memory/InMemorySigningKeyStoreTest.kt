@@ -46,8 +46,8 @@ import kotlin.time.Instant
  *    current signer first.
  *  - `register` rejects duplicate kid within the same tenant (RFC 6749 §10.4 reuse-defense:
  *    a kid MUST never be reused for a fresh key).
- *  - `rotate` is atomic: insert + demote-previous-active happens in one critical section,
- *    so a concurrent reader never observes "two ACTIVE" or "no ACTIVE".
+ *  - `rotate` is atomic per algorithm: insert + demote-previous-active happens in one critical
+ *    section without disabling active signers for other algorithms.
  *  - `setState` transitions LEGACY → DISABLED (and back-stops); idempotent on no-op.
  *  - The `init` block on [OAuth2SigningKey] enforces that `keyInfo.kid` and
  *    `keyInfo.signatureAlgorithm` are non-null so downstream sign paths can read them
@@ -225,6 +225,23 @@ class InMemorySigningKeyStoreTest {
             val result = store.listAll(tenantA)
             assertTrue(result.isOk)
             assertEquals(setOf("active", "legacy", "disabled"), result.value.map { it.kid }.toSet())
+        }
+
+    @Test
+    fun rotateDemotesOnlyActiveKeysUsingTheSameAlgorithm() =
+        runTest {
+            val store = newStore()
+            store.register(signingKey(kid = "rsa-old", algorithm = SignatureAlgorithm.RSA_SHA256))
+            store.register(signingKey(kid = "ec-active", algorithm = SignatureAlgorithm.ECDSA_SHA256))
+
+            val rotation = store.rotate(signingKey(kid = "rsa-new", algorithm = SignatureAlgorithm.RSA_SHA256))
+
+            assertTrue(rotation.isOk)
+            assertEquals(listOf("rsa-old"), rotation.value.demotedToLegacy.map { it.kid })
+            val all = store.listAll(tenantA).value.associateBy { it.kid }
+            assertEquals(OAuth2SigningKeyState.LEGACY, all.getValue("rsa-old").state)
+            assertEquals(OAuth2SigningKeyState.ACTIVE, all.getValue("rsa-new").state)
+            assertEquals(OAuth2SigningKeyState.ACTIVE, all.getValue("ec-active").state)
         }
 
     @Test

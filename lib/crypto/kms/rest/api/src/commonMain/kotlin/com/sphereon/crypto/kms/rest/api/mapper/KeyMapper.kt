@@ -18,6 +18,7 @@
 package com.sphereon.crypto.kms.rest.api.mapper
 
 import com.sphereon.core.api.error.NotFoundException
+import com.sphereon.core.api.model.Origin
 import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
@@ -25,6 +26,7 @@ import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
+import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.cose.CoseAlgorithm
@@ -68,7 +70,9 @@ import com.sphereon.crypto.kms.rest.api.generated.models.KeyVisibility as KeyVis
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse as ListKeysResponseRest
 import com.sphereon.crypto.kms.rest.api.generated.models.ManagedKeyInfo as ManagedKeyInfoRest
 import com.sphereon.crypto.kms.rest.api.generated.models.ManagedKeyPair as ManagedKeyPairRest
+import com.sphereon.crypto.kms.rest.api.generated.models.Origin as OriginRest
 import com.sphereon.crypto.kms.rest.api.generated.models.ResolvedKeyInfo as ResolvedKeyInfoRest
+import com.sphereon.crypto.kms.rest.api.generated.models.ResourceControlMode as ResourceControlModeRest
 import com.sphereon.crypto.kms.rest.api.generated.models.SignatureAlgorithm as SignatureAlgorithmRest
 
 fun JwaKeyType.toRest() = JwkKeyTypeRest.valueOf(this.value)
@@ -86,6 +90,19 @@ fun JwaCurve?.toRest() = this?.let { CurveRest.decode(it) }
 fun CurveRest?.toSdk() = this?.let { JwaCurve.fromValue(it.value) }
 
 fun SignatureAlgorithm?.toRest() = this?.let { SignatureAlgorithmRest.decode(it::class.simpleName) }
+
+fun Origin.toRest(): OriginRest =
+    OriginRest.decode(name.lowercase())
+        ?: error("Unknown origin: $name")
+
+fun OriginRest.toSdk(): Origin = Origin.fromValue(value)
+
+fun ResourceControlMode.toRest(): ResourceControlModeRest =
+    ResourceControlModeRest.decode(name.lowercase())
+        ?: error("Unknown resource control mode: $name")
+
+fun ResourceControlModeRest.toSdk(): ResourceControlMode =
+    ResourceControlMode.valueOf(value.uppercase())
 
 fun JwkType.toRest(): JwkRest =
     JwkRest(
@@ -108,6 +125,24 @@ fun JwkType.toRest(): JwkRest =
         x5c = this.x5c,
         x5t = this.x5t,
         x5u = this.x5u,
+        x5tHashS256 = this.x5t_S256,
+    )
+
+private fun JwkType.toPublicRest(): JwkRest =
+    JwkRest(
+        kty = this.kty.toRest(),
+        kid = this.kid,
+        alg = this.alg?.value,
+        use = this.use?.jwkUseToRest(),
+        keyOps = this.key_ops?.toRest(),
+        crv = this.crv?.toRest(),
+        x = this.x,
+        y = this.y,
+        n = this.n,
+        e = this.e,
+        x5c = this.x5c,
+        x5t = this.x5t,
+        x5u = null,
         x5tHashS256 = this.x5t_S256,
     )
 
@@ -213,9 +248,13 @@ fun JoseKeyPairRest.toSdk(): JoseKeyPair =
         publicJwk = Jwk.from(this.publicJwk.toSdk()),
     )
 
-fun ManagedKeyInfoType<*>.toRest(): ManagedKeyInfoRest =
+/** Binary-compatible public projection retained for existing JVM consumers. */
+fun ManagedKeyInfoType<*>.toRest(): ManagedKeyInfoRest = toRest(reference = null)
+
+/** Public projection enriched with lifecycle metadata from the persisted reference index. */
+fun ManagedKeyInfoType<*>.toRest(reference: ManagedKeyReference?): ManagedKeyInfoRest =
     ManagedKeyInfoRest(
-        key = (this.key as Jwk).toRest(),
+        key = (this.key as Jwk).toPublicRest(),
         alias = this.alias,
         providerId = this.providerId,
         kid = this.kid,
@@ -225,6 +264,8 @@ fun ManagedKeyInfoType<*>.toRest(): ManagedKeyInfoRest =
                 ?.let { name -> SignatureAlgorithmRest.decode(name) },
         keyVisibility = this.keyVisibility?.let { KeyVisibilityRest.valueOf(it.name) },
         x5c = this.x5c,
+        origin = reference?.origin?.toRest(),
+        controlMode = reference?.takeIf { it.origin != null }?.controlMode?.toRest(),
         keyType = this.keyType?.let { KeyTypeRest.valueOf(it.jose.value.uppercase()) },
         keyEncoding = this.keyEncoding?.let { KeyEncodingRest.valueOf(it.name.uppercase()) },
         opts = this.opts,
@@ -305,6 +346,23 @@ fun KeyInfoRest.toSdk(): KeyInfoType<*> =
         key = this.key?.toSdk() as? Jwk,
     )
 
+/** Map metadata-only references without dropping their additive provenance and lifecycle fields. */
+fun ManagedKeyReference.toRest(): KeyInfoRest =
+    KeyInfoRest(
+        key = null,
+        alias = alias,
+        providerId = providerId,
+        kid = kid,
+        signatureAlgorithm = signatureAlgorithm?.let { SignatureAlgorithmRest.decode(it::class.simpleName) },
+        keyVisibility = keyVisibility?.let { KeyVisibilityRest.valueOf(it.name) },
+        x5c = null,
+        origin = origin?.toRest(),
+        controlMode = controlMode.toRest(),
+        keyType = keyType?.let { KeyTypeRest.valueOf(it.jose.value.uppercase()) },
+        keyEncoding = keyEncoding?.let { KeyEncodingRest.valueOf(it.name.uppercase()) },
+        opts = null,
+    )
+
 fun KeyInfoType<*>.toRest(): KeyInfoRest {
     val jwkKey = this.key as? Jwk
     return KeyInfoRest(
@@ -337,6 +395,7 @@ fun ListKeysResponseRest.toSdkReferences(): Array<ManagedKeyReference> =
                 alias = keyInfo.alias ?: "",
                 kid = keyInfo.kid,
                 providerId = keyInfo.providerId ?: "",
+                origin = keyInfo.origin?.toSdk(),
                 signatureAlgorithm =
                     keyInfo.signatureAlgorithm
                         ?.let { SignatureAlgorithm.fromValue(it.value) },
@@ -349,6 +408,7 @@ fun ListKeysResponseRest.toSdkReferences(): Array<ManagedKeyReference> =
                 keyEncoding =
                     keyInfo.keyEncoding
                         ?.let { runCatching { KeyEncoding.valueOf(it.value.uppercase()) }.getOrNull() },
+                controlMode = keyInfo.controlMode?.toSdk() ?: ResourceControlMode.PLATFORM_MANAGED,
             )
         }.toTypedArray()
 

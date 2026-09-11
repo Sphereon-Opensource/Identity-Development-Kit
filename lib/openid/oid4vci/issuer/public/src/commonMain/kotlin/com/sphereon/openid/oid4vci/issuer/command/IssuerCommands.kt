@@ -35,6 +35,7 @@ import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncrypt
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.common.model.NonceResponse
 import com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciIssuanceLifecycleHook
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionCallbackConfig
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.OptionalBinding
@@ -51,6 +52,8 @@ data class CreateCredentialOfferArgs(
     val instanceId: String,
     val issuerId: String,
     val credentialConfigurationIds: List<String>,
+    /** Exact persisted issuance-template resource that authorized this offer. */
+    val issuanceTemplateResourceId: String? = null,
     val preAuthorizedCodeGrant: Boolean = false,
     val authorizationCodeGrant: Boolean = false,
     val txCodeRequired: Boolean = false,
@@ -102,6 +105,8 @@ data class CreateCredentialOfferArgs(
      * [OfferUriLifecycle.SINGLE_USE] (ignored but accepted).
      */
     val rateLimit: OfferRateLimit? = null,
+    /** Immutable AS/profile decision made by the deployment boundary before protocol execution. */
+    val authorizationPolicySnapshot: Oid4vciAuthorizationPolicySnapshot,
 )
 
 @JsExportCompat

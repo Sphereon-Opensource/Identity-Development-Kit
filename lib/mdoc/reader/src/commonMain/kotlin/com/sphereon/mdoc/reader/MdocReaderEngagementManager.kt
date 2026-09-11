@@ -19,11 +19,15 @@ package com.sphereon.mdoc.reader
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.core.cose.CoseKeyType
+import com.sphereon.crypto.core.generic.VerifyResultsType
+import com.sphereon.crypto.core.generic.VerifySignatureResultType
 import com.sphereon.mdoc.data.device.DeviceRequest
 import com.sphereon.mdoc.data.device.DeviceResponse
 import com.sphereon.mdoc.data.device.Document
 import com.sphereon.mdoc.engagement.DeviceEngagement
 import com.sphereon.mdoc.engagement.EngagementInstance
+import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -319,8 +323,9 @@ interface MdocReaderEngagementManager : AutoCloseable {
      * 4. DocType matches
      * 5. ValidityInfo (issued, expiry dates)
      *
-     * ## Not Yet Implemented
-     * Current implementation is a placeholder that always returns true.
+     * ## Compatibility behavior
+     * The legacy synchronous reader-engagement API fails closed when the asynchronous
+     * validator is not available; callers must use the validated transfer path.
      * Full validation requires:
      * - Certificate validation service
      * - COSE signature verification
@@ -332,6 +337,18 @@ interface MdocReaderEngagementManager : AutoCloseable {
     fun validateIssuerAuthentication(document: Document): Boolean
 
     /**
+     * Validate issuer authentication using the real asynchronous MSO validation pipeline.
+     *
+     * The legacy boolean method above is retained for source compatibility and cannot execute a
+     * suspend validator. New reader integrations should use this method so certificate-chain,
+     * COSE, digest, document-type, and validity failures remain observable as an [IdkResult].
+     */
+    suspend fun validateIssuerAuthenticationAsync(
+        document: Document,
+        trustedCerts: Array<String>? = null,
+    ): IdkResult<VerifyResultsType<CoseKeyType>, IdkError>
+
+    /**
      * Validate device authentication (MAC or signature).
      *
      * Per ISO 18013-5:2021 §9.1.2.5, this validates:
@@ -341,8 +358,9 @@ interface MdocReaderEngagementManager : AutoCloseable {
      * Device authentication proves that the device possesses the private key
      * corresponding to the public key in the MSO.
      *
-     * ## Not Yet Implemented
-     * Current implementation is a placeholder that always returns true.
+     * ## Compatibility behavior
+     * The legacy synchronous reader-engagement API fails closed when the asynchronous
+     * validator is not available; callers must use the validated transfer path.
      * Full validation requires:
      * - Key derivation (EMacKey for MAC)
      * - COSE_Mac0 verification
@@ -352,6 +370,18 @@ interface MdocReaderEngagementManager : AutoCloseable {
      * @return true if device authentication is valid, false otherwise
      */
     fun validateDeviceAuthentication(document: Document): Boolean
+
+    /**
+     * Validate holder device authentication against the active transfer transcript.
+     *
+     * Pass [expectedSessionTranscript] when validating a transcript supplied by the caller;
+     * otherwise the transcript created by the current engagement is used. This method is the
+     * suspend counterpart to the legacy boolean API and preserves verification failures.
+     */
+    suspend fun validateDeviceAuthenticationAsync(
+        document: Document,
+        expectedSessionTranscript: SessionTranscript? = null,
+    ): IdkResult<VerifySignatureResultType<CoseKeyType>, IdkError>
 
     /**
      * Use a reverse engagement for request/response operations.

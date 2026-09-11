@@ -17,7 +17,6 @@
 
 package com.sphereon.crypto.kms
 
-import at.asitplus.awesn1.crypto.X509AlgorithmIdentifier
 import at.asitplus.awesn1.crypto.pki.Pkcs10CertificationRequest
 import at.asitplus.awesn1.crypto.pki.Pkcs10CertificationRequestInfo
 import at.asitplus.awesn1.crypto.pki.Pkcs10CsrAttribute
@@ -25,28 +24,39 @@ import at.asitplus.awesn1.crypto.pki.X500RelativeDistinguishedName
 import at.asitplus.awesn1.serialization.DER
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.generic.CertificateSigningRequest
+import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.X509DistinguishedNameElements
 import com.sphereon.crypto.core.interop.ecSignatureToX509SignatureValue
+import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
+import com.sphereon.crypto.core.interop.resolveEcdsaKmpDigest
+import com.sphereon.crypto.core.interop.toEcdsaPublicKey
 import com.sphereon.crypto.core.interop.toSignatureAlgorithmIdentifier
 import com.sphereon.crypto.core.interop.toSubjectPublicKeyInfo
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.crypto.core.kms.CertificateResult
 import com.sphereon.crypto.core.kms.CertificateService
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.X509CertificateExtensionSpec
 import com.sphereon.crypto.core.x509.CertificateCreationUtils
+import com.sphereon.crypto.core.sign.requireSigningKeyCompatible
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import dev.whyoleg.cryptography.CryptographyProvider
+import dev.whyoleg.cryptography.algorithms.ECDSA
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlin.experimental.ExperimentalObjCName
@@ -107,7 +117,36 @@ class CertificateServiceImpl(
             )
 
         // Get the TBS bytes for signing
-        val sigAlg = jwk.toSignatureAlgorithmIdentifier()
+        val signingAlgorithm = jwk.csrSignatureAlgorithm()
+        subjectKeyInfo.requireSigningKeyCompatible(signingAlgorithm)
+        val sigAlg = signingAlgorithm.toSignatureAlgorithmIdentifier()
+        val provider = keyManagerService.getProvider(subjectKeyInfo.providerId, signingAlgorithm)
+        val signingKeyInfo = if (jwk.d == null && subjectKeyInfo is ManagedKeyInfoType<*>) {
+            require(subjectKeyInfo.providerId.isNotBlank() && subjectKeyInfo.alias.isNotBlank()) {
+                "Managed CSR signing requires a provider and alias"
+            }
+            require(subjectKeyInfo.kid == null || jwk.kid == null || subjectKeyInfo.kid == jwk.kid) {
+                "CSR subject key id conflicts with supplied key material"
+            }
+            // Resolve by the managed coordinates alone: caller material/kid must not influence
+            // the canonical lookup. Public material is evidence to compare, not a private-key fallback.
+            val canonical = provider.getKey(KeyInfo<KeyType>(
+                providerId = subjectKeyInfo.providerId, alias = subjectKeyInfo.alias,
+                keyVisibility = KeyVisibility.PUBLIC,
+            ))
+            val canonicalJwk = CoseJoseKeyMappingService.toJoseJwk(canonical.key)
+            require(generateJwkThumbprint(jwk) == generateJwkThumbprint(canonicalJwk)) {
+                "Managed CSR signing key does not match the supplied subject public key"
+            }
+            require(listOfNotNull(subjectKeyInfo.kid, jwk.kid, canonical.kid, canonicalJwk.kid).distinct().size <= 1) {
+                "Managed CSR signing key id does not match the supplied subject"
+            }
+            canonical.requireSigningKeyCompatible(signingAlgorithm)
+            KeyInfo<KeyType>(
+                providerId = subjectKeyInfo.providerId, alias = subjectKeyInfo.alias,
+                kid = subjectKeyInfo.kid ?: jwk.kid, signatureAlgorithm = signingAlgorithm,
+            )
+        } else subjectKeyInfo
         val initialTbsBytes = DER.encodeToByteArray(tbsCsr)
 
         // Verify that the TBS bytes will match what Pkcs10CertificationRequest will contain
@@ -142,10 +181,20 @@ class CertificateServiceImpl(
             }
 
         // Sign the TBS bytes
-        val signature: ByteArray =
-            keyManagerService
-                .getProvider(subjectKeyInfo.providerId, subjectKeyInfo.signatureAlgorithm)
-                .createRawSignature(subjectKeyInfo, tbsBytesToSign, requireX5Chain = true)
+        val signature = provider.createRawSignature(signingKeyInfo, tbsBytesToSign, requireX5Chain = true)
+
+        // Verify the exact CSR subject and bytes, including after a managed alias race. This is
+        // a mathematical consistency check, not another authorization operation: SIGN-only key
+        // policy was enforced above and must not be rewritten to grant VERIFY.
+        val publicKey = jwk.toEcdsaPublicKey(
+            provider = CryptographyProvider.Default,
+            curve = resolveEcdsaKmpCurve(Curve.fromJose(requireNotNull(jwk.crv))),
+        )
+        require(publicKey.signatureVerifier(
+            digest = resolveEcdsaKmpDigest(signingAlgorithm), format = ECDSA.SignatureFormat.RAW,
+        ).tryVerifySignature(tbsBytesToSign, signature)) {
+            "CSR signature does not verify against its subject public key"
+        }
 
         // Build the final CSR with the real signature
         val csr =
@@ -227,21 +276,18 @@ class CertificateServiceImpl(
         )
 
     /**
-     * Converts a [Jwk] to a [SignatureAlgorithmIdentifier] based on the key's curve.
+     * Selects the CSR signature algorithm from the subject key's curve.
      *
      * @receiver The [Jwk] to convert.
-     * @return The corresponding [SignatureAlgorithmIdentifier] for the awesn1 lib.
+     * @return The corresponding [SignatureAlgorithm].
      */
     @OptIn(ExperimentalObjCRefinement::class)
     @HiddenFromObjC
-    private fun Jwk.toSignatureAlgorithmIdentifier(): X509AlgorithmIdentifier {
-        val sigAlg =
-            when (crv) {
-                JwaCurve.P_256 -> SignatureAlgorithm.ECDSA_SHA256
-                JwaCurve.P_384 -> SignatureAlgorithm.ECDSA_SHA384
-                JwaCurve.P_521 -> SignatureAlgorithm.ECDSA_SHA512
-                else -> error("Unsupported curve: $crv. Only P-256, P-384, and P-521 are supported for CSR generation.")
-            }
-        return sigAlg.toSignatureAlgorithmIdentifier()
-    }
+    private fun Jwk.csrSignatureAlgorithm(): SignatureAlgorithm =
+        when (crv) {
+            JwaCurve.P_256 -> SignatureAlgorithm.ECDSA_SHA256
+            JwaCurve.P_384 -> SignatureAlgorithm.ECDSA_SHA384
+            JwaCurve.P_521 -> SignatureAlgorithm.ECDSA_SHA512
+            else -> error("Unsupported curve: $crv. Only P-256, P-384, and P-521 are supported for CSR generation.")
+        }
 }

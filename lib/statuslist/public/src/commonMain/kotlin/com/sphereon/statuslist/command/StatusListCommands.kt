@@ -53,6 +53,16 @@ interface GetStatusListCommand : ServiceCommand<StatusListRef, StatusListResult,
     }
 }
 
+/** Soft-delete a status list owned by the calling tenant (issuer/management). */
+@JsExportCompat
+interface DeleteStatusListCommand : ServiceCommand<StatusListRef, Boolean, IdkError> {
+    override val commandId: String get() = COMMAND_ID
+
+    companion object {
+        const val COMMAND_ID = "statuslist.list.delete"
+    }
+}
+
 /** List status lists, filtered + paginated (issuer/management). */
 @JsExportCompat
 interface ListStatusListsCommand : ServiceCommand<ListStatusListsArgs, Page<StatusListSummary>, IdkError> {

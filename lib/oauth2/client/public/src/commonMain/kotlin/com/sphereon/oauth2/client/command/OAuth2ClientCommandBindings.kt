@@ -87,4 +87,9 @@ interface OAuth2ClientCommandBindings {
     fun completeOidcLogin(registry: SessionScopedCommandRegistry): CompleteOidcLoginCommand =
         registry.get(CompleteOidcLoginCommand.COMMAND_ID) as? CompleteOidcLoginCommand
             ?: error("No binding for ${CompleteOidcLoginCommand.COMMAND_ID}")
+
+    @Provides
+    fun privateKeyJwtClientAssertion(registry: SessionScopedCommandRegistry): PrivateKeyJwtClientAssertionServiceCommand =
+        registry.get(PrivateKeyJwtClientAssertionServiceCommand.COMMAND_ID) as? PrivateKeyJwtClientAssertionServiceCommand
+            ?: error("No binding for ${PrivateKeyJwtClientAssertionServiceCommand.COMMAND_ID}")
 }

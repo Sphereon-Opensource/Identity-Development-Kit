@@ -49,6 +49,7 @@ interface UpdateWitnessFileServiceCommand :
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "updateWebvhWitnessFile",
                 tags = setOf("did:webvh"),
                 summary = "Merge witness proofs into did-witness.json",

@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class AuthorizationCodeCredentialCorrelationTest {
     @Test
@@ -40,6 +41,20 @@ class AuthorizationCodeCredentialCorrelationTest {
             listOf(listOf("dataset-pid"), listOf("dataset-mdl")),
             details.map { detail -> detail["credential_identifiers"]?.jsonArray?.map { it.jsonPrimitive.content } },
         )
+    }
+
+    @Test
+    fun opaqueTokenCredentialIdentifierCarriesOfferSessionCorrelation() {
+        val sessionId = "ff6b2102-c658-4c96-9d6e-41ad809d5b0f"
+        val detail =
+            buildAuthorizationCodeCredentialAuthorizationDetails(
+                credentialConfigurationIds = listOf("employee-card"),
+                issuanceSessionId = sessionId,
+            )!![0].jsonObject
+
+        val identifier = detail["credential_identifiers"]!!.jsonArray.single().jsonPrimitive.content
+        assertTrue(identifier.startsWith("urn:vdx:oid4vci:credential:$sessionId:"))
+        assertNotEquals("employee-card", identifier)
     }
 
     @Test

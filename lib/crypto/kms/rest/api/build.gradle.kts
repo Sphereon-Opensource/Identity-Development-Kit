@@ -35,6 +35,13 @@ kotlin {
         generatorName.set("kotlin")
         library.set("multiplatform")
         inputSpec.set(inputSpecPath)
+        // GenerateTask tracks inputSpec itself but not same-directory files reached through
+        // external $ref entries. Declare those files explicitly so a component-only contract
+        // change cannot restore stale generated models from the Gradle build cache.
+        inputs.files(
+            openapiSpec("kms-components.yml"),
+            openapiSpec("common-components.yml"),
+        )
         outputDir.set(generatedSourcesPath)
         templateDir.set(templatesPath)
 
@@ -103,6 +110,7 @@ kotlin {
             kotlin.srcDir("$generatedSourcesPath/src/commonMain/kotlin")
 
             dependencies {
+                api(projects.libCryptoCertificatePersistenceApi)
                 api(projects.libCryptoCorePublic)
                 api(sphereonlib.io.ktor.client.core)
                 api(sphereonlib.io.ktor.client.content.negotiation)

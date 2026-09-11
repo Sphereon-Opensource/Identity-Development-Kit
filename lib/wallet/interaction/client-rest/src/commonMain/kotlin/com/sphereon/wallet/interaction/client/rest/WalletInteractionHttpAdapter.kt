@@ -15,10 +15,12 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.command.headerIgnoreCase
+import com.sphereon.core.api.http.command.optionalIntQueryParam
 import com.sphereon.core.api.http.command.requireJsonBody
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
@@ -30,6 +32,10 @@ import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.interaction.CancelWalletInteractionArgs
+import com.sphereon.wallet.interaction.ConsumeWalletInteractionAuthorizationHandoffCommand
+import com.sphereon.wallet.interaction.ConsumeWalletInteractionHandoffArgs
+import com.sphereon.wallet.interaction.ConsumeWalletInteractionHandoffRequest
+import com.sphereon.wallet.interaction.ConsumeWalletInteractionHandoffResult
 import com.sphereon.wallet.interaction.CancelWalletInteractionCommand
 import com.sphereon.wallet.interaction.CancelWalletInteractionResult
 import com.sphereon.wallet.interaction.DispatchWalletInteractionActionBody
@@ -37,6 +43,13 @@ import com.sphereon.wallet.interaction.GetWalletInteractionEventsArgs
 import com.sphereon.wallet.interaction.GetWalletInteractionEventsCommand
 import com.sphereon.wallet.interaction.GetWalletInteractionStateArgs
 import com.sphereon.wallet.interaction.GetWalletInteractionStateCommand
+import com.sphereon.wallet.interaction.ListWalletInteractionActivityArgs
+import com.sphereon.wallet.interaction.ListWalletInteractionActivityCommand
+import com.sphereon.wallet.interaction.ListWalletInteractionActivityResult
+import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputArgs
+import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputCommand
+import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputRequest
+import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputResult
 import com.sphereon.wallet.interaction.ResumeWalletInteractionArgs
 import com.sphereon.wallet.interaction.ResumeWalletInteractionCommand
 import com.sphereon.wallet.interaction.StartWalletInteractionBody
@@ -46,15 +59,19 @@ import com.sphereon.wallet.interaction.SubmitWalletInteractionActionCommand
 import com.sphereon.wallet.interaction.WalletInteractionApiConstants
 import com.sphereon.wallet.interaction.WalletInteractionClientFrame
 import com.sphereon.wallet.interaction.WalletInteractionClientFrameType
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
+import com.sphereon.wallet.interaction.WalletInteractionRevisionConflict
 import com.sphereon.wallet.interaction.WalletInteractionServerFrame
 import com.sphereon.wallet.interaction.WalletInteractionServerFrameType
 import com.sphereon.wallet.interaction.WalletInteractionSessionEnvelope
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionStateEnvelope
 import com.sphereon.wallet.interaction.WalletInteractionStateEvent
+import com.sphereon.wallet.interaction.classifiedWalletInteractionError
 import dev.zacsweers.metro.AppScope
-import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -63,7 +80,14 @@ import kotlinx.serialization.json.Json
 
 private const val PARAM_WALLET_UNIT_ID = "walletUnitId"
 private const val PARAM_SESSION_ID = "sessionId"
+private const val PARAM_AFTER_SEQUENCE = "afterSequence"
+private const val PARAM_LIMIT = "limit"
+private const val ACTIVITY_LIMIT_MIN = 1
+private const val ACTIVITY_LIMIT_MAX = 500
 private const val WALLET_INTERACTION_TAG = "wallet-interaction"
+
+/** Answer to a conditional dispatch the session has already moved past. Nothing was applied. */
+private const val HTTP_CONFLICT = 409
 private val JSON_MEDIA = setOf(MediaType.ApplicationJson)
 private val SSE_MEDIA = setOf(MediaType.Custom("text/event-stream"))
 private val JSON_HEADERS = mapOf("Content-Type" to "application/json")
@@ -170,7 +194,55 @@ interface HandleWalletInteractionFrameHttpEndpointCommand : HttpEndpointCommand 
                 consumes = JSON_MEDIA,
                 produces = JSON_MEDIA,
                 operationId = "handleWalletInteractionFrame",
-                commandId = COMMAND_ID,
+                commandId = WalletInteractionApiConstants.Commands.FRAME,
+                handlerCommandId = COMMAND_ID,
+            )
+    }
+}
+
+interface ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand : HttpEndpointCommand {
+    companion object {
+        const val COMMAND_ID: String = WalletInteractionApiConstants.EndpointCommands.CONSUME_AUTHORIZATION_HANDOFF
+        val ENDPOINT: HttpEndpointDescriptor =
+            walletInteractionEndpoint(
+                method = HttpMethod.POST,
+                pathPattern = WalletInteractionApiConstants.Paths.AUTHORIZATION_HANDOFF,
+                consumes = JSON_MEDIA,
+                produces = JSON_MEDIA,
+                operationId = "consumeWalletInteractionAuthorizationHandoff",
+                commandId = WalletInteractionApiConstants.Commands.CONSUME_AUTHORIZATION_HANDOFF,
+                handlerCommandId = COMMAND_ID,
+            )
+    }
+}
+
+interface RegisterWalletInteractionSensitiveInputHttpEndpointCommand : HttpEndpointCommand {
+    companion object {
+        const val COMMAND_ID: String = WalletInteractionApiConstants.EndpointCommands.REGISTER_SENSITIVE_INPUT
+        val ENDPOINT: HttpEndpointDescriptor =
+            walletInteractionEndpoint(
+                method = HttpMethod.POST,
+                pathPattern = WalletInteractionApiConstants.Paths.SENSITIVE_INPUTS,
+                consumes = JSON_MEDIA,
+                produces = JSON_MEDIA,
+                operationId = "registerWalletInteractionSensitiveInput",
+                commandId = WalletInteractionApiConstants.Commands.REGISTER_SENSITIVE_INPUT,
+                handlerCommandId = COMMAND_ID,
+            )
+    }
+}
+
+interface ListWalletInteractionActivityHttpEndpointCommand : HttpEndpointCommand {
+    companion object {
+        const val COMMAND_ID: String = WalletInteractionApiConstants.EndpointCommands.LIST_ACTIVITY
+        val ENDPOINT: HttpEndpointDescriptor =
+            walletInteractionEndpoint(
+                method = HttpMethod.GET,
+                pathPattern = WalletInteractionApiConstants.Paths.ACTIVITY,
+                produces = JSON_MEDIA,
+                operationId = "listWalletInteractionActivity",
+                commandId = WalletInteractionApiConstants.Commands.LIST_ACTIVITY,
+                handlerCommandId = COMMAND_ID,
             )
     }
 }
@@ -184,31 +256,18 @@ interface HandleWalletInteractionFrameHttpEndpointCommand : HttpEndpointCommand 
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(WalletInteractionHttpAdapter.ADAPTER_ID)
 class WalletInteractionHttpAdapter(
     execution: SessionExecution,
-    private val start: StartWalletInteractionHttpEndpointCommand,
-    private val resume: ResumeWalletInteractionHttpEndpointCommand,
-    private val dispatch: DispatchWalletInteractionActionHttpEndpointCommand,
-    private val cancel: CancelWalletInteractionHttpEndpointCommand,
-    private val getState: GetWalletInteractionStateHttpEndpointCommand,
-    private val getEvents: GetWalletInteractionEventsHttpEndpointCommand,
-    private val frame: HandleWalletInteractionFrameHttpEndpointCommand,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
 ) : CommandBackedHttpAdapter(
         id = ADAPTER_ID,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = BASE_PATH),
         tenantPathPolicy = TenantPathPolicy.None,
     ) {
-    override val endpointCommands: List<HttpEndpointCommand> by lazy {
-        listOf(start, resume, dispatch, cancel, getState, getEvents, frame)
-    }
-
-    override val openApiHints: OpenApiHints =
-        OpenApiHints(
-            tags = setOf(WALLET_INTERACTION_TAG),
-            operationIdPrefix = "walletInteraction",
-        )
 
     companion object {
         const val ADAPTER_ID: String = "wallet.interaction.http"
@@ -254,12 +313,16 @@ object WalletInteractionHttpEndpoints {
             GetWalletInteractionStateHttpEndpointCommand.ENDPOINT,
             GetWalletInteractionEventsHttpEndpointCommand.ENDPOINT,
             HandleWalletInteractionFrameHttpEndpointCommand.ENDPOINT,
+            RegisterWalletInteractionSensitiveInputHttpEndpointCommand.ENDPOINT,
+            ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand.ENDPOINT,
+            ListWalletInteractionActivityHttpEndpointCommand.ENDPOINT,
         )
 }
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<StartWalletInteractionHttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(StartWalletInteractionHttpEndpointCommand.COMMAND_ID)
 class StartWalletInteractionHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val command: StartWalletInteractionCommand,
@@ -288,7 +351,8 @@ class StartWalletInteractionHttpEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ResumeWalletInteractionHttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ResumeWalletInteractionHttpEndpointCommand.COMMAND_ID)
 class ResumeWalletInteractionHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val command: ResumeWalletInteractionCommand,
@@ -318,10 +382,12 @@ class ResumeWalletInteractionHttpEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<DispatchWalletInteractionActionHttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(DispatchWalletInteractionActionHttpEndpointCommand.COMMAND_ID)
 class DispatchWalletInteractionActionHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val command: SubmitWalletInteractionActionCommand,
+    private val stateCommand: GetWalletInteractionStateCommand,
 ) : WalletInteractionHttpEndpointCommandAdapter(
         id = DispatchWalletInteractionActionHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -334,23 +400,62 @@ class DispatchWalletInteractionActionHttpEndpointCommandImpl(
     ): IdkResult<GenericHttpResponse, IdkError> =
         runWalletInteractionEndpoint {
             val request = applyDuring(args)
+            val walletUnitId = request.walletUnitId().orAbort()
+            val sessionId = request.sessionId().orAbort()
             val body = request.requireJsonBody<DispatchWalletInteractionActionBody>(json).orAbort()
-            WalletInteractionStateEnvelope(
-                command
-                    .execute(
-                        SubmitWalletInteractionActionArgs(
-                            walletUnitId = request.walletUnitId().orAbort(),
-                            sessionId = request.sessionId().orAbort(),
-                            action = body.action,
-                        ),
-                    ).orAbort(),
-            ).json(WalletInteractionStateEnvelope.serializer())
+            // Conditional write. A dispatch that names the revision it was decided against is
+            // refused outright when the session has moved on, so an approval given on a screen
+            // the user is no longer looking at never reaches the state machine. The check reads
+            // the state immediately before dispatching: it deterministically refuses the
+            // stale-render case, and the managed deployment's action authority is what turns
+            // two dispatches racing at the same revision into a single atomic claim.
+            val conflict = revisionConflict(walletUnitId, sessionId, body.expectedRevision)
+            if (conflict != null) {
+                conflict.json(WalletInteractionRevisionConflict.serializer(), statusCode = HTTP_CONFLICT)
+            } else {
+                WalletInteractionStateEnvelope(
+                    command
+                        .execute(
+                            SubmitWalletInteractionActionArgs(
+                                walletUnitId = walletUnitId,
+                                sessionId = sessionId,
+                                action = body.action,
+                                expectedProcessRevision = body.expectedRevision,
+                                idempotencyKey = body.idempotencyKey,
+                            ),
+                        ).orAbort(),
+                ).json(WalletInteractionStateEnvelope.serializer())
+            }
         }
+
+    /**
+     * The refusal describing why this dispatch must not be applied, or null when the session is
+     * at the stated revision or the caller stated none.
+     */
+    private suspend fun revisionConflict(
+        walletUnitId: String,
+        sessionId: WalletInteractionSessionId,
+        expectedRevision: Long?,
+    ): WalletInteractionRevisionConflict? {
+        if (expectedRevision == null) return null
+        val current =
+            stateCommand
+                .execute(GetWalletInteractionStateArgs(walletUnitId = walletUnitId, sessionId = sessionId))
+                .orAbort()
+        if (current.revision == expectedRevision) return null
+        return WalletInteractionRevisionConflict(
+            sessionId = sessionId,
+            expectedRevision = expectedRevision,
+            currentRevision = current.revision,
+            state = current,
+        )
+    }
 }
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<CancelWalletInteractionHttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(CancelWalletInteractionHttpEndpointCommand.COMMAND_ID)
 class CancelWalletInteractionHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val command: CancelWalletInteractionCommand,
@@ -379,7 +484,8 @@ class CancelWalletInteractionHttpEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetWalletInteractionStateHttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetWalletInteractionStateHttpEndpointCommand.COMMAND_ID)
 class GetWalletInteractionStateHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val command: GetWalletInteractionStateCommand,
@@ -409,7 +515,8 @@ class GetWalletInteractionStateHttpEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetWalletInteractionEventsHttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetWalletInteractionEventsHttpEndpointCommand.COMMAND_ID)
 class GetWalletInteractionEventsHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val command: GetWalletInteractionEventsCommand,
@@ -443,12 +550,14 @@ class GetWalletInteractionEventsHttpEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<HandleWalletInteractionFrameHttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(HandleWalletInteractionFrameHttpEndpointCommand.COMMAND_ID)
 class HandleWalletInteractionFrameHttpEndpointCommandImpl(
     execution: SessionExecution,
     private val resumeCommand: ResumeWalletInteractionCommand,
     private val submitActionCommand: SubmitWalletInteractionActionCommand,
     private val cancelCommand: CancelWalletInteractionCommand,
+    private val stateCommand: GetWalletInteractionStateCommand,
 ) : WalletInteractionHttpEndpointCommandAdapter(
         id = HandleWalletInteractionFrameHttpEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -467,6 +576,21 @@ class HandleWalletInteractionFrameHttpEndpointCommandImpl(
                 abort(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "wallet_interaction_frame_session_mismatch"))
             }
             val walletUnitId = request.walletUnitId().orAbort()
+            // Same conditional write as the actions endpoint, on the transport that already
+            // carries the precondition in its body. Only DISPATCH_ACTION advances the state
+            // machine on the client's behalf, so only DISPATCH_ACTION is gated.
+            val staleAgainst =
+                if (frame.type == WalletInteractionClientFrameType.DISPATCH_ACTION) {
+                    frameRevisionConflict(walletUnitId, frame.sessionId, frame.lastRevision)
+                } else {
+                    null
+                }
+            if (staleAgainst != null) {
+                return@runWalletInteractionEndpoint staleAgainst.json(
+                    WalletInteractionServerFrame.serializer(),
+                    statusCode = HTTP_CONFLICT,
+                )
+            }
             val state =
                 when (frame.type) {
                     WalletInteractionClientFrameType.RESUME -> {
@@ -513,6 +637,142 @@ class HandleWalletInteractionFrameHttpEndpointCommandImpl(
                     )
                 }
             response.json(WalletInteractionServerFrame.serializer())
+        }
+
+    /**
+     * The ERROR server frame refusing a DISPATCH_ACTION frame whose stated revision is not the
+     * one the session is at, or null when it matches or the frame stated none. The current state
+     * rides along so the client can re-render without a second round trip.
+     */
+    private suspend fun frameRevisionConflict(
+        walletUnitId: String,
+        sessionId: WalletInteractionSessionId,
+        lastRevision: Long?,
+    ): WalletInteractionServerFrame? {
+        if (lastRevision == null) return null
+        val current =
+            stateCommand
+                .execute(GetWalletInteractionStateArgs(walletUnitId = walletUnitId, sessionId = sessionId))
+                .orAbort()
+        if (current.revision == lastRevision) return null
+        return WalletInteractionServerFrame(
+            type = WalletInteractionServerFrameType.ERROR,
+            sessionId = sessionId,
+            revision = current.revision,
+            state = current,
+            error =
+                classifiedWalletInteractionError(
+                    code = WalletInteractionFailureCodes.REVISION_CONFLICT,
+                    messageKey = WalletInteractionApiConstants.Errors.REVISION_CONFLICT_MESSAGE_KEY,
+                    arguments =
+                        mapOf(
+                            "expectedRevision" to lastRevision.toString(),
+                            "currentRevision" to current.revision.toString(),
+                        ),
+                ),
+        )
+    }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(RegisterWalletInteractionSensitiveInputHttpEndpointCommand.COMMAND_ID)
+class RegisterWalletInteractionSensitiveInputHttpEndpointCommandImpl(
+    execution: SessionExecution,
+    private val command: RegisterWalletInteractionSensitiveInputCommand,
+) : WalletInteractionHttpEndpointCommandAdapter(
+        id = RegisterWalletInteractionSensitiveInputHttpEndpointCommand.COMMAND_ID,
+        execution = execution,
+        endpoint = RegisterWalletInteractionSensitiveInputHttpEndpointCommand.ENDPOINT,
+    ),
+    RegisterWalletInteractionSensitiveInputHttpEndpointCommand {
+    override suspend fun doExecute(
+        args: GenericHttpRequest,
+        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+    ): IdkResult<GenericHttpResponse, IdkError> =
+        runWalletInteractionEndpoint {
+            val request = applyDuring(args)
+            val body = request.sensitiveInputBody(json).orAbort()
+            command
+                .execute(
+                    RegisterWalletInteractionSensitiveInputArgs(
+                        walletUnitId = request.walletUnitId().orAbort(),
+                        sessionId = request.sessionId().orAbort(),
+                        purpose = body.purpose,
+                        value = body.value,
+                    ),
+                ).orAbort()
+                .json(RegisterWalletInteractionSensitiveInputResult.serializer(), statusCode = 201)
+        }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand.COMMAND_ID)
+class ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommandImpl(
+    execution: SessionExecution,
+    private val command: ConsumeWalletInteractionAuthorizationHandoffCommand,
+) : WalletInteractionHttpEndpointCommandAdapter(
+        id = ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand.COMMAND_ID,
+        execution = execution,
+        endpoint = ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand.ENDPOINT,
+    ),
+    ConsumeWalletInteractionAuthorizationHandoffHttpEndpointCommand {
+    override suspend fun doExecute(
+        args: GenericHttpRequest,
+        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+    ): IdkResult<GenericHttpResponse, IdkError> =
+        runWalletInteractionEndpoint {
+            val request = applyDuring(args)
+            val body = request.requireJsonBody<ConsumeWalletInteractionHandoffRequest>(json).orAbort()
+            command
+                .execute(
+                    ConsumeWalletInteractionHandoffArgs(
+                        walletUnitId = request.walletUnitId().orAbort(),
+                        sessionId = request.sessionId().orAbort(),
+                        ref = body.ref,
+                    ),
+                ).orAbort()
+                .json(ConsumeWalletInteractionHandoffResult.serializer())
+        }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListWalletInteractionActivityHttpEndpointCommand.COMMAND_ID)
+class ListWalletInteractionActivityHttpEndpointCommandImpl(
+    execution: SessionExecution,
+    private val command: ListWalletInteractionActivityCommand,
+) : WalletInteractionHttpEndpointCommandAdapter(
+        id = ListWalletInteractionActivityHttpEndpointCommand.COMMAND_ID,
+        execution = execution,
+        endpoint = ListWalletInteractionActivityHttpEndpointCommand.ENDPOINT,
+    ),
+    ListWalletInteractionActivityHttpEndpointCommand {
+    override suspend fun doExecute(
+        args: GenericHttpRequest,
+        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+    ): IdkResult<GenericHttpResponse, IdkError> =
+        runWalletInteractionEndpoint {
+            val request = applyDuring(args)
+            val walletUnitId = request.walletUnitId().orAbort()
+            val afterSequence = request.afterSequence().orAbort()
+            val limit =
+                request
+                    .optionalIntQueryParam(PARAM_LIMIT, min = ACTIVITY_LIMIT_MIN, max = ACTIVITY_LIMIT_MAX)
+                    .orAbort()
+            val listArgs =
+                ListWalletInteractionActivityArgs(
+                    walletUnitId = walletUnitId,
+                    afterSequence = afterSequence,
+                ).let { base -> if (limit == null) base else base.copy(limit = limit) }
+            command
+                .execute(listArgs)
+                .orAbort()
+                .json(ListWalletInteractionActivityResult.serializer())
         }
 }
 
@@ -573,6 +833,32 @@ private fun GenericHttpRequest.afterRevision(): IdkResult<Long?, IdkError> {
     return Ok(revision)
 }
 
+/**
+ * Reads the sensitive-input body without letting the decoder speak.
+ *
+ * The generic JSON body helper reports failures as "Invalid request body: <decoder message>", and a
+ * kotlinx decoding message ends with the offending JSON document. On this one endpoint that
+ * document IS the sensitive value, so the generic helper would put a transaction code or an
+ * authorization callback into a 400 response body and into every log line that renders the error.
+ * The failure is therefore reported as a fixed key, and the cause is deliberately not attached.
+ */
+private fun GenericHttpRequest.sensitiveInputBody(json: Json): IdkResult<RegisterWalletInteractionSensitiveInputRequest, IdkError> {
+    val text = body ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "wallet_interaction_sensitive_input_body_missing"))
+    return try {
+        Ok(json.decodeFromString(RegisterWalletInteractionSensitiveInputRequest.serializer(), text))
+    } catch (expected: Exception) {
+        Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "wallet_interaction_sensitive_input_body_invalid"))
+    }
+}
+
+private fun GenericHttpRequest.afterSequence(): IdkResult<Long?, IdkError> {
+    val raw = queryParams[PARAM_AFTER_SEQUENCE] ?: return Ok(null)
+    val sequence =
+        raw.toLongOrNull()?.takeIf { it >= 0 }
+            ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "wallet_interaction_activity_after_sequence_invalid"))
+    return Ok(sequence)
+}
+
 private fun walletInteractionEndpoint(
     method: HttpMethod,
     pathPattern: String,
@@ -580,6 +866,7 @@ private fun walletInteractionEndpoint(
     produces: Set<MediaType>,
     operationId: String,
     commandId: String,
+    handlerCommandId: String = commandId,
 ): HttpEndpointDescriptor =
     HttpEndpointDescriptor(
         method = method,
@@ -588,5 +875,6 @@ private fun walletInteractionEndpoint(
         produces = produces,
         operationId = operationId,
         commandId = commandId,
+        handlerCommandId = handlerCommandId,
         tags = setOf(WALLET_INTERACTION_TAG),
     )

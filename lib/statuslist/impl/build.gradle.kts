@@ -46,6 +46,7 @@ kotlin {
                 api(projects.libCoreApiPublic)
                 api(projects.libStatuslistPublic)
                 api(projects.libCompression)
+                api(projects.libCborImpl)
                 api(projects.libCryptoCore)
                 // DID-method resolution so the status-list token can carry the same DID `kid` as the
                 // credentials that reference it (did:jwk / did:key / did:web signing modes).
@@ -72,6 +73,9 @@ kotlin {
                 implementation(projects.libCryptoKmsProviderSoftware)
                 // CBOR impl (CborParser binding + CborParserImpl) for the CWT/COSE e2e.
                 implementation(projects.libCborImpl)
+                // Keep the test transport explicit and aligned with the library BOM version used
+                // by the rest of IDK (the same pattern used by mdoc/core/impl).
+                implementation("io.ktor:ktor-client-mock:3.5.0")
             }
         }
     }

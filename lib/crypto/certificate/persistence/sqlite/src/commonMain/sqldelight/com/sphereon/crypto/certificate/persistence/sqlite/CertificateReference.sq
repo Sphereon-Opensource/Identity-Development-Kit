@@ -1,0 +1,130 @@
+-- Tenant-scoped certificate reference metadata and public verification material only.
+
+CREATE TABLE IF NOT EXISTS certificate_reference (
+    id TEXT NOT NULL PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    alias TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    provider_certificate_id TEXT,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    control_mode TEXT NOT NULL DEFAULT 'platform_managed',
+    linked_key_reference_id TEXT,
+    certificate_chain_der BLOB,
+    certificate_fingerprint BLOB NOT NULL,
+    public_key_fingerprint BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by_id TEXT,
+    deleted_at TEXT,
+    deleted_by_id TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cert_ref_tenant_alias_provider_kind
+    ON certificate_reference(tenant_id, alias, provider_id, kind)
+    WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant ON certificate_reference(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant_provider ON certificate_reference(tenant_id, provider_id);
+CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant_provider_certificate
+    ON certificate_reference(tenant_id, provider_id, provider_certificate_id);
+CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant_linked_key
+    ON certificate_reference(tenant_id, linked_key_reference_id);
+
+findById:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL;
+
+findPersistedById:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND id = :id;
+
+findByAlias:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND alias = :alias AND provider_id = :providerId
+  AND kind = :kind AND deleted_at IS NULL;
+
+findAllByAliasIncludingDeleted:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND alias = :alias
+  AND (:providerId IS NULL OR provider_id = :providerId)
+  AND kind = :kind
+ORDER BY CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END ASC,
+         updated_at DESC, created_at DESC, id DESC;
+
+findLatestByAliasIncludingDeleted:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND alias = :alias
+  AND (:providerId IS NULL OR provider_id = :providerId)
+  AND kind = :kind
+ORDER BY CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END ASC,
+         updated_at DESC, created_at DESC, id DESC
+LIMIT 1;
+
+findByProviderCertificateId:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND provider_id = :providerId
+  AND provider_certificate_id = :providerCertificateId AND deleted_at IS NULL
+ORDER BY alias ASC, kind ASC, created_at ASC, id ASC;
+
+findByLinkedKeyReferenceId:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND linked_key_reference_id = :linkedKeyReferenceId
+  AND deleted_at IS NULL
+ORDER BY created_at DESC;
+
+findAll:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND deleted_at IS NULL
+  AND (:providerId IS NULL OR provider_id = :providerId)
+  AND (:kind IS NULL OR kind = :kind)
+  AND (:source IS NULL OR source = :source)
+ORDER BY created_at DESC;
+
+findExistingForUpsert:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND alias = :alias AND provider_id = :providerId
+  AND kind = :kind AND deleted_at IS NULL;
+
+insertRecord:
+INSERT INTO certificate_reference(
+    id, tenant_id, alias, provider_id, provider_certificate_id, kind, source, control_mode,
+    linked_key_reference_id, certificate_chain_der, certificate_fingerprint, public_key_fingerprint,
+    created_at, created_by_id, updated_at, updated_by_id, deleted_at, deleted_by_id
+) VALUES (
+    :id, :tenantId, :alias, :providerId, :providerCertificateId, :kind, :source, :controlMode,
+    :linkedKeyReferenceId, :certificateChainDer, :certificateFingerprint, :publicKeyFingerprint,
+    :createdAt, :createdById, :updatedAt, :updatedById, :deletedAt, :deletedById
+);
+
+updateRecord:
+UPDATE certificate_reference SET
+    provider_certificate_id = :providerCertificateId,
+    source = :source,
+    control_mode = :controlMode,
+    linked_key_reference_id = :linkedKeyReferenceId,
+    certificate_chain_der = :certificateChainDer,
+    certificate_fingerprint = :certificateFingerprint,
+    public_key_fingerprint = :publicKeyFingerprint,
+    updated_at = :updatedAt,
+    updated_by_id = :updatedById,
+    deleted_at = :deletedAt,
+    deleted_by_id = :deletedById
+WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL;
+
+softDelete:
+UPDATE certificate_reference SET
+    deleted_at = :deletedAt,
+    deleted_by_id = :deletedById
+WHERE tenant_id = :tenantId AND alias = :alias AND provider_id = :providerId
+  AND kind = :kind AND deleted_at IS NULL;
+
+softDeleteById:
+UPDATE certificate_reference SET
+    deleted_at = :deletedAt,
+    deleted_by_id = :deletedById
+WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL;
+
+lastChangeCount:
+SELECT changes();

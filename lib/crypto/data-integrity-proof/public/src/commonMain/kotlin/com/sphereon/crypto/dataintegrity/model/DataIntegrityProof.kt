@@ -48,7 +48,7 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("DataIntegrityProof", exact = true)
 @JsExportCompat
-@Serializable
+@Serializable(with = DataIntegrityProofSerializer::class)
 data class DataIntegrityProof
     @JvmOverloads
     constructor(
@@ -65,9 +65,57 @@ data class DataIntegrityProof
         val nonce: String? = null,
         @Serializable(with = PreviousProofSerializer::class)
         val previousProof: List<String>? = null,
+        /**
+         * Cryptosuite-defined proof properties not covered by the typed
+         * Data Integrity model. These remain top-level JSON properties on the
+         * wire and are included in proof configuration canonicalization.
+         *
+         * A key in this object may not shadow a typed property. Silently
+         * dropping such a collision would make the model and signed input
+         * disagree.
+         */
+        val additionalProofProperties: kotlinx.serialization.json.JsonObject =
+            kotlinx.serialization.json.JsonObject(emptyMap()),
+        /**
+         * The unordered-set form of the Data Integrity `domain` property.
+         * The list order is retained for wire round-tripping; callers must
+         * not provide both [domain] and this property.
+         */
+        val domainSet: List<String>? = null,
     ) {
+        init {
+            require(domain == null || domainSet == null) {
+                "DataIntegrityProof.domain and domainSet are mutually exclusive"
+            }
+            domainSet?.let { values ->
+                require(values.isNotEmpty()) { "DataIntegrityProof.domainSet must not be empty" }
+                require(values.all(String::isNotBlank)) { "DataIntegrityProof.domainSet values must not be blank" }
+                require(values.distinct().size == values.size) { "DataIntegrityProof.domainSet values must be unique" }
+            }
+            val conflicts = additionalProofProperties.keys intersect TYPED_PROPERTY_NAMES
+            require(conflicts.isEmpty()) {
+                "DataIntegrityProof extension properties shadow typed properties: ${conflicts.sorted().joinToString()}"
+            }
+        }
+
         companion object {
             /** Suite-agnostic type per W3C VC-DI 1.0. */
             const val TYPE_DATA_INTEGRITY: String = "DataIntegrityProof"
+
+            internal val TYPED_PROPERTY_NAMES: Set<String> =
+                setOf(
+                    "type",
+                    "cryptosuite",
+                    "proofPurpose",
+                    "verificationMethod",
+                    "proofValue",
+                    "id",
+                    "created",
+                    "expires",
+                    "domain",
+                    "challenge",
+                    "nonce",
+                    "previousProof",
+                )
         }
     }

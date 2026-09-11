@@ -53,6 +53,7 @@ interface CompleteReconciliationWithClaimsCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "completeReconciliationWithClaims",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp-auth-reconciliation"),
                 summary = "Complete identity reconciliation with pre-extracted OIDC claims from the STS",
             )

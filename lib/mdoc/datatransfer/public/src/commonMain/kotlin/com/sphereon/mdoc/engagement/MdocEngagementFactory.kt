@@ -107,6 +107,12 @@ class EngagementConfiguration {
     private val _engagementMethods = mutableSetOf<MdocEngagementMethod>()
     private val _retrievalMethods = mutableSetOf<DeviceRetrievalMethod>()
 
+    /**
+     * Domain origin obtained from a trusted user-agent/referrer context for
+     * website retrieval. This is deliberately not inferred from ReaderEngagement.
+     */
+    var trustedOriginDomain: String? = null
+
     val engagementMethods: Set<MdocEngagementMethod>
         get() = _engagementMethods.ifEmpty { setOf(QREngagementMethod()) }
 
@@ -523,9 +529,9 @@ class Oid4vpEngagementBuilder {
  * This builder configures OID4VP retrieval options including:
  * - Client identifier (verifier)
  * - Request URI (HTTPS URL to fetch Authorization Request Object)
- * - Response URI (HTTPS URL to POST Authorization Response)
- * - Nonce (cryptographic nonce, min 16 bytes)
- * - Presentation Definition URI (optional, legacy; DCQL is the default)
+ * - Response URI, nonce, and the restricted inline Presentation Definition are obtained from
+ *   the signed Authorization Request Object at `request_uri`
+ * - No DCQL or Presentation Definition URI is accepted by the Annex B path
  *
  * ## Usage Example
  * ```kotlin
@@ -579,8 +585,9 @@ class Oid4vpRetrievalBuilder(
     var nonce: String = ""
 
     /**
-     * Optional HTTPS URL to fetch the Presentation Definition (legacy).
-     * If not provided, DCQL should be included inline in the Authorization Request.
+     * Legacy compatibility field for an optional HTTPS Presentation Definition URL.
+     * ISO 18013-7 Annex B requires the restricted Presentation Exchange definition
+     * inline in the signed Authorization Request and rejects this field at transport time.
      */
     var presentationDefinitionUri: String? = null
 
@@ -591,8 +598,8 @@ class Oid4vpRetrievalBuilder(
      *
      * Per ISO 18013-7 Annex B, the URI typically contains only `client_id` and `request_uri`.
      * The holder must fetch the Authorization Request Object from `request_uri` to get
-     * the actual parameters like `response_uri`, `nonce`, and `dcql_query`
-     * (or legacy `presentation_definition`).
+     * the actual parameters like `response_uri`, `nonce`, and
+     * `presentation_definition`.
      *
      * @param uri The full `mdoc-openid4vp://` URI
      */
@@ -616,7 +623,7 @@ class Oid4vpRetrievalBuilder(
             clientId = params["client_id"] ?: throw IllegalArgumentException("client_id parameter required")
             requestUri = params["request_uri"] ?: throw IllegalArgumentException("request_uri parameter required")
 
-            // Note: response_uri, nonce, and dcql_query are NOT in the mdoc-openid4vp:// URI
+            // Note: response_uri, nonce, and presentation_definition are NOT in the mdoc-openid4vp:// URI
             // They must be fetched from the Authorization Request Object at request_uri
             // These should be set separately after fetching the Authorization Request
         }

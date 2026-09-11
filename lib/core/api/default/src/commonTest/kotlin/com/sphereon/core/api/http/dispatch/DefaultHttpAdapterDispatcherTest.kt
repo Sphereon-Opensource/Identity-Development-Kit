@@ -16,6 +16,17 @@
 
 package com.sphereon.core.api.http.dispatch
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.ConfigService
+import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.TenantConfigService
+import com.sphereon.core.api.context.ContextConfig
+import com.sphereon.core.api.context.IdkScope
+import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
@@ -28,6 +39,16 @@ import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.HttpRoute
 import com.sphereon.core.api.http.describe.TenantPathMode
+import com.sphereon.core.api.http.response.errorResponse
+import com.sphereon.core.api.log.AsyncLogService
+import com.sphereon.core.api.log.LogMessage
+import com.sphereon.core.api.log.LogService
+import com.sphereon.core.api.log.LoggerConfig
+import com.sphereon.core.api.log.SessionLogManager
+import com.sphereon.core.api.log.SessionLogService
+import com.sphereon.di.context.NoOpSessionContext
+import com.sphereon.di.session.SessionContext
+import com.sphereon.di.session.SessionContextManager
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,9 +69,14 @@ class DefaultHttpAdapterDispatcherTest {
         override val mount: HttpAdapterMount get() = adapterMount
 
         override val routes: List<HttpRoute> =
-            routeSpecs.map { (method, pattern) ->
+            routeSpecs.mapIndexed { index, (method, pattern) ->
                 HttpRoute(
-                    endpoint = HttpEndpointDescriptor(method = method, pathPattern = pattern),
+                    endpoint =
+                        HttpEndpointDescriptor(
+                            method = method,
+                            pathPattern = pattern,
+                            handlerCommandId = "test.handler.route-$index",
+                        ),
                     handler = { request ->
                         captureNormalizedPath?.invoke(request.path)
                         GenericHttpResponse(
@@ -71,25 +97,123 @@ class DefaultHttpAdapterDispatcherTest {
             HttpAdapterDescription(
                 id = id,
                 mount = mount,
-                endpoints = endpoints,
+                endpoints =
+                    endpoints.mapIndexed { index, endpoint ->
+                        endpoint.copy(
+                            handlerCommandId = endpoint.handlerCommandId ?: "test.handler.route-$index",
+                        )
+                    },
             )
     }
 
     private fun createCatalog(providers: Set<HttpAdapterDescriptorProvider>): HttpAdapterCatalog = DefaultHttpAdapterCatalog(providers, com.sphereon.core.api.http.config.UniversalHttpConfig.DEFAULT)
 
-    /**
-     * Mirrors production DI: the dispatcher's parity guard compares the runtime adapter id set
-     * against the RAW descriptor-provider id set. The helper derives that provider set from the
-     * catalog so the happy-path tests (paired adapter + descriptor) construct cleanly. Tests that
-     * exercise the parity / collision guards pass explicit, deliberately-mismatched sets.
-     */
-    private fun providersFromCatalog(catalog: HttpAdapterCatalog): Set<HttpAdapterDescriptorProvider> = catalog.describeAll().map { TestDescriptorProvider(it.id, it.mount, it.endpoints) }.toSet()
+    private class TestDispatcher(
+        private val selector: HttpAdapterRouteSelector,
+        private val dispatcher: DefaultHttpAdapterDispatcher,
+    ) {
+        suspend fun dispatch(request: GenericHttpRequest): GenericHttpResponse =
+            when (val selection = selector.select(request.method, request.path)) {
+                is HttpAdapterRouteSelection.Selected -> dispatcher.dispatch(request, selection.match)
+                is HttpAdapterRouteSelection.NotFound -> errorResponse(404, "Not found")
+                is HttpAdapterRouteSelection.Ambiguous -> errorResponse(500, "Internal server error")
+                is HttpAdapterRouteSelection.Misconfigured -> errorResponse(500, "Internal server error")
+            }
+
+        suspend fun dispatch(
+            request: GenericHttpRequest,
+            route: HttpAdapterRouteMatch,
+        ): GenericHttpResponse = dispatcher.dispatch(request, route)
+    }
 
     private fun createDispatcher(
         catalog: HttpAdapterCatalog,
-        adapters: Set<HttpAdapter>,
-        descriptorProviders: Set<HttpAdapterDescriptorProvider> = providersFromCatalog(catalog),
-    ): DefaultHttpAdapterDispatcher = DefaultHttpAdapterDispatcher(catalog, adapters, descriptorProviders)
+        vararg adapters: HttpAdapter,
+    ): TestDispatcher {
+        val adaptersById = adapters.groupBy(HttpAdapter::id)
+        val duplicateIds = adaptersById.filterValues { it.size > 1 }.keys.sorted()
+        require(duplicateIds.isEmpty()) {
+            "Multiple runtime HttpAdapter instances found for ids: ${duplicateIds.joinToString(", ")}"
+        }
+        return createDispatcher(
+            catalog,
+            adaptersById.mapValues { (_, values) -> lazyOf(values.single()) },
+        )
+    }
+
+    private fun createDispatcher(
+        catalog: HttpAdapterCatalog,
+        adapters: Map<String, Lazy<HttpAdapter>>,
+        execution: SessionExecution = TestSessionExecution,
+    ): TestDispatcher =
+        TestDispatcher(
+            selector = DefaultHttpAdapterRouteSelector(catalog),
+            dispatcher =
+                DefaultHttpAdapterDispatcher(
+                    adapters = adapters,
+                    execution = execution,
+                ),
+        )
+
+    private object TestSessionExecution : SessionExecution {
+        override val sessionContext: SessionContext = NoOpSessionContext
+        override val sessionContextManager: SessionContextManager
+            get() = error("Not needed for dispatcher tests")
+        override val log: SessionLogService = NoOpSessionLogService
+        override val conf: ContextConfig = NoOpContextConfig
+    }
+
+    private object NoOpSessionLogService : SessionLogService {
+        override val sessionContext: SessionContext = NoOpSessionContext
+        override val id: String = "test-http-dispatch"
+        override val isEnabled: Boolean = false
+        override val scope: IdkScope = IdkScope.SESSION
+        override val logManager: SessionLogManager
+            get() = throw NotImplementedError("Not needed for dispatcher tests")
+
+        override suspend fun setConfig(config: LoggerConfig): LogService = this
+
+        override fun executeAsync(message: LogMessage): IdkResult<Unit, IdkErrorType> = Ok(Unit)
+
+        override fun toAsync(): AsyncLogService = throw NotImplementedError("Not needed for dispatcher tests")
+    }
+
+    private class CapturingSessionLogService : SessionLogService {
+        val messages = mutableListOf<LogMessage>()
+        override val sessionContext: SessionContext = NoOpSessionContext
+        override val id: String = "capturing-http-dispatch"
+        override val isEnabled: Boolean = true
+        override val scope: IdkScope = IdkScope.SESSION
+        override val logManager: SessionLogManager
+            get() = throw NotImplementedError("Not needed for dispatcher tests")
+
+        override suspend fun setConfig(config: LoggerConfig): LogService = this
+
+        override fun executeAsync(message: LogMessage): IdkResult<Unit, IdkErrorType> =
+            Ok(Unit).also { messages += message }
+
+        override fun toAsync(): AsyncLogService = throw NotImplementedError("Not needed for dispatcher tests")
+    }
+
+    private class CapturingSessionExecution(
+        override val log: SessionLogService,
+    ) : SessionExecution {
+        override val sessionContext: SessionContext = NoOpSessionContext
+        override val sessionContextManager: SessionContextManager
+            get() = error("Not needed for dispatcher tests")
+        override val conf: ContextConfig = NoOpContextConfig
+    }
+
+    private object NoOpContextConfig : ContextConfig {
+        override val app: AppConfigService
+            get() = error("Not needed for dispatcher tests")
+        override val tenant: TenantConfigService
+            get() = error("Not needed for dispatcher tests")
+        override val principal: PrincipalConfigService
+            get() = error("Not needed for dispatcher tests")
+
+        override fun conf(level: ConfigLevel): ConfigService = error("Not needed for dispatcher tests")
+    }
 
     // ========== Path normalization tests (TenantPathMode.OFF) ==========
 
@@ -111,11 +235,83 @@ class DefaultHttpAdapterDispatcherTest {
                     endpoints = listOf(HttpEndpointDescriptor(HttpMethod.POST, "/api/commands")),
                 )
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "POST", path = "/api/commands"))
 
             assertEquals(200, response.statusCode)
+        }
+
+    @Test
+    fun dispatchUsesAppScopePreselectedRouteWithoutRepeatingCatalogSelection() =
+        runTest {
+            var capturedPath: String? = null
+            val adapter =
+                TestAdapter(
+                    id = "KMS_KEYS",
+                    adapterMount = HttpAdapterMount(serverPrefix = "/api/kms", adapterBasePath = "/keys"),
+                    routeSpecs = listOf(HttpMethod.GET to "/{keyId}"),
+                    captureNormalizedPath = { capturedPath = it },
+                )
+            val provider =
+                TestDescriptorProvider(
+                    id = adapter.id,
+                    mount = adapter.describe().mount,
+                    endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/keys/{keyId}")),
+                )
+            val dispatcher = createDispatcher(createCatalog(setOf(provider)), adapter)
+            val request = GenericHttpRequest(method = "GET", path = "/api/kms/keys/abc123")
+            val route =
+                HttpAdapterRouteMatch(
+                    adapterId = adapter.id,
+                    method = request.method,
+                    originalPath = request.path,
+                    normalizedPath = "/keys/abc123",
+                    matchedPathPattern = "/keys/{keyId}",
+                    handlerCommandId = "test.handler.route-0",
+                    tenantIdFromPath = null,
+                )
+
+            val response = dispatcher.dispatch(request, route)
+
+            assertEquals(200, response.statusCode)
+            assertEquals("/keys/abc123", capturedPath)
+        }
+
+    @Test
+    fun dispatchRejectsPreselectedRouteWhoseRuntimeAdapterIsAbsent() =
+        runTest {
+            val log = CapturingSessionLogService()
+            val dispatcher =
+                createDispatcher(
+                    catalog = createCatalog(emptySet()),
+                    adapters = emptyMap(),
+                    execution = CapturingSessionExecution(log),
+                )
+            val route =
+                HttpAdapterRouteMatch(
+                    adapterId = "missing-adapter",
+                    method = "GET",
+                    originalPath = "/missing",
+                    normalizedPath = "/missing",
+                    matchedPathPattern = "/missing",
+                    handlerCommandId = "missing.endpoint.get",
+                    tenantIdFromPath = null,
+                )
+
+            val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/missing"), route)
+
+            assertEquals(500, response.statusCode)
+            assertTrue(response.body?.contains("Internal server error") == true)
+            assertTrue(response.body?.contains("missing-adapter") != true)
+            val resolution = log.messages.single { it.message == "VDX_HTTP_ROUTE_FIRST_RESOLUTION" }
+            assertEquals("selected-adapter-resolution", resolution.metadata?.get("stage"))
+            assertEquals("missing", resolution.metadata?.get("outcome"))
+            val failure = log.messages.single { it.message == "HTTP_DISPATCH_FAILED" }
+            assertEquals("HTTP_DISPATCH_FAILED", failure.message)
+            assertEquals("runtime_adapter_missing", failure.metadata?.get("reason"))
+            assertEquals("missing-adapter", failure.metadata?.get("adapterId"))
+            assertEquals("missing.endpoint.get", failure.metadata?.get("handlerCommandId"))
         }
 
     @Test
@@ -139,7 +335,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/keys/abc123"))
 
@@ -172,13 +368,13 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(providers)
-            val dispatcher = createDispatcher(catalog, setOf(kmsAdapter, oauthAdapter))
+            val dispatcher = createDispatcher(catalog, kmsAdapter, oauthAdapter)
 
             val kmsResponse = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/keys"))
-            assertEquals(201, kmsResponse.statusCode)
+            assertEquals(201, kmsResponse.statusCode, kmsResponse.body)
 
             val oauthResponse = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/oauth2/token"))
-            assertEquals(202, oauthResponse.statusCode)
+            assertEquals(202, oauthResponse.statusCode, oauthResponse.body)
         }
 
     @Test
@@ -198,7 +394,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/unknown/path"))
 
@@ -222,7 +418,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "POST", path = "/api/items"))
 
@@ -255,7 +451,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/t/tenant123/api/kms/keys"))
 
@@ -287,7 +483,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/t/myTenant/api/kms/keys/key456"))
 
@@ -318,7 +514,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/t/tenant999/keys"))
 
@@ -350,7 +546,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/t/tenantABC/keys/keyXYZ"))
 
@@ -381,7 +577,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/t/beforeTenant/api/kms/keys"))
 
@@ -411,7 +607,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/t/afterTenant/keys"))
 
@@ -443,7 +639,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response =
                 dispatcher.dispatch(
@@ -480,7 +676,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response =
                 dispatcher.dispatch(
@@ -519,7 +715,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/tenant/customTenant/api/kms/keys"))
 
@@ -537,10 +733,10 @@ class DefaultHttpAdapterDispatcherTest {
                     adapterMount =
                         HttpAdapterMount(
                             serverPrefix = "",
-                            adapterBasePath = "/",
+                            adapterBasePath = "/oid4vp",
                             tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 1),
                         ),
-                    routeSpecs = listOf(HttpMethod.GET to "/{tenantSlug}/oid4vp/request-uri/{id}"),
+                    routeSpecs = listOf(HttpMethod.GET to "/request-uri/{id}"),
                     captureNormalizedPath = { capturedPath = it },
                 )
             val provider =
@@ -556,7 +752,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/acme/oid4vp/request-uri/123"))
 
@@ -577,7 +773,7 @@ class DefaultHttpAdapterDispatcherTest {
                             adapterBasePath = "/",
                             tenantPathPolicy = TenantPathPolicy.WellKnownSuffix(maxDepth = 1),
                         ),
-                    routeSpecs = listOf(HttpMethod.GET to "/.well-known/openid-configuration/{tenantSlug}"),
+                    routeSpecs = listOf(HttpMethod.GET to "/.well-known/openid-configuration"),
                     captureNormalizedPath = { capturedPath = it },
                 )
             val provider =
@@ -588,7 +784,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/.well-known/openid-configuration/acme"))
 
@@ -623,7 +819,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(providers)
-            val dispatcher = createDispatcher(catalog, setOf(generalAdapter, specificAdapter))
+            val dispatcher = createDispatcher(catalog, generalAdapter, specificAdapter)
 
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/kms/keys"))
 
@@ -657,7 +853,7 @@ class DefaultHttpAdapterDispatcherTest {
                 )
 
             val catalog = createCatalog(setOf(provider))
-            val dispatcher = createDispatcher(catalog, setOf(adapter))
+            val dispatcher = createDispatcher(catalog, adapter)
 
             // Request to /api/items/123 should match the more specific /items/{id}
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/items/123"))
@@ -669,40 +865,118 @@ class DefaultHttpAdapterDispatcherTest {
     // ========== Error handling tests ==========
 
     @Test
-    fun constructionFailsWhenMultipleRuntimeAdaptersHaveSameId() =
+    fun routeNotFoundDoesNotConstructAnySessionAdapter() =
         runTest {
-            // Duplicate adapter IDs are rejected at construction time (fail-fast)
-            val adapter1 =
-                TestAdapter(
-                    id = "DUPLICATE_ID",
-                    adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/a"),
-                    routeSpecs = listOf(HttpMethod.GET to "/"),
+            var selectedConstructions = 0
+            var unrelatedConstructions = 0
+            val selectedProvider =
+                TestDescriptorProvider(
+                    id = "SELECTED_ADAPTER",
+                    mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/selected"),
+                    endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/selected")),
                 )
-            val adapter2 =
+            val dispatcher =
+                createDispatcher(
+                    createCatalog(setOf(selectedProvider)),
+                    mapOf(
+                        "SELECTED_ADAPTER" to lazy {
+                            selectedConstructions++
+                            TestAdapter(
+                                id = "SELECTED_ADAPTER",
+                                adapterMount = HttpAdapterMount("/api", "/selected"),
+                                routeSpecs = listOf(HttpMethod.GET to "/"),
+                            )
+                        },
+                        "UNRELATED_ADAPTER" to lazy {
+                            unrelatedConstructions++
+                            TestAdapter(
+                                id = "UNRELATED_ADAPTER",
+                                adapterMount = HttpAdapterMount("/api", "/unrelated"),
+                                routeSpecs = listOf(HttpMethod.GET to "/"),
+                            )
+                        },
+                    ),
+                )
+
+            val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/unknown"))
+
+            assertEquals(404, response.statusCode)
+            assertEquals(0, selectedConstructions)
+            assertEquals(0, unrelatedConstructions)
+        }
+
+    @Test
+    fun selectedRouteConstructsOnlyItsKeyedSessionAdapter() =
+        runTest {
+            var selectedConstructions = 0
+            var unrelatedConstructions = 0
+            val selectedProvider =
+                TestDescriptorProvider(
+                    id = "SELECTED_ADAPTER",
+                    mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/selected"),
+                    endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/selected")),
+                )
+            val dispatcher =
+                createDispatcher(
+                    createCatalog(setOf(selectedProvider)),
+                    mapOf(
+                        "SELECTED_ADAPTER" to lazy {
+                            selectedConstructions++
+                            TestAdapter(
+                                id = "SELECTED_ADAPTER",
+                                adapterMount = HttpAdapterMount("/api", "/selected"),
+                                routeSpecs = listOf(HttpMethod.GET to "/"),
+                            )
+                        },
+                        "UNRELATED_ADAPTER" to lazy {
+                            unrelatedConstructions++
+                            TestAdapter(
+                                id = "UNRELATED_ADAPTER",
+                                adapterMount = HttpAdapterMount("/api", "/unrelated"),
+                                routeSpecs = listOf(HttpMethod.GET to "/"),
+                            )
+                        },
+                    ),
+                )
+
+            val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/selected"))
+
+            assertEquals(200, response.statusCode)
+            assertEquals(1, selectedConstructions)
+            assertEquals(0, unrelatedConstructions)
+        }
+
+    @Test
+    fun dispatchFailsWhenKeyedAdapterHasDifferentRuntimeIdentity() =
+        runTest {
+            val wrongAdapter =
                 TestAdapter(
-                    id = "DUPLICATE_ID",
-                    adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/b"),
+                    id = "WRONG_ID",
+                    adapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/a"),
                     routeSpecs = listOf(HttpMethod.GET to "/"),
                 )
             val provider =
                 TestDescriptorProvider(
-                    id = "DUPLICATE_ID",
-                    mount = adapter1.describe().mount,
+                    id = "EXPECTED_ID",
+                    mount = wrongAdapter.describe().mount,
                     endpoints = listOf(HttpEndpointDescriptor(HttpMethod.GET, "/a")),
                 )
-
             val catalog = createCatalog(setOf(provider))
+            val dispatcher =
+                createDispatcher(
+                    catalog,
+                    mapOf("EXPECTED_ID" to lazyOf<HttpAdapter>(wrongAdapter)),
+                )
 
-            val ex =
-                assertFailsWith<IllegalArgumentException> {
-                    createDispatcher(catalog, setOf(adapter1, adapter2))
-                }
-            assertTrue(ex.message?.contains("Multiple runtime HttpAdapter") == true)
+            val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/a"))
+
+            assertEquals(500, response.statusCode)
+            assertTrue(response.body?.contains("Internal server error") == true)
+            assertTrue(response.body?.contains("WRONG_ID") != true)
         }
 
     @Test
-    fun dispatchReturns500WhenEndpointsCollide() =
-        runTest {
+    fun catalogConstructionFailsWhenEndpointsCollide() {
             // Two adapters with identical mounts and endpoints — an ambiguous route. The
             // fail-fast collision guard rejects this at construction instead of returning a
             // runtime 500 only when the colliding route is hit.
@@ -726,21 +1000,15 @@ class DefaultHttpAdapterDispatcherTest {
                     TestDescriptorProvider("ADAPTER_B", adapter2.describe().mount, listOf(HttpEndpointDescriptor(HttpMethod.GET, "/items"))),
                 )
 
-            val catalog = createCatalog(providers)
-
-            val dispatcher = createDispatcher(catalog, setOf(adapter1, adapter2))
-            val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/items"))
-
-            assertEquals(500, response.statusCode)
-            assertTrue(response.body?.contains("Ambiguous adapter match") == true, "unexpected body: ${response.body}")
-        }
+            assertFailsWith<IllegalArgumentException> { createCatalog(providers) }
+    }
 
     @Test
     fun dispatchFailsLoudlyWhenDescriptorHasNoRuntimeAdapter() =
         runTest {
             // Catalog has a descriptor but no runtime adapter with that id. That is a wiring
-            // defect, not an unserved route: it answers 500 and names the descriptor, so it can
-            // never be mistaken for an ordinary route-not-found.
+            // defect, not an unserved route. The public response stays generic; the session log
+            // carries the descriptor and handler identities needed for diagnosis.
             val provider =
                 TestDescriptorProvider(
                     id = "MISSING_ADAPTER",
@@ -750,18 +1018,19 @@ class DefaultHttpAdapterDispatcherTest {
 
             val catalog = createCatalog(setOf(provider))
 
-            val dispatcher = createDispatcher(catalog, emptySet())
+            val dispatcher = createDispatcher(catalog, emptyMap<String, Lazy<HttpAdapter>>())
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/missing"))
 
             assertEquals(500, response.statusCode)
-            assertTrue(response.body?.contains("MISSING_ADAPTER") == true, "unexpected body: ${response.body}")
+            assertTrue(response.body?.contains("Internal server error") == true)
+            assertTrue(response.body?.contains("MISSING_ADAPTER") != true)
         }
 
     @Test
     fun dispatchReturns404WhenAdapterHasNoDescriptor() =
         runTest {
             // The silent-404 case this guard exists to kill: an adapter is contributed to
-            // Set<HttpAdapter> but its AppScope descriptor provider was forgotten, so the catalog
+            // runtime adapter map but its AppScope descriptor provider was forgotten, so the catalog
             // never advertises its routes.
             val withDescriptor =
                 TestAdapter(
@@ -782,7 +1051,7 @@ class DefaultHttpAdapterDispatcherTest {
                     ),
                 )
 
-            val dispatcher = createDispatcher(catalog, setOf(withDescriptor, orphanAdapter))
+            val dispatcher = createDispatcher(catalog, withDescriptor, orphanAdapter)
             val response = dispatcher.dispatch(GenericHttpRequest(method = "GET", path = "/api/b"))
 
             assertEquals(404, response.statusCode)

@@ -67,7 +67,7 @@ sealed interface DcqlError : IdkErrorType {
      * - "jwt_vc_json" (W3C VC JWT)
      * - "ldp_vc" (W3C VC with Linked Data Proofs)
      * - "jwt_vp" (JWT VP)
-     * - "ldp_vp" (LDP VP)
+     * - "ldp_vc" (W3C Data Integrity VC or holder-bound VP)
      */
     data class InvalidFormat(
         val format: String,

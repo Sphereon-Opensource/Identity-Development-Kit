@@ -1,0 +1,99 @@
+import kotlin.Boolean;
+import kotlin.Long;
+
+CREATE TABLE IF NOT EXISTS attestation_catalog (
+    tenant_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL,
+    verification_enabled INTEGER AS Boolean NOT NULL DEFAULT 0,
+    version INTEGER AS Long NOT NULL,
+    created_at TEXT,
+    updated_at TEXT,
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_attestation_catalog_slug
+    ON attestation_catalog(tenant_id, slug);
+
+-- Serving uses listed_from/listed_until (epoch millis). CREATE TABLE IF NOT EXISTS
+-- does not add those columns to a file-backed DB that still has boolean `listed`.
+-- SqliteCatalogDatabases migrates that table on open; otherwise delete attestation_schema.
+CREATE TABLE IF NOT EXISTS attestation_schema (
+    tenant_id TEXT NOT NULL,
+    catalog_id TEXT NOT NULL,
+    schema_id TEXT NOT NULL,
+    schema_json TEXT NOT NULL,
+    provenance TEXT NOT NULL,
+    listed_from INTEGER AS Long NOT NULL,
+    listed_until INTEGER AS Long,
+    linked_design_id TEXT,
+    linked_vct_id TEXT,
+    created_at TEXT,
+    updated_at TEXT,
+    PRIMARY KEY (tenant_id, catalog_id, schema_id)
+);
+
+CREATE TABLE IF NOT EXISTS attestation_schema_document (
+    tenant_id TEXT NOT NULL,
+    catalog_id TEXT NOT NULL,
+    schema_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    format_identifier TEXT NOT NULL DEFAULT '',
+    media_type TEXT NOT NULL,
+    bytes BLOB NOT NULL,
+    integrity TEXT,
+    PRIMARY KEY (tenant_id, catalog_id, schema_id, kind, format_identifier)
+);
+
+selectCatalog:
+SELECT * FROM attestation_catalog WHERE tenant_id = :tenantId AND id = :id;
+
+selectCatalogBySlug:
+SELECT * FROM attestation_catalog WHERE tenant_id = :tenantId AND slug = :slug;
+
+listCatalogs:
+SELECT * FROM attestation_catalog WHERE tenant_id = :tenantId;
+
+upsertCatalog:
+INSERT OR REPLACE INTO attestation_catalog(
+    tenant_id, id, slug, display_name, description, status, verification_enabled, version, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectSchema:
+SELECT * FROM attestation_schema WHERE tenant_id = :tenantId AND catalog_id = :catalogId AND schema_id = :schemaId;
+
+listSchemas:
+SELECT * FROM attestation_schema WHERE tenant_id = :tenantId AND catalog_id = :catalogId;
+
+upsertSchema:
+INSERT OR REPLACE INTO attestation_schema(
+    tenant_id, catalog_id, schema_id, schema_json, provenance, listed_from, listed_until, linked_design_id, linked_vct_id, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteSchema:
+DELETE FROM attestation_schema WHERE tenant_id = :tenantId AND catalog_id = :catalogId AND schema_id = :schemaId;
+
+deleteSchemaDocuments:
+DELETE FROM attestation_schema_document WHERE tenant_id = :tenantId AND catalog_id = :catalogId AND schema_id = :schemaId;
+
+listDocuments:
+SELECT * FROM attestation_schema_document WHERE tenant_id = :tenantId AND catalog_id = :catalogId AND schema_id = :schemaId;
+
+upsertDocument:
+INSERT OR REPLACE INTO attestation_schema_document(
+    tenant_id, catalog_id, schema_id, kind, format_identifier, media_type, bytes, integrity
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+listPublishedVerificationSchemas:
+SELECT s.*
+FROM attestation_schema s
+INNER JOIN attestation_catalog c
+    ON c.tenant_id = s.tenant_id AND c.id = s.catalog_id
+WHERE s.tenant_id = :tenantId
+  AND c.status = 'PUBLISHED'
+  AND c.verification_enabled = 1
+  AND s.listed_from <= :now
+  AND (s.listed_until IS NULL OR s.listed_until > :now);

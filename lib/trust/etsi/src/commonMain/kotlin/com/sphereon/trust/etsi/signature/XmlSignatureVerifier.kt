@@ -20,11 +20,15 @@ package com.sphereon.trust.etsi.signature
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFrom
+import com.sphereon.core.api.encodeTo
 import com.sphereon.core.compat.xml.c14n.ExclusiveC14N
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.x509.X509VerificationRequest
+import com.sphereon.crypto.core.x509.X509VerifyService
 import com.sphereon.di.session.SessionScope
+import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import com.sphereon.trust.etsi.signature.xades.QualifyingProperties
 import com.sphereon.trust.etsi.signature.xades.XAdESParser
 import com.sphereon.trust.etsi.signature.xmldsig.ReferenceValidator
@@ -53,6 +57,7 @@ import kotlin.time.Instant
 @ContributesBinding(SessionScope::class, binding = binding<XmlSignatureVerifier>())
 class XmlUtilSignatureVerifier(
     private val keyManagerService: KeyManagerService,
+    private val x509VerifyService: X509VerifyService,
     private val execution: SessionExecution,
 ) : XmlSignatureVerifier {
     private companion object {
@@ -154,6 +159,43 @@ class XmlUtilSignatureVerifier(
                 )
             }
 
+            val signingCertificate = x509Certificates.first().decodeFrom(Encoding.BASE64)
+            if (options.validateCertificateChain) {
+                val trustedRoots = options.trustedRoots
+                when {
+                    trustedRoots.isNullOrEmpty() -> {
+                        return XmlSignatureVerificationResult(
+                            valid = false,
+                            signaturePresent = true,
+                            signingCertificate = signingCertificate,
+                            certificateChain = chain,
+                            errorMessage = "No configured signer root certificates were provided",
+                            reasonCodes = listOf(TrustDiagnosticReasonCodes.SIGNER_ROOT_NOT_CONFIGURED),
+                        )
+                    }
+                    trustedRoots.any { it.contentEquals(signingCertificate) } -> Unit
+                    else -> {
+                        val chainResult =
+                            x509VerifyService.verifyCertificateChain(
+                                X509VerificationRequest(
+                                    chainDER = chain?.toTypedArray(),
+                                    trustedCerts = trustedRoots.map(::derToPem).toTypedArray(),
+                                ),
+                            )
+                        if (chainResult.error) {
+                            return XmlSignatureVerificationResult(
+                                valid = false,
+                                signaturePresent = true,
+                                signingCertificate = signingCertificate,
+                                certificateChain = chain,
+                                errorMessage = "Signer certificate chain validation failed: ${chainResult.message ?: "unknown error"}",
+                                reasonCodes = listOf(TrustDiagnosticReasonCodes.SIGNER_CHAIN_INVALID),
+                            )
+                        }
+                    }
+                }
+            }
+
             // Create KeyInfo with certificate
             val keyInfo =
                 KeyInfo<KeyType>(
@@ -176,7 +218,7 @@ class XmlUtilSignatureVerifier(
                 return XmlSignatureVerificationResult(
                     valid = false,
                     signaturePresent = true,
-                    signingCertificate = x509Certificates.firstOrNull()?.decodeFrom(Encoding.BASE64),
+                    signingCertificate = signingCertificate,
                     certificateChain = chain,
                     errorMessage = "Signature validation failed",
                 )
@@ -195,7 +237,7 @@ class XmlUtilSignatureVerifier(
                 return XmlSignatureVerificationResult(
                     valid = false,
                     signaturePresent = true,
-                    signingCertificate = x509Certificates.firstOrNull()?.decodeFrom(Encoding.BASE64),
+                    signingCertificate = signingCertificate,
                     certificateChain = chain,
                     errorMessage = "Reference validation failed: ${invalidRefs.first().errorMessage}",
                     referenceResults = referenceResults,
@@ -220,7 +262,7 @@ class XmlUtilSignatureVerifier(
             XmlSignatureVerificationResult(
                 valid = true,
                 signaturePresent = true,
-                signingCertificate = x509Certificates.firstOrNull()?.decodeFrom(Encoding.BASE64),
+                signingCertificate = signingCertificate,
                 certificateChain = chain,
                 xadesProperties = qualifyingProperties,
                 signingTime = signingTime,
@@ -300,6 +342,9 @@ class XmlUtilSignatureVerifier(
             null
         }
     }
+
+    private fun derToPem(der: ByteArray): String =
+        "-----BEGIN CERTIFICATE-----\n${der.encodeTo(Encoding.BASE64)}\n-----END CERTIFICATE-----"
 }
 
 /**
@@ -352,7 +397,7 @@ data class XmlSignatureVerificationOptions(
     val checkRevocation: Boolean = false,
     /**
      * Trusted root certificates for chain validation (DER encoded).
-     * If null, system trust store is used.
+     * If null or empty while chain validation is enabled, validation fails closed.
      */
     val trustedRoots: List<ByteArray>? = null,
     /**
@@ -403,6 +448,7 @@ data class XmlSignatureVerificationResult(
      * Per-reference validation results from SignedInfo.
      */
     val referenceResults: List<ReferenceValidator.ReferenceResult> = emptyList(),
+    val reasonCodes: List<String> = emptyList(),
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -421,6 +467,7 @@ data class XmlSignatureVerificationResult(
         if (certificateChain != other.certificateChain) return false
         if (errorMessage != other.errorMessage) return false
         if (details != other.details) return false
+        if (reasonCodes != other.reasonCodes) return false
 
         return true
     }
@@ -432,6 +479,7 @@ data class XmlSignatureVerificationResult(
         result = 31 * result + (certificateChain?.hashCode() ?: 0)
         result = 31 * result + (errorMessage?.hashCode() ?: 0)
         result = 31 * result + details.hashCode()
+        result = 31 * result + reasonCodes.hashCode()
         return result
     }
 }

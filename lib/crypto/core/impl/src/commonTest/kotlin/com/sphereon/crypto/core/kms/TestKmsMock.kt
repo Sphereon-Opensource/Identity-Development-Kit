@@ -27,6 +27,7 @@ import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
+import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.generic.CryptoAlg
@@ -158,9 +159,17 @@ class TestKmsMock : KeyManagerService {
         providerId: String?,
         alg: SignatureAlgorithm?,
     ): KmsProvider {
-        if (providerId != null) return getProviderById(providerId)
-        if (alg != null) return getKmsBySignatureAlgorithm(alg)
-        return providers.values.firstOrNull() ?: throw IllegalStateException("No provider registered")
+        if (providerId != null) {
+            val provider = getProviderById(providerId)
+            if (alg != null && alg !in provider.getCapabilities().signatureAlgorithms) {
+                throw PKIException("KMS provider $providerId does not support signature algorithm $alg")
+            }
+            return provider
+        }
+
+        val defaultProvider = providers.values.firstOrNull() ?: throw IllegalStateException("No provider registered")
+        if (alg == null || alg in defaultProvider.getCapabilities().signatureAlgorithms) return defaultProvider
+        return getKmsBySignatureAlgorithm(alg)
     }
 
     override suspend fun createRawSignature(
@@ -407,6 +416,7 @@ class TestKmsMock : KeyManagerService {
         keyOperations: Array<out KeyOperations>?,
         alg: SignatureAlgorithm?,
         keyVisibility: KeyVisibility?,
+        walletUnitId: String?,
     ): IdkResult<GenerateKeyResult, IdkError> = Ok(GenerateKeyResult(generateKey(providerId, alias, use, keyOperations, alg, keyVisibility)))
 
     override suspend fun listKeysResult(providerId: String?): IdkResult<ListKeysResult, IdkError> {

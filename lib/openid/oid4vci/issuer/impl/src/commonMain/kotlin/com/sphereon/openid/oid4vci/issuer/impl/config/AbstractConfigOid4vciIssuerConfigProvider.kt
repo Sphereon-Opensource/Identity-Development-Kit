@@ -27,7 +27,6 @@ import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.jose.JwaAlgorithm
-import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.openid.oid4vc.common.CredentialFormat
@@ -39,7 +38,6 @@ import com.sphereon.openid.oid4vci.common.model.KeyAttestationsRequired
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.issuer.config.CredentialSigningConfig
-import com.sphereon.openid.oid4vci.issuer.config.KeyAttesterTrustConfig
 import com.sphereon.openid.oid4vci.issuer.config.MissingRequiredClaimsPolicy
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciSpecVersion
@@ -61,6 +59,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Base for [Oid4vciIssuerConfigProvider] / [VctTypeMetadataProvider] implementations that read
@@ -73,7 +74,6 @@ import kotlinx.serialization.json.jsonObject
  *  - per-credential keys: `<namespace>.credentials.[<configId>].<key>`
  *
  * Subclasses choose the namespace:
- *  - [ConfigDrivenOid4vciIssuerConfigProvider] pins it to the singular `oid4vci.issuer` namespace.
  *  - [RegistryBackedOid4vciIssuerConfigProvider] computes a per-instance namespace
  *    (`oid4vci.issuers.<instanceId>`) selected at request time.
  *
@@ -91,7 +91,6 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     // aborting issuance instead of silently issuing credentials that could never be revoked.
     private val statusListDefinitionsProvider: Provider<StatusListDefinitionsProvider>? = null,
     private val namespaceProvider: () -> String,
-    private val fallbackToSingularNamespace: Boolean = true,
     /**
      * Active issuer instance id, evaluated per read like [namespaceProvider]. It identifies the
      * binding a bound [IssuerKeyNameResolver] resolves against; it never itself names a key.
@@ -114,19 +113,11 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
     protected val namespace: String
         get() = namespaceProvider()
 
-    private val singularNamespace: String
-        get() = ConfigDrivenOid4vciIssuerConfigProvider.NAMESPACE
-
     private fun namespaceProperty(relativeKey: String): String? =
         propertyInNamespace(namespace, relativeKey)
-            ?: if (fallbackToSingularNamespace && namespace != singularNamespace) propertyInNamespace(singularNamespace, relativeKey) else null
 
-    private fun namespaceSubProperties(relativePrefix: String): Map<String, String> {
-        val active = subPropertiesInNamespace(namespace, relativePrefix)
-        if (!fallbackToSingularNamespace || namespace == singularNamespace) return active
-        val fallback = subPropertiesInNamespace(singularNamespace, relativePrefix)
-        return fallback + active
-    }
+    private fun namespaceSubProperties(relativePrefix: String): Map<String, String> =
+        subPropertiesInNamespace(namespace, relativePrefix)
 
     private fun propertyInNamespace(
         ns: String,
@@ -315,6 +306,28 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             return ids.associateWith { id -> buildCredentialConfiguration(id) }
         }
 
+    @OptIn(ExperimentalUuidApi::class)
+    override fun credentialAuthorizationServerId(credentialConfigurationId: String): Uuid? =
+        credentialAuthorizationServerOverride(credentialConfigurationId)
+            ?.get("authorizationServerId")?.jsonPrimitive?.content
+            ?.takeIf(String::isNotBlank)?.let(Uuid::parse)
+
+    override fun credentialAuthorizationServerAllowedGrants(credentialConfigurationId: String): Set<com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant>? =
+        (credentialAuthorizationServerOverride(credentialConfigurationId)?.get("allowedGrantTypes") as? JsonArray)
+            ?.map {
+                when (it.jsonPrimitive.content) {
+                    "authorization_code" -> com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant.AUTHORIZATION_CODE
+                    "urn:ietf:params:oauth:grant-type:pre-authorized_code" -> com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE
+                    else -> error("Unsupported OID4VCI authorization-server override grant")
+                }
+            }
+            ?.toSet()
+
+    private fun credentialAuthorizationServerOverride(credentialConfigurationId: String): JsonObject? =
+        credentialProperty(credentialConfigurationId, "authorizationServerOverride")
+            ?.takeIf(String::isNotBlank)
+            ?.let { Json.parseToJsonElement(it).jsonObject }
+
     override val credentialResponseEncryption: MetadataCredentialResponseEncryption?
         get() {
             val mode =
@@ -410,15 +423,6 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
         val issuerKeyName = metadataSigningKeyName()
         return ids.associateWith { id -> buildCredentialSigningConfig(id, issuerKeyName) }
     }
-
-    override val keyAttesterTrustConfigs: Map<String, Map<String, KeyAttesterTrustConfig>>
-        get() {
-            val ids = credentialConfigIds() ?: return emptyMap()
-
-            return ids
-                .associateWith { id -> buildKeyAttesterTrustConfigsForCredential(id) }
-                .filterValues { it.isNotEmpty() }
-        }
 
     // -------------------------------------------------------------------------
     // Per-credential configuration building
@@ -737,7 +741,8 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                 credentialOrDefaultProperty(configId, "signingKeyMode"),
             )
         val signingVerificationMethodId = credentialOrDefaultProperty(configId, "signingVerificationMethodId")
-        val signingCertChainPath = credentialOrDefaultProperty(configId, "signingCertChainPath")
+        val signingX5c = credentialOrDefaultProperty(configId, "signingX5c")?.splitX5c()
+        val dataIntegrityCryptosuite = credentialOrDefaultProperty(configId, "dataIntegrityCryptosuite")
         val expirationInDays =
             credentialOrDefaultProperty(configId, "validityPeriod")?.toValidityDays()
                 ?: credentialOrDefaultProperty(configId, "expirationInDays")?.toPositiveIntOrNull()
@@ -746,7 +751,8 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             signingKeyAlias = signingKeyName,
             signingKeyMode = signingKeyMode,
             signingVerificationMethodId = signingVerificationMethodId,
-            signingCertChainPath = signingCertChainPath,
+            signingX5c = signingX5c,
+            dataIntegrityCryptosuite = dataIntegrityCryptosuite,
             expirationInDays = expirationInDays,
         )
     }
@@ -801,13 +807,50 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                     ),
                 )
         return Ok(
-            StatusListBinding(
-                statusListCorrelationId = listId,
-                spec = definition.spec,
-                purposes = definition.purposes,
-            ),
+            bindingFromDefinition(listId, definition),
         )
     }
+
+    override suspend fun statusListBindingForIssuance(credentialConfigId: String): IdkResult<StatusListBinding?, IdkError> {
+        val listId =
+            (
+                credentialOrDefaultProperty(credentialConfigId, "status.statusListId")
+                    ?: credentialOrDefaultProperty(credentialConfigId, "statusListId")
+            )?.takeIf { it.isNotBlank() }
+                ?: return Ok(null)
+        val definitions =
+            statusListDefinitionsProvider?.invoke()
+                ?: return Err(
+                    StatusListErrors.bindingUnresolvable(
+                        credentialConfigurationId = credentialConfigId,
+                        statusListId = listId,
+                        reason = "no status-list definitions source is available on this deployment (status-list module missing)",
+                    ),
+                )
+        val definition = definitions.resolve(listId).getOrElse {
+            return Err(it)
+        } ?: return Err(
+            StatusListErrors.bindingUnresolvable(
+                credentialConfigurationId = credentialConfigId,
+                statusListId = listId,
+                reason = "no status list with id '$listId' is defined under the 'statuslists' namespace or in tenant persistence",
+            ),
+        )
+        return Ok(bindingFromDefinition(listId, definition))
+    }
+
+    private fun bindingFromDefinition(
+        listId: String,
+        definition: com.sphereon.statuslist.CreateStatusListArgs,
+    ) =
+        StatusListBinding(
+            statusListCorrelationId = listId,
+            spec = definition.spec,
+            purposes = definition.purposes,
+            mdocProfile = definition.mdocProfile,
+            proofFormat = definition.proofFormat,
+            aggregationUri = definition.aggregationUri,
+        )
 
     // endregion
 
@@ -845,68 +888,6 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                 KeyAttestationsRequired(keyStorage = keyStorage, userAuthentication = userAuth)
             }.filterValues { it != null }
             .mapValues { (_, v) -> v!! }
-
-    /**
-     * Builds per-proof-carrier trust configs for a credential. Reads from
-     * `<namespace>.credentials.[<id>].proof-types.<type>.key-attestations.key-attester-trust.{jwks,issuers,x509-anchor-paths}`
-     * — trust is nested inside the `key-attestations` group it pairs with, since trust is
-     * only meaningful when the policy is enabled.
-     *
-     * Returns the empty map when no carrier has any trust override; callers then fall back
-     * to global X.509 anchors loaded by `lib/trust/x509`.
-     */
-    private fun buildKeyAttesterTrustConfigsForCredential(configId: String,): Map<String, KeyAttesterTrustConfig> {
-        val proofTypeKeys = buildProofTypes(configId).keys
-        if (proofTypeKeys.isEmpty()) return emptyMap()
-        return proofTypeKeys
-            .mapNotNull { proofType ->
-                val trustPrefix = "proofTypes.$proofType.keyAttestations.keyAttesterTrust"
-                val trustMode = credentialProperty(configId, "$trustPrefix.mode")?.trim()?.takeIf { it.isNotEmpty() }
-                val jwks = parseTrustedJwks(credentialProperty(configId, "$trustPrefix.jwks"))
-                val issuers = credentialProperty(configId, "$trustPrefix.issuers")?.splitComma()?.takeIf { it.isNotEmpty() }
-                val x509Paths =
-                    credentialProperty(configId, "$trustPrefix.x509AnchorPaths")
-                        ?.splitComma()
-                        ?.takeIf { it.isNotEmpty() }
-                val requireWalletUnitEvidence =
-                    credentialProperty(configId, "$trustPrefix.requireWalletUnitEvidence")
-                        ?.toBooleanStrictOrNull()
-                        ?: false
-                if (trustMode == null && jwks == null && issuers == null && x509Paths == null && !requireWalletUnitEvidence) return@mapNotNull null
-                proofType to
-                    KeyAttesterTrustConfig(
-                        mode = trustMode,
-                        trustedJwks = jwks,
-                        trustedIssuers = issuers,
-                        x509TrustAnchorPaths = x509Paths,
-                        requireWalletUnitEvidence = requireWalletUnitEvidence,
-                    )
-            }.toMap()
-    }
-
-    /**
-     * Parses the per-credential `key-attester-trust.jwks` value. Accepts either:
-     *  - a raw JSON array of JWK objects: `[{...}, {...}]`
-     *  - a JWKS document: `{"keys":[{...}, {...}]}` — the shape the OIDF conformance plan
-     *    publishes under its `vci.key_attestation_jwks` config field
-     *
-     * Returns null on blank / malformed input — the verifier then falls back to other trust
-     * sources (issuer allow-list, x509 anchors) when the JWK list is absent.
-     */
-    private fun parseTrustedJwks(raw: String?): List<Jwk>? {
-        if (raw.isNullOrBlank()) return null
-        val element = runCatching { Json.parseToJsonElement(raw) }.getOrNull() ?: return null
-        val array =
-            when (element) {
-                is JsonArray -> element
-                is JsonObject -> element["keys"] as? JsonArray
-                else -> null
-            } ?: return null
-        if (array.isEmpty()) return null
-        return array
-            .mapNotNull { item -> runCatching { Jwk.fromJsonObject(item.jsonObject) }.getOrNull() }
-            .takeIf { it.isNotEmpty() }
-    }
 
     /**
      * Reads proof type configurations under `<prefix>.proofTypes.<type>.signingAlgorithms`.
@@ -992,4 +973,20 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             ?.takeIf { it > 0 }
 
     private fun String.splitComma(): List<String> = split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
+    /**
+     * Reads configured x5c as either a JSON array (the YAML/OpenAPI shape) or a comma-separated
+     * property value (the properties shape). Values remain canonical standard-base64 DER strings;
+     * certificate parsing and chain normalization happen at the common issuance boundary.
+     */
+    private fun String.splitX5c(): Array<String> {
+        val trimmed = trim()
+        val values =
+            runCatching {
+                (Json.parseToJsonElement(trimmed) as? JsonArray)
+                    ?.mapNotNull { element -> element.jsonPrimitive.content.takeIf { it.isNotBlank() } }
+            }.getOrNull()
+                ?: trimmed.splitComma()
+        return values.map(String::trim).filter(String::isNotEmpty).toTypedArray()
+    }
 }

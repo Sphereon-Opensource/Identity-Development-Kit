@@ -86,18 +86,18 @@ data class ClientMetadata(
 /**
  * Selects the verifier key used for an encrypted OID4VP authorization response.
  *
- * The same key must drive both JWE encryption and the RFC 7638 thumbprint in the
- * ISO 18013-7 OpenID4VPHandover. Keeping the selection here prevents those two
- * cryptographic bindings from silently choosing different keys.
+ * The selected key drives regular OID4VP JWE encryption. The ISO 18013-7 Annex B
+ * adapter reuses this key-selection primitive for its `kid` binding, while keeping
+ * the ISO handover and metadata validation in the ISO-specific transport.
  */
-fun ClientMetadata.selectEncryptedResponseJwk(): JwkType? =
+fun ClientMetadata.selectEncryptedResponseJwk(requireAlgorithm: Boolean = true): JwkType? =
     jwks?.keys?.firstOrNull { jwk ->
         val isEncryptionKey =
             jwk.use == "enc" ||
                 jwk.key_ops?.any { operation ->
                     operation == JoseKeyOperations.ENCRYPT || operation == JoseKeyOperations.WRAP_KEY
                 } == true
-        isEncryptionKey && jwk.alg != null
+        isEncryptionKey && (!requireAlgorithm || jwk.alg != null)
     }
 
 /**
@@ -110,15 +110,16 @@ fun ClientMetadata.selectEncryptedResponseJwk(): JwkType? =
  * Different credential formats have different algorithm fields:
  * - **dc+sd-jwt** / **vc+sd-jwt**: Uses `sd-jwt_alg_values` and `kb-jwt_alg_values`
  * - **mso_mdoc**: Uses `issuerauth_alg_values` and `deviceauth_alg_values` (COSE algorithm numbers)
- * - **jwt_vp_json** / **jwt_vc_json**: Uses `alg_values` (JWS algorithms)
- * - **ldp_vp** / **ldp_vc**: Uses `proof_types_supported` (Linked Data Proof types)
+ * - **jwt_vc_json**: Uses `alg_values` (JWS algorithms)
+ * - **ldp_vc**: Uses `proof_type_values` and `cryptosuite_values` (Data Integrity)
  *
  * Reference: OpenID4VP 1.0 Final Section 9.1
  *
  * @property sdJwtAlgValuesSupported JWS algorithms for SD-JWT issuer signature (dc+sd-jwt, vc+sd-jwt)
  * @property kbJwtAlgValuesSupported JWS algorithms for Key Binding JWT (dc+sd-jwt, vc+sd-jwt)
- * @property algValuesSupported General JWS algorithms (jwt_vp_json, jwt_vc_json)
- * @property proofTypesSupported Linked Data Proof types (ldp_vp, ldp_vc)
+ * @property algValuesSupported General JWS algorithms (jwt_vc_json)
+ * @property proofTypeValues Data Integrity proof type identifiers (ldp_vc)
+ * @property cryptosuiteValues Data Integrity cryptosuite identifiers (ldp_vc)
  * @property issuerAuthAlgValuesSupported COSE algorithms for IssuerAuth in mdoc (mso_mdoc)
  * @property deviceAuthAlgValuesSupported COSE algorithms for DeviceAuth in mdoc (mso_mdoc)
  */
@@ -141,18 +142,23 @@ data class VpFormatInfo(
     val kbJwtAlgValuesSupported: List<String>? = null,
     /**
      * General JWS algorithms supported.
-     * Applicable to "jwt_vp_json", "jwt_vc_json" and similar JWT formats.
+     * Applicable to "jwt_vc_json" and similar JWT formats.
      * Example: ["ES256", "ES384", "RS256"]
      */
     @SerialName("alg_values")
     val algValuesSupported: List<String>? = null,
     /**
-     * Proof types supported for Linked Data Proofs.
-     * Applicable to "ldp_vp", "ldp_vc" and similar LD formats.
-     * Example: ["Ed25519Signature2018", "JsonWebSignature2020"]
+     * Data Integrity proof type identifiers supported for `ldp_vc`.
+     * Example: ["DataIntegrityProof"]
      */
-    @SerialName("proof_types_supported")
-    val proofTypesSupported: List<String>? = null,
+    @SerialName("proof_type_values")
+    val proofTypeValues: List<String>? = null,
+    /**
+     * Data Integrity cryptosuite identifiers supported for `ldp_vc`.
+     * Example: ["eddsa-rdfc-2022", "ecdsa-rdfc-2019"]
+     */
+    @SerialName("cryptosuite_values")
+    val cryptosuiteValues: List<String>? = null,
     /**
      * COSE algorithms supported for IssuerAuth in mdoc.
      * Values are COSE algorithm numbers (e.g., -7 for ES256, -35 for ES384, -36 for ES512).
@@ -182,7 +188,8 @@ val validateVpFormatInfo =
             !it.sdJwtAlgValuesSupported.isNullOrEmpty() ||
                 !it.kbJwtAlgValuesSupported.isNullOrEmpty() ||
                 !it.algValuesSupported.isNullOrEmpty() ||
-                !it.proofTypesSupported.isNullOrEmpty() ||
+                !it.proofTypeValues.isNullOrEmpty() ||
+                !it.cryptosuiteValues.isNullOrEmpty() ||
                 !it.issuerAuthAlgValuesSupported.isNullOrEmpty() ||
                 !it.deviceAuthAlgValuesSupported.isNullOrEmpty()
         }
@@ -213,8 +220,20 @@ val validateVpFormatInfo =
             it.algValuesSupported?.isNotEmpty() ?: true
         }
 
-        constrain("proof_types_supported must not be empty if specified") {
-            it.proofTypesSupported?.isNotEmpty() ?: true
+        constrain("proof_type_values must not be empty if specified") {
+            it.proofTypeValues?.isNotEmpty() ?: true
+        }
+
+        constrain("cryptosuite_values must not be empty if specified") {
+            it.cryptosuiteValues?.isNotEmpty() ?: true
+        }
+
+        constrain("proof_type_values must contain non-blank identifiers") {
+            it.proofTypeValues?.all(String::isNotBlank) ?: true
+        }
+
+        constrain("cryptosuite_values must contain non-blank identifiers") {
+            it.cryptosuiteValues?.all(String::isNotBlank) ?: true
         }
 
         constrain("issuerauth_alg_values must not be empty if specified") {
@@ -272,7 +291,8 @@ class VpFormatInfoBuilder {
     private var sdJwtAlgValues: MutableList<String>? = null
     private var kbJwtAlgValues: MutableList<String>? = null
     private var algValues: MutableList<String>? = null
-    private var proofTypes: MutableList<String>? = null
+    private var proofTypeValues: MutableList<String>? = null
+    private var cryptosuiteValues: MutableList<String>? = null
     private var issuerAuthAlgValues: MutableList<Int>? = null
     private var deviceAuthAlgValues: MutableList<Int>? = null
 
@@ -301,11 +321,19 @@ class VpFormatInfoBuilder {
         }
 
     /**
-     * Set Linked Data Proof types.
+     * Set Data Integrity proof type identifiers for `ldp_vc`.
      */
-    fun proofTypes(vararg types: String) =
+    fun proofTypeValues(vararg types: String) =
         apply {
-            proofTypes = types.toMutableList()
+            proofTypeValues = types.toMutableList()
+        }
+
+    /**
+     * Set Data Integrity cryptosuite identifiers for `ldp_vc`.
+     */
+    fun cryptosuiteValues(vararg cryptosuites: String) =
+        apply {
+            cryptosuiteValues = cryptosuites.toMutableList()
         }
 
     /**
@@ -329,7 +357,8 @@ class VpFormatInfoBuilder {
             sdJwtAlgValuesSupported = sdJwtAlgValues?.toList(),
             kbJwtAlgValuesSupported = kbJwtAlgValues?.toList(),
             algValuesSupported = algValues?.toList(),
-            proofTypesSupported = proofTypes?.toList(),
+            proofTypeValues = proofTypeValues?.toList(),
+            cryptosuiteValues = cryptosuiteValues?.toList(),
             issuerAuthAlgValuesSupported = issuerAuthAlgValues?.toList(),
             deviceAuthAlgValuesSupported = deviceAuthAlgValues?.toList(),
         )
@@ -380,23 +409,28 @@ fun mdocVpFormatInfo(
     )
 
 /**
- * Create VpFormatInfo for JWT VP format (jwt_vp_json, jwt_vc_json).
+ * Create VpFormatInfo for the JWT-secured W3C credential/presentation format (`jwt_vc_json`).
  *
  * @param algValues JWS algorithms supported (default: ES256, ES384, RS256)
  */
-fun jwtVpFormatInfo(algValues: List<String> = listOf("ES256", "ES384", "RS256")): VpFormatInfo =
+fun jwtVcFormatInfo(algValues: List<String> = listOf("ES256", "ES384", "RS256")): VpFormatInfo =
     VpFormatInfo(
         algValuesSupported = algValues,
     )
 
 /**
- * Create VpFormatInfo for Linked Data Proof format (ldp_vp, ldp_vc).
+ * Create VpFormatInfo for the W3C Data Integrity format (`ldp_vc`).
  *
- * @param proofTypes Proof types supported (default: Ed25519Signature2018, JsonWebSignature2020)
+ * @param proofTypeValues Data Integrity proof type identifiers supported
+ * @param cryptosuiteValues Data Integrity cryptosuite identifiers supported
  */
-fun ldpVpFormatInfo(proofTypes: List<String> = listOf("Ed25519Signature2018", "JsonWebSignature2020")): VpFormatInfo =
+fun ldpVcFormatInfo(
+    proofTypeValues: List<String> = listOf("DataIntegrityProof"),
+    cryptosuiteValues: List<String>? = null,
+): VpFormatInfo =
     VpFormatInfo(
-        proofTypesSupported = proofTypes,
+        proofTypeValues = proofTypeValues,
+        cryptosuiteValues = cryptosuiteValues,
     )
 
 // =============================================================================
@@ -443,35 +477,22 @@ class VpFormatsBuilder {
     }
 
     /**
-     * Add support for jwt_vp_json format.
-     */
-    fun jwtVpJson(algValues: List<String> = listOf("ES256", "ES384", "RS256")) =
-        apply {
-            formats["jwt_vp_json"] = jwtVpFormatInfo(algValues)
-        }
-
-    /**
      * Add support for jwt_vc_json format.
      */
     fun jwtVcJson(algValues: List<String> = listOf("ES256", "ES384", "RS256")) =
         apply {
-            formats["jwt_vc_json"] = jwtVpFormatInfo(algValues)
-        }
-
-    /**
-     * Add support for ldp_vp format.
-     */
-    fun ldpVp(proofTypes: List<String> = listOf("Ed25519Signature2018", "JsonWebSignature2020")) =
-        apply {
-            formats["ldp_vp"] = ldpVpFormatInfo(proofTypes)
+            formats["jwt_vc_json"] = jwtVcFormatInfo(algValues)
         }
 
     /**
      * Add support for ldp_vc format.
      */
-    fun ldpVc(proofTypes: List<String> = listOf("Ed25519Signature2018", "JsonWebSignature2020")) =
+    fun ldpVc(
+        proofTypeValues: List<String> = listOf("DataIntegrityProof"),
+        cryptosuiteValues: List<String>? = null,
+    ) =
         apply {
-            formats["ldp_vc"] = ldpVpFormatInfo(proofTypes)
+            formats["ldp_vc"] = ldpVcFormatInfo(proofTypeValues, cryptosuiteValues)
         }
 
     /**
@@ -507,7 +528,7 @@ class VpFormatsBuilder {
  * val vpFormats = buildVpFormats {
  *     sdJwtVc()
  *     msoMdoc()
- *     jwtVpJson(listOf("ES256"))
+ *     jwtVcJson(listOf("ES256"))
  * }
  * ```
  */

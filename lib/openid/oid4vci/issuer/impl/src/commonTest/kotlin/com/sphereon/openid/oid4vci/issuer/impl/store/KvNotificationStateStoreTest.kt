@@ -34,6 +34,7 @@ class KvNotificationStateStoreTest {
         val kvStoreManager = InMemoryTestKvStoreManager()
         return KvNotificationStateStore(
             kvStoreManager = kvStoreManager,
+            kvStoreService = UnconfiguredKvStoreService,
             execution = NoOpSessionExecution(),
         )
     }

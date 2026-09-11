@@ -25,11 +25,11 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.JwsUtils
-import com.sphereon.crypto.jose.jws.JwsValidationResult
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.di.session.SessionScope
+import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.ActorClaim
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenTypeIdentifier
@@ -57,8 +57,18 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
+import kotlin.time.Clock
 
 private const val JWT_PART_COUNT = 3
+private const val NOT_BEFORE_CLOCK_SKEW_SECONDS = 1L
+private const val CLAIM_ISSUER = "iss"
+private const val CLAIM_SUBJECT = "sub"
+private const val CLAIM_AUDIENCE = "aud"
+private const val CLAIM_EXPIRATION = "exp"
+private const val CLAIM_NOT_BEFORE = "nbf"
+private const val CLAIM_CLIENT_ID = "client_id"
+private const val CLAIM_AUTHORIZED_PARTY = "azp"
+private const val CLAIM_EMAIL = "email"
 
 /**
  * Implementation of VerifyTokenExchangeGrantCommand
@@ -83,6 +93,7 @@ class VerifyTokenExchangeGrantCommandImpl(
     private val tokenExchangePolicy: TokenExchangePolicy,
     private val jwtService: JwtService,
     private val signingKeyStore: SigningKeyStore,
+    private val serversConfigProvider: OAuth2ServersConfigProvider,
     private val signingKeyPublicJwkResolver: AsSigningKeyPublicJwkResolver? = null,
 ) : TypedServiceCommandAdapter<VerifyTokenExchangeGrantArgs, VerifiedTokenExchangeGrant, IdkError>(
         commandId = VerifyTokenExchangeGrantCommand.COMMAND_ID,
@@ -91,6 +102,8 @@ class VerifyTokenExchangeGrantCommandImpl(
         outputTypeToken = typeToken<VerifiedTokenExchangeGrant>(),
     ),
     VerifyTokenExchangeGrantCommand {
+    private val sessionExecution = execution
+
     override val commandId: String get() = VerifyTokenExchangeGrantCommand.COMMAND_ID
 
     override suspend fun supports(args: Any): Boolean = args is VerifyTokenExchangeGrantArgs
@@ -172,13 +185,23 @@ class VerifyTokenExchangeGrantCommandImpl(
 
         // 4. Validate subject token by type
         val subjectResult =
-            validateToken(args.subjectToken, args.subjectTokenType, "subject")
+            validateToken(
+                token = args.subjectToken,
+                tokenType = args.subjectTokenType,
+                tokenRole = "subject",
+                exchangingClient = client,
+            )
                 .getOrElse { error -> return Err(error) }
 
         // 5. Validate actor token (if present)
         val actorResult =
             if (args.actorToken != null && args.actorTokenType != null) {
-                validateToken(args.actorToken!!, args.actorTokenType!!, "actor")
+                validateToken(
+                    token = args.actorToken!!,
+                    tokenType = args.actorTokenType!!,
+                    tokenRole = "actor",
+                    exchangingClient = null,
+                )
                     .getOrElse { error -> return Err(error) }
             } else {
                 null
@@ -280,13 +303,14 @@ class VerifyTokenExchangeGrantCommandImpl(
         token: String,
         tokenType: String,
         tokenRole: String,
+        exchangingClient: VerifiedClientAuthorization?,
     ): IdkResult<TokenValidationResult, AuthorizationServerError> =
         when (tokenType) {
             TokenTypeIdentifier.ACCESS_TOKEN,
             TokenTypeIdentifier.ID_TOKEN,
             TokenTypeIdentifier.JWT,
             -> {
-                validateJwtToken(token, tokenRole)
+                validateJwtToken(token, tokenRole, exchangingClient)
             }
 
             TokenTypeIdentifier.REFRESH_TOKEN -> {
@@ -324,12 +348,14 @@ class VerifyTokenExchangeGrantCommandImpl(
      * and JwsUtils for payload decoding.
      *
      * Returns extracted claims + verification status. Structural JWT issues
-     * (wrong format, unparseable payload) are rejected. Signature verification
+     * (wrong format, unparseable payload) are rejected. Locally-issued JWTs are pinned to this
+     * AS's issuer and signing-key registry and fail closed here; genuinely external signature
      * failures are reported to the policy via the [TokenValidationResult.verified] flag.
      */
     private suspend fun validateJwtToken(
         token: String,
         tokenRole: String,
+        exchangingClient: VerifiedClientAuthorization?,
     ): IdkResult<TokenValidationResult, AuthorizationServerError> {
         // Basic structure check (3 dot-separated parts)
         val parts = token.split(".")
@@ -340,14 +366,6 @@ class VerifyTokenExchangeGrantCommandImpl(
                 ),
             )
         }
-
-        // Attempt JWS signature verification. A locally-issued token is pinned to the public
-        // material that the AS publishes for its registered signing key; external tokens retain
-        // the normal JwtService header-resolution path.
-        // Verification status is passed to the TokenExchangePolicy which decides whether
-        // to accept unverified tokens (e.g. external IdP tokens without local signing keys).
-        val verifyResult = verifySelfIssuedTokenIfKnown(token) ?: jwtService.verifyJws(VerifyJwsArgs(jws = JwsCompact(token)))
-        val verified = verifyResult.isOk && verifyResult.value.isValid
 
         // Decode payload claims using JwsUtils (uses com.sphereon.core.api.Encoding internally)
         val claims =
@@ -364,42 +382,198 @@ class VerifyTokenExchangeGrantCommandImpl(
                 )
             }
 
+        val expectedIssuer = configuredIssuer().getOrElse { return Err(it) }
+        val tokenIssuer = claims.strictStringClaim(CLAIM_ISSUER)
+        val kid = jwtHeaderKid(token)
+        val localSigningKey =
+            kid?.let { signingKeyStore.findByKid(sessionExecution.tenantId, it).getOrNull() }
+
+        // A token that claims this AS must never escape to the generic JOSE resolver. Otherwise
+        // an attacker could present an embedded key under an unknown kid and turn a local issuer
+        // claim into a self-selected trust root.
+        if (tokenIssuer == expectedIssuer && localSigningKey == null) {
+            return invalidGrant("$tokenRole token uses an unknown local signing key")
+        }
+
+        val verified =
+            if (localSigningKey != null) {
+                if (tokenIssuer != expectedIssuer) {
+                    return invalidGrant("$tokenRole token issuer does not match this authorization server")
+                }
+                if (localSigningKey.state == OAuth2SigningKeyState.DISABLED) {
+                    return invalidGrant("$tokenRole token uses a disabled local signing key")
+                }
+                val resolver = signingKeyPublicJwkResolver
+                    ?: return invalidGrant("$tokenRole token local signing key resolver is unavailable")
+                val publicJwk = resolver.resolve(localSigningKey)
+                    ?: return invalidGrant("$tokenRole token local signing key could not be resolved")
+                val trustedJwks =
+                    buildJsonObject {
+                        put(
+                            "keys",
+                            JsonArray(listOf(Json.encodeToJsonElement(Jwk.serializer(), publicJwk))),
+                        )
+                    }
+                val verifyResult =
+                    jwtService.verifyJws(
+                        VerifyJwsArgs(
+                            jws = JwsCompact(token),
+                            trustedJwks = trustedJwks,
+                        ),
+                    )
+                if (verifyResult.isErr || !verifyResult.value.isValid) {
+                    return invalidGrant("$tokenRole token has an invalid local signature")
+                }
+                validateVerifiedJwtTimeClaims(claims, tokenRole)
+                    ?.let { return Err(it) }
+                if (exchangingClient != null) {
+                    validateLocalSubjectClaims(claims, exchangingClient)
+                        .getOrElse { return Err(it) }
+                }
+                true
+            } else {
+                // Genuinely external issuers retain the generic verification and policy path.
+                // Once the signature verifies, JWT time claims are still enforced here rather
+                // than trusting every TokenExchangePolicy implementation to repeat them.
+                val verifyResult = jwtService.verifyJws(VerifyJwsArgs(jws = JwsCompact(token)))
+                val isVerified = verifyResult.isOk && verifyResult.value.isValid
+                if (isVerified) {
+                    validateVerifiedJwtTimeClaims(claims, tokenRole)
+                        ?.let { return Err(it) }
+                }
+                isVerified
+            }
+
         return Ok(TokenValidationResult(claims = claims, verified = verified))
     }
 
-    /**
-     * Verify an inbound token against the AS's registered public signing material when its
-     * header `kid` belongs to this tenant. Tenant AS deployments keep the corresponding private
-     * key in the tenant KMS and expose public material through [AsSigningKeyPublicJwkResolver];
-     * resolving that `kid` through the AS process's local provider is therefore both incorrect
-     * and unavailable after satellite redeployment.
-     *
-     * A matching disabled key produces an empty pinned set, so it cannot fall through to an
-     * unscoped provider lookup. Unknown `kid` values remain on the existing external-token path.
-     */
-    private suspend fun verifySelfIssuedTokenIfKnown(token: String): IdkResult<JwsValidationResult, IdkError>? {
-        val resolver = signingKeyPublicJwkResolver ?: return null
-        val kid = jwtHeaderKid(token) ?: return null
-        val signingKey = signingKeyStore.findByKid(execution.tenantId, kid).getOrNull() ?: return null
-        val publicJwk =
-            if (signingKey.state == OAuth2SigningKeyState.DISABLED) {
-                null
-            } else {
-                resolver.resolve(signingKey)
-            }
-        val trustedJwks =
-            buildJsonObject {
-                put(
-                    "keys",
-                    JsonArray(
-                        publicJwk
-                            ?.let { listOf(Json.encodeToJsonElement(Jwk.serializer(), it)) }
-                            .orEmpty(),
+    private fun configuredIssuer(): IdkResult<String, AuthorizationServerError> =
+        runCatching {
+            val config = serversConfigProvider.getConfig()
+            serversConfigProvider
+                .resolveIssuer(config.defaultServer, sessionExecution.tenantId)
+                .trim()
+                .takeIf(String::isNotEmpty)
+        }.fold(
+            onSuccess = { issuer ->
+                if (issuer != null) {
+                    Ok(issuer)
+                } else {
+                    Err(
+                        AuthorizationServerError.ServerError(
+                            details = "Authorization server issuer policy is unavailable",
+                        ),
+                    )
+                }
+            },
+            onFailure = {
+                Err(
+                    AuthorizationServerError.ServerError(
+                        details = "Authorization server issuer policy is unavailable",
                     ),
                 )
+            },
+        )
+
+    private fun validateVerifiedJwtTimeClaims(
+        claims: Map<String, Any>,
+        tokenRole: String,
+    ): AuthorizationServerError.InvalidGrant? {
+        val now = Clock.System.now().epochSeconds
+        val expiresAt = claims.numericDateClaim(CLAIM_EXPIRATION)
+            ?: return AuthorizationServerError.InvalidGrant(
+                details = "$tokenRole token has no valid exp claim",
+            )
+        if (expiresAt <= now) {
+            return AuthorizationServerError.InvalidGrant(details = "$tokenRole token is expired")
+        }
+        if (CLAIM_NOT_BEFORE in claims) {
+            val notBefore = claims.numericDateClaim(CLAIM_NOT_BEFORE)
+                ?: return AuthorizationServerError.InvalidGrant(
+                    details = "$tokenRole token has an invalid nbf claim",
+                )
+            if (notBefore > now + NOT_BEFORE_CLOCK_SKEW_SECONDS) {
+                return AuthorizationServerError.InvalidGrant(details = "$tokenRole token is not yet valid")
             }
-        return jwtService.verifyJws(VerifyJwsArgs(jws = JwsCompact(token), trustedJwks = trustedJwks))
+        }
+        return null
     }
+
+    private suspend fun validateLocalSubjectClaims(
+        claims: Map<String, Any>,
+        exchangingClient: VerifiedClientAuthorization,
+    ): IdkResult<Unit, AuthorizationServerError> {
+        val issuingClientId = claims.strictStringClaim(CLAIM_CLIENT_ID)
+            ?: return invalidGrant("subject token has no valid client_id claim")
+        val issuingClient =
+            if (issuingClientId == exchangingClient.clientId) {
+                exchangingClient
+            } else {
+                clientRegistry
+                    .getClient(issuingClientId)
+                    .getOrElse {
+                        return Err(
+                            AuthorizationServerError.ServerError(
+                                details = "Failed to retrieve the subject token client registration",
+                            ),
+                        )
+                    }?.toVerifiedClientAuthorization()
+                    ?: return invalidGrant("subject token client is not registered")
+            }
+
+        val audiences = claims.stringClaimValues(CLAIM_AUDIENCE)
+            ?.takeIf { it.isNotEmpty() }
+            ?: return invalidGrant("subject token has no valid aud claim")
+        val allowedAudiences =
+            buildSet {
+                issuingClient.defaultAccessTokenAudience
+                    ?.trim()
+                    ?.takeIf(String::isNotEmpty)
+                    ?.let(::add)
+                issuingClient.allowedAccessTokenAudiences
+                    .map(String::trim)
+                    .filter(String::isNotEmpty)
+                    .forEach(::add)
+            }
+        if (allowedAudiences.isEmpty() || audiences.any { it !in allowedAudiences }) {
+            return invalidGrant("subject token audience is not authorized for its client")
+        }
+
+        val subject = claims.strictStringClaim(CLAIM_SUBJECT)
+        val emailPresent = claims[CLAIM_EMAIL] != null
+        val isWorkload = subject != null && subject == issuingClientId && !emailPresent
+        if (isWorkload) {
+            val authorizedParty = claims.strictStringClaim(CLAIM_AUTHORIZED_PARTY)
+            if (
+                authorizedParty == null ||
+                authorizedParty != issuingClientId ||
+                exchangingClient.clientId != issuingClientId
+            ) {
+                return invalidGrant("workload subject token is not bound to the exchanging client")
+            }
+        }
+
+        return Ok(Unit)
+    }
+
+    private fun invalidGrant(details: String): IdkResult<Nothing, AuthorizationServerError> =
+        Err(AuthorizationServerError.InvalidGrant(details = details))
+
+    private fun Map<String, Any>.strictStringClaim(name: String): String? =
+        (this[name] as? String)?.trim()?.takeIf(String::isNotEmpty)
+
+    private fun Map<String, Any>.numericDateClaim(name: String): Long? =
+        (this[name] as? Number)?.toLong()
+
+    private fun Map<String, Any>.stringClaimValues(name: String): List<String>? =
+        when (val value = this[name]) {
+            is String -> listOf(value.trim()).filter(String::isNotEmpty)
+            is List<*> ->
+                value
+                    .mapNotNull { (it as? String)?.trim()?.takeIf(String::isNotEmpty) }
+                    .takeIf { it.size == value.size }
+            else -> null
+        }
 
     private fun jwtHeaderKid(token: String): String? =
         runCatching {

@@ -3,15 +3,18 @@ package com.sphereon.openid.oid4vci.integration
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.data.store.party.model.IdentityRole
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.session.SessionScope
+import com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver
 import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
 import com.sphereon.wallet.WalletIdentityResolver
 import com.sphereon.wallet.credential.IdentifierRef
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionClient
+import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
 import com.sphereon.wallet.interaction.impl.InMemoryWalletInteractionPrivateSessionStore
@@ -27,6 +30,7 @@ import com.sphereon.wallet.wscd.ActivationProof
 import com.sphereon.wallet.wscd.ActivationProofKind
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -35,6 +39,8 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metro.createGraphFactory
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @DependencyGraph(AppScope::class)
 abstract class Oid4vciTestAppGraph : AbstractAppGraph() {
@@ -60,6 +66,78 @@ abstract class Oid4vciTestAppGraph : AbstractAppGraph() {
     }
 }
 
+/**
+ * Explicit in-process authority for issuer signing-key names.
+ *
+ * Production resolves these names from a tenant and issuer resource handle. The E2E fixture has no
+ * enterprise resource authority, so it registers only the test key it created for a specific
+ * tenant/issuer pair. It deliberately never reads protocol configuration aliases.
+ */
+interface Oid4vciTestIssuerKeyNameRegistry {
+    suspend fun register(
+        tenantId: String,
+        issuerInstanceId: String,
+        keyName: String,
+    )
+
+    suspend fun resolve(
+        tenantId: String,
+        issuerInstanceId: String,
+    ): String?
+}
+
+@Inject
+@SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class, binding = binding<Oid4vciTestIssuerKeyNameRegistry>())
+class InMemoryOid4vciTestIssuerKeyNameRegistry : Oid4vciTestIssuerKeyNameRegistry {
+    private val mutex = Mutex()
+    private val keyNames = mutableMapOf<Pair<String, String>, String>()
+
+    override suspend fun register(
+        tenantId: String,
+        issuerInstanceId: String,
+        keyName: String,
+    ) {
+        mutex.withLock {
+            keyNames[tenantId to issuerInstanceId] = keyName
+        }
+    }
+
+    override suspend fun resolve(
+        tenantId: String,
+        issuerInstanceId: String,
+    ): String? =
+        mutex.withLock {
+            keyNames[tenantId to issuerInstanceId]
+        }
+}
+
+/**
+ * E2E-only replacement for the enterprise typed-handle resolver.
+ *
+ * It has the same tenant/issuer lookup contract, backed by the explicit test authority above.
+ * An unregistered pair refuses exactly as production does.
+ */
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(
+    SessionScope::class,
+    binding = binding<IssuerKeyNameResolver>(),
+)
+class Oid4vciTestIssuerKeyNameResolver(
+    private val registry: Oid4vciTestIssuerKeyNameRegistry,
+) : IssuerKeyNameResolver {
+    override suspend fun resolveMetadataSigningKeyName(
+        tenantId: String,
+        issuerInstanceId: String,
+    ): String? = registry.resolve(tenantId, issuerInstanceId)
+
+    override suspend fun resolveRequestDecryptionKeyName(
+        tenantId: String,
+        issuerInstanceId: String,
+    ): String? = null
+}
+
 @ContributesTo(SessionScope::class)
 interface Oid4vciWalletInteractionTestModule {
     @Provides
@@ -76,6 +154,11 @@ interface Oid4vciWalletInteractionTestModule {
     @Provides
     @SingleIn(SessionScope::class)
     fun provideWalletInteractionSessionStore(): WalletInteractionSessionStore = InMemoryWalletInteractionSessionStore()
+
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun provideWalletCounterpartyEncounterRegistry(): WalletCounterpartyEncounterRegistry =
+        WalletCounterpartyEncounterRegistry.none
 
     @Provides
     @SingleIn(SessionScope::class)
@@ -120,10 +203,8 @@ class Oid4vciTestWalletUserAuthenticator : WalletUserAuthenticator {
 /** Test-only identity authority for protocol fixtures that intentionally do not persist Party data. */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(
-    SessionScope::class,
-    binding = binding<WalletIdentityResolver>(),
-)
+@ContributesBinding(SessionScope::class, binding = binding<WalletIdentityResolver>())
+@ContributesIntoSet(SessionScope::class)
 class Oid4vciTestWalletIdentityResolver : WalletIdentityResolver {
     override suspend fun resolve(
         ref: IdentifierRef,
@@ -137,6 +218,11 @@ fun createOid4vciTestAppGraph(
     profile: String = "test",
     version: String = "test",
 ): Oid4vciTestAppGraph {
+    // Software WSCD rehydration deliberately fails closed without authoritative wallet-unit
+    // ownership metadata.  The integration graph uses the shared in-memory test authority so
+    // generated holder keys remain verifiable across the WSCA/WSCD boundary without weakening
+    // the production ownership check.
+    DefaultPrincipalMapPropertySource.addProperty("database.app.dialect", "in-memory-test")
     val graph =
         createGraphFactory<Oid4vciTestAppGraph.Factory>().create(
             application = application,

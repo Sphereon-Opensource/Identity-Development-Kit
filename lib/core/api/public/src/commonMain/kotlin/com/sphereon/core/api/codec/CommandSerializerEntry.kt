@@ -21,6 +21,7 @@ import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Multibinds
 import kotlinx.serialization.KSerializer
 import kotlin.reflect.KClass
+import kotlin.reflect.KType
 
 /**
  * A compile-time carrier that pairs a `@Serializable` command input/output [kClass]
@@ -38,10 +39,19 @@ import kotlin.reflect.KClass
  *
  * @property kClass The runtime class of the serializable type.
  * @property serializer The compile-time `KSerializer` for that type.
+ * @property kType The exact Kotlin type represented by [serializer], when
+ *     runtime class erasure would otherwise make generic serializers collide.
  */
 class CommandSerializerEntry(
     val kClass: KClass<*>,
     val serializer: KSerializer<*>,
+    /**
+     * The exact Kotlin type represented by [serializer]. This is required for
+     * parameterized values whose runtime class is erased (for example
+     * `Page<DataDomainRevision>`). Existing class-keyed entries may leave this
+     * null and continue to resolve by [kClass].
+     */
+    val kType: KType? = null,
 )
 
 /**

@@ -26,6 +26,7 @@ import com.sphereon.cbor.CborParser
 import com.sphereon.cbor.CborParserImpl
 import com.sphereon.cbor.CborString
 import com.sphereon.cbor.CborTDate
+import com.sphereon.cbor.CborUInt
 import com.sphereon.cbor.CborTagged
 import com.sphereon.cbor.NumberLabel
 import com.sphereon.cbor.StringLabel
@@ -124,9 +125,40 @@ private fun encodeMobileSecurityObject(
                 MobileSecurityObject.DEVICE_KEY_INFO to encodeDeviceKeyInfo(value.deviceKeyInfo, coseKeyCodec),
                 MobileSecurityObject.DOC_TYPE to CborString(value.docType.toString()),
                 MobileSecurityObject.VALIDITY_INFO to encodeValidityInfo(value.validityInfo),
-            ),
+            ).also { entries -> value.status?.let { entries[MobileSecurityObject.STATUS] = encodeStatus(it) } },
         ),
     )
+}
+
+private fun encodeStatus(value: Status): CborMap<StringLabel, CborItem<*>> {
+    val fields = mutableMapOf<StringLabel, CborItem<*>>()
+    value.identifierList?.let { fields[StringLabel("identifier_list")] = encodeIdentifierListInfo(it) }
+    value.statusList?.let { fields[StringLabel("status_list")] = encodeStatusListInfo(it) }
+    value.unknown?.let { fields.putAll(it.mapKeys { (key, _) -> StringLabel(key) }) }
+    return CborMap(fields)
+}
+
+private fun encodeIdentifierListInfo(value: IdentifierListInfo): CborMap<StringLabel, CborItem<*>> {
+    val fields =
+        mutableMapOf<StringLabel, CborItem<*>>(
+            StringLabel("id") to CborByteString(value.id),
+            StringLabel("uri") to CborString(value.uri),
+        )
+    value.certificate?.let { fields[StringLabel("certificate")] = CborByteString(it) }
+    value.unknown?.let { fields.putAll(it.mapKeys { (key, _) -> StringLabel(key) }) }
+    return CborMap(fields)
+}
+
+private fun encodeStatusListInfo(value: StatusListInfo): CborMap<StringLabel, CborItem<*>> {
+    val fields =
+        mutableMapOf<StringLabel, CborItem<*>>(
+            StringLabel("idx") to CborUInt(value.idx.toLong()),
+            StringLabel("uri") to CborString(value.uri),
+        )
+    value.certificate?.let { fields[StringLabel("certificate")] = CborByteString(it) }
+    value.aggregationUri?.let { fields[StringLabel("aggregation_uri")] = CborString(it) }
+    value.unknown?.let { fields.putAll(it.mapKeys { (key, _) -> StringLabel(key) }) }
+    return CborMap(fields)
 }
 
 private fun encodeValueDigests(valueDigests: Map<NameSpace, Map<DigestID, ByteArray>>): ValueDigestsAlias =
@@ -192,7 +224,7 @@ private fun decodeMobileSecurityObject(
                     requireDigestMap(digestsItem, "MobileSecurityObject.valueDigests[$nameSpace]")
                         .value
                         .map { (digestId, digestValue) ->
-                            DigestID(digestId.value.toUInt()) to digestValue.value.copyOf()
+                            DigestID(toUIntExact(digestId.value, "MobileSecurityObject.valueDigests[$nameSpace] digestID")) to digestValue.value.copyOf()
                         }.toMap()
             }.toMap()
 
@@ -207,6 +239,46 @@ private fun decodeMobileSecurityObject(
                 requireStringLabelMap(MobileSecurityObject.VALIDITY_INFO.required(structure), "MobileSecurityObject.validityInfo"),
             ),
         original = original,
+        status = MobileSecurityObject.STATUS.optional<CborItem<*>>(structure)?.let(::decodeStatus),
+    )
+}
+
+private fun decodeStatus(item: CborItem<*>): Status {
+    val fields = requireStringLabelMap(item, "MobileSecurityObject.status")
+    val identifierList = fields.value[StringLabel("identifier_list")]?.let(::decodeIdentifierListInfo)
+    val statusList = fields.value[StringLabel("status_list")]?.let(::decodeStatusListInfo)
+    return Status(
+        identifierList = identifierList,
+        statusList = statusList,
+        unknown = unknownFields(fields, setOf("identifier_list", "status_list")),
+    )
+}
+
+private fun decodeIdentifierListInfo(item: CborItem<*>): IdentifierListInfo {
+    val fields = requireStringLabelMap(item, "IdentifierListInfo")
+    val certificate = fields.value[StringLabel("certificate")]
+        ?.let { value -> (value as? CborByteString)?.value ?: error("IdentifierListInfo.certificate must be a byte string") }
+    return IdentifierListInfo(
+        id = (fields.value[StringLabel("id")] as? CborByteString)?.value ?: error("IdentifierListInfo.id must be a byte string"),
+        uri = (fields.value[StringLabel("uri")] as? CborString)?.value ?: error("IdentifierListInfo.uri must be text"),
+        certificate = certificate,
+        unknown = unknownFields(fields, setOf("id", "uri", "certificate")),
+    )
+}
+
+private fun decodeStatusListInfo(item: CborItem<*>): StatusListInfo {
+    val fields = requireStringLabelMap(item, "StatusListInfo")
+    val certificate = fields.value[StringLabel("certificate")]
+        ?.let { value -> (value as? CborByteString)?.value ?: error("StatusListInfo.certificate must be a byte string") }
+    val aggregationUri = fields.value[StringLabel("aggregation_uri")]
+        ?.let { value -> (value as? CborString)?.value ?: error("StatusListInfo.aggregation_uri must be text") }
+    return StatusListInfo(
+        idx = (fields.value[StringLabel("idx")] as? CborUInt)?.value?.let { toUIntExact(it, "StatusListInfo.idx") }
+            ?: error("StatusListInfo.idx must be unsigned"),
+        uri = (fields.value[StringLabel("uri")] as? CborString)?.value ?: error("StatusListInfo.uri must be text"),
+        certificate = certificate,
+        aggregationUri = aggregationUri,
+        unknown = unknownFields(fields, setOf("idx", "uri", "certificate", "aggregation_uri")),
     )
 }
 
@@ -297,6 +369,16 @@ private fun decodeDeviceKeyInfo(
         original = null,
     )
 }
+
+@Suppress("UNCHECKED_CAST")
+private fun unknownFields(
+    structure: CborMap<StringLabel, CborItem<*>>,
+    known: Set<String>,
+): Map<String, CborItem<*>>? =
+    structure.value
+        .filterKeys { it.value !in known }
+        .mapKeys { (key, _) -> key.value }
+        .takeIf { it.isNotEmpty() }
 
 private fun decodeKeyAuthorizations(item: CborItem<*>): KeyAuthorizations {
     val structure = requireStringLabelMap(item, "KeyAuthorizations")
@@ -403,4 +485,12 @@ private fun requireAuthorizedDataElements(
                     )
             }.toMutableMap()
     return CborMap(normalizedEntries, item.indefiniteLength)
+}
+
+private fun toUIntExact(
+    value: Long,
+    field: String,
+): UInt {
+    require(value in 0..UInt.MAX_VALUE.toLong()) { "$field is outside the UInt range" }
+    return value.toUInt()
 }

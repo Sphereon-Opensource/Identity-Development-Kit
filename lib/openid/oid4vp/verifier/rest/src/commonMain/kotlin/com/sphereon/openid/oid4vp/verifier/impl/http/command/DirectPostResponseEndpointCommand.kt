@@ -23,6 +23,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFrom
 import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
@@ -43,12 +44,18 @@ import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseArgs
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseCommand
 import com.sphereon.openid.oid4vp.verifier.config.ResponseEncryptionKeyConfig
+import com.sphereon.openid.oid4vp.verifier.spi.VerifierTrustedAuthenticationRequest
+import com.sphereon.openid.oid4vp.verifier.spi.VerifierTrustedAuthenticationResolver
 import com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -71,6 +78,7 @@ interface DirectPostResponseEndpointCommand : HttpEndpointCommand {
                 consumes = setOf(MediaType.ApplicationFormUrlEncoded),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "handleDirectPostResponse",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp", "direct-post"),
                 summary = "Handle OID4VP direct_post authorization response from wallet",
                 authPolicy = EndpointAuthPolicy.PUBLIC,
@@ -88,12 +96,14 @@ interface DirectPostResponseEndpointCommand : HttpEndpointCommand {
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<DirectPostResponseEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(DirectPostResponseEndpointCommand.COMMAND_ID)
 class DirectPostResponseEndpointCommandImpl(
     execution: SessionExecution,
     private val handleDirectPostCommand: HandleDirectPostResponseCommand,
     private val authorizationSessionStore: AuthorizationSessionStore,
     private val responseEncryptionKeyConfig: ResponseEncryptionKeyConfig,
+    private val trustedAuthenticationResolver: Provider<VerifierTrustedAuthenticationResolver>? = null,
 ) : HttpEndpointCommandAdapter(
         id = DirectPostResponseEndpointCommand.COMMAND_ID,
         execution = execution,
@@ -141,9 +151,11 @@ class DirectPostResponseEndpointCommandImpl(
             authorizationSessionStore.getByCorrelationId(correlationId).getOrNull()
                 ?: return Err(IdkError.NOT_FOUND_ERROR(message = "Authorization session not found: $correlationId"))
 
-        // This response-endpoint redirect is distinct from the authorization request's
-        // `redirect_uri`: direct_post uses `response_uri` for wallet submission, while this
-        // optional session value controls the subsequent browser navigation.
+        // Per OID4VP §7.2 redirect_uri is OPTIONAL in the response, and this response-endpoint
+        // redirect is distinct from the authorization request's `redirect_uri`: direct_post uses
+        // `response_uri` for wallet submission and the two request parameters are mutually
+        // exclusive, so the post-completion destination is pinned on the session instead. Unset —
+        // omit it, and the wallet stays on its current screen.
         val sessionRedirectUri = session.directPostResponseRedirectUri.orEmpty()
 
         // A `direct_post.jwt` session decrypts under the key the server holds for its verifier
@@ -197,6 +209,77 @@ class DirectPostResponseEndpointCommandImpl(
                 null
             }
 
+        // ISO/IEC TS 18013-7 Annex B uses a distinct mdoc handover. The mdoc-generated nonce is
+        // not a request parameter; it is authenticated in the response JWE `apu` header. Extract
+        // it only for the unmistakable restricted PE profile (presentation_definition without
+        // dcql_query). Regular OID4VP/DCQL keeps the regular four-element handover path.
+        val iso18013MdocGeneratedNonce =
+            if (isIso18013AnnexBRequest(session.authorizationRequest)) {
+                val jwe =
+                    responseParams["response"]
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "ISO 18013-7 Annex B direct_post.jwt response is missing the response JWE",
+                            ),
+                        )
+                val header =
+                    extractJweHeader(jwe)
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "ISO 18013-7 Annex B response JWE has no decodable protected header",
+                            ),
+                        )
+                val apu =
+                    header["apu"]
+                        ?.let { it as? JsonPrimitive }
+                        ?.takeIf { it.isString }
+                        ?.content
+                        ?.let { value ->
+                            runCatching { value.decodeFromBase64Url().decodeToString() }.getOrNull()
+                        }
+                        ?.takeIf { it.isNotBlank() }
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "ISO 18013-7 Annex B response JWE must carry a non-empty apu mdoc-generated nonce",
+                            ),
+                        )
+                val expectedApv = session.authorizationRequest.nonce
+                    ?.encodeToByteArray()
+                    ?.let { it.encodeToBase64Url() }
+                val actualApv =
+                    header["apv"]
+                        ?.let { it as? JsonPrimitive }
+                        ?.takeIf { it.isString }
+                        ?.content
+                if (expectedApv == null || actualApv != expectedApv) {
+                    return Err(
+                        IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            message = "ISO 18013-7 Annex B response JWE apv does not match the authorization-request nonce",
+                        ),
+                    )
+                }
+                apu
+            } else {
+                null
+            }
+
+        val trustedAuthentications =
+            trustedAuthenticationResolver
+                ?.invoke()
+                ?.resolveTrustedAuthentications(
+                    VerifierTrustedAuthenticationRequest(
+                        tenantId = execution.tenantId,
+                        verifierInstanceId = session.instanceId,
+                        verifierId = session.verifierId,
+                        dcqlQueryId = session.dcqlQueryId,
+                        templateId = session.templateId,
+                        originalRequest = session.authorizationRequest,
+                        dcqlQuery = session.dcqlQuery,
+                    ),
+                )
+                ?.getOrElse { return Err(it) }
+                .orEmpty()
+
         // Build args for the direct_post handler
         val directPostArgs =
             HandleDirectPostResponseArgs(
@@ -209,6 +292,8 @@ class DirectPostResponseEndpointCommandImpl(
                 verifierId = session.verifierId,
                 dcqlQueryId = session.dcqlQueryId,
                 templateId = session.templateId,
+                trustedAuthentications = trustedAuthentications,
+                iso18013MdocGeneratedNonce = iso18013MdocGeneratedNonce,
             )
 
         // Delegate to the service command
@@ -260,6 +345,24 @@ class DirectPostResponseEndpointCommandImpl(
             null
         }
     }
+
+    private fun extractJweHeader(jwe: String): kotlinx.serialization.json.JsonObject? {
+        val firstDot = jwe.indexOf('.')
+        if (firstDot <= 0) return null
+        return runCatching {
+            val headerJson = jwe.substring(0, firstDot).decodeFromBase64Url().decodeToString()
+            json.parseToJsonElement(headerJson) as? kotlinx.serialization.json.JsonObject
+        }.getOrNull()
+    }
+
+    private fun isIso18013AnnexBRequest(request: com.sphereon.oauth2.common.model.AuthorizationRequest): Boolean =
+        request.responseMode == ResponseMode.DIRECT_POST_JWT.value &&
+            request.additionalParameters.containsKey("presentation_definition") &&
+            !request.additionalParameters.containsKey("dcql_query") &&
+            request.additionalParameters["client_id_scheme"]
+                ?.let { it as? JsonPrimitive }
+                ?.takeIf { it.isString }
+                ?.content == "x509_san_dns"
 
     /**
      * Parse application/x-www-form-urlencoded body into a map.

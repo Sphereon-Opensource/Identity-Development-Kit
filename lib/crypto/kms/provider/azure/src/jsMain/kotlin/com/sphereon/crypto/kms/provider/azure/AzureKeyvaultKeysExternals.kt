@@ -25,6 +25,7 @@ external class KeyClient(keyvaultUrl: String, credential: ClientSecretCredential
     fun createEcKey(keyName: String, options: CreateEcKeyOptions): Promise<AzureKeyVaultKey>
     fun createRsaKey(keyName: String, options: CreateRsaKeyOptions): Promise<AzureKeyVaultKey>
     fun getKey(keyName: String): Promise<AzureKeyVaultKey>
+    fun getKey(keyName: String, keyVersion: String): Promise<AzureKeyVaultKey>
     fun listPropertiesOfKeys(): AsyncIterableIterator<KeyProperties>
     fun beginDeleteKey(keyName: String): Promise<AzureKeyVaultKey>
     fun importKey(name: String, key: JsonWebKey): Promise<AzureKeyVaultKey>

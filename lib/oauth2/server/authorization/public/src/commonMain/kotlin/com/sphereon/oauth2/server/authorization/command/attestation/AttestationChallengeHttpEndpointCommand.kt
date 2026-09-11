@@ -44,6 +44,7 @@ interface AttestationChallengeHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "createAttestationChallenge",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("attestation"),
                 summary = "OAuth 2.0 Attestation-Based Client Auth challenge endpoint",
             )

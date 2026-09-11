@@ -55,6 +55,8 @@ import com.sphereon.crypto.core.sign.model.SignOutputData
 import com.sphereon.crypto.core.sign.model.Signature
 import com.sphereon.crypto.core.sign.model.SignatureLevel
 import com.sphereon.crypto.core.sign.model.SigningMode
+import com.sphereon.crypto.core.sign.requireSigningKeyCompatible
+import com.sphereon.crypto.core.sign.keyCompatibilityFailure
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.crypto.core.kms.PredefinedKmsProviderTypes
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
@@ -62,6 +64,7 @@ import com.sphereon.crypto.core.kms.EncryptionResult
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.command.SignatureEncodingCodec
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
 
 
 /** Convert Kotlin ByteArray (Int8Array) to Uint8Array for Azure SDK interop */
@@ -81,6 +84,12 @@ private fun Uint8Array.toByteArray(): ByteArray {
     }
     return bytes
 }
+
+internal fun withExplicitSignatureAlgorithm(
+    keyInfo: KeyInfoType<*>,
+    signatureAlgorithm: SignatureAlgorithm?,
+): KeyInfoType<*> =
+    signatureAlgorithm?.let { KeyInfo.fromDTO(keyInfo).copy(signatureAlgorithm = it) } ?: keyInfo
 
 // Azure SDK external declarations are in separate files with @file:JsModule
 // for proper ESM named import generation:
@@ -239,12 +248,22 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         input: ByteArray,
         requireX5Chain: Boolean
     ): ByteArray {
-        require(keyInfo.alias !== null) { "Key reference is required" }
-
+        requireManagedSigningKeySelection(keyInfo)
         return try {
-            val azureKey = keyClient.getKey(keyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, keyInfo)
+            val resolved = ManagedKeyInfo(
+                providerId = id,
+                alias = azureKey.name,
+                resolvedKeyInfo = ResolvedKeyInfo.fromKey(azureKey.toJwk()),
+            )
+            val algorithm = keyInfo.signatureAlgorithm
+                ?: requireNotNull(SignatureAlgorithm.fromValue(azureKey.key.getSignatureAlgorithmName())) {
+                    "Unsupported Azure signing algorithm '${azureKey.key.getSignatureAlgorithmName()}'"
+                }
+            keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(algorithm) }
+            resolved.signingPolicyInfo().requireSigningKeyCompatible(algorithm)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
-            val signature = cryptographyClient.signData(azureKey.key.getSignatureAlgorithmName(), input.toUint8Array()).await()
+            val signature = cryptographyClient.signData(algorithm.toAzureSignatureAlgorithmName(), input.toUint8Array()).await()
             signature.result.toByteArray()
         } catch (expected: Exception) {
             throw SignClientException("Failed to create signature: ${expected.message}")
@@ -256,13 +275,21 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
      */
     private suspend fun createRawSignatureFromDigest(
         keyInfo: KeyInfoType<*>,
-        digest: ByteArray
+        digest: ByteArray,
+        signatureAlgorithm: SignatureAlgorithm,
     ): ByteArray {
-        require(keyInfo.alias !== null) { "Key reference is required" }
+        requireManagedSigningKeySelection(keyInfo)
         return try {
-            val azureKey = keyClient.getKey(keyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, keyInfo)
+            val resolved = ManagedKeyInfo(
+                providerId = id,
+                alias = azureKey.name,
+                resolvedKeyInfo = ResolvedKeyInfo.fromKey(azureKey.toJwk()),
+            )
+            keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(signatureAlgorithm) }
+            resolved.signingPolicyInfo().requireSigningKeyCompatible(signatureAlgorithm)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
-            val signature = cryptographyClient.sign(azureKey.key.getSignatureAlgorithmName(), digest.toUint8Array()).await()
+            val signature = cryptographyClient.sign(signatureAlgorithm.toAzureSignatureAlgorithmName(), digest.toUint8Array()).await()
             signature.result.toByteArray()
         } catch (expected: Exception) {
             throw SignClientException("Failed to create signature from digest: ${expected.message}")
@@ -276,10 +303,17 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         signatureEncoding: SignatureEncoding,
         requireX5Chain: Boolean,
     ): ByteArray {
-        require(keyInfo.alias !== null) { "Key reference is required" }
+        requireManagedSigningKeySelection(keyInfo)
         requireDigestLength(signatureAlgorithm, digest)
         return try {
-            val azureKey = keyClient.getKey(keyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, keyInfo)
+            val resolved = ManagedKeyInfo(
+                providerId = id,
+                alias = azureKey.name,
+                resolvedKeyInfo = ResolvedKeyInfo.fromKey(azureKey.toJwk()),
+            )
+            keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(signatureAlgorithm) }
+            resolved.signingPolicyInfo().requireSigningKeyCompatible(signatureAlgorithm)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
             val signature = cryptographyClient.sign(signatureAlgorithm.toAzureSignatureAlgorithmName(), digest.toUint8Array()).await()
             normalizeAzureSignatureOutput(signature.result.toByteArray(), signatureEncoding, signatureAlgorithm)
@@ -301,13 +335,18 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         input: ByteArray,
         signature: ByteArray
     ): Boolean {
-        require(keyInfo.alias !== null) { "Key reference is required" }
-
         return try {
-            val azureKey = keyClient.getKey(keyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, keyInfo)
+            val resolved = azureKey.toVerificationManagedKeyInfo(id)
+            val algorithm = keyInfo.signatureAlgorithm
+                ?: requireNotNull(SignatureAlgorithm.fromValue(azureKey.key.getSignatureAlgorithmName())) {
+                    "Unsupported Azure verification algorithm '${azureKey.key.getSignatureAlgorithmName()}'"
+                }
+            keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(algorithm) }
+            resolved.verificationPolicyInfo().requireVerificationKeyCompatible(algorithm)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
             val verifyResultRaw =
-                cryptographyClient.verifyData(azureKey.key.getSignatureAlgorithmName(), input.toUint8Array(), signature.toUint8Array()).await()
+                cryptographyClient.verifyData(algorithm.toAzureSignatureAlgorithmName(), input.toUint8Array(), signature.toUint8Array()).await()
             // Access result dynamically in case the property name differs in the Azure JS SDK
             val result = verifyResultRaw.asDynamic().result
             if (result == null || result == undefined) {
@@ -327,7 +366,8 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
      */
     suspend fun fetchKeyAsync(keyRef: String): ManagedKeyInfoType<Jwk> {
         return try {
-            val keyVaultKey = keyClient.getKey(keyRef).await()
+            val (keyName, keyVersion) = kidToKVKeyName(keyRef)
+            val keyVaultKey = if (keyVersion.isBlank()) keyClient.getKey(keyName).await() else keyClient.getKey(keyName, keyVersion).await()
             val keyVaultJwk = keyVaultKey.toJwk()
             ManagedKeyInfo(
                 providerId = id,
@@ -362,11 +402,15 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         val signatureValue = when (signInput.signMode) {
             SigningMode.DIGEST -> {
                 // Input is already a digest — use sign() which does NOT hash
-                createRawSignatureFromDigest(actualKeyInfo, signInput.input)
+                createRawSignatureFromDigest(actualKeyInfo, signInput.input, actualAlg)
             }
             else -> {
                 // Input is a full document — use signData() which hashes internally
-                createRawSignature(actualKeyInfo, signInput.input, requireX5Chain = false)
+                createRawSignature(
+                    withExplicitSignatureAlgorithm(actualKeyInfo, signatureAlgorithm),
+                    signInput.input,
+                    requireX5Chain = false,
+                )
             }
         }
 
@@ -408,12 +452,18 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         digest: ByteArray,
         signature: ByteArray
     ): Boolean {
-        require(keyInfo.alias !== null) { "Key reference is required" }
         return try {
-            val azureKey = keyClient.getKey(keyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, keyInfo)
+            val resolved = azureKey.toVerificationManagedKeyInfo(id)
+            val algorithm = keyInfo.signatureAlgorithm
+                ?: requireNotNull(SignatureAlgorithm.fromValue(azureKey.key.getSignatureAlgorithmName())) {
+                    "Unsupported Azure verification algorithm '${azureKey.key.getSignatureAlgorithmName()}'"
+                }
+            keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(algorithm) }
+            resolved.verificationPolicyInfo().requireVerificationKeyCompatible(algorithm)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
             val verifyResult =
-                cryptographyClient.verify(azureKey.key.getSignatureAlgorithmName(), digest.toUint8Array(), signature.toUint8Array()).await()
+                cryptographyClient.verify(algorithm.toAzureSignatureAlgorithmName(), digest.toUint8Array(), signature.toUint8Array()).await()
             verifyResult.result
         } catch (expected: Exception) {
             throw SignClientException("Failed to verify digest signature: ${expected.message}", expected)
@@ -427,11 +477,13 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         signatureAlgorithm: SignatureAlgorithm,
         signatureEncoding: SignatureEncoding,
     ): Boolean {
-        require(keyInfo.alias !== null) { "Key reference is required" }
         requireDigestLength(signatureAlgorithm, digest)
         val nativeSignature = normalizeAzureSignatureInput(signature, signatureEncoding, signatureAlgorithm)
         return try {
-            val azureKey = keyClient.getKey(keyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, keyInfo)
+            val resolved = azureKey.toVerificationManagedKeyInfo(id)
+            keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(signatureAlgorithm) }
+            resolved.verificationPolicyInfo().requireVerificationKeyCompatible(signatureAlgorithm)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
             val verifyResult =
                 cryptographyClient.verify(signatureAlgorithm.toAzureSignatureAlgorithmName(), digest.toUint8Array(), nativeSignature.toUint8Array()).await()
@@ -478,11 +530,10 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
             throw IllegalArgumentException("Either key reference or kid must be provided")
         }
 
-        val keyRef = keyInfo.alias ?: keyInfo.kid
-        val (keyName, _) = kidToKVKeyName(keyRef.toString())
+        val keyRef = azureKeyReference(keyInfo)
 
         return try {
-            fetchKeyAsync(keyName)
+            fetchKeyAsync(keyRef)
         } catch (expected: Exception) {
             throw SignClientException("Failed to get key: ${expected.message}")
         }
@@ -628,10 +679,8 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         algorithm: ContentEncryptionAlgorithm,
         additionalAuthenticatedData: ByteArray?
     ): EncryptionResult {
-        require(keyInfo.alias !== null) { "Key reference is required" }
-
         return try {
-            val azureKey = keyClient.getKey(keyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, keyInfo)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
             val azureAlgorithm = algorithm.toAzureAlgorithmName()
 
@@ -667,10 +716,8 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         authTag: ByteArray,
         additionalAuthenticatedData: ByteArray?
     ): ByteArray {
-        require(keyInfo.alias !== null) { "Key reference is required" }
-
         return try {
-            val azureKey = keyClient.getKey(keyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, keyInfo)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
             val azureAlgorithm = algorithm.toAzureAlgorithmName()
 
@@ -697,10 +744,8 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         keyToWrap: ByteArray,
         algorithm: KeyWrapAlgorithm
     ): ByteArray {
-        require(wrappingKeyInfo.alias !== null) { "Key reference is required" }
-
         return try {
-            val azureKey = keyClient.getKey(wrappingKeyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, wrappingKeyInfo)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
             val azureAlgorithm = algorithm.toAzureAlgorithmName()
 
@@ -725,10 +770,8 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         wrappedKey: ByteArray,
         algorithm: KeyWrapAlgorithm
     ): ByteArray {
-        require(unwrappingKeyInfo.alias !== null) { "Key reference is required" }
-
         return try {
-            val azureKey = keyClient.getKey(unwrappingKeyInfo.alias.toString()).await()
+            val azureKey = fetchAzureKey(keyClient, unwrappingKeyInfo)
             val cryptographyClient = CryptographyClient(azureKey, clientSecretCredential)
             val azureAlgorithm = algorithm.toAzureAlgorithmName()
 
@@ -768,4 +811,35 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         KeyWrapAlgorithm.A256GCMKW -> throw UnsupportedOperationException("A256GCMKW not supported by Azure Key Vault")
         KeyWrapAlgorithm.DIR -> throw UnsupportedOperationException("Direct key agreement not supported for key wrapping")
     }
+}
+
+private fun ManagedKeyInfoType<*>.signingPolicyInfo(): KeyInfoType<*> {
+    val dto = KeyInfo.fromDTO(this)
+    return if ((dto.key as? JwkType)?.alg == null) dto.copy(signatureAlgorithm = null) else dto
+}
+
+private fun ManagedKeyInfoType<*>.verificationPolicyInfo(): KeyInfoType<*> = signingPolicyInfo()
+
+private fun AzureKeyVaultKey.toVerificationManagedKeyInfo(providerId: String): ManagedKeyInfoType<Jwk> =
+    ManagedKeyInfo(
+        providerId = providerId,
+        alias = name,
+        resolvedKeyInfo = ResolvedKeyInfo.fromKey(toJwk()),
+    )
+
+private fun KeyInfoType<*>.requireVerificationKeyCompatible(requestedAlgorithm: SignatureAlgorithm) {
+    keyCompatibilityFailure(requestedAlgorithm, KeyOperations.VERIFY)?.let { failure ->
+        throw IllegalArgumentException(failure)
+    }
+}
+
+/** Azure aliases are tenant-scoped operational references and take precedence over metadata kids. */
+internal fun azureKeyReference(keyInfo: KeyInfoType<*>): String =
+    keyInfo.alias ?: keyInfo.kid
+    ?: throw SignClientException("A key id or alias is required for Azure Key Vault operations")
+
+private suspend fun fetchAzureKey(keyClient: KeyClient, keyInfo: KeyInfoType<*>): AzureKeyVaultKey {
+    val reference = azureKeyReference(keyInfo)
+    val (name, version) = kidToKVKeyName(reference)
+    return if (version.isBlank()) keyClient.getKey(name).await() else keyClient.getKey(name, version).await()
 }

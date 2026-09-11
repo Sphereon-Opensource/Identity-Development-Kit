@@ -32,6 +32,7 @@ import java.nio.file.Files
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -164,16 +165,18 @@ class SoftwareKeyStoreServiceKidResolutionTest {
         }
 
     @Test
-    fun hmacKeyLookupFallsBackToKidWhenAliasIsMissing() =
+    fun hmacKeyLookupFailsClosedWhenAliasIsMissingEvenIfKidExists() =
         runTest {
             val service = newPkcs12Service()
             val fallbackKid = "qa-license-recipient"
             service.storeKey(hmacResolvedKeyInfo(fallbackKid), "test-pkcs12", fallbackKid)
 
-            val resolved = service.getKey(KeyInfo<Jwk>(alias = "license-recipient", kid = fallbackKid))
+            val exception =
+                assertFailsWith<Exception> {
+                    service.getKey(KeyInfo<Jwk>(alias = "license-recipient", kid = fallbackKid))
+                }
 
-            assertEquals(fallbackKid, resolved.alias)
-            assertNotNull((resolved.key as? JwkType)?.k, "Lookup with missing alias must fall back to kid")
+            assertTrue(exception.message?.contains("license-recipient") == true)
         }
 
     /**

@@ -51,8 +51,8 @@ value class DeviceResponseStatus(
     val value: UInt,
 ) {
     init {
-        require(value == 0u || value == 11u || value == 12u || value == 20u) {
-            "Status code must be 0, 11, 12 or 20 unsigned but was '$value' instead"
+        require(value == 0u || value == 10u || value == 11u || value == 12u || value == 20u) {
+            "Status code must be 0, 10, 11, 12 or 20 unsigned but was '$value' instead"
         }
     }
 
@@ -87,6 +87,8 @@ data class DeviceResponse(
     val documentErrors: Array<Map<DocType, DocumentError>>? = arrayOf(),
     val status: DeviceResponseStatus = DeviceResponseStatus(0u),
     val original: ByteArray?,
+    val zkDocuments: Array<ZkDocument>? = null,
+    val encryptedDocuments: Array<EncryptedDocuments>? = null,
 ) {
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("Builder", exact = true)
@@ -94,10 +96,12 @@ data class DeviceResponse(
         var documents: Array<Document> = arrayOf(),
         var documentErrors: Array<DeviceResponseDocumentErrorAlias> = arrayOf(),
         var status: DeviceResponseStatus = DeviceResponseStatus(0u),
+        var zkDocuments: Array<ZkDocument>? = null,
+        var encryptedDocuments: Array<EncryptedDocuments>? = null,
     ) {
         fun withDocuments(documents: Array<Document>) = apply { this.documents = documents }
 
-        fun addDocument(document: Document) = apply { this.documents.plus(document) }
+        fun addDocument(document: Document) = apply { this.documents = this.documents.plus(document) }
 
         fun addDocumentOrErrorFromOid4vpSignResult(signResult: Oid4vpSignResult) =
             apply {
@@ -114,9 +118,13 @@ data class DeviceResponse(
 
         fun withDocumentErrors(documentErrors: Array<DeviceResponseDocumentErrorAlias>?) = apply { this.documentErrors = documentErrors ?: arrayOf() }
 
-        fun addDocumentError(documentError: DeviceResponseDocumentErrorAlias) = apply { this.documentErrors.plus(documentError) }
+        fun addDocumentError(documentError: DeviceResponseDocumentErrorAlias) = apply { this.documentErrors = this.documentErrors.plus(documentError) }
 
         fun withStatus(status: DeviceResponseStatus) = apply { this.status = status }
+
+        fun withZkDocuments(zkDocuments: Array<ZkDocument>?) = apply { this.zkDocuments = zkDocuments }
+
+        fun withEncryptedDocuments(encryptedDocuments: Array<EncryptedDocuments>?) = apply { this.encryptedDocuments = encryptedDocuments }
 
         fun build(): DeviceResponse =
             DeviceResponse(
@@ -130,11 +138,15 @@ data class DeviceResponse(
                 version = DeviceResponseVersion("1.0"),
                 status = status,
                 original = null,
+                zkDocuments = zkDocuments,
+                encryptedDocuments = encryptedDocuments,
             )
     }
 
     override fun toString(): String =
-        "DeviceResponse(version=$version, documents=${stringify(documents)}, documentErrors=${stringify(documentErrors)}, status=$status, original=${stringify(original)})"
+        "DeviceResponse(version=$version, documents=${stringify(documents)}, zkDocuments=${stringify(zkDocuments)}, " +
+            "encryptedDocuments=${stringify(encryptedDocuments)}, documentErrors=${stringify(documentErrors)}, " +
+            "status=$status, original=${stringify(original)})"
 
     override fun equals(other: Any?): Boolean {
         if (this === other) {
@@ -170,6 +182,12 @@ data class DeviceResponse(
         if (status != other.status) {
             return false
         }
+        if (!zkDocuments.contentEquals(other.zkDocuments)) {
+            return false
+        }
+        if (!encryptedDocuments.contentEquals(other.encryptedDocuments)) {
+            return false
+        }
 
         return true
     }
@@ -179,6 +197,8 @@ data class DeviceResponse(
         result = 31 * result + (documents?.contentHashCode() ?: 0)
         result = 31 * result + (documentErrors?.contentHashCode() ?: 0)
         result = 31 * result + status.hashCode()
+        result = 31 * result + (zkDocuments?.contentHashCode() ?: 0)
+        result = 31 * result + (encryptedDocuments?.contentHashCode() ?: 0)
         return result
     }
 
@@ -198,5 +218,13 @@ data class DeviceResponse(
         @JsStatic
         @JvmStatic
         val STATUS = StringLabel("status")
+
+        @JsStatic
+        @JvmStatic
+        val ZK_DOCUMENTS = StringLabel("zkDocuments")
+
+        @JsStatic
+        @JvmStatic
+        val ENCRYPTED_DOCUMENTS = StringLabel("encryptedDocuments")
     }
 }

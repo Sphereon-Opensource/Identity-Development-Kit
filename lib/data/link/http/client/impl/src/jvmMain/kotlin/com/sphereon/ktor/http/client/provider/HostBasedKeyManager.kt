@@ -19,6 +19,7 @@ package com.sphereon.ktor.http.client.provider
 import java.net.Socket
 import java.security.Principal
 import javax.net.ssl.X509KeyManager
+import javax.net.ssl.SSLSocket
 
 class HostBasedKeyManager(
     private val delegate: X509KeyManager,
@@ -30,7 +31,13 @@ class HostBasedKeyManager(
         issuers: Array<Principal>?,
         socket: Socket?,
     ): String? {
-        val host = socket?.inetAddress?.hostName ?: return defaultAlias
-        return hostNameToAlias[host] ?: defaultAlias
+        val host = ((socket as? SSLSocket)?.handshakeSession?.peerHost ?: socket?.inetAddress?.hostName)
+            ?.trim()
+            ?.trimEnd('.')
+            ?.lowercase()
+            ?: return defaultAlias
+        return hostNameToAlias.entries.firstOrNull { it.key.trim().trimEnd('.').lowercase() == host }?.value ?: defaultAlias
     }
 }
+
+

@@ -42,16 +42,13 @@ class HandleDiscoveryRequestCommandImplTest {
                     authorizationEndpoint = "https://issuer.example.com/authorize",
                     tokenEndpoint = "https://issuer.example.com/token",
                 )
-            val service =
-                StubAuthorizationServerService(
-                    buildServerMetadataStub =
-                        stubBuildServerMetadata { args ->
-                            seenServerId = args.serverId
-                            seenBaseUrl = args.baseUrlOverride
-                            Ok(expected)
-                        },
-                )
-            val command = HandleDiscoveryRequestCommandImpl(ctx.execution, service)
+            val buildServerMetadata =
+                stubBuildServerMetadata { args ->
+                    seenServerId = args.serverId
+                    seenBaseUrl = args.baseUrlOverride
+                    Ok(expected)
+                }
+            val command = HandleDiscoveryRequestCommandImpl(ctx.execution, buildServerMetadata)
 
             val result =
                 command.execute(
@@ -70,14 +67,11 @@ class HandleDiscoveryRequestCommandImplTest {
     @Test
     fun propagatesBuildMetadataError() =
         runTest {
-            val service =
-                StubAuthorizationServerService(
-                    buildServerMetadataStub =
-                        stubBuildServerMetadata {
-                            Err(IdkError.fromString(code = "server_error", message = "config broken"))
-                        },
-                )
-            val command = HandleDiscoveryRequestCommandImpl(ctx.execution, service)
+            val buildServerMetadata =
+                stubBuildServerMetadata {
+                    Err(IdkError.fromString(code = "server_error", message = "config broken"))
+                }
+            val command = HandleDiscoveryRequestCommandImpl(ctx.execution, buildServerMetadata)
 
             val result = command.execute(HandleDiscoveryRequestArgs())
 

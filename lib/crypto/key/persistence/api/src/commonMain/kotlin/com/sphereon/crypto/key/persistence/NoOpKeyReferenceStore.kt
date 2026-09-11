@@ -39,6 +39,7 @@ import dev.zacsweers.metro.binding
 @ContributesBinding(SessionScope::class, binding = binding<KeyReferenceStore>())
 class NoOpKeyReferenceStore : KeyReferenceStore {
     override val isAvailable: Boolean = false
+    override val ownershipHistoryCapability: KeyReferenceHistoryCapability = KeyReferenceHistoryCapability.UNSUPPORTED
 
     override suspend fun save(record: KeyReferenceRecord): IdkResult<KeyReferenceRecord, IdkError> = Ok(record)
 

@@ -45,6 +45,7 @@ kotlin {
                 api(projects.libCoreApiPublic)
                 api(projects.libWalletWscaPublic)
                 api(projects.libWalletWscdPublic)
+                api(projects.libCryptoKeyPersistenceApi)
                 // Sanctioned raw-KMS wiring for tests (TestWscdSupport): this
                 // module lives under lib/wallet/wscd/, so the boundary guards exempt it. Not
                 // re-exported (implementation): consumers get a KeyManagerService handle back from
@@ -67,9 +68,20 @@ kotlin {
                 // software KMS provider factory binding on its compile classpath.
                 api(projects.libWalletImpl)
                 api(projects.libCryptoKmsProviderSoftware)
+                // WalletAppGraph is a final composition root. OID4VP holder support now
+                // creates W3C Data Integrity presentations through AddProofServiceCommand,
+                // so the command implementation and supported cryptosuite contributions
+                // must be visible to Metro when this graph is generated.
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
                 // The fixture graph uses a real durable SQLite DID repository. Production memory
                 // factories were deliberately removed from the graph.
                 api(projects.libDidPersistenceSqlite)
+                // Include the persistent managed-key selector so the graph's KeyManagerService
+                // delegates registered-key authority lookups to the shared in-memory fixture store.
+                implementation(projects.libCryptoKeyPersistenceImpl)
             }
         }
     }

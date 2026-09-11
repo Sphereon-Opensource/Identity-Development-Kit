@@ -140,7 +140,7 @@ class DidManagerCommandBehaviorTest {
             createDidKey("no-page-a").getOrThrow()
             createDidKey("no-page-b").getOrThrow()
             val out = commands.listDids.execute(DidFilter(size = null)).getOrThrow()
-            assertEquals(out.items.size, out.page.total)
+            assertEquals(out.items.size.toLong(), out.page.total)
         }
 
     // ============ ListVerificationRelationshipsServiceCommand purpose filter ============

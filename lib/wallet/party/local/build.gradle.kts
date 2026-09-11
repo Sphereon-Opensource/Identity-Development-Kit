@@ -17,7 +17,6 @@ kotlin {
     android {
         namespace = "com.sphereon.wallet.party.local"
         compileSdk = 36
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }

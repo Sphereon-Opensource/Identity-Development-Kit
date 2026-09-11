@@ -31,7 +31,6 @@ import com.sphereon.mdoc.transfer.device.Capabilities
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethod
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethodType
 import com.sphereon.mdoc.transfer.device.RestApiOptions
-import io.ktor.http.Url
 import kotlin.uuid.Uuid
 
 internal data class PreparedHolderDeviceEngagement(
@@ -73,8 +72,6 @@ internal class HolderDeviceEngagementAssembler(
                     ?.firstOrNull { it.type == DeviceRetrievalMethodType.WEBSITE }
                     ?.retrievalOptions as? RestApiOptions
                     ?: throw IllegalArgumentException("Device retrieval website")
-            val domain = Url(restApiOptions.uri).host
-
             return PreparedHolderDeviceEngagement(
                 engagement =
                     DeviceEngagement.V1_1(
@@ -92,7 +89,12 @@ internal class HolderDeviceEngagementAssembler(
                                 OriginInfo(
                                     cat = OriginInfoCategory(1u),
                                     type = OriginInfoType(1u),
-                                    details = OriginInfoDetails(mapOf("domain" to domain)),
+                                    details = OriginInfoDetails(
+                                        mapOf(
+                                            OriginInfoDetails.DOMAIN to
+                                                (data.getTrustedOriginDomain() ?: ""),
+                                        ),
+                                    ),
                                     original = null,
                                 ),
                             ),

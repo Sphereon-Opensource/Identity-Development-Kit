@@ -81,7 +81,20 @@ interface IdvExecutionStore {
         tenantId: String,
     ): IdvExecution?
 
-    suspend fun create(execution: IdvExecution): IdvExecution
+    /**
+     * Persists an execution together with the immutable use-case snapshot it was compiled from.
+     * The snapshot is execution state, not a catalog entry: ad-hoc graphs must remain reloadable
+     * without becoming tenant-visible definitions, and catalog edits must not alter an active run.
+     */
+    suspend fun create(
+        execution: IdvExecution,
+        useCaseSnapshot: IdvUseCaseDefinition? = null,
+    ): IdvExecution
+
+    suspend fun findUseCaseSnapshot(
+        executionId: IdvExecutionId,
+        tenantId: String,
+    ): IdvUseCaseDefinition?
 
     suspend fun update(
         execution: IdvExecution,

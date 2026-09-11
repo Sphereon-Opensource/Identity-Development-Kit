@@ -1,0 +1,6 @@
+All documents in this Repository are licensed by contributors under the
+W3C Software and Document License.
+
+Source repository: https://github.com/w3c/rdf-canon
+License text: https://www.w3.org/Consortium/Legal/copyright-software
+Pinned source commit: 15619df2fda7a4ca88308733789b6774517f9638

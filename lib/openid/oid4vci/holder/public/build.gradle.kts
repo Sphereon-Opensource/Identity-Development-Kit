@@ -57,6 +57,9 @@ kotlin {
                 // Crypto (for managed identifiers, key types)
                 api(projects.libCryptoCorePublic)
 
+                // Durable WSCA-prepared credential-proof snapshots
+                api(projects.libWalletUnitPublic)
+
                 // KV store (for session/offer persistence)
                 api(projects.libDataStoreKvPublic)
 

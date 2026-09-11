@@ -41,6 +41,9 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
@@ -66,7 +69,7 @@ class NoOpKmsProviderFactoryImpl : KmsProviderFactory {
 @Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
-@OptIn(ExperimentalObjCName::class)
+@OptIn(ExperimentalObjCName::class, ExperimentalAtomicApi::class)
 @ObjCName("KmsProviderManagerImpl", exact = true)
 class KmsProviderManagerImpl(
     factories: Set<KmsProviderFactory>,
@@ -212,11 +215,28 @@ class KmsProviderManagerImpl(
             // Provider configs are composite values and may contain credentials. The generic
             // configuration cache intentionally rejects them. Keep that fail-closed boundary and
             // report the rejection instead of claiming that an entry was stored.
-            log.debug(
-                "VDX_KMS_PROVIDER_CONFIG_CACHE_REJECTED scope=${snapshotKey.scope} " +
-                    "tenant=${snapshotKey.tenantId ?: "none"} principal=${snapshotKey.principalId ?: "none"} " +
-                    "prefix=${snapshotKey.prefix} size=${configs.size} reason=unsafe-composite-value",
-            )
+            //
+            // The rejection is invariant, not incidental: this value type is composite by
+            // construction, so every write attempt is refused and the line fires once per
+            // (scope, tenant, principal, config-revision). Repeating an unchanging fact once
+            // per resolution buries the lines that do carry information, so it is stated once
+            // per process and counted thereafter. The count is emitted on the powers of two so
+            // the signal never disappears entirely while staying flat under sustained load.
+            val occurrence = cacheRejectionsLogged.incrementAndFetch()
+            if (occurrence == 1) {
+                log.debug(
+                    "VDX_KMS_PROVIDER_CONFIG_CACHE_REJECTED scope=${snapshotKey.scope} " +
+                        "tenant=${snapshotKey.tenantId ?: "none"} principal=${snapshotKey.principalId ?: "none"} " +
+                        "prefix=${snapshotKey.prefix} size=${configs.size} reason=unsafe-composite-value. " +
+                        "This is the fail-closed cache boundary working as designed; provider configs are " +
+                        "resolved fresh on every use. Further rejections are counted, not logged.",
+                )
+            } else if (occurrence and (occurrence - 1) == 0) {
+                log.debug(
+                    "VDX_KMS_PROVIDER_CONFIG_CACHE_REJECTED count=$occurrence (reason=unsafe-composite-value, " +
+                        "expected; see the first occurrence for detail)",
+                )
+            }
             return
         }
 
@@ -242,6 +262,16 @@ class KmsProviderManagerImpl(
     private companion object {
         const val KMS_PROVIDER_CONFIGS_SNAPSHOT_VALUE = "configs"
         const val KMS_PROVIDER_CONFIG_SNAPSHOT_PREFIX = "_derived.kms.provider-configs.bound"
+
+        /**
+         * How many times the config cache has refused a provider-config snapshot.
+         *
+         * A log-deduplication counter, deliberately not provider or configuration state: it is
+         * never read by resolution, never affects which providers are built, and losing or
+         * duplicating a count changes nothing but log volume. That is why it does not breach
+         * the no-state rule this class is annotated with.
+         */
+        val cacheRejectionsLogged = AtomicInt(0)
     }
 }
 
@@ -362,6 +392,35 @@ class KmsProviderConfigBinderImpl(
     // configured prefix binder once instead of rebuilding its normalized alias tables per request.
     private val polymorphicBinders = buildPrefixes().associateWith(::createPolymorphicBinder)
 
+    /**
+     * Binds every entry under [prefix], keeping the entries that bind when a sibling entry does not.
+     *
+     * Enumeration is a read across all configured providers, so a single unbindable entry must not
+     * decide the outcome for the rest: failing the whole map turns one malformed provider into a
+     * 500 on every request that resolves any provider, including requests that never touch it. The
+     * strict pass still runs first so the per-entry diagnostics are logged in full, and the failed
+     * entry is left out of the result rather than returned half-bound.
+     *
+     * This does not soften provider resolution. [getKmsProviderConfig] binds the requested entry on
+     * its own and still throws for that provider, so naming a malformed provider fails closed.
+     */
+    private fun bindEntries(
+        configService: ConfigService,
+        prefix: String,
+        binder: DefaultPolymorphicConfigBinder<KmsProviderConfigBase>,
+    ): Map<String, KmsProviderConfigBase> {
+        val strictResult = binder.getEntryConfigsAsMapResult(configService, strict = true)
+        if (strictResult.isOk) return strictResult.value
+
+        log.warn(
+            "[KmsProviderConfigBinder] Skipping unbindable KMS provider entries under prefix '$prefix'. " +
+                "The remaining providers stay available and resolving a skipped provider by id fails. " +
+                "Diagnostics: ${strictResult.error.message.defaultMessage}",
+        )
+        val lenientResult = binder.getEntryConfigsAsMapResult(configService, strict = false)
+        return if (lenientResult.isOk) lenientResult.value else emptyMap()
+    }
+
     override fun getKmsProviderIds(configService: ConfigService): Array<String> {
         log.debug("[KmsProviderConfigBinder] Getting KMS provider IDs from config service at level: ${configService.configLevel}")
         log.debug("[KmsProviderConfigBinder] Using prefix: ${polymorphicBinders.keys.joinToString(",")}")
@@ -370,11 +429,7 @@ class KmsProviderConfigBinderImpl(
         // Prefer the explicit config id field when present to preserve original IDs (e.g., with hyphens).
         val allIds = mutableSetOf<String>()
         for ((prefix, binder) in polymorphicBinders) {
-            val configsResult = binder.getEntryConfigsAsMapResult(configService, strict = true)
-            require(configsResult.isOk) {
-                "Failed to bind KMS provider configs for prefix '$prefix': ${configsResult.error.message.defaultMessage}"
-            }
-            val configs = configsResult.value
+            val configs = bindEntries(configService, prefix, binder)
             if (configs.isNotEmpty()) {
                 allIds.addAll(configs.values.map { it.id })
             } else {
@@ -416,13 +471,8 @@ class KmsProviderConfigBinderImpl(
         // Collect all configs from all prefixes
         val allConfigs = mutableMapOf<String, KmsProviderConfigBase>()
         for ((prefix, binder) in polymorphicBinders) {
-            val configsResult = binder.getEntryConfigsAsMapResult(configService, strict = true)
-            require(configsResult.isOk) {
-                "Failed to bind KMS provider configs for prefix '$prefix': ${configsResult.error.message.defaultMessage}"
-            }
-            val configs = configsResult.value
             // Later prefixes override earlier ones
-            allConfigs.putAll(configs)
+            allConfigs.putAll(bindEntries(configService, prefix, binder))
         }
 
         log.debug("[KmsProviderConfigBinder] Found ${allConfigs.size} provider configs")

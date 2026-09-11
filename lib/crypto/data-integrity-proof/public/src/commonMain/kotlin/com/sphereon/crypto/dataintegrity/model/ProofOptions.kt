@@ -52,4 +52,17 @@ data class ProofOptions(
     val previousProof: List<String>? = null,
     val proofId: String? = null,
     val additionalProofProperties: JsonObject? = null,
-)
+    /** Unordered-set form of `domain`; mutually exclusive with [domain]. */
+    val domainSet: List<String>? = null,
+) {
+    init {
+        require(domain == null || domainSet == null) {
+            "ProofOptions.domain and domainSet are mutually exclusive"
+        }
+        domainSet?.let { values ->
+            require(values.isNotEmpty()) { "ProofOptions.domainSet must not be empty" }
+            require(values.all(String::isNotBlank)) { "ProofOptions.domainSet values must not be blank" }
+            require(values.distinct().size == values.size) { "ProofOptions.domainSet values must be unique" }
+        }
+    }
+}

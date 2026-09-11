@@ -19,10 +19,14 @@ package com.sphereon.mdoc.reader
 
 import com.sphereon.mdoc.data.device.DataElementIdentifier
 import com.sphereon.mdoc.data.device.DeviceRequest
+import com.sphereon.mdoc.data.device.DeviceRequestInfo
+import com.sphereon.mdoc.data.device.DeviceRequestVersion
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.DocType
 import com.sphereon.mdoc.data.device.IntentToRetain
+import com.sphereon.mdoc.data.device.MacKeys
 import com.sphereon.mdoc.data.device.NameSpace
+import com.sphereon.mdoc.data.device.ReaderAuthAll
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -71,6 +75,9 @@ import kotlin.native.ObjCName
 class DeviceRequestBuilder {
     private var version: String = "1.0"
     private val docRequests = mutableListOf<DocRequest>()
+    private var deviceRequestInfo: DeviceRequestInfo? = null
+    private var readerAuthAll: Array<ReaderAuthAll>? = null
+    private var macKeys: MacKeys? = null
 
     /**
      * Set the DeviceRequest version.
@@ -95,6 +102,21 @@ class DeviceRequestBuilder {
         apply {
             docRequests.add(docRequest)
         }
+
+    /** Adds the ISO 18013-5 second-edition request information. */
+    fun withDeviceRequestInfo(deviceRequestInfo: DeviceRequestInfo?) = apply {
+        this.deviceRequestInfo = deviceRequestInfo
+    }
+
+    /** Adds the detached ReaderAuthenticationAll signatures in request order. */
+    fun withReaderAuthAll(readerAuthAll: Array<ReaderAuthAll>?) = apply {
+        this.readerAuthAll = readerAuthAll
+    }
+
+    /** Adds the verifier MAC keys advertised for device authentication. */
+    fun withMacKeys(macKeys: MacKeys?) = apply {
+        this.macKeys = macKeys
+    }
 
     /**
      * Add a DocRequest with simplified namespace structure.
@@ -133,9 +155,19 @@ class DeviceRequestBuilder {
      */
     fun build(): DeviceRequest {
         require(docRequests.isNotEmpty()) { "At least one DocRequest is required" }
+        val effectiveVersion =
+            if (deviceRequestInfo != null || readerAuthAll != null || macKeys != null) {
+                "1.1"
+            } else {
+                version
+            }
         return DeviceRequest(
+            version = DeviceRequestVersion(effectiveVersion),
             docRequests = docRequests.toTypedArray(),
             original = null,
+            deviceRequestInfo = deviceRequestInfo,
+            readerAuthAll = readerAuthAll,
+            macKeys = macKeys,
         )
     }
 }

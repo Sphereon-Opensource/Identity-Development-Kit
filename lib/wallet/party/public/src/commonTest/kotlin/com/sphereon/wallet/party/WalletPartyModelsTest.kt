@@ -38,7 +38,7 @@ class WalletPartyModelsTest {
         val organizationId = Uuid.random()
         val businessUnitId = Uuid.random()
         val identityId = Uuid.random()
-        val party = Party(organizationId, "personal", PartyType.ORGANIZATION, PartyOrigin.EXTERNAL, "Example issuer", "https://issuer.example", organizationUnitId = businessUnitId, createdAt = now, updatedAt = now)
+        val party = Party(organizationId, "personal", PartyType.ORGANIZATION, PartyOrigin.CEREMONY_DISCOVERY, "Example issuer", "https://issuer.example", organizationUnitId = businessUnitId, createdAt = now, updatedAt = now)
         val identity = Identity(identityId, "personal", IdentityRole.ISSUER, privacyMode = IdentityPrivacyMode.PARTY_PROFILED, createdAt = now, updatedAt = now)
         val binding = IdentityPartyBinding(identityId, organizationId, PartyType.ORGANIZATION, "organization_identity", now)
         val identifier = IdentityIdentifier(Uuid.random(), identityId, "personal", IdentifierType.OID4VCI_ISSUER, "https://issuer.example", isPrimary = true, validFrom = now, createdAt = now, updatedAt = now)

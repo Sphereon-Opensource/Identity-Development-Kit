@@ -50,7 +50,7 @@ class CredentialSubjectExtractorImpl : CredentialSubjectExtractor {
         when {
             format.isSdJwt -> extractFromSdJwt(raw)
 
-            format.isJwt || format == CredentialFormat.VC_LD_JSON_JWT -> extractFromJwt(raw)
+            format.isJwt || format == CredentialFormat.JWT_VC_JSON_LD -> extractFromJwt(raw)
 
             format.isMdoc -> emptyList()
 
@@ -74,12 +74,12 @@ class CredentialSubjectExtractorImpl : CredentialSubjectExtractor {
     }
 
     /**
-     * JWT (jwt_vc_json / vc+ld+json+jwt): split on '.' and base64url-decode the payload part via
+     * JWT (jwt_vc_json / jwt_vc_json-ld): split on '.' and base64url-decode the payload part via
      * [JwsUtils.decodeBase64UrlToJson]. Then:
      *
      * - For jwt_vc_json: read `vc.credentialSubject` — may be an object with an `id` field, or
      *   a JSON array of objects each with an `id` field (W3C multi-subject).
-     * - For vc+ld+json+jwt: the VCDM 2.0 body is the entire payload; read `credentialSubject`
+     * - For jwt_vc_json-ld: the VCDM 2.0 body is the entire payload; read `credentialSubject`
      *   directly (same object-or-array shape).
      * - Fallback: read the top-level `sub` string claim (covers the jwt_vc_json envelope style
      *   where the issuer mirrors the subject DID at JWT level).
@@ -103,7 +103,7 @@ class CredentialSubjectExtractorImpl : CredentialSubjectExtractor {
             if (fromVc.isNotEmpty()) return fromVc
         }
 
-        // vc+ld+json+jwt: VCDM 2.0 payload is the root — credentialSubject at root
+        // jwt_vc_json-ld: VCDM 2.0 payload is the root — credentialSubject at root
         val fromRoot = subjectsFromCredentialSubjectClaim(payload)
         if (fromRoot.isNotEmpty()) return fromRoot
 

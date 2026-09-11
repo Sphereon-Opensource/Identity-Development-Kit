@@ -43,10 +43,12 @@ import kotlin.time.Clock
 /**
  * Verifies OID4VCI pre-authorized code grants.
  *
- * 1. Atomically consume the code from storage
+ * 1. Load the code without consuming it
  * 2. Check expiry
  * 3. Validate tx_code if required (SHA-256 hash comparison)
- * 4. Return session, subject, and credential configuration IDs
+ * 4. Validate client binding
+ * 5. Atomically consume the validated code from storage
+ * 6. Return session, subject, and credential configuration IDs
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -77,10 +79,11 @@ class VerifyPreAuthorizedCodeGrantCommandImpl(
     }
 
     private suspend fun executeInternal(args: VerifyPreAuthCodeArgs): IdkResult<VerifiedPreAuthCodeGrant, AuthorizationServerError> {
-        // 1. Atomically consume the pre-authorized code
+        // 1. Load the pre-authorized code without consuming it. Invalid attempts must not
+        // destroy a valid code; the final consume below remains the single-use gate.
         val codeData =
             preAuthorizedCodeStorage
-                .consumePreAuthorizedCode(args.preAuthorizedCode)
+                .findPreAuthorizedCode(args.preAuthorizedCode)
                 .getOrElse { error ->
                     return Err(
                         AuthorizationServerError.ServerError(
@@ -91,6 +94,7 @@ class VerifyPreAuthorizedCodeGrantCommandImpl(
                 }
 
         if (codeData == null) {
+            execution.log.warn("VDX_PREAUTH_MISS codeHash=${args.preAuthorizedCode.hashCode()}")
             return Err(
                 AuthorizationServerError.InvalidGrant(
                     details = "Invalid or already used pre-authorized code",
@@ -101,7 +105,7 @@ class VerifyPreAuthorizedCodeGrantCommandImpl(
 
         // 2. Check expiry
         val now = clock.now()
-        if (codeData.expiresAt < now) {
+        if (codeData.expiresAt <= now) {
             return Err(
                 AuthorizationServerError.InvalidGrant(
                     details = "Pre-authorized code has expired",
@@ -142,13 +146,38 @@ class VerifyPreAuthorizedCodeGrantCommandImpl(
             )
         }
 
+        // 5. Atomically compare-and-consume only after every validation has succeeded. The
+        // storage operation also re-checks identity and expiry at commit time, so replacement
+        // or expiry during validation cannot mint a grant from stale data.
+        val consumedCodeData =
+            preAuthorizedCodeStorage
+                .consumePreAuthorizedCodeIfValid(
+                    code = args.preAuthorizedCode,
+                    expectedData = codeData,
+                    now = clock.now(),
+                )
+                .getOrElse { error ->
+                    return Err(
+                        AuthorizationServerError.ServerError(
+                            details = "Failed to consume pre-authorized code: ${error.details}",
+                            exception = null,
+                        ),
+                    )
+                }
+                ?: return Err(
+                    AuthorizationServerError.InvalidGrant(
+                        details = "Invalid or already used pre-authorized code",
+                        exception = null,
+                    ),
+                )
+
         return Ok(
             VerifiedPreAuthCodeGrant(
-                sessionId = codeData.sessionId,
-                subject = codeData.subject,
-                credentialConfigurationIds = codeData.credentialConfigurationIds,
-                issuerIdentifier = codeData.issuerIdentifier,
-                useCredentialIdentifiers = codeData.useCredentialIdentifiers,
+                sessionId = consumedCodeData.sessionId,
+                subject = consumedCodeData.subject,
+                credentialConfigurationIds = consumedCodeData.credentialConfigurationIds,
+                issuerIdentifier = consumedCodeData.issuerIdentifier,
+                useCredentialIdentifiers = consumedCodeData.useCredentialIdentifiers,
             ),
         )
     }

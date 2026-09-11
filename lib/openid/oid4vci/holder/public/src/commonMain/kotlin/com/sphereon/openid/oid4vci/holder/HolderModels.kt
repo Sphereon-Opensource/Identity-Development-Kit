@@ -52,6 +52,8 @@ enum class Oid4vciHolderSessionStatus {
     OFFER_RESOLVED,
     TOKEN_OBTAINED,
     CREDENTIAL_REQUESTED,
+    /** A prepared proof was rejected and a new server-owned activation is required. */
+    ACTIVATION_REQUIRED,
     CREDENTIAL_RECEIVED,
     DEFERRED_PENDING,
     COMPLETED,

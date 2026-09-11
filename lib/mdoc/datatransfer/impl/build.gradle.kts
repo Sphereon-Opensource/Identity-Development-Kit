@@ -30,7 +30,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.mdoc.datatransfer.impl"
         compileSdk = 35
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }

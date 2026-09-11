@@ -58,15 +58,18 @@ fun systemDefaultsLightJson(): String = json.encodeToString(SystemDefaults.basel
 fun systemDefaultsDarkJson(): String = json.encodeToString(SystemDefaults.baselineDark)
 
 /**
- * Get a flat token map for a given variant ("light", "dark", or "high_contrast").
- * Merges and resolves references from the system default definitions.
+ * Get a flat token map for a given variant ("light", "dark", "high_contrast_light" or
+ * "high_contrast_dark"). Merges and resolves references from the system default definitions.
+ *
+ * High contrast is named per ground because the role shapes invert between them; see [ThemeVariant].
  */
 @JsExport
 fun systemDefaultsTokens(variant: String): Map<String, String> {
     val definition =
         when (variant.lowercase()) {
             "dark" -> SystemDefaults.baselineDark
-            "high_contrast" -> SystemDefaults.baselineHighContrast
+            "high_contrast_light" -> SystemDefaults.baselineHighContrastLight
+            "high_contrast_dark" -> SystemDefaults.baselineHighContrastDark
             else -> SystemDefaults.baseline
         }
     val flat = TokenFlattener.merge(listOf(definition))

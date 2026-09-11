@@ -30,7 +30,11 @@ import com.sphereon.sdjwt.dsl.sdJwtPayload
 import com.sphereon.sdjwt.testutil.createSdJwtTestAppGraph
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -246,6 +250,9 @@ class PresentationTest {
             val holderKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
             // Use PRIVATE visibility for signing operations
             val holderKeyInfo: ManagedKeyInfoType<*> = holderKeyPair.joseToManagedKeyInfo(com.sphereon.crypto.core.KeyVisibility.PRIVATE)
+            // Bind the issued SD-JWT to the holder's canonical public JWK.
+            val holderPublicKeyInfo: ManagedKeyInfoType<*> = holderKeyPair.joseToManagedKeyInfo(com.sphereon.crypto.core.KeyVisibility.PUBLIC)
+            val holderPublicJwk = (holderPublicKeyInfo.key as com.sphereon.crypto.core.jose.Jwk).toMinimalJwk()
 
             val holderKey =
                 ManagedOptsKeyInfo(
@@ -263,6 +270,12 @@ class PresentationTest {
                     iss("https://kb-issuer.example.com")
                     sub("user-kb")
                     claimSd("email", "kb@example.com")
+                    claim(
+                        "cnf",
+                        buildJsonObject {
+                            put("jwk", holderPublicJwk.toJsonObject())
+                        },
+                    )
                 }
 
             val issueResult = sdJwtService.issueSdJwt(com.sphereon.sdjwt.IssueSdJwtArgs(issuer = issuer, payload = payload))
@@ -596,12 +609,158 @@ class PresentationTest {
             println("PASS: sd_hash binding verified successfully")
         }
 
+    @Test
+    fun testPresentationCreationRejectsMissingCnfJwkForKeyBinding() =
+        runTest {
+            val holderKeyInfo: ManagedKeyInfoType<*> =
+                keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+                    .joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val holder = ManagedOptsKeyInfo(identifier = holderKeyInfo)
+            listOf<JsonElement?>(null, buildJsonObject {}).forEachIndexed { index, cnfClaim ->
+                val issuerKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+                val issuerKeyInfo: ManagedKeyInfoType<*> = issuerKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+                val issuer =
+                    ManagedOptsKeyInfo(
+                        identifier = issuerKeyInfo,
+                        context = IdentifierContext(clientId = "missing-cnf-issuer-$index", issuer = "https://missing-cnf-$index.example.com"),
+                    )
+                val issuerUrl = "https://missing-cnf-$index.example.com"
+                val payload =
+                    sdJwtPayload {
+                        iss(issuerUrl)
+                        sub("user-missing-cnf-$index")
+                        claimSd("email", "missing-cnf-$index@example.com")
+                        cnfClaim?.let { claim("cnf", it) }
+                    }
+
+                val issueResult = sdJwtService.issueSdJwt(com.sphereon.sdjwt.IssueSdJwtArgs(issuer = issuer, payload = payload))
+                assertTrue(issueResult.isOk)
+
+                val presentResult =
+                    sdJwtService.presentSdJwt(
+                        com.sphereon.sdjwt.PresentSdJwtArgs(
+                            sdJwt = issueResult.value.sdJwt,
+                            holderKey = holder,
+                            audience = "https://verifier-missing-cnf-$index.example.com",
+                            nonce = "missing-cnf-$index-nonce",
+                        ),
+                    )
+
+                assertTrue(presentResult.isErr, "Key binding creation must fail closed when issuer cnf.jwk is absent (case $index)")
+                assertTrue(
+                    presentResult.error.message.defaultMessage.contains("cnf.jwk", ignoreCase = true),
+                    "Error should identify the missing cnf.jwk (case $index): ${presentResult.error.message.defaultMessage}",
+                )
+            }
+        }
+
+    @Test
+    fun testPresentationCreationRejectsPrivateMembersInCnfJwk() =
+        runTest {
+            val issuerKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val issuerKeyInfo: ManagedKeyInfoType<*> = issuerKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer =
+                ManagedOptsKeyInfo(
+                    identifier = issuerKeyInfo,
+                    context = IdentifierContext(clientId = "private-cnf-issuer", issuer = "https://private-cnf.example.com"),
+                )
+            val holderKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val holderKeyInfo: ManagedKeyInfoType<*> = holderKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val holderPublicJwk =
+                (holderKeyPair.joseToManagedKeyInfo(KeyVisibility.PUBLIC).key as com.sphereon.crypto.core.jose.Jwk)
+                    .toMinimalJwk()
+            val privateMembers = setOf("d", "p", "q", "dp", "dq", "qi", "k", "oth")
+            val cnfJwk =
+                buildJsonObject {
+                    holderPublicJwk.toJsonObject().jsonObject.forEach { (name, value) -> put(name, value) }
+                    privateMembers.forEach { member -> put(member, JsonPrimitive("secret-$member")) }
+                }
+            val payload =
+                sdJwtPayload {
+                    iss("https://private-cnf.example.com")
+                    sub("user-private-cnf")
+                    claimSd("email", "private-cnf@example.com")
+                    claim("cnf", buildJsonObject { put("jwk", cnfJwk) })
+                }
+
+            val issueResult = sdJwtService.issueSdJwt(com.sphereon.sdjwt.IssueSdJwtArgs(issuer = issuer, payload = payload))
+            assertTrue(issueResult.isOk)
+            val presentResult =
+                sdJwtService.presentSdJwt(
+                    com.sphereon.sdjwt.PresentSdJwtArgs(
+                        sdJwt = issueResult.value.sdJwt,
+                        holderKey = ManagedOptsKeyInfo(identifier = holderKeyInfo),
+                        audience = "https://verifier-private-cnf.example.com",
+                        nonce = "private-cnf-nonce",
+                    ),
+                )
+
+            assertTrue(presentResult.isErr, "Key binding creation must reject private members in issuer cnf.jwk")
+            assertTrue(
+                presentResult.error.message.defaultMessage.contains("private", ignoreCase = true) ||
+                    presentResult.error.message.defaultMessage.contains("secret", ignoreCase = true),
+                "Error should identify private/secret cnf.jwk members: ${presentResult.error.message.defaultMessage}",
+            )
+        }
+
+    @Test
+    fun testPresentationCreationRejectsCnfAlgorithmUseAndKeyOpsMismatches() =
+        runTest {
+            val issuerKeyInfo: ManagedKeyInfoType<*> =
+                keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+                    .joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer =
+                ManagedOptsKeyInfo(
+                    identifier = issuerKeyInfo,
+                    context = IdentifierContext(clientId = "constraints-cnf-issuer", issuer = "https://constraints-cnf.example.com"),
+                )
+            val holderKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val holderKeyInfo: ManagedKeyInfoType<*> = holderKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val holderPublicJwk =
+                (holderKeyPair.joseToManagedKeyInfo(KeyVisibility.PUBLIC).key as com.sphereon.crypto.core.jose.Jwk)
+                    .toMinimalJwk()
+            val mismatches: List<Pair<String, JsonElement>> =
+                listOf(
+                    "alg" to JsonPrimitive("ES384"),
+                    "use" to JsonPrimitive("enc"),
+                    "key_ops" to JsonArray(listOf(JsonPrimitive("verify"))),
+                )
+
+            mismatches.forEach { (field, value) ->
+                val cnfJwk =
+                    buildJsonObject {
+                        holderPublicJwk.toJsonObject().jsonObject.forEach { (name, element) -> put(name, element) }
+                        put(field, value)
+                    }
+                val payload =
+                    sdJwtPayload {
+                        iss("https://constraints-cnf.example.com")
+                        sub("user-constraints-$field")
+                        claimSd("email", "constraints-$field@example.com")
+                        claim("cnf", buildJsonObject { put("jwk", cnfJwk) })
+                    }
+                val issueResult = sdJwtService.issueSdJwt(com.sphereon.sdjwt.IssueSdJwtArgs(issuer = issuer, payload = payload))
+                assertTrue(issueResult.isOk)
+                val presentResult =
+                    sdJwtService.presentSdJwt(
+                        com.sphereon.sdjwt.PresentSdJwtArgs(
+                            sdJwt = issueResult.value.sdJwt,
+                            holderKey = ManagedOptsKeyInfo(identifier = holderKeyInfo),
+                            audience = "https://verifier-constraints-cnf.example.com",
+                            nonce = "constraints-$field-nonce",
+                        ),
+                    )
+
+                assertTrue(presentResult.isErr, "Key binding creation must reject cnf.jwk $field mismatch")
+            }
+        }
+
     /**
      * Test that KB-JWT signed with a different key (not matching CNF claim) is rejected
      * This is a CRITICAL security test per RFC 9901 Â§4.3
      */
     @Test
-    fun testKbJwtCnfMismatchRejected() =
+    fun testPresentationCreationRejectsCnfMismatchEvenWithMatchingManagedKeyIdentity() =
         runTest {
             // Generate issuer key
             val issuerKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
@@ -642,7 +801,16 @@ class PresentationTest {
 
             // Generate DIFFERENT key for signing KB-JWT (this should be rejected!)
             val attackerKeyPair = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
-            val attackerKeyInfo: ManagedKeyInfoType<*> = attackerKeyPair.joseToManagedKeyInfo(com.sphereon.crypto.core.KeyVisibility.PRIVATE)
+            // Deliberately copy the holder's provider/kid/alias metadata onto the attacker's
+            // private key. Presentation creation must compare public key properties, not trust
+            // an explicit managed-key identity as proof that the key matches cnf.jwk.
+            val attackerKeyInfo: ManagedKeyInfoType<*> =
+                attackerKeyPair
+                    .copy(
+                        kid = holderKeyPair.kid,
+                        providerId = holderKeyPair.providerId,
+                        alias = holderKeyPair.alias,
+                    ).joseToManagedKeyInfo(com.sphereon.crypto.core.KeyVisibility.PRIVATE)
             val attackerKey =
                 ManagedOptsKeyInfo(
                     identifier = attackerKeyInfo,
@@ -664,40 +832,11 @@ class PresentationTest {
                 )
 
             val presentResult = sdJwtService.presentSdJwt(presentArgs)
-            assertTrue(presentResult.isOk, "Presentation should succeed (KB-JWT gets created)")
-
-            // Verify the presentation - should FAIL because KB-JWT is signed with wrong key
-            val verifyResult =
-                sdJwtService.verifySdJwt(
-                    com.sphereon.sdjwt.VerifySdJwtArgs(
-                        sdJwt = presentResult.value.presentation,
-                        identifier = issuer,
-                        expectedAudience = "https://verifier-cnf-test.example.com",
-                        expectedNonce = "cnf-test-nonce",
-                    ),
-                )
-
-            // CRITICAL: Verification MUST fail when KB-JWT is signed with a key that doesn't match CNF claim
-            if (verifyResult.isOk) {
-                assertFalse(
-                    verifyResult.value.isValid,
-                    "KB-JWT signed with wrong key MUST be rejected - this is a critical security vulnerability if it passes!",
-                )
-
-                val errorMessages = verifyResult.value.errorMessages
-                assertTrue(
-                    errorMessages.any {
-                        it.contains("KB-JWT signature is invalid") ||
-                            it.contains("CNF claim JWK") ||
-                            it.contains("does not match")
-                    },
-                    "Error message should indicate KB-JWT signature or key mismatch. Actual errors: $errorMessages",
-                )
-
-                println("PASS: KB-JWT with mismatched key correctly rejected")
-            } else {
-                // If verification fails at the command level, that's also acceptable
-                println("PASS: KB-JWT with mismatched key rejected at verification level: ${verifyResult.error.message}")
-            }
+            assertTrue(presentResult.isErr, "Presentation creation must reject a holder key that does not match cnf.jwk")
+            assertTrue(
+                presentResult.error.message.defaultMessage.contains("cnf", ignoreCase = true) &&
+                    presentResult.error.message.defaultMessage.contains("match", ignoreCase = true),
+                "Error should identify the cnf key mismatch: ${presentResult.error.message.defaultMessage}",
+            )
         }
 }

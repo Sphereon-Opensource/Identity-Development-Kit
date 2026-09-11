@@ -20,7 +20,8 @@ import com.sphereon.crypto.kms.rest.api.generated.models.ProviderQuery
 import com.sphereon.crypto.kms.rest.server.service.CapabilitiesRestService
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -29,7 +30,8 @@ import kotlinx.serialization.json.Json
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(CapabilitiesHttpAdapter.ID)
 class CapabilitiesHttpAdapter(
     private val capabilitiesService: CapabilitiesRestService,
 ) : RoutedHttpAdapter() {
@@ -45,22 +47,26 @@ class CapabilitiesHttpAdapter(
         httpRoutes {
             get("/capabilities") {
                 operationId("listCapabilities")
+                handlerCommandId("kms.capabilities.list")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleListCapabilities(req) }
             }
             get("/providers/{providerId}/capabilities") {
                 operationId("getProviderCapabilities")
+                handlerCommandId("kms.capabilities.get")
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleGetProviderCapabilities(req) }
             }
             post("/providers/query") {
                 operationId("queryProviders")
+                handlerCommandId("kms.providers.query")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleQueryProviders(req) }
             }
             post("/providers/query/best") {
                 operationId("queryBestProvider")
+                handlerCommandId("kms.provider.query")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { req -> handleQueryBestProvider(req) }

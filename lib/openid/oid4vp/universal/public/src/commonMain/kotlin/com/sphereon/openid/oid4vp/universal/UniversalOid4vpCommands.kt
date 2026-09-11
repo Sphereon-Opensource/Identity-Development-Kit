@@ -47,6 +47,7 @@ interface CreateAuthRequestEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "createAuthorizationRequest",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("universal-oid4vp", "auth-requests"),
                 summary = "Create a new OID4VP authorization request session",
             )
@@ -75,6 +76,7 @@ interface GetAuthRequestStatusEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getAuthorizationRequestStatus",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("universal-oid4vp", "auth-requests"),
                 summary = "Get the status of an OID4VP authorization request",
             )
@@ -102,6 +104,7 @@ interface DeleteAuthRequestEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "deleteAuthorizationRequest",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("universal-oid4vp", "auth-requests"),
                 summary = "Delete an OID4VP authorization request session",
             )

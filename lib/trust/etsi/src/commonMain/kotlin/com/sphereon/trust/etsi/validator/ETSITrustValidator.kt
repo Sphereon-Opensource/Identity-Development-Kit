@@ -101,7 +101,7 @@ class ETSITrustValidator(
         )
     }
 
-    override suspend fun validate(request: TrustValidationRequest): TrustValidationResult {
+    override suspend fun doValidate(request: TrustValidationRequest): TrustValidationResult {
         try {
             // Load the trust list
             val trustList = loadTrustList(request.context)
@@ -266,7 +266,7 @@ class ETSITrustValidator(
         }
     }
 
-    override suspend fun getTrustAnchors(): List<TrustAnchor> {
+    override suspend fun doGetTrustAnchors(): List<TrustAnchor> {
         return try {
             val context = TrustContext(type = TrustContext.TYPE_ETSI_TSL)
             val trustList = loadTrustList(context)

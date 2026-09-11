@@ -47,6 +47,15 @@ object LoTEServiceType {
 }
 
 /**
+ * Service type URIs used by the member-state trusted lists defined by ETSI
+ * TS 119 612.  These values must not be treated as TS 119 602 LoTE service
+ * types.
+ */
+object LoTLServiceType {
+    const val QEAA_ISSUANCE = "http://uri.etsi.org/TrstSvc/Svctype/EAA/Q"
+}
+
+/**
  * Service status URIs per ETSI TS 119 602.
  */
 object LoTEServiceStatus {

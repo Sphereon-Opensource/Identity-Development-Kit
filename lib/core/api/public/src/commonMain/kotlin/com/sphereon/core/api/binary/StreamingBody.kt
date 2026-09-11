@@ -19,6 +19,7 @@ package com.sphereon.core.api.binary
 import com.sphereon.core.api.http.GenericHttpBody
 import com.sphereon.core.compat.JsExportCompat
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
@@ -375,6 +376,12 @@ sealed class StreamingBody {
                     } else {
                         Bytes(bytes)
                     }
+                }
+
+                is GenericHttpBody.TextStream -> {
+                    ByteStream(
+                        flow = body.flow.map { chunk -> chunk.encodeToByteArray() },
+                    )
                 }
             }
     }

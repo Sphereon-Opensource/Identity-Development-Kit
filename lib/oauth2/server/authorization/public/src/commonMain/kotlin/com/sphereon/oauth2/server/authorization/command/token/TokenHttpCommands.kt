@@ -43,6 +43,7 @@ interface TokenHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "token",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("token"),
                 summary = "RFC 6749 OAuth 2.0 Token Endpoint",
             )
@@ -62,6 +63,7 @@ interface RegisterPreAuthorizedCodeHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "registerPreAuthCode",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("token", "internal"),
                 summary = "Internal endpoint for cross-service pre-authorized code registration",
             )

@@ -152,46 +152,39 @@ class VerifyClientCredentialsGrantCommandImpl(
                 requestedScope
             }
 
-        val normalizedRequestedAudience = requestedAudience.map(String::trim).filter(String::isNotEmpty)
+        val normalizedRequestedAudience = requestedAudience.map(String::trim).filter(String::isNotEmpty).distinct()
         val defaultAudience = client.defaultAccessTokenAudience?.trim()?.takeIf(String::isNotEmpty)
         val allowedAudiences = client.allowedAccessTokenAudiences.map(String::trim).filter(String::isNotEmpty).toSet()
-        if (normalizedRequestedAudience.size > 1) {
-            return Err(
-                AuthorizationServerError.InvalidTarget(
-                    audience = normalizedRequestedAudience.joinToString(" "),
-                    reason = "Client credentials access tokens are restricted to one audience per request",
-                ),
-            )
-        }
 
-        val requestedTarget = normalizedRequestedAudience.singleOrNull()
         val grantedAudience =
-            when {
-                requestedTarget == null && defaultAudience == null -> {
-                    return Err(
-                        AuthorizationServerError.InvalidTarget(
-                            audience = "",
-                            reason = "No audience was requested and this client has no default access-token audience",
+            if (normalizedRequestedAudience.isEmpty()) {
+                listOf(
+                    defaultAudience
+                        ?: return Err(
+                            AuthorizationServerError.InvalidTarget(
+                                audience = "",
+                                reason = "No audience was requested and this client has no default access-token audience",
+                            ),
                         ),
-                    )
-                }
-
-                requestedTarget == null -> {
-                    listOf(defaultAudience!!)
-                }
-
-                requestedTarget == defaultAudience || requestedTarget in allowedAudiences -> {
-                    listOf(requestedTarget)
-                }
-
-                else -> {
+                )
+            } else {
+                val unregistered = normalizedRequestedAudience.filter { it != defaultAudience && it !in allowedAudiences }
+                if (unregistered.isNotEmpty()) {
                     return Err(
                         AuthorizationServerError.InvalidTarget(
-                            audience = requestedTarget,
+                            audience = unregistered.joinToString(" "),
                             reason = "Requested audience is not registered for this client",
                         ),
                     )
                 }
+                normalizedRequestedAudience
+            }
+
+        val principalRoles = client.principalRoles.map(String::trim).filter(String::isNotEmpty).distinct()
+        val additionalClaims =
+            buildMap<String, Any> {
+                client.tenantId?.let { put(TENANT_ID_CLAIM, it) }
+                if (principalRoles.isNotEmpty()) put(ROLES_CLAIM, principalRoles)
             }
 
         // Return verified grant
@@ -202,14 +195,13 @@ class VerifyClientCredentialsGrantCommandImpl(
                 clientId = clientId,
                 scope = grantedScope,
                 audience = grantedAudience,
-                additionalClaims = client.tenantId
-                    ?.let { mapOf(TENANT_ID_CLAIM to it) }
-                    .orEmpty(),
+                additionalClaims = additionalClaims,
             ),
         )
     }
 
     private companion object {
         const val TENANT_ID_CLAIM = "tenant_id"
+        const val ROLES_CLAIM = "roles"
     }
 }

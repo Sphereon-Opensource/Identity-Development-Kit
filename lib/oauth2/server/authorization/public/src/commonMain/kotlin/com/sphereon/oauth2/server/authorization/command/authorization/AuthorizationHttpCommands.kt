@@ -50,6 +50,7 @@ interface AuthorizeHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "authorize",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("authorization"),
                 summary = "RFC 6749 OAuth 2.0 Authorization Endpoint",
             )
@@ -68,6 +69,7 @@ interface AuthorizeCallbackHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "authorizeCallback",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("authorization"),
                 summary = "Resume the authorization flow after upstream user authentication",
             )
@@ -87,6 +89,7 @@ interface IaeHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "interactiveAuthorization",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("iae", "authorization"),
                 summary = "OID4VCI Interactive Authorization Endpoint",
             )

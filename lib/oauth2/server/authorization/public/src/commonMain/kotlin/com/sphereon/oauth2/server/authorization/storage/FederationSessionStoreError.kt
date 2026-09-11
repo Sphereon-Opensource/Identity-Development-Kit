@@ -21,9 +21,8 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 
 /**
- * Errors emitted by [FederationSessionStore] implementations. Mirrors the
- * `TenantIdpRegistryError` / `ResourceServerError` shape (sealed interface over
- * [IdkErrorType] with per-variant data classes carrying a stable [code]) so transport
+ * Errors emitted by [FederationSessionStore] implementations. Uses a sealed interface over
+ * [IdkErrorType] with per-variant data classes carrying a stable [code], so transport
  * layers can dispatch on `error.code` without pattern-matching free-form reason strings.
  */
 sealed interface FederationSessionStoreError : IdkErrorType {

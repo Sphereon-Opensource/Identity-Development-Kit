@@ -34,7 +34,8 @@ object DefaultThemeDefaults {
 
     val light: ResolvedTheme by lazy { buildResolvedTheme(SystemDefaults.baseline, ThemeVariant.LIGHT) }
     val dark: ResolvedTheme by lazy { buildResolvedTheme(SystemDefaults.baselineDark, ThemeVariant.DARK) }
-    val highContrast: ResolvedTheme by lazy { buildResolvedTheme(SystemDefaults.baselineHighContrast, ThemeVariant.HIGH_CONTRAST) }
+    val highContrastLight: ResolvedTheme by lazy { buildResolvedTheme(SystemDefaults.baselineHighContrastLight, ThemeVariant.HIGH_CONTRAST_LIGHT) }
+    val highContrastDark: ResolvedTheme by lazy { buildResolvedTheme(SystemDefaults.baselineHighContrastDark, ThemeVariant.HIGH_CONTRAST_DARK) }
 
     private fun buildResolvedTheme(
         definition: com.sphereon.conf.theme.core.model.ThemeDefinition,

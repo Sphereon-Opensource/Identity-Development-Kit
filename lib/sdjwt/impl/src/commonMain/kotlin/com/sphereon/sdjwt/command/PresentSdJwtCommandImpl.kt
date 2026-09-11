@@ -24,11 +24,15 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.core.interop.toKeyInfoJwk
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsCompactCommand
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.crypto.resolution.managed.ManagedIdentifierKeyResult
+import com.sphereon.crypto.resolution.managed.KeyInfoIdentifierResolutionService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.sdjwt.Disclosure
 import com.sphereon.sdjwt.PresentSdJwtArgs
@@ -71,6 +75,7 @@ import kotlin.time.Clock
 class PresentSdJwtCommandImpl(
     execution: SessionExecution,
     private val createJwsCompactCommand: CreateJwsCompactCommand,
+    private val keyInfoIdentifierResolutionService: KeyInfoIdentifierResolutionService,
 ) : TypedServiceCommandAdapter<PresentSdJwtArgs, PresentSdJwtResult, IdkError>(
         commandId = PresentSdJwtCommand.COMMAND_ID,
         execution = execution,
@@ -87,8 +92,11 @@ class PresentSdJwtCommandImpl(
         applyDuring: (PresentSdJwtArgs) -> PresentSdJwtArgs,
     ): IdkResult<PresentSdJwtResult, IdkError> {
         val appliedArgs = applyDuring(args)
+        val holderKey = appliedArgs.holderKey
+        val audience = appliedArgs.audience
+        val nonce = appliedArgs.nonce
 
-        log.debug("Creating SD-JWT presentation: hasHolderKey=${appliedArgs.holderKey != null}, hasAudience=${appliedArgs.audience != null}")
+        log.debug("Creating SD-JWT presentation: hasHolderKey=${holderKey != null}, hasAudience=${audience != null}")
 
         try {
             // Step 1: Parse the full SD-JWT
@@ -99,6 +107,14 @@ class PresentSdJwtCommandImpl(
             }
             val sdJwt = parseResult.value
             log.debug("Parsed SD-JWT with ${sdJwt.disclosures.size} disclosures")
+            val resolvedHolderKey =
+                if (holderKey != null && audience != null && nonce != null) {
+                    // Resolve once and retain the result through validation and signing. This prevents
+                    // a mutable alias/kid selector from changing the key between those operations.
+                    validateHolderKeyAgainstCnf(sdJwt, holderKey)
+                } else {
+                    null
+                }
 
             // Step 2: Select disclosures based on selection criteria
             val selection =
@@ -112,13 +128,13 @@ class PresentSdJwtCommandImpl(
 
             // Step 4: Create Key Binding JWT if holder key is provided
             val kbJwt =
-                if (appliedArgs.holderKey != null && appliedArgs.audience != null && appliedArgs.nonce != null) {
+                if (resolvedHolderKey != null && audience != null && nonce != null) {
                     log.debug("Creating Key Binding JWT for holder authentication")
                     createKeyBindingJwt(
                         presentationWithoutKb = presentationWithoutKb,
-                        audience = appliedArgs.audience!!,
-                        nonce = appliedArgs.nonce!!,
-                        holderKey = appliedArgs.holderKey!!,
+                        audience = audience,
+                        nonce = nonce,
+                        holderKey = resolvedHolderKey,
                         digestAlg = selection.digestAlgorithm,
                         opts = appliedArgs.kbJwtOpts,
                     )
@@ -230,6 +246,69 @@ class PresentSdJwtCommandImpl(
     }
 
     /**
+     * Ensure the key that will sign the KB-JWT is the public key bound by the issuer in cnf.jwk.
+     *
+     * Managed provider/alias/kid values select custody, but are not cryptographic key identity.
+     * Compare the actual public JWK and issuer-declared constraints before any signing operation
+     * so a caller cannot supply a different key under matching managed metadata.
+     */
+    private suspend fun validateHolderKeyAgainstCnf(
+        sdJwt: SdJwtCompact,
+        holderKey: ManagedIdentifierOptsOrResult,
+    ): ManagedIdentifierKeyResult {
+        val cnf =
+            sdJwt.payload.undisclosedPayload["cnf"] as? JsonObject
+                ?: throw IllegalArgumentException("Cannot create KB-JWT: issuer-signed cnf.jwk is required")
+        val cnfJwkElement =
+            cnf["jwk"]
+                ?: throw IllegalArgumentException("Cannot create KB-JWT: issuer-signed cnf.jwk is required")
+        require(cnfJwkElement is JsonObject) { "Issuer-signed cnf.jwk must be a JSON object" }
+
+        val privateMembers = cnfJwkElement.keys.intersect(PRIVATE_JWK_MEMBERS)
+        require(privateMembers.isEmpty()) {
+            "Issuer-signed cnf.jwk must contain public key material only; private/secret members are forbidden: ${privateMembers.sorted().joinToString()}"
+        }
+
+        val expected = Jwk.fromJsonObject(cnfJwkElement)
+        val holderResult =
+            keyInfoIdentifierResolutionService.resolve(holderKey).getOrElse {
+                throw IllegalArgumentException("Cannot resolve supplied holder key for cnf.jwk validation: ${it.message.defaultMessage}")
+            }
+        val actual =
+            toKeyInfoJwk(holderResult.keyInfo).key?.toPublicKey()
+                ?: throw IllegalArgumentException("Supplied holder key does not expose a JOSE public JWK for cnf.jwk validation")
+
+        val mismatches = mutableListOf<String>()
+        if (actual.toMinimalJwk().toJsonObject() != expected.toMinimalJwk().toJsonObject()) {
+            mismatches += "public key material"
+        }
+
+        expected.alg?.value?.let { expectedAlgorithm ->
+            val actualAlgorithm =
+                actual.alg?.value
+                    ?: holderResult.keyInfo.signatureAlgorithm?.jose?.value
+                    ?: actual.getSignatureAlgorithm()?.jose?.value
+            if (actualAlgorithm != expectedAlgorithm) mismatches += "alg"
+        }
+        expected.use?.let { expectedUse ->
+            if (actual.use != expectedUse) mismatches += "use"
+        }
+        expected.key_ops?.let { expectedOperations ->
+            if (actual.key_ops?.toSet() != expectedOperations.toSet()) mismatches += "key_ops"
+        }
+
+        if (actual.use != null && actual.use != "sig") mismatches += "holder use"
+        if (actual.key_ops?.contains(com.sphereon.crypto.core.jose.JoseKeyOperations.SIGN) == false) {
+            mismatches += "holder key_ops"
+        }
+
+        require(mismatches.isEmpty()) {
+            "Supplied holder key does not match issuer-signed cnf.jwk (${mismatches.distinct().joinToString()})"
+        }
+        return holderResult
+    }
+
+    /**
      * Extract digest algorithm from JWT payload.
      * Falls back to SHA-256 if not specified (RFC 9901 default).
      */
@@ -241,5 +320,9 @@ class PresentSdJwtCommandImpl(
         } else {
             SdJwt.Companion.DEFAULT_HASH_ALG
         }
+    }
+
+    private companion object {
+        val PRIVATE_JWK_MEMBERS = setOf("d", "p", "q", "dp", "dq", "qi", "k", "oth")
     }
 }

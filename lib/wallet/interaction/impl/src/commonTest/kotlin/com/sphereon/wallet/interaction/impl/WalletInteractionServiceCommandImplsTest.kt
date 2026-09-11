@@ -35,6 +35,7 @@ import com.sphereon.di.session.SessionContextManager
 import com.sphereon.wallet.interaction.GetWalletInteractionEventsArgs
 import com.sphereon.wallet.interaction.BeginWalletAppOutcomeEvidenceArgs
 import com.sphereon.wallet.interaction.RecordWalletAppOutcomeEvidenceArgs
+import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputArgs
 import com.sphereon.wallet.interaction.VerifiedWalletAppOutcomeEvidence
 import com.sphereon.wallet.interaction.WalletAppOutcomeEvidenceChallenge
 import com.sphereon.wallet.interaction.WalletAppOutcomeEvidenceSummary
@@ -47,16 +48,117 @@ import com.sphereon.wallet.interaction.WalletInteractionInput
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionStatus
+import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
+import com.sphereon.wallet.interaction.WalletSecurityAssurance
+import com.sphereon.wallet.interaction.WalletSecurityGrant
+import com.sphereon.wallet.interaction.WalletCounterpartyAssociationRequest
+import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry
+import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRequest
+import com.sphereon.wallet.interaction.WalletCounterpartyEncounterResult
+import com.sphereon.wallet.interaction.WalletCounterpartyRole
+import com.sphereon.wallet.interaction.WalletCounterpartySummary
+import com.sphereon.wallet.interaction.WalletProtocol
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class WalletInteractionServiceCommandImplsTest {
+    @Test
+    fun resolveCounterpartyEncounterCommandForwardsOnlyTheTypedCounterpartySummary() =
+        runTest {
+            val request =
+                WalletCounterpartyEncounterRequest(
+                    walletUnitId = WALLET_UNIT_ID,
+                    protocol = WalletProtocol.OID4VCI,
+                    counterparty =
+                        WalletCounterpartySummary(
+                            role = WalletCounterpartyRole.ISSUER,
+                            identifier = "https://issuer.example",
+                            displayName = "Example issuer",
+                        ),
+                )
+            var invocations = 0
+            var received: WalletCounterpartyEncounterRequest? = null
+            val registry =
+                object : WalletCounterpartyEncounterRegistry {
+                    override suspend fun encounter(input: WalletCounterpartyEncounterRequest): WalletCounterpartyEncounterResult {
+                        invocations += 1
+                        received = input
+                        return WalletCounterpartyEncounterResult(
+                            counterparty = input.counterparty.copy(partyId = "party-issuer"),
+                            resolved = true,
+                            organizationCreated = false,
+                            firstInteraction = true,
+                        )
+                    }
+
+                    override suspend fun resolveAssociation(request: WalletCounterpartyAssociationRequest): WalletCounterpartyEncounterResult =
+                        error("unused")
+                }
+
+            val result =
+                ResolveWalletCounterpartyEncounterCommandImpl(TestSessionExecution(), registry)
+                    .execute(request)
+                    .getOrThrow()
+
+            assertEquals(1, invocations)
+            assertEquals(request, received)
+            assertEquals("party-issuer", result.counterparty.partyId)
+            assertEquals(true, result.resolved)
+        }
+
+    @Test
+    fun registerSensitiveInputCommandPreservesSecurityGrantsAsTypedOneUseValues() =
+        runTest {
+            val authority = StoreBackedWalletInteractionSensitiveInputAuthority(InMemoryWalletInteractionPrivateSessionStore())
+            val engine =
+                testWalletInteractionEngine(
+                    adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
+                    sessionIdGenerator = FixedWalletInteractionSessionIdGenerator(),
+                    sensitiveInputAuthority = authority,
+                    sessionStore = InMemoryWalletInteractionSessionStore(),
+                )
+            val started =
+                engine.start(
+                    WalletInteractionInput(
+                        walletUnitId = WALLET_UNIT_ID,
+                        entryPoint = WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x"),
+                    ),
+                )
+            val grant =
+                WalletSecurityGrant(
+                    grantId = "security-challenge-a",
+                    assurance = WalletSecurityAssurance.PASSKEY,
+                    expiresAtEpochSeconds = 1_800_000_000,
+                    evidence =
+                        mapOf(
+                            "challenge_id" to "security-challenge-a",
+                            "wallet_unit_id" to WALLET_UNIT_ID,
+                            "operation_binding" to "operation-binding-a",
+                        ),
+                )
+            val result =
+                RegisterWalletInteractionSensitiveInputCommandImpl(TestSessionExecution(), engine, authority)
+                    .execute(
+                        RegisterWalletInteractionSensitiveInputArgs(
+                            walletUnitId = WALLET_UNIT_ID,
+                            sessionId = started.sessionId,
+                            purpose = WalletInteractionSensitiveInputPurpose.INTERACTION_SECURITY_GRANT,
+                            value = Json.encodeToString(grant),
+                        ),
+                    ).getOrThrow()
+
+            assertEquals(grant, authority.consumeSecurityGrant(started.sessionId, result.ref))
+            assertEquals(null, authority.consumeSecurityGrant(started.sessionId, result.ref), "security grants must remain one-use")
+        }
+
     @Test
     fun verifiedWalletAppOutcomeCommandsPersistOnlyTheMinimizedTerminalProjectionAndReplayIdempotently() =
         runTest {

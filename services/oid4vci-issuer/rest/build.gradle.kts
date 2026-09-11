@@ -25,6 +25,7 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(projects.libOpenidOid4vciIssuerRest)
                 // OID4VCI REST API (backend credential offer management)
                 implementation(projects.libOpenidOid4vciRestPublic)
                 implementation(projects.libOpenidOid4vciRestImpl)
@@ -32,6 +33,21 @@ kotlin {
                 // OID4VCI Issuer service logic
                 implementation(projects.libOpenidOid4vciIssuerPublic)
                 implementation(projects.libOpenidOid4vciIssuerImpl)
+
+                // The service is the Metro composition root. Contributions hidden behind an
+                // `implementation` dependency of issuer-impl are intentionally not re-exported,
+                // so include the Data Integrity command and cryptosuite implementations here.
+                // This makes `ldp_vc` issuance use the same real Add Proof pipeline as the
+                // library API instead of leaving AddProofServiceCommand unbound at runtime.
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
+
+                // HttpAsBridge verifies JWT access tokens through the OAuth2 resource-server
+                // command registry. Include the implementation so Metro can contribute the
+                // VerifyJwtCommand descriptor to the standalone issuer service graph.
+                implementation(projects.libOauth2ServerResourceImpl)
 
                 // Credential status list: the driver/signer/resolver/enricher bindings (the enricher
                 // embeds status into issued credentials; the driver hosts the signed token).

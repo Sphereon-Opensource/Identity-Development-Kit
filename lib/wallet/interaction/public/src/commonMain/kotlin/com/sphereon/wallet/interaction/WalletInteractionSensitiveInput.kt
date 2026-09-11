@@ -47,6 +47,16 @@ interface WalletInteractionSensitiveInputAuthority {
         ref: WalletInteractionSensitiveInputRef,
     ): String?
 
+    /**
+     * Return the bound value without spending it. Authorization-handoff callers validate before
+     * [consume] so an unopenable URL is refused on every implementation, not only StoreBacked.
+     */
+    suspend fun peek(
+        sessionId: WalletInteractionSessionId,
+        purpose: WalletInteractionSensitiveInputPurpose,
+        ref: WalletInteractionSensitiveInputRef,
+    ): String? = throw UnsupportedOperationException("wallet_interaction_sensitive_input_peek_required")
+
     suspend fun registerSecurityGrant(
         sessionId: WalletInteractionSessionId,
         grant: WalletSecurityGrant,

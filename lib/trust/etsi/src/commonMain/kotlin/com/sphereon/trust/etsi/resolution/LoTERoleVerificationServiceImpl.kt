@@ -27,6 +27,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.di.session.SessionScope
 import com.sphereon.trust.core.model.TrustStatus
+import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import com.sphereon.trust.core.resolver.ResolutionOptions
 import com.sphereon.trust.core.resolver.TrustListResolver
 import com.sphereon.trust.etsi.lote.model.EidasRole
@@ -62,13 +63,15 @@ interface LoTERoleVerificationService {
 
 /**
  * Verifies whether a party's X.509 certificate is listed in the official EU trust lists
- * for a specific eIDAS role (PID issuer, wallet provider, QEAA provider, relying party, registrar).
+ * for a specific eIDAS role (PID provider, wallet provider, QEAA provider, PuB-EAA provider,
+ * Access CA, or Registration Certificate Provider).
  *
  * Supports both ETSI TS 119 602 (LoTE) and 612 (TSL) trust list formats:
  * - **602 path**: Navigate LOTL by LoTEType qualifier to find role-specific LoTEs
  * - **612 path**: Navigate LOTL by territory, then filter services by type
  *
- * The format is auto-detected based on whether LOTL pointer qualifiers contain LoTEType data.
+ * The role selects the applicable ETSI profile. QEAA uses TS 119 612 member-state services;
+ * the other roles use their TS 119 602 LoTE profile.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -111,13 +114,20 @@ class LoTERoleVerificationServiceImpl(
         logger.info("Verifying role ${request.role.name} for certificate")
 
         // Resolve LOTL
-        val lotlResult = resolveTrustList(request.lotlUri, request.useCache, request.maxCacheAge)
+        val lotlResult =
+            resolveTrustList(
+                request.lotlUri,
+                request.useCache,
+                request.maxCacheAge,
+                request.trustedSignerRoots,
+            )
         if (lotlResult.isErr) {
             return notVerifiedResult(
                 request.role,
                 TrustStatus.UNKNOWN,
                 "Failed to resolve LOTL: ${lotlResult.error}",
                 verificationTime,
+                TrustDiagnosticReasonCodes.TRUST_LIST_RESOLUTION_FAILED,
             ).asOkResult()
         }
         val (lotl, _) = lotlResult.value
@@ -131,12 +141,19 @@ class LoTERoleVerificationServiceImpl(
                 "No trust list pointers found for role ${request.role.name}" +
                     (request.territory?.let { " in territory $it" } ?: ""),
                 verificationTime,
+                TrustDiagnosticReasonCodes.TRUST_LIST_POINTER_MISSING,
             ).asOkResult()
         }
 
         // Check each matching trust list
         for (pointer in pointers) {
-            val tlResult = resolveTrustList(pointer.location, request.useCache, request.maxCacheAge)
+            val tlResult =
+                resolveTrustList(
+                    pointer.location,
+                    request.useCache,
+                    request.maxCacheAge,
+                    request.trustedSignerRoots,
+                )
             if (tlResult.isErr) {
                 logger.warn("Failed to resolve trust list at ${pointer.location}: ${tlResult.error}")
                 continue
@@ -205,6 +222,7 @@ class LoTERoleVerificationServiceImpl(
             TrustStatus.UNTRUSTED,
             "Certificate not found in any trust list for role ${request.role.name}",
             verificationTime,
+            TrustDiagnosticReasonCodes.CERTIFICATE_NOT_FOUND,
         ).asOkResult()
     }
 
@@ -222,6 +240,7 @@ class LoTERoleVerificationServiceImpl(
                     matchStrategy = request.matchStrategy,
                     useCache = request.useCache,
                     maxCacheAge = request.maxCacheAge,
+                    trustedSignerRoots = request.trustedSignerRoots,
                 )
             val result = verifyRole(verifyRequest)
             if (result.isOk) {
@@ -246,71 +265,21 @@ class LoTERoleVerificationServiceImpl(
         lotl: ETSILoTE,
         role: EidasRole,
         territory: String?,
-    ): List<ETSIOtherLoTEPointer> {
-        // First try 602 navigation: look for pointers with matching LoTEType qualifier
-        val loteTypePointers =
-            lotl.pointersToOtherLoTE.filter { pointer ->
-                val qualifierLoTEType = pointer.additionalInformation?.otherInformation?.firstOrNull()
-                qualifierLoTEType == role.loTEType
-            }
-
-        if (loteTypePointers.isNotEmpty()) {
-            // 602 format — optionally filter by territory
-            return if (territory != null) {
-                loteTypePointers
-                    .filter { it.schemeTerritory.equals(territory, ignoreCase = true) }
-                    .ifEmpty { loteTypePointers }
-            } else {
-                loteTypePointers
-            }
-        }
-
-        // Fall back to 612 navigation: filter by territory
-        return if (territory != null) {
-            lotl.pointersToOtherLoTE.filter { pointer ->
-                pointer.schemeTerritory.equals(territory, ignoreCase = true)
-            }
-        } else {
-            // Without territory and without 602 qualifiers, return all pointers
-            lotl.pointersToOtherLoTE
-        }
-    }
+    ): List<ETSIOtherLoTEPointer> = LoTERoleTrustListRouting.findPointersForRole(lotl, role, territory)
 
     /**
      * Builds the service type filter for a role.
      * Includes both 602 issuance types and 612 legacy types.
      */
     internal fun buildServiceTypeFilter(role: EidasRole): List<String> =
-        buildList {
-            add(role.issuanceServiceType)
-            role.revocationServiceType?.let { add(it) }
-            addAll(role.legacyServiceTypes)
-        }
+        LoTERoleTrustListRouting.buildServiceTypeFilter(role)
 
     /**
      * Evaluates whether a service status indicates a trusted or untrusted entity.
      * Handles both 602 and 612 status URIs.
      */
     internal fun evaluateServiceStatus(serviceStatus: String): Pair<Boolean, TrustStatus> =
-        when (serviceStatus) {
-            // 602 statuses
-            ETSIServiceStatus.NOTIFIED -> true to TrustStatus.TRUSTED
-
-            ETSIServiceStatus.WITHDRAWN_602 -> false to TrustStatus.UNTRUSTED
-
-            // 612 statuses
-            ETSIServiceStatus.GRANTED,
-            ETSIServiceStatus.RECOGNISED_NATIONAL_LEVEL,
-            -> true to TrustStatus.TRUSTED
-
-            ETSIServiceStatus.REVOKED -> false to TrustStatus.REVOKED
-
-            ETSIServiceStatus.WITHDRAWN,
-            ETSIServiceStatus.SUSPENDED,
-            -> false to TrustStatus.UNTRUSTED
-
-            else -> false to TrustStatus.UNKNOWN
-        }
+        LoTERoleTrustListStatusPolicy.evaluate(serviceStatus)
 
     private fun buildVerifiedResult(
         match: CertificateTrustListMatcher.EntityMatchResult,
@@ -321,6 +290,12 @@ class LoTERoleVerificationServiceImpl(
         verificationTime: Instant,
     ): RoleVerificationResult {
         val (trusted, trustStatus) = evaluateServiceStatus(match.serviceInfo.serviceStatus)
+        val reasonCodes =
+            when {
+                trustStatus == TrustStatus.REVOKED -> listOf(TrustDiagnosticReasonCodes.SERVICE_REVOKED)
+                trusted -> emptyList()
+                else -> listOf(TrustDiagnosticReasonCodes.SERVICE_STATUS_UNKNOWN)
+            }
 
         val matchedEntity =
             MatchedEntityInfo(
@@ -365,6 +340,7 @@ class LoTERoleVerificationServiceImpl(
                     "Certificate found but service status is ${match.serviceInfo.serviceStatus}"
                 },
             verifiedAt = verificationTime,
+            reasonCodes = reasonCodes,
         )
     }
 
@@ -373,6 +349,7 @@ class LoTERoleVerificationServiceImpl(
         trustStatus: TrustStatus,
         details: String,
         verificationTime: Instant,
+        reasonCode: String? = null,
     ): RoleVerificationResult =
         RoleVerificationResult(
             verified = false,
@@ -382,18 +359,20 @@ class LoTERoleVerificationServiceImpl(
             trustListInfo = null,
             details = details,
             verifiedAt = verificationTime,
+            reasonCodes = reasonCode?.let(::listOf) ?: emptyList(),
         )
 
     private suspend fun resolveTrustList(
         tslUri: String,
         useCache: Boolean,
         maxCacheAge: Long,
+        trustedSignerRoots: List<ByteArray>?,
     ): IdkResult<Pair<ETSILoTE, Boolean>, IdkErrorType> {
         // Check cache
         if (useCache) {
             tslCache[tslUri]?.let { cached ->
                 val age = Clock.System.now().toEpochMilliseconds() - cached.timestamp
-                if (age < maxCacheAge) {
+                if (age < maxCacheAge && Clock.System.now() < cached.trustList.nextUpdate) {
                     return (cached.trustList to true).asOkResult()
                 }
             }
@@ -412,9 +391,20 @@ class LoTERoleVerificationServiceImpl(
                     useCache = useCache,
                     maxCacheAgeMs = maxCacheAge,
                     verifySignature = true,
+                    trustedSignerRoots = trustedSignerRoots,
                 )
             val trustListData = resolver.resolve(tslUri, resolutionOptions)
             val trustList = trustListParser.parseFromBytes(trustListData.data)
+            val freshnessFailure =
+                TrustListFreshnessPolicy.failureReason(
+                    sequenceNumber = trustList.sequenceNumber,
+                    nextUpdate = trustList.nextUpdate,
+                    previousSequenceNumber = tslCache[tslUri]?.trustList?.sequenceNumber,
+                    now = Clock.System.now(),
+                )
+            if (freshnessFailure != null) {
+                throw TrustListFreshnessException(freshnessFailure)
+            }
 
             if (useCache) {
                 tslCache[tslUri] =
@@ -429,7 +419,7 @@ class LoTERoleVerificationServiceImpl(
             logger.error("Failed to resolve trust list from $tslUri", exception = expected)
             IdkError
                 .UNKNOWN_ERROR(
-                    message = "Failed to resolve trust list: ${expected.message}",
+                    message = "${(expected as? TrustListFreshnessException)?.reasonCode ?: TrustDiagnosticReasonCodes.TRUST_LIST_RESOLUTION_FAILED}: Failed to resolve trust list: ${expected.message}",
                 ).asErrorResult()
         }
     }
@@ -438,4 +428,8 @@ class LoTERoleVerificationServiceImpl(
         val trustList: ETSILoTE,
         val timestamp: Long,
     )
+
+    private class TrustListFreshnessException(
+        val reasonCode: String,
+    ) : IllegalStateException(reasonCode)
 }

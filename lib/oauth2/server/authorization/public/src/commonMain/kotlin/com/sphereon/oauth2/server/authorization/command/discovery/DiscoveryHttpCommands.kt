@@ -39,21 +39,26 @@ import com.sphereon.core.compat.JsExportCompat
 interface OAuth2ServerMetadataHttpEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oauth2.discovery.oauth2-server-metadata-endpoint"
+        const val TENANT_PATH_PATTERN = "/.well-known/oauth-authorization-server/{tenant-path}"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/.well-known/oauth-authorization-server",
+                pathPatterns =
+                    listOf(
+                        "/.well-known/oauth-authorization-server",
+                        TENANT_PATH_PATTERN,
+                    ),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "serverMetadataDefault",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("discovery"),
                 summary = "RFC 8414 OAuth 2.0 Authorization Server Metadata",
                 // RFC 8414 server metadata is an anonymous, well-known discovery document.
                 authPolicy = EndpointAuthPolicy.PUBLIC,
             )
 
-        const val TENANT_PATH_PATTERN = "/.well-known/oauth-authorization-server/{tenant-path}"
     }
 }
 
@@ -61,21 +66,26 @@ interface OAuth2ServerMetadataHttpEndpointCommand : HttpEndpointCommand {
 interface OpenidDiscoveryHttpEndpointCommand : HttpEndpointCommand {
     companion object {
         const val COMMAND_ID = "oauth2.discovery.openid-configuration-endpoint"
+        const val TENANT_PATH_PATTERN = "/.well-known/openid-configuration/{tenant-path}"
 
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
-                pathPattern = "/.well-known/openid-configuration",
+                pathPatterns =
+                    listOf(
+                        "/.well-known/openid-configuration",
+                        TENANT_PATH_PATTERN,
+                    ),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "openidConfigurationDefault",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("discovery", "oidc"),
                 summary = "OpenID Connect Discovery 1.0",
                 // OIDC discovery is an anonymous, well-known document.
                 authPolicy = EndpointAuthPolicy.PUBLIC,
             )
 
-        const val TENANT_PATH_PATTERN = "/.well-known/openid-configuration/{tenant-path}"
     }
 }
 
@@ -91,6 +101,7 @@ interface JwksHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "jwks",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("discovery", "jwks"),
                 summary = "JSON Web Key Set used to verify access tokens and id_tokens",
                 // JWKS must be anonymously fetchable: every token validator (operator bearer auth,

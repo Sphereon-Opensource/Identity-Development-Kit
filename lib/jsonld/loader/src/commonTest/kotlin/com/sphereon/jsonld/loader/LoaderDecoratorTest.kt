@@ -38,6 +38,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertIs
 
 /**
  * Covers the four decorator loaders in isolation and composed:
@@ -75,6 +76,86 @@ class LoaderDecoratorTest {
             valueSerializer = CacheSerializers.string,
             ttlConfig = CacheTtlConfig.DEFAULT,
         )
+
+    @Test
+    fun allowlistedLoaderRejectsUntrustedContextBeforeDelegating() =
+        runTest {
+            val terminal =
+                FakeLoader(
+                    Ok(LinkedDataDocument(documentUrl = sampleIri, content = sampleContent)),
+                )
+            val loader =
+                AllowlistedLinkedDataDocumentLoader(
+                    next = terminal,
+                    policy = JsonLdDocumentLoadingPolicy.allowOnly(setOf("https://trusted.test/context")),
+                )
+
+            val result = loader.loadDocument(sampleIri)
+
+            assertTrue(result.isErr)
+            assertIs<JsonLdError.DocumentNotAllowed>(result.error)
+            assertEquals(0, terminal.callCount, "disallowed context must not reach the network loader")
+        }
+
+    @Test
+    fun allowlistedLoaderRejectsUntrustedRedirectTarget() =
+        runTest {
+            val terminal =
+                FakeLoader(
+                    Ok(
+                        LinkedDataDocument(
+                            documentUrl = "https://untrusted.test/context",
+                            content = sampleContent,
+                        ),
+                    ),
+                )
+            val loader =
+                AllowlistedLinkedDataDocumentLoader(
+                    next = terminal,
+                    policy = JsonLdDocumentLoadingPolicy.allowOnly(setOf(sampleIri)),
+                )
+
+            val result = loader.loadDocument(sampleIri)
+
+            assertTrue(result.isErr)
+            assertIs<JsonLdError.DocumentNotAllowed>(result.error)
+        }
+
+    @Test
+    fun allowlistedLoaderRejectsUntrustedHttpContextLink() =
+        runTest {
+            val terminal =
+                FakeLoader(
+                    Ok(
+                        LinkedDataDocument(
+                            documentUrl = sampleIri,
+                            content = sampleContent,
+                            contextUrl = "https://untrusted.test/context",
+                        ),
+                    ),
+                )
+            val loader =
+                AllowlistedLinkedDataDocumentLoader(
+                    next = terminal,
+                    policy = JsonLdDocumentLoadingPolicy.allowOnly(setOf(sampleIri)),
+                )
+
+            val result = loader.loadDocument(sampleIri)
+
+            assertTrue(result.isErr)
+            assertIs<JsonLdError.DocumentNotAllowed>(result.error)
+        }
+
+    @Test
+    fun allowOnlyNormalizesOnlyCaseInsensitiveIriPartsAndKeepsPortPathExact() =
+        runTest {
+            val policy = JsonLdDocumentLoadingPolicy.allowOnly(setOf("https://EXAMPLE.test/context"))
+
+            assertTrue(policy.isAllowed("https://example.TEST/context"))
+            assertTrue(!policy.isAllowed("https://example.test/context/child"))
+            assertTrue(!policy.isAllowed("https://example.test:443/context"))
+            assertTrue(!policy.isAllowed("https://example.test@evil.test/context"))
+        }
 
     @Test
     fun builtInDelegatesToNextOnMiss() =
@@ -128,6 +209,61 @@ class LoaderDecoratorTest {
             assertTrue(second.isOk)
             assertEquals(1, terminal.callCount, "second call must be served from cache")
             assertEquals(sampleContent, second.value.content)
+        }
+
+    @Test
+    fun cachedHitPreservesRemoteDocumentMetadata() =
+        runTest {
+            val finalUrl = "https://example.com/documents/item.json"
+            val terminal =
+                FakeLoader(
+                    Ok(
+                        LinkedDataDocument(
+                            documentUrl = finalUrl,
+                            content = sampleContent,
+                            contextUrl = "https://example.com/contexts/context.jsonld",
+                            contentType = "application/json; charset=utf-8",
+                            profile = "https://example.com/profile",
+                        ),
+                    ),
+                )
+            val cached = CachedLinkedDataDocumentLoader(next = terminal, cache = newCache())
+
+            val first = cached.loadDocument(sampleIri)
+            val second = cached.loadDocument(sampleIri)
+
+            assertTrue(first.isOk)
+            assertTrue(second.isOk)
+            assertEquals(first.value, second.value)
+            assertEquals(1, terminal.callCount)
+        }
+
+    @Test
+    fun integrityPinningRemainsInForceOnCacheHits() =
+        runTest {
+            val expected = sha256HexOfJcs(sampleContent)
+            var pinLookups = 0
+            val terminal =
+                FakeLoader(
+                    Ok(LinkedDataDocument(documentUrl = sampleIri, content = sampleContent)),
+                )
+            val cached = CachedLinkedDataDocumentLoader(next = terminal, cache = newCache())
+            val pinning =
+                IntegrityPinningLinkedDataDocumentLoader(
+                    next = cached,
+                    pins = IntegrityPinResolver {
+                        pinLookups++
+                        expected
+                    },
+                )
+
+            val first = pinning.loadDocument(sampleIri)
+            val second = pinning.loadDocument(sampleIri)
+
+            assertTrue(first.isOk)
+            assertTrue(second.isOk)
+            assertEquals(2, pinLookups, "pin policy must run for both live and cached documents")
+            assertEquals(1, terminal.callCount)
         }
 
     @Test
@@ -196,6 +332,25 @@ class LoaderDecoratorTest {
             val mismatch = assertNotNull(result.error as? JsonLdError.IntegrityPinMismatch)
             assertEquals(wrongPin, mismatch.expectedSha256)
             assertEquals(sha256HexOfJcs(sampleContent), mismatch.actualSha256)
+        }
+
+    @Test
+    fun integrityPinningUsesResolvedAlternateDocumentUrl() =
+        runTest {
+            val alias = "https://example.com/alias"
+            val alternate = "https://example.com/alternate.jsonld"
+            val expected = sha256HexOfJcs(sampleContent)
+            val terminal = FakeLoader(
+                Ok(LinkedDataDocument(documentUrl = alternate, content = sampleContent)),
+            )
+            val pinning = IntegrityPinningLinkedDataDocumentLoader(
+                next = terminal,
+                pins = IntegrityPinResolver.of(mapOf(alternate to expected)),
+            )
+
+            val result = pinning.loadDocument(alias)
+
+            assertTrue(result.isOk)
         }
 
     @Test

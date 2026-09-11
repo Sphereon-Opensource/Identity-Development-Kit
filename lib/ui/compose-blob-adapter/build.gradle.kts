@@ -16,7 +16,6 @@ kotlin {
     android {
         namespace = "com.sphereon.conf.theme.ui.compose.blob.adapter"
         compileSdk = 35
-        minSdk = 27
     }
 
     configureJsTargetIfEnabled {

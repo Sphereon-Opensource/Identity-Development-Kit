@@ -3,23 +3,13 @@ package com.sphereon.data.credential.definition.rest.adapter
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
-import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.data.credential.definition.CredentialDefinitionApiConstants
-import com.sphereon.data.credential.definition.http.AddCredentialDefinitionClaimEndpointCommand
-import com.sphereon.data.credential.definition.http.CreateCredentialDefinitionEndpointCommand
-import com.sphereon.data.credential.definition.http.DeleteCredentialDefinitionEndpointCommand
-import com.sphereon.data.credential.definition.http.GetCredentialDefinitionEndpointCommand
-import com.sphereon.data.credential.definition.http.ListCredentialDefinitionsEndpointCommand
-import com.sphereon.data.credential.definition.http.RemoveCredentialDefinitionClaimEndpointCommand
-import com.sphereon.data.credential.definition.http.SetCredentialDefinitionClaimsEndpointCommand
-import com.sphereon.data.credential.definition.http.SetCredentialDefinitionLifecycleEndpointCommand
-import com.sphereon.data.credential.definition.http.SnapshotCredentialDefinitionVersionEndpointCommand
-import com.sphereon.data.credential.definition.http.UpdateCredentialDefinitionClaimEndpointCommand
-import com.sphereon.data.credential.definition.http.UpdateCredentialDefinitionEndpointCommand
 import com.sphereon.di.session.SessionScope
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -31,43 +21,21 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(CredentialDefinitionHttpAdapter.ID)
 class CredentialDefinitionHttpAdapter(
     execution: SessionExecution,
-    createDefinition: CreateCredentialDefinitionEndpointCommand,
-    getDefinition: GetCredentialDefinitionEndpointCommand,
-    listDefinitions: ListCredentialDefinitionsEndpointCommand,
-    updateDefinition: UpdateCredentialDefinitionEndpointCommand,
-    deleteDefinition: DeleteCredentialDefinitionEndpointCommand,
-    setClaims: SetCredentialDefinitionClaimsEndpointCommand,
-    addClaim: AddCredentialDefinitionClaimEndpointCommand,
-    updateClaim: UpdateCredentialDefinitionClaimEndpointCommand,
-    removeClaim: RemoveCredentialDefinitionClaimEndpointCommand,
-    snapshotVersion: SnapshotCredentialDefinitionVersionEndpointCommand,
-    setLifecycle: SetCredentialDefinitionLifecycleEndpointCommand,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
 ) : CommandBackedHttpAdapter(
         id = ID,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount =
             HttpAdapterMount(
                 serverPrefix = "",
                 adapterBasePath = CredentialDefinitionApiConstants.BASE_PATH,
             ),
     ) {
-    override val endpointCommands: List<HttpEndpointCommand> =
-        listOf(
-            createDefinition,
-            getDefinition,
-            listDefinitions,
-            updateDefinition,
-            deleteDefinition,
-            setClaims,
-            addClaim,
-            updateClaim,
-            removeClaim,
-            snapshotVersion,
-            setLifecycle,
-        )
 
     override val openApiHints =
         OpenApiHints(

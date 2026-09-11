@@ -32,6 +32,8 @@ kotlin {
             dependencies {
                 // IDK core API for IdkResult, IdkError, SessionContext
                 api(projects.libCoreApiPublic)
+                // Local persisted trust anchors can be supplied as an inline JWK identifier.
+                api(projects.libCryptoCorePublic)
 
                 // Kotlin serialization
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)

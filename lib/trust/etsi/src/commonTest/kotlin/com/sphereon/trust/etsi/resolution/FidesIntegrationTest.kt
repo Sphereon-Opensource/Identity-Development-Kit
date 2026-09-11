@@ -94,6 +94,43 @@ class FidesIntegrationTest {
         }
 
     @Test
+    fun roleVerificationPassesConfiguredSignerRootsToResolutionOptions() =
+        runTest {
+            val roots = listOf(byteArrayOf(4, 5, 6))
+            val capturingResolver =
+                object : TrustListResolver {
+                    var seenOptions: ResolutionOptions? = null
+
+                    override fun getId(): String = "capturing-resolver"
+
+                    override suspend fun resolve(uri: String, options: ResolutionOptions): TrustListData {
+                        seenOptions = options
+                        throw IllegalStateException("stop after capturing resolution options")
+                    }
+
+                    override fun supports(uri: String): Boolean = true
+                }
+            val service =
+                LoTERoleVerificationServiceImpl(
+                    execution = TestSessionExecution(createAnonymousSessionContext("roots-test", "roots-test-correlation")),
+                    trustListResolvers = setOf(capturingResolver),
+                    trustListParser = parser,
+                )
+
+            service.verifyRole(
+                RoleVerificationRequest(
+                    certificate = KeyInfo<Nothing>(x5c = arrayOf("AAAA")),
+                    role = EidasRole.PID_PROVIDER,
+                    lotlUri = "https://captured.example/lotl.xml",
+                    trustedSignerRoots = roots,
+                ),
+            )
+
+            assertNotNull(capturingResolver.seenOptions)
+            assertTrue(capturingResolver.seenOptions!!.trustedSignerRoots!!.single().contentEquals(roots.single()))
+        }
+
+    @Test
     fun parseFidesTlEntities() =
         runTest {
             val tlXml = ctx.fetchUrl(FIDES_TL_URL)

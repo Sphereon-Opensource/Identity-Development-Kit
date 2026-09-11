@@ -257,8 +257,12 @@ object CoseJoseKeyMappingService {
             opts = keyInfo.opts,
             signatureAlgorithm = keyInfo.signatureAlgorithm ?: key?.getSignatureAlgorithm(),
             keyVisibility = keyInfo.keyVisibility,
+            x5c = keyInfo.x5c ?: key?.getX509CertificateChain(),
             providerId = keyInfo.providerId,
             alias = keyInfo.alias,
+            keyType = keyInfo.keyType ?: key?.getKeyType(),
+            keyEncoding = keyInfo.keyEncoding,
+            noCache = keyInfo.noCache,
         )
     }
 
@@ -276,9 +280,13 @@ object CoseJoseKeyMappingService {
                 kid = kid ?: coseKey.getKeyId(false),
                 signatureAlgorithm = signatureAlgorithm ?: coseKey.getSignatureAlgorithm(),
                 opts = opts,
-                keyType = keyType,
+                keyVisibility = keyVisibility,
+                x5c = x5c ?: coseKey.getX509CertificateChain(),
+                keyType = keyType ?: coseKey.getKeyType(),
                 providerId = providerId,
                 alias = alias,
+                keyEncoding = keyEncoding,
+                noCache = noCache,
             )
         }
     }

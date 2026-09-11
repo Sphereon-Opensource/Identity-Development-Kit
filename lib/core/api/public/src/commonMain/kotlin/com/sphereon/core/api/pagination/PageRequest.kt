@@ -220,6 +220,10 @@ data class Page<T>(
  * API PagingMeta objects without duplicating computation logic.
  */
 @JsExportCompat
+@Deprecated(
+    message = "Use the canonical PageMeta wire projection",
+    replaceWith = ReplaceWith("PageMeta", "com.sphereon.core.api.pagination.PageMeta"),
+)
 data class PagingValues(
     val page: Int,
     val size: Int,
@@ -231,6 +235,10 @@ data class PagingValues(
  * Extract computed pagination values from this Page.
  * Each REST module can use these values to construct its own generated PagingMeta type.
  */
+@Deprecated(
+    message = "Use toPageMeta() so pagination metadata retains Long totals and the canonical fields",
+    replaceWith = ReplaceWith("toPageMeta()", "com.sphereon.core.api.pagination.toPageMeta"),
+)
 fun <T> Page<T>.toPagingValues(): PagingValues =
     PagingValues(
         page = pageNumber,

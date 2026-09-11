@@ -17,7 +17,6 @@ import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.did.manager.impl.DidCreationDslProcessor
 import com.sphereon.did.manager.impl.DidCreationDslProcessorImpl
 import com.sphereon.did.manager.impl.DidManagerServiceImpl
-import com.sphereon.did.manager.rest.server.adapter.DidManagerHttpAdapter
 import com.sphereon.did.manager.rest.server.ktor.createDidManagerAppGraph
 import com.sphereon.did.models.VerificationPurpose
 import kotlinx.coroutines.test.runTest
@@ -52,7 +51,7 @@ class DidManagerHttpAdapterE2ETest {
         }
 
     private lateinit var app: com.sphereon.di.app.AppGraph
-    private lateinit var adapter: DidManagerHttpAdapter
+    private lateinit var httpClient: DidManagerTestHttpClient
     private lateinit var dslProcessor: DidCreationDslProcessor
     private lateinit var didManager: com.sphereon.did.manager.DidManager
     private lateinit var keyManager: com.sphereon.crypto.core.kms.KeyManagerService
@@ -76,7 +75,7 @@ class DidManagerHttpAdapterE2ETest {
         val userContext = app.userContextManager.getAnonymous()
         val session = userContext.sessionContextManager.createOrGetFromId("rest-e2e", principalType = com.sphereon.di.context.PrincipalType.USER)
         val fixture = TestSessionGraph.fromSession(session)
-        adapter = fixture.adapter
+        httpClient = DidManagerTestHttpClient(app, session)
         dslProcessor = fixture.dslProcessor
         didManager = fixture.didManager
         keyManager = fixture.keyManager
@@ -115,13 +114,13 @@ class DidManagerHttpAdapterE2ETest {
             throw expected
         }
 
-    private suspend fun get(path: String): com.sphereon.core.api.http.GenericHttpResponse = adapter.handleRequest(GenericHttpRequest(method = "GET", path = path))
+    private suspend fun get(path: String): com.sphereon.core.api.http.GenericHttpResponse = httpClient.dispatch(GenericHttpRequest(method = "GET", path = path))
 
     private suspend fun postJson(
         path: String,
         body: String,
     ): com.sphereon.core.api.http.GenericHttpResponse =
-        adapter.handleRequest(
+        httpClient.dispatch(
             GenericHttpRequest(
                 method = "POST",
                 path = path,
@@ -134,7 +133,7 @@ class DidManagerHttpAdapterE2ETest {
         path: String,
         body: String,
     ): com.sphereon.core.api.http.GenericHttpResponse =
-        adapter.handleRequest(
+        httpClient.dispatch(
             GenericHttpRequest(
                 method = "PATCH",
                 path = path,
@@ -143,7 +142,7 @@ class DidManagerHttpAdapterE2ETest {
             ),
         )
 
-    private suspend fun delete(path: String): com.sphereon.core.api.http.GenericHttpResponse = adapter.handleRequest(GenericHttpRequest(method = "DELETE", path = path))
+    private suspend fun delete(path: String): com.sphereon.core.api.http.GenericHttpResponse = httpClient.dispatch(GenericHttpRequest(method = "DELETE", path = path))
 
     private fun publicJwkKeyInfo(kid: String): JsonObject =
         buildJsonObject {
@@ -178,7 +177,7 @@ class DidManagerHttpAdapterE2ETest {
                 }
             val createResponse =
                 try {
-                    adapter.handleRequest(
+                    httpClient.dispatch(
                         GenericHttpRequest(
                             method = "POST",
                             path = "/api/did/v1/identifiers",
@@ -220,7 +219,7 @@ class DidManagerHttpAdapterE2ETest {
             )
 
             val listResponse =
-                adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"))
+                httpClient.dispatch(GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"))
             assertEquals(200, listResponse.statusCode, "GET /api/did/v1/identifiers should return 200")
             val listBody = listResponse.body
             assertNotNull(listBody)
@@ -231,7 +230,7 @@ class DidManagerHttpAdapterE2ETest {
             )
 
             val getResponse =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/did:key:nonexistent"),
                 )
             assertTrue(
@@ -240,7 +239,7 @@ class DidManagerHttpAdapterE2ETest {
             )
 
             val listVmResponse =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/did:key:nonexistent/verification-methods"),
                 )
             assertTrue(
@@ -249,7 +248,7 @@ class DidManagerHttpAdapterE2ETest {
             )
 
             val deactivateResponse =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "POST",
                         path = "/api/did/v1/identifiers/did:key:nonexistent/actions/deactivate",
@@ -263,7 +262,7 @@ class DidManagerHttpAdapterE2ETest {
             )
 
             val deleteResponse =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(method = "DELETE", path = "/api/did/v1/identifiers/did:key:nonexistent"),
                 )
             assertTrue(
@@ -294,7 +293,7 @@ class DidManagerHttpAdapterE2ETest {
                     )
                 }
             val createResponse =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "POST",
                         path = "/api/did/v1/identifiers",
@@ -340,7 +339,7 @@ class DidManagerHttpAdapterE2ETest {
                     put("keyInfo", publicJwkKeyInfo(webAlias))
                 }
             val missingDomainResponse =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "POST",
                         path = "/api/did/v1/identifiers",
@@ -360,7 +359,7 @@ class DidManagerHttpAdapterE2ETest {
     fun listDidsFilter_appliesQueryParams() =
         runTest {
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers",
@@ -578,7 +577,7 @@ class DidManagerHttpAdapterE2ETest {
     fun unknownPath_returnsClientError() =
         runTest {
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/does-not-exist/no-such-subresource"),
                 )
             assertTrue(
@@ -645,7 +644,7 @@ class DidManagerHttpAdapterE2ETest {
                 }
                 """.trimIndent()
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "PUT",
                         path = "/api/did/v1/identifiers/$did",
@@ -798,7 +797,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             val did = createManagedDidKey("expand-default-get")
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/$did"),
                 )
             assertEquals(200, response.statusCode, "body=${response.body}")
@@ -821,7 +820,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             val did = createManagedDidKey("expand-doc-get")
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers/$did",
@@ -845,7 +844,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             val did = createManagedDidKey("expand-keys-get")
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers/$did",
@@ -905,7 +904,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             val did = createManagedDidKey("expand-all-get")
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers/$did",
@@ -925,7 +924,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             val did = createManagedDidKey("expand-csv-get")
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers/$did",
@@ -944,7 +943,7 @@ class DidManagerHttpAdapterE2ETest {
             // Parser fails fast before the service-command call, so a synthetic DID string is
             // sufficient — no need to mint a real key (avoids the IDK-17 fixture gate).
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers/did:key:z6MkSyntheticForExpandTest",
@@ -959,7 +958,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             createManagedDidKey("expand-list-default")
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"),
                 )
             assertEquals(200, response.statusCode, "body=${response.body}")
@@ -984,7 +983,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             createManagedDidKey("expand-list-doc")
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers",
@@ -1010,7 +1009,7 @@ class DidManagerHttpAdapterE2ETest {
         runTest {
             createManagedDidKey("expand-list-all")
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers",
@@ -1032,7 +1031,7 @@ class DidManagerHttpAdapterE2ETest {
     fun listDids_expandUnknownValue_returns400() =
         runTest {
             val response =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers",

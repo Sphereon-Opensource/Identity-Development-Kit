@@ -599,4 +599,85 @@ class ValidateIdTokenCommandE2ETest {
                 )
             assertTrue(result.isErr, "missing/empty aud must be rejected")
         }
+
+    @Test
+    fun validate_futureIssuedAt_rejects() =
+        runTest {
+            val keyInfo = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256).joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer = ManagedOptsKeyInfo(identifier = keyInfo, context = IdentifierContext(clientId = "https://example.com"))
+            val now = Clock.System.now().epochSeconds
+            val idToken =
+                createSignedIdToken(
+                    issuer,
+                    mapOf(
+                        "iss" to "https://example.com",
+                        "sub" to "user",
+                        "aud" to listOf("client-1"),
+                        "exp" to (now + 7200),
+                        "iat" to (now + 3600),
+                    ),
+                )
+
+            val result = validateCommand.execute(
+                ValidateIdTokenArgs(
+                    idToken,
+                    IdTokenValidationOptions("https://example.com", "client-1", clockSkewSeconds = 0),
+                ),
+            )
+            assertTrue(result.isErr, "an ID token issued in the future must be rejected")
+        }
+
+    @Test
+    fun validate_invalidAtHash_rejects() =
+        runTest {
+            val keyInfo = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256).joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer = ManagedOptsKeyInfo(identifier = keyInfo, context = IdentifierContext(clientId = "https://example.com"))
+            val now = Clock.System.now().epochSeconds
+            val idToken = createSignedIdToken(
+                issuer,
+                mapOf(
+                    "iss" to "https://example.com",
+                    "sub" to "user",
+                    "aud" to listOf("client-1"),
+                    "exp" to (now + 3600),
+                    "iat" to now,
+                    "at_hash" to "deliberately-invalid",
+                ),
+            )
+
+            val result = validateCommand.execute(
+                ValidateIdTokenArgs(
+                    idToken,
+                    IdTokenValidationOptions("https://example.com", "client-1", accessToken = "access-token"),
+                ),
+            )
+            assertTrue(result.isErr, "an invalid at_hash must be rejected")
+        }
+
+    @Test
+    fun validate_invalidCHash_rejects() =
+        runTest {
+            val keyInfo = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256).joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val issuer = ManagedOptsKeyInfo(identifier = keyInfo, context = IdentifierContext(clientId = "https://example.com"))
+            val now = Clock.System.now().epochSeconds
+            val idToken = createSignedIdToken(
+                issuer,
+                mapOf(
+                    "iss" to "https://example.com",
+                    "sub" to "user",
+                    "aud" to listOf("client-1"),
+                    "exp" to (now + 3600),
+                    "iat" to now,
+                    "c_hash" to "deliberately-invalid",
+                ),
+            )
+
+            val result = validateCommand.execute(
+                ValidateIdTokenArgs(
+                    idToken,
+                    IdTokenValidationOptions("https://example.com", "client-1", authorizationCode = "authorization-code"),
+                ),
+            )
+            assertTrue(result.isErr, "an invalid c_hash must be rejected")
+        }
 }

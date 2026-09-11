@@ -22,7 +22,6 @@ import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.TokenRequestData
-import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
 
 /**
@@ -34,10 +33,9 @@ import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestation
  * `urn:ietf:params:oauth:grant-type:device_code`.
  *
  * The token-endpoint orchestrator parses the request, verifies the DPoP proof and client
- * authentication, builds a [GrantContext] carrying the cross-cutting state, then dispatches to the
- * first contributed handler whose [supports] returns true. Adding a new grant is a matter of
- * contributing one more handler to the `Set<GrantHandler>` multibinding: discovery picks it up via
- * [grantType] and dispatch picks it up via [supports].
+ * authentication, builds a [GrantContext] carrying the cross-cutting state, then resolves exactly
+ * one lazily contributed handler by its [grantType]. [supports] is a defensive assertion that the
+ * selected handler accepts the parsed parameter variant.
  */
 interface GrantHandler {
     /**
@@ -48,15 +46,16 @@ interface GrantHandler {
 
     /**
      * Returns true when [params] is the [GrantParameters] variant this handler accepts.
-     * The orchestrator picks the first contributed handler whose `supports` is true.
+     * The orchestrator resolves by [grantType] first and uses this as a fail-closed assertion that
+     * the parsed parameter variant and keyed contribution agree.
      */
     fun supports(params: GrantParameters): Boolean
 
     /**
      * Mints the [TokenResponse] for [params]. [context] carries cross-cutting inputs that the
      * orchestrator pre-resolves (parsed request, verified client id, DPoP proof thumbprint, mTLS
-     * cert thumbprint, server config, request-time clock). Grant-specific verifier commands and
-     * storage are pulled from [GrantContext.commands] or injected directly into the handler.
+     * cert thumbprint, server config, request-time clock). Grant-specific verifier, minting, and
+     * storage dependencies are injected directly into the lazily selected handler.
      */
     suspend fun handle(
         params: GrantParameters,
@@ -64,11 +63,24 @@ interface GrantHandler {
     ): IdkResult<TokenResponse, IdkError>
 }
 
+/** Compile-time map keys shared by handler contributions, token dispatch, and discovery metadata. */
+object GrantHandlerKeys {
+    const val AUTHORIZATION_CODE = "authorization_code"
+    const val REFRESH_TOKEN = "refresh_token"
+    const val CLIENT_CREDENTIALS = "client_credentials"
+    const val PASSWORD = "password"
+    const val PRE_AUTHORIZED_CODE = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+    const val TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
+    const val DEVICE_CODE = "urn:ietf:params:oauth:grant-type:device_code"
+}
+
 /**
  * Cross-cutting state for a single token-endpoint invocation, shared by every [GrantHandler].
  *
  * @property tokenRequest the parsed `/token` request, including the `grant_type` enum and the
  *                        per-grant [GrantParameters].
+ * @property tenantId the authoritative tenant resolved by the session execution that owns this
+ *                    token request; handlers use it for durable audit attribution.
  * @property resolvedClientId the client id confirmed by client authentication; for grants that
  *                            authenticate via mTLS or attestation this is the resolved id, not
  *                            the raw `client_id` form parameter.
@@ -82,9 +94,6 @@ interface GrantHandler {
  *                              forward this to [com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs].
  * @property applied the [HandleTokenRequestArgs] post-`applyDuring`, used so handlers can read
  *                   the per-request `baseUrlOverride` for issuer resolution behind a proxy.
- * @property commands the [AuthorizationServerService.Commands] bundle exposing the AS sub-commands
- *                    (parse / verify / create access token / create refresh token / create token
- *                    response / create id token).
  * @property serverConfig the resolved server instance config; pre-resolved here so each handler
  *                        does not re-read it from the [com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider].
  * @property walletInstanceAttestation production Wallet Instance Attestation evidence accepted at
@@ -92,12 +101,12 @@ interface GrantHandler {
  */
 data class GrantContext(
     val tokenRequest: TokenRequestData,
+    val tenantId: String,
     val resolvedClientId: String,
     val clientInstanceKeyJkt: String? = null,
     val proofJkt: String?,
     val certThumbprintS256: String?,
     val applied: HandleTokenRequestArgs,
-    val commands: AuthorizationServerService.Commands,
     val serverConfig: OAuth2ServerInstanceConfig,
     val walletInstanceAttestation: WalletInstanceAttestationEvidence? = null,
 )

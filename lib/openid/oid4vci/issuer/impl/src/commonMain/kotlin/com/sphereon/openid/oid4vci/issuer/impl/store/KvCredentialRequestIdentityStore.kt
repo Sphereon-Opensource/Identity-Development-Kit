@@ -23,6 +23,7 @@ import com.sphereon.data.store.kv.impl.KvStoreService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.store.CredentialRequestIdentity
 import com.sphereon.openid.oid4vci.issuer.store.CredentialRequestIdentityStore
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -66,9 +67,14 @@ class KvCredentialRequestIdentityStore(
     override suspend fun resolveOrCreate(
         protocolSessionId: String,
         instanceId: String,
+        authorizationPolicySnapshot: Oid4vciAuthorizationPolicySnapshot,
         ttlSeconds: Long,
     ): IdkResult<CredentialRequestIdentity, IdkError> {
-        val candidate = CredentialRequestIdentity(protocolSessionId = protocolSessionId, instanceId = instanceId)
+        val candidate = CredentialRequestIdentity(
+            protocolSessionId = protocolSessionId,
+            instanceId = instanceId,
+            authorizationPolicySnapshot = authorizationPolicySnapshot,
+        )
         require(ttlSeconds > 0) { "ttlSeconds must be positive" }
 
         val versioning = versioningStore().getOrElse { return Err(it) }
@@ -91,6 +97,11 @@ class KvCredentialRequestIdentityStore(
                 appended.currentHead?.value?.let { resolveExisting(it, candidate) }
                     ?: Err(bindingConflict())
         }
+    }
+
+    override suspend fun get(protocolSessionId: String): IdkResult<CredentialRequestIdentity?, IdkError> {
+        val versioning = versioningStore().getOrElse { return Err(it) }
+        return versioning.getHead(namespace, protocolSessionId).map { it?.value }
     }
 
     private fun resolveExisting(

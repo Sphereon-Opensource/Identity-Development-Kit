@@ -61,7 +61,7 @@ interface WalletNestedPresentationExecutor {
                     request: WalletNestedPresentationRequest,
                 ): WalletNestedPresentationExecutionResult<WalletNestedPresentationChallenge> =
                     WalletNestedPresentationExecutionResult.Failed(
-                        code = "wallet_nested_presentation.not_configured",
+                        code = WalletInteractionFailureCodes.NESTED_PRESENTATION_NOT_CONFIGURED,
                         messageKey = "wallet.interaction.error.nested_presentation_not_configured",
                         retryable = true,
                     )
@@ -72,7 +72,7 @@ interface WalletNestedPresentationExecutor {
                     action: WalletInteractionAction,
                 ): WalletNestedPresentationExecutionResult<WalletNestedPresentationResponse> =
                     WalletNestedPresentationExecutionResult.Failed(
-                        code = "wallet_nested_presentation.not_configured",
+                        code = WalletInteractionFailureCodes.NESTED_PRESENTATION_NOT_CONFIGURED,
                         messageKey = "wallet.interaction.error.nested_presentation_not_configured",
                         retryable = true,
                     )

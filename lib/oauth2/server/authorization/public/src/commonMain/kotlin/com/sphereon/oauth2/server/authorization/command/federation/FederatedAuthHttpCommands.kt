@@ -41,6 +41,7 @@ interface FederationAuthorizeHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "federationAuthorize",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("federation"),
                 summary = "Initiate federated authentication by redirecting to the upstream IdP",
             )
@@ -59,6 +60,7 @@ interface ReconciliationAuthorizeHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "reconciliationAuthorize",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("federation", "reconciliation"),
                 summary = "Initiate reconciliation (IDV) flow against an upstream IdP",
             )
@@ -77,6 +79,7 @@ interface FederationCallbackHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "federationCallback",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("federation"),
                 summary = "Handle the upstream IdP callback for both federation and reconciliation flows",
             )
@@ -95,6 +98,7 @@ interface ReconciliationCallbackHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "reconciliationCallback",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("federation", "reconciliation"),
                 summary = "Handle the upstream IdP callback for a reconciliation (IDV) flow",
             )
@@ -113,6 +117,7 @@ interface ListFederationProvidersHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "federationProviders",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("federation"),
                 summary = "List the enabled federation providers for login UI provider selection",
             )

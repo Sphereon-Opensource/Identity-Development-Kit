@@ -59,7 +59,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.idk.all"
         compileSdk = 35
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
             freeCompilerArgs.add("-Xjdk-release=${JavaVersion.VERSION_17}")

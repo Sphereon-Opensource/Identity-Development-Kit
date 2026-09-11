@@ -52,7 +52,7 @@ import kotlin.native.ObjCName
  *      - `jwt_vc_json` (W3C VC secured as a JWT/JWS) — Appendix B.1
  *      - `mso_mdoc` (base64url-encoded ISO 18013-5 `DeviceResponse`) — Appendix B.3
  *  - W3C Data Integrity formats — the Presentation is a JSON **object**:
- *      - `ldp_vc` / `ldp_vp` (JSON-LD Verifiable Presentation with an embedded proof) — Appendix B.2
+ *      - `ldp_vc` (JSON-LD Verifiable Credential or holder-bound Presentation with a Data Integrity proof) — Appendix B.1.3.2
  *
  * Therefore each Presentation is modelled as a [JsonElement] that may be a
  * [JsonPrimitive] (string) OR a [JsonObject]. Code MUST NOT assume the string form and
@@ -63,12 +63,12 @@ import kotlin.native.ObjCName
  * ```json
  * { "credential_query_id_1": ["eyJhbGc..."] }               // single compact presentation
  * { "credential_query_id_2": ["eyJhbGc...", "eyJhbGc..."] } // multiple compact presentations
- * { "credential_query_id_3": [{ "@context": [...], ... }] }  // single ldp_vp (JSON object)
+ * { "credential_query_id_3": [{ "@context": [...], ... }] }  // single ldp_vc Presentation (JSON object)
  * ```
  *
  * @property presentationElements Canonical map from credential query ID to the list of
  *   Presentation elements. Each element is a string ([JsonPrimitive]) for compact formats
- *   or a [JsonObject] for `ldp_vc`/`ldp_vp`. Even single presentations are single-element lists.
+ *   or a [JsonObject] for `ldp_vc`. Even single presentations are single-element lists.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("VpToken", exact = true)
@@ -93,7 +93,7 @@ data class VpToken(
      * Compact-format view of the presentations: each [JsonElement] is rendered to a [String].
      *
      * String ([JsonPrimitive]) presentations (`dc+sd-jwt`, `jwt_vc_json`, `mso_mdoc`) yield
-     * their raw content. Object (`ldp_vc`/`ldp_vp`) presentations are rendered as compact JSON
+     * their raw content. Object (`ldp_vc`) presentations are rendered as compact JSON
      * so legacy string-based call sites never crash with a [ClassCastException]; consumers that
      * must verify or inspect an LDP presentation should use [presentationElements] /
      * [getPresentationElements] and branch on the element type instead.
@@ -162,7 +162,7 @@ data class VpToken(
         /**
          * Construct a [VpToken] from a map of query IDs to compact (string) presentations.
          * Each string is wrapped as a [JsonPrimitive]. Use the primary constructor directly
-         * when any presentation is an `ldp_vc`/`ldp_vp` JSON object.
+         * when any presentation is an `ldp_vc` JSON object.
          */
         @JvmStatic
         fun fromStrings(presentations: Map<String, List<String>>): VpToken = VpToken(presentations.mapValues { (_, list) -> list.map { JsonPrimitive(it) } })
@@ -172,7 +172,7 @@ data class VpToken(
          *
          * Parses the DCQL object format where keys are credential query IDs and every value is
          * an array of one or more Presentations. Each Presentation is a string (compact formats)
-         * or a JSON object (`ldp_vc`/`ldp_vp`) per OID4VP 1.0 Final section 8.1.
+         * or a JSON object (`ldp_vc`) per OID4VP 1.0 Final section 8.1.
          *
          * @param json JSON element representing the vp_token
          * @return Parsed VpToken
@@ -215,7 +215,7 @@ data class VpToken(
 
         /**
          * A Presentation value is either a non-blank string (compact formats) or a JSON
-         * object (`ldp_vc`/`ldp_vp`). Anything else (number, boolean, null, nested array,
+         * object (`ldp_vc`). Anything else (number, boolean, null, nested array,
          * blank string) is not a valid OID4VP §8.1 Presentation.
          */
         private fun requirePresentationShape(
@@ -236,7 +236,7 @@ data class VpToken(
                     Unit
                 }
 
-                // ldp_vc / ldp_vp
+                // ldp_vc
 
                 else -> {
                     throw IllegalArgumentException(
@@ -323,7 +323,7 @@ class VpTokenBuilder {
     }
 
     /**
-     * Add a presentation element (string or `ldp_vc`/`ldp_vp` JSON object) for a query ID.
+     * Add a presentation element (string or `ldp_vc` JSON object) for a query ID.
      */
     fun presentationElement(
         queryId: String,

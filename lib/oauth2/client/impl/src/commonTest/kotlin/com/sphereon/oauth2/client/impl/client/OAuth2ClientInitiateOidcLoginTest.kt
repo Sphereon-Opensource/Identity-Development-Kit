@@ -118,6 +118,27 @@ class OAuth2ClientInitiateOidcLoginTest {
         }
 
     @Test
+    fun initiateAuthorization_preservesAdditionalParameters() =
+        runTest {
+            val result =
+                oauth2Client.initiateAuthorization(
+                    authorizationServerMetadata = metadata,
+                    clientId = "upstream-client",
+                    redirectUri = "https://rp.example.com/federation/callback",
+                    scope = "openid profile",
+                    state = "upstream-state",
+                    additionalParameters = mapOf("nonce" to "upstream-nonce", "login_hint" to "user@example.com"),
+                )
+            assertTrue(result.isOk, "initiate authorization should succeed: ${if (result.isErr) result.error else ""}")
+            val url = result.value.authorizationUrl
+            assertTrue(url.contains("nonce=upstream-nonce"), "authorization URL must carry the OIDC nonce. URL: $url")
+            assertTrue(
+                url.contains("login_hint=user%40example.com") || url.contains("login_hint=user@example.com"),
+                "authorization URL must carry extension parameters. URL: $url",
+            )
+        }
+
+    @Test
     fun initiateOidcLogin_distinctStatesAcrossCalls() =
         runTest {
             val first =

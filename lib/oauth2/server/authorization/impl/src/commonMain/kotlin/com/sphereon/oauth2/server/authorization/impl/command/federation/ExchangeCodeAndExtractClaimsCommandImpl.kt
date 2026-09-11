@@ -22,7 +22,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.log.LogLevel
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.client.client.OAuth2Client
@@ -30,15 +29,26 @@ import com.sphereon.oauth2.client.command.FetchUserInfoResult
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientCredentials
 import com.sphereon.oauth2.common.token.OidcTokenClaimExtractor
+import com.sphereon.oauth2.common.model.IdTokenValidationOptions
+import com.sphereon.oauth2.client.metadata.IssuerJwksResolver
 import com.sphereon.oauth2.server.authorization.command.federation.ExchangeCodeAndExtractClaimsArgs
 import com.sphereon.oauth2.server.authorization.command.federation.ExchangeCodeAndExtractClaimsCommand
 import com.sphereon.oauth2.server.authorization.command.federation.FederatedExchangeResult
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
+import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 
 /**
  * Exchange the upstream authorization code for tokens, then merge claims from the id_token
@@ -54,6 +64,9 @@ class ExchangeCodeAndExtractClaimsCommandImpl(
     execution: SessionExecution,
     private val oauth2Client: OAuth2Client,
     private val tokenClaimExtractor: OidcTokenClaimExtractor,
+    private val issuerJwksResolver: IssuerJwksResolver,
+    private val providerResolver: FederationProviderRuntimeResolver,
+    private val clock: kotlin.time.Clock,
 ) : TypedServiceCommandAdapter<ExchangeCodeAndExtractClaimsArgs, FederatedExchangeResult, AuthenticationError>(
         commandId = ExchangeCodeAndExtractClaimsCommand.COMMAND_ID,
         execution = execution,
@@ -73,17 +86,13 @@ class ExchangeCodeAndExtractClaimsCommandImpl(
         val providerConfig = applied.providerConfig
         val pending = applied.pending
         val log = execution.log
+        val upstreamPkce = pending.pkceData
+        if (upstreamPkce.codeVerifier.isBlank() || upstreamPkce.codeChallenge.isBlank()) {
+            return Err(AuthenticationError.Generic(description = "Pinned upstream PKCE transaction is invalid"))
+        }
 
-        val clientAuth =
-            providerConfig.clientSecret?.let { secret ->
-                ClientAuthenticationConfig.Post(
-                    credentials =
-                        ClientCredentials(
-                            clientId = providerConfig.clientId,
-                            clientSecret = secret,
-                        ),
-                )
-            } ?: ClientAuthenticationConfig.None(clientId = providerConfig.clientId)
+        val clientAuth = providerResolver.clientAuthentication(providerConfig.id, pending.upstreamIssuer)
+            .getOrElse { return Err(it) }
 
         val tokenResponse =
             oauth2Client
@@ -92,7 +101,7 @@ class ExchangeCodeAndExtractClaimsCommandImpl(
                     clientAuthentication = clientAuth,
                     authorizationCode = applied.code,
                     redirectUri = pending.callbackRedirectUri,
-                    pkceData = pending.pkceData,
+                    pkceData = upstreamPkce,
                 ).getOrElse {
                     return Err(
                         AuthenticationError.Generic(
@@ -103,10 +112,31 @@ class ExchangeCodeAndExtractClaimsCommandImpl(
 
         val idToken = tokenResponse.idToken
         val accessToken = tokenResponse.accessToken
+        if (idToken == null) {
+            return Err(AuthenticationError.Generic(description = "Upstream token response did not contain an ID token"))
+        }
+        val jwks = issuerJwksResolver.resolve(pending.metadata).getOrElse {
+            return Err(AuthenticationError.Generic(description = "Failed to resolve pinned upstream signing keys: ${it.message.defaultMessage}"))
+        }
+        val validatedIdToken = oauth2Client.validateIdToken(
+            idToken,
+            IdTokenValidationOptions(
+                expectedIssuer = pending.upstreamIssuer,
+                expectedAudience = providerConfig.clientId,
+                expectedNonce = pending.nonce,
+                accessToken = accessToken,
+                authorizationCode = applied.code,
+                allowedAlgorithms = pending.metadata.idTokenSigningAlgValuesSupported.orEmpty().ifEmpty { IdTokenValidationOptions.DEFAULT_ID_TOKEN_ALG_ALLOWLIST },
+                trustedJwks = jwks,
+            ),
+        ).getOrElse {
+            return Err(AuthenticationError.Generic(description = "Upstream ID token validation failed: ${it.message.defaultMessage}"))
+        }
 
         var upstreamAcr: String? = null
         var upstreamAmr: List<String>? = null
         var upstreamSid: String? = null
+        var upstreamAuthTime: kotlin.time.Instant? = null
         val userClaims: Map<String, Any> =
             if (idToken != null) {
                 val rawIdTokenClaims =
@@ -131,7 +161,8 @@ class ExchangeCodeAndExtractClaimsCommandImpl(
                     (rawIdTokenClaims["sid"] as? kotlinx.serialization.json.JsonPrimitive)
                         ?.contentOrNull
                         ?.takeIf { it.isNotBlank() }
-                rawIdTokenClaims.mapValues { (_, v) -> v.toString().removeSurrounding("\"") }
+                upstreamAuthTime = (rawIdTokenClaims["auth_time"] as? JsonPrimitive)?.longOrNull?.let(kotlin.time.Instant::fromEpochSeconds)
+                rawIdTokenClaims.mapValues { (_, value) -> value.toFederatedClaimValue() }
             } else {
                 emptyMap()
             }
@@ -151,20 +182,31 @@ class ExchangeCodeAndExtractClaimsCommandImpl(
                 null
             }
 
+        val validatedSubject = validatedIdToken.payload.sub
+        val userInfoSubject = userinfoResult?.claims?.get("sub")?.let {
+            when (it) {
+                is JsonPrimitive -> it.contentOrNull
+                else -> it.toString().trim('"')
+            }
+        }
+        if (userInfoSubject != null && userInfoSubject != validatedSubject) {
+            return Err(AuthenticationError.Generic(description = "Upstream UserInfo subject does not match the validated ID token"))
+        }
+
         val mergedClaims =
             buildMap<String, Any> {
                 putAll(userClaims)
                 userinfoResult?.claims?.forEach { (key, value) ->
-                    put(key, value.toString().removeSurrounding("\""))
+                    put(key, value.toFederatedClaimValue())
                 }
             }
 
         log.debug("ID token claims: ${userClaims.keys}")
         log.debug("Merged claims (${mergedClaims.size} total, keys=${mergedClaims.keys})")
-        if (log.isEnabled(level = LogLevel.TRACE)) {
-            mergedClaims.forEach { (k, v) -> log.trace("  $k = $v") }
-        }
-        log.debug("Upstream acr=$upstreamAcr, amr=$upstreamAmr")
+        // Claim values are authentication evidence and may contain personal data.  Only
+        // structural diagnostics are safe to emit; values belong in the normalized,
+        // access-controlled evidence record produced by the outcome handler.
+        log.debug("Upstream authentication evidence fields: acr=${upstreamAcr != null}, amrCount=${upstreamAmr?.size ?: 0}")
 
         return Ok(
             FederatedExchangeResult(
@@ -172,7 +214,25 @@ class ExchangeCodeAndExtractClaimsCommandImpl(
                 upstreamAcr = upstreamAcr,
                 upstreamAmr = upstreamAmr,
                 upstreamSid = upstreamSid,
+                upstreamSubject = validatedIdToken.payload.sub,
+                upstreamAuthTime = upstreamAuthTime,
+                validatedAt = clock.now(),
             ),
         )
     }
 }
+
+internal fun JsonElement.toFederatedClaimValue(): Any =
+    when (this) {
+        JsonNull -> JsonNull
+        is JsonPrimitive ->
+            when {
+                isString -> content
+                booleanOrNull != null -> booleanOrNull!!
+                longOrNull != null -> longOrNull!!
+                doubleOrNull != null -> doubleOrNull!!
+                else -> content
+            }
+        is JsonArray -> map { it.toFederatedClaimValue() }
+        is JsonObject -> mapValues { (_, value) -> value.toFederatedClaimValue() }
+    }

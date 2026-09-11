@@ -78,7 +78,7 @@ class GetAuthRequestStatusServiceCommandImpl(
 
         // 1. Get session from store
         val session =
-            authorizationSessionStore.getByCorrelationId(correlationId).getOrNull()
+            authorizationSessionStore.getByCorrelationId(correlationId).getOrElse { return Err(it) }
                 ?: return Err(
                     IdkError.NOT_FOUND_ERROR(
                         message = "Authorization request not found: $correlationId",
@@ -114,6 +114,7 @@ class GetAuthRequestStatusServiceCommandImpl(
                 expiresAt = session.expiresAt,
                 error = sessionError,
                 verifiedData = verifiedData,
+                verificationBinding = com.sphereon.openid.oid4vp.universal.VerificationSessionBinding(session.instanceId, session.templateId, session.templateRevision, session.dcqlQueryId, session.dcqlQueryVersion, session.createdAt, session.expiresAt),
             )
 
         return Ok(output)

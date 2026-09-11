@@ -85,12 +85,27 @@ kotlin {
                 implementation(projects.libCryptoKeyPersistenceImpl)
             }
         }
+        // libsodium-bindings backs ChaCha20Poly1305Aead (ChaCha20Poly1305EncryptionService);
+        // it publishes no wasmJs artifact, so the actual lives in nonWasmMain (JVM/JS/native)
+        // and the wasmJsMain actual throws.
+        val nonWasmMain by creating {
+            dependsOn(commonMain)
+            dependencies {
+                implementation(sphereonlib.com.ionspin.kotlin.multiplatform.crypto.libsodium.bindings)
+            }
+        }
+        // ChaCha20Poly1305EncryptionServiceTest exercises libsodium, so it cannot run on wasmJs.
+        val nonWasmTest by creating {
+            dependsOn(commonTest)
+        }
         val jvmMain by getting {
+            dependsOn(nonWasmMain)
             dependencies {
                 implementation(sphereonlib.dev.whyoleg.cryptography.provider.jdk)
             }
         }
         val jvmTest by getting {
+            dependsOn(nonWasmTest)
             dependencies {
                 implementation(sphereonlib.io.ktor.client.cio.jvm)
                 implementation(projects.libCryptoKmsProviderSoftware)
@@ -103,6 +118,12 @@ kotlin {
                 implementation("com.nimbusds:nimbus-jose-jwt:9.40")
             }
         }
+        // Route js/native main + test through nonWasmMain/nonWasmTest so they get the
+        // libsodium AEAD actual (wasmJs is excluded — it uses the throwing actual).
+        findByName("jsMain")?.dependsOn(nonWasmMain)
+        findByName("nativeMain")?.dependsOn(nonWasmMain)
+        findByName("jsTest")?.dependsOn(nonWasmTest)
+        findByName("nativeTest")?.dependsOn(nonWasmTest)
         findByName("jsMain")?.dependencies {
             implementation(npm("@js-joda/core", "5.6.3"))
             implementation(npm("@js-joda/timezone", "2.22.0"))

@@ -18,7 +18,9 @@
 package com.sphereon.core.api.http
 
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 
 /**
  * Interface for HTTP adapters that handle REST API requests.
@@ -26,17 +28,14 @@ import com.sphereon.core.compat.JsExportCompat
  * This interface provides a universal pattern for implementing HTTP APIs:
  * - Framework-agnostic (works with Spring, Ktor, Lambda, Azure, etc.)
  * - Dependency injection via kotlin-inject
- * - Multiple implementations per application (KMS, mDoc, Signature, etc.)
+ * - Multiple keyed adapters per application (KMS, mDoc, Signature, etc.)
  * - Easy testing and mocking
  *
- * Multiple Implementations:
- * Since this interface is generic, you MUST use Named qualifiers when implementing.
- *
  * Implementation Guidelines:
- * - Be annotated with Inject, SingleIn(SessionScope), and Named(YourAdapter.ID)
+ * - Be annotated with Inject, SingleIn(SessionScope), ContributesIntoMap, and StringKey
  * - Define a companion object with a const val ID
- * - Contain ALL routing logic for your API
- * - Delegate to handlers for business logic
+ * - Execute only the route selected from application-scoped metadata
+ * - Delegate the selected route to its handler
  * - Map exceptions to HTTP status codes
  * - Return GenericHttpResponse with proper status and headers
  *
@@ -44,7 +43,8 @@ import com.sphereon.core.compat.JsExportCompat
  * ```
  * @Inject
  * @SingleIn(SessionScope::class)
- * @Named(KmsHttpAdapter.ID)
+ * @ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+ * @StringKey(KmsHttpAdapter.ID)
  * class KmsHttpAdapter : HttpAdapter {
  *     companion object {
  *         const val ID = "kms-api"
@@ -54,7 +54,10 @@ import com.sphereon.core.compat.JsExportCompat
  *
  *     override fun describe(): HttpAdapterDescription = TODO("Provide mount + endpoints")
  *
- *     override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
+ *     override suspend fun handleResolvedRequest(
+ *         request: GenericHttpRequest,
+ *         route: HttpAdapterRouteMatch,
+ *     ): GenericHttpResponse {
  *         // implementation
  *     }
  * }
@@ -65,28 +68,23 @@ interface HttpAdapter {
     /**
      * Stable identifier for this adapter.
      *
-     * Notes:
-     * - This is used for configuration overrides and for EDK extension replacement.
-     * - When multiple implementations exist, continue to use @Named qualifiers in DI, but keep this id stable.
+     * This is the map key that binds application-scoped route metadata to the one selected
+     * session-scoped adapter instance. It must be unique within an application graph.
      */
     val id: String
 
     /**
      * Describe the adapter mount and supported endpoints.
      *
-     * The open-source IDK uses this for collision detection and generic Ktor exposure.
-     * EDK uses this for OpenAPI reconciliation and Spring exposure.
+     * Used for fail-fast collision detection, route selection, generic transport exposure,
+     * and OpenAPI reconciliation.
      */
     fun describe(): HttpAdapterDescription
 
-    /**
-     * Handle an HTTP request and return an HTTP response.
-     *
-     * This method contains ALL routing logic for the API.
-     * Platform adapters just convert their native request/response to/from GenericHttp types.
-     *
-     * @param request Framework-agnostic HTTP request
-     * @return Framework-agnostic HTTP response with status code, headers, and body
-     */
-    suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse
+    /** Execute an AppScope-preselected route without rescanning unrelated handlers. */
+    @JsExportIgnoreCompat
+    suspend fun handleResolvedRequest(
+        request: GenericHttpRequest,
+        route: HttpAdapterRouteMatch,
+    ): GenericHttpResponse
 }

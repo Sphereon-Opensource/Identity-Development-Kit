@@ -94,12 +94,23 @@ class SoftwareWscd(
         // A caller-supplied alias is honored verbatim as the key identity; otherwise the secure
         // component derives a single stable identity per (wallet unit, usage, algorithm).
         val alias = spec.alias?.takeIf { it.isNotBlank() } ?: deriveDefaultAlias(spec.walletUnitId, spec.usage, spec.algorithm)
-        provisionedKeys[alias]?.let { return Ok(it.handle) }
         return provisioningMutex.withLock {
-            provisionedKeys[alias]?.let { return@withLock Ok(it.handle) }
-            rehydrateKmsKey(alias = alias, spec = spec)?.let { recovered ->
-                provisionedKeys[alias] = recovered
-                return@withLock Ok(recovered.handle)
+            // The cache is only an optimization for browser custody. Durable KMS aliases must be
+            // revalidated against the KMS reference authority on every lookup; otherwise a caller
+            // can relabel a cached handle by supplying the same alias from another wallet unit.
+            when (val recovered = rehydrateKmsKey(alias = alias, spec = spec)) {
+                null -> Unit
+                is Ok -> {
+                    provisionedKeys[alias] = recovered.value
+                    return@withLock Ok(recovered.value.handle)
+                }
+                is Err -> return@withLock recovered
+            }
+            provisionedKeys[alias]?.let { cached ->
+                if (cached.handle.walletUnitId != spec.walletUnitId) {
+                    return@withLock Err(ownerMismatchError(alias, spec.walletUnitId, cached.handle.walletUnitId))
+                }
+                return@withLock Ok(cached.handle)
             }
             provisionKey(alias = alias, spec = spec)
         }
@@ -114,25 +125,53 @@ class SoftwareWscd(
     private suspend fun rehydrateKmsKey(
         alias: String,
         spec: WscdKeySpec,
-    ): ProvisionedSecureComponentKey? {
+    ): IdkResult<ProvisionedSecureComponentKey, IdkError>? {
+        // Request PRIVATE explicitly: KeyInfo defaults to PUBLIC, which makes software
+        // keystores strip `d`/`k`. Softwares createRawSignature treats inline key material as
+        // authoritative, so a public-only rehydrate would poison the session cache and make
+        // every later signDigest fail closed even though the KMS still holds the private key.
         val managed =
             keyManagerService
-                .getKeyResult(KeyInfo<Nothing>(alias = alias))
+                .getKeyResult(KeyInfo<Nothing>(alias = alias, keyVisibility = KeyVisibility.PRIVATE))
                 .getOrNull()
                 ?.key
                 ?: return null
-        val jwk = managed.key as? Jwk ?: return null
+        val jwk =
+            managed.key as? Jwk
+                ?: return Err(
+                    IdkError.fromString(
+                        code = "WALLET_WSCD_KEY_REHYDRATION_FAILED",
+                        message = "Durable key '$alias' did not resolve to a JWK",
+                    ),
+                )
+        if (jwk.d == null && jwk.k == null) {
+            return Err(
+                IdkError.fromString(
+                    code = "WALLET_WSCD_KEY_REHYDRATION_FAILED",
+                    message =
+                        "Durable key '$alias' rehydrated without private key material; " +
+                            "refusing to cache a public-only signing handle",
+                ),
+            )
+        }
+        val reference =
+            keyManagerService.findRegisteredKeyReference(aliasOrKid = alias, providerId = managed.providerId)
+                ?: return Err(ownerMetadataMissingError(alias))
+        val owner = reference.walletUnitId ?: return Err(ownerMetadataMissingError(alias))
+        if (owner != spec.walletUnitId) {
+            return Err(ownerMismatchError(alias, spec.walletUnitId, owner))
+        }
         val publicJwk = jwk.toPublicKey().copy(kid = jwk.kid ?: managed.kid ?: alias)
         val handle =
             WscdKeyHandle(
                 keyRef = alias,
                 profile = WscdProfile.Software,
-                walletUnitId = spec.walletUnitId,
+                walletUnitId = owner,
                 publicKeyJwk = publicJwk.toJsonString(),
                 keyId = publicJwk.kid ?: managed.kid ?: alias,
                 providerId = managed.providerId,
             )
-        return ProvisionedSecureComponentKey(handle = handle, custody = KeyCustody.Kms(managed))
+        return Ok(ProvisionedSecureComponentKey(handle = handle, custody = KeyCustody.Kms(managed)))
     }
 
     override suspend fun generateFreshKey(spec: WscdKeySpec): IdkResult<WscdKeyHandle, IdkError> {
@@ -177,6 +216,7 @@ class SoftwareWscd(
                     use = JwkUse.sig,
                     alg = spec.algorithm,
                     keyVisibility = KeyVisibility.PRIVATE,
+                    walletUnitId = spec.walletUnitId,
                 ).getOrElse { return Err(it) }
 
         val keyPair =
@@ -189,11 +229,18 @@ class SoftwareWscd(
                 )
 
         val signingKeyInfo = keyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+        val reference =
+            keyManagerService.findRegisteredKeyReference(aliasOrKid = alias, providerId = keyPair.providerId)
+                ?: return Err(ownerMetadataMissingError(alias))
+        val owner = reference.walletUnitId ?: return Err(ownerMetadataMissingError(alias))
+        if (owner != spec.walletUnitId) {
+            return Err(ownerMismatchError(alias, spec.walletUnitId, owner))
+        }
         val handle =
             WscdKeyHandle(
                 keyRef = alias,
                 profile = WscdProfile.Software,
-                walletUnitId = spec.walletUnitId,
+                walletUnitId = owner,
                 publicKeyJwk = keyPair.jose.publicJwk.toJsonString(),
                 keyId = keyPair.kid ?: alias,
                 providerId = keyPair.providerId,
@@ -222,16 +269,7 @@ class SoftwareWscd(
             ActivationProofKind.LOCAL_USER_AUTH, ActivationProofKind.NONE_DEV_ONLY -> Unit
         }
 
-        val provisioned =
-            provisionedKeys[handle.keyRef]
-                ?: return Err(
-                    IdkError.fromString(
-                        code = "WALLET_WSCD_KEY_NOT_PROVISIONED",
-                        message =
-                            "No secure-component-held key provisioned for reference '${handle.keyRef}' " +
-                                "(wallet unit '${handle.walletUnitId}'); call generateKey or generateFreshKey first",
-                    ),
-                )
+        val provisioned = resolveProvisionedKey(handle).getOrElse { return Err(it) }
 
         val signature =
             when (val custody = provisioned.custody) {
@@ -257,6 +295,29 @@ class SoftwareWscd(
     }
 
     override suspend fun deleteKey(handle: WscdKeyHandle): IdkResult<Unit, IdkError> {
+        val provisioned = resolveProvisionedKey(handle).getOrElse { return Err(it) }
+        when (val custody = provisioned.custody) {
+            is KeyCustody.BrowserWebCrypto -> forgetBrowserWscdKey(handle.keyRef)
+            is KeyCustody.Kms -> keyManagerService.deleteKeyResult(custody.signingKeyInfo).getOrElse { return Err(it) }
+        }
+        provisionedKeys.remove(handle.keyRef)
+        return Ok(Unit)
+    }
+
+    override suspend fun keyEvidence(handle: WscdKeyHandle): IdkResult<WscdKeyEvidence, IdkError> {
+        val provisioned = resolveProvisionedKey(handle).getOrElse { return Err(it) }
+        // Honest custody: neither custody kind ever makes an ISO 18045 (hardware assurance)
+        // claim - the software profile ceiling applies regardless. KMS-held keys sit in an
+        // unprotected software KMS and get no evidence entries at all; browser-custody keys are
+        // non-extractable WebCrypto CryptoKeys and say so (see wscdCustodyEvidence).
+        return Ok(WscdKeyEvidence(profile = WscdProfile.Software, evidence = wscdCustodyEvidence(provisioned.custody)))
+    }
+
+    /**
+     * Resolve a cached handle only after checking its owner against authoritative metadata.
+     * KMS-held aliases are never authorized from the in-memory cache alone.
+     */
+    private suspend fun resolveProvisionedKey(handle: WscdKeyHandle): IdkResult<ProvisionedSecureComponentKey, IdkError> {
         val provisioned =
             provisionedKeys[handle.keyRef]
                 ?: return Err(
@@ -268,30 +329,39 @@ class SoftwareWscd(
                     ),
                 )
         when (val custody = provisioned.custody) {
-            is KeyCustody.BrowserWebCrypto -> forgetBrowserWscdKey(handle.keyRef)
-            is KeyCustody.Kms -> keyManagerService.deleteKeyResult(custody.signingKeyInfo).getOrElse { return Err(it) }
+            KeyCustody.BrowserWebCrypto -> {
+                if (provisioned.handle.walletUnitId != handle.walletUnitId) {
+                    return Err(ownerMismatchError(handle.keyRef, handle.walletUnitId, provisioned.handle.walletUnitId))
+                }
+            }
+            is KeyCustody.Kms -> {
+                val reference =
+                    keyManagerService.findRegisteredKeyReference(
+                        aliasOrKid = handle.keyRef,
+                        providerId = custody.signingKeyInfo.providerId,
+                    ) ?: return Err(ownerMetadataMissingError(handle.keyRef))
+                val owner = reference.walletUnitId ?: return Err(ownerMetadataMissingError(handle.keyRef))
+                if (owner != handle.walletUnitId) {
+                    return Err(ownerMismatchError(handle.keyRef, handle.walletUnitId, owner))
+                }
+            }
         }
-        provisionedKeys.remove(handle.keyRef)
-        return Ok(Unit)
+        return Ok(provisioned)
     }
 
-    override suspend fun keyEvidence(handle: WscdKeyHandle): IdkResult<WscdKeyEvidence, IdkError> {
-        val provisioned =
-            provisionedKeys[handle.keyRef]
-                ?: return Err(
-                    IdkError.fromString(
-                        code = "WALLET_WSCD_KEY_NOT_PROVISIONED",
-                        message =
-                            "No secure-component-held key provisioned for reference '${handle.keyRef}' " +
-                                "(wallet unit '${handle.walletUnitId}')",
-                    ),
-                )
-        // Honest custody: neither custody kind ever makes an ISO 18045 (hardware assurance)
-        // claim - the software profile ceiling applies regardless. KMS-held keys sit in an
-        // unprotected software KMS and get no evidence entries at all; browser-custody keys are
-        // non-extractable WebCrypto CryptoKeys and say so (see wscdCustodyEvidence).
-        return Ok(WscdKeyEvidence(profile = WscdProfile.Software, evidence = wscdCustodyEvidence(provisioned.custody)))
-    }
+    private fun ownerMetadataMissingError(alias: String): IdkError =
+        IdkError.fromString(
+            code = "WALLET_WSCD_KEY_OWNER_METADATA_MISSING",
+            message = "Durable key '$alias' has no authoritative wallet-unit owner metadata",
+        )
+
+    private fun ownerMismatchError(alias: String, requestedOwner: String, actualOwner: String?): IdkError =
+        IdkError.fromString(
+            code = "WALLET_WSCD_KEY_OWNER_MISMATCH",
+            message =
+                "Durable key '$alias' belongs to wallet unit '${actualOwner ?: "unknown"}', " +
+                    "not '$requestedOwner'",
+        )
 
     private fun deriveDefaultAlias(
         walletUnitId: String,

@@ -23,6 +23,10 @@ import com.sphereon.crypto.core.generic.Multibase
 import com.sphereon.crypto.core.generic.MultibaseEncoding
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.dataintegrity.model.DataIntegrityProof
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.JwkType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -83,7 +87,12 @@ object EddsaJcs2022Cryptosuite {
      * Multibase-encode a raw Ed25519 signature with the base58btc prefix `z`,
      * matching the W3C VC-DI proofValue format.
      */
-    fun encodeProofValue(rawSignature: ByteArray): String = Multibase.encode(rawSignature, MultibaseEncoding.BASE58BTC)
+    fun encodeProofValue(rawSignature: ByteArray): String {
+        require(rawSignature.size == ED25519_SIGNATURE_BYTES) {
+            "$ID signatures must be exactly $ED25519_SIGNATURE_BYTES raw bytes"
+        }
+        return Multibase.encode(rawSignature, MultibaseEncoding.BASE58BTC)
+    }
 
     /**
      * Decode a multibase-encoded proofValue back into raw signature bytes.
@@ -94,6 +103,23 @@ object EddsaJcs2022Cryptosuite {
         require(proofValue.isNotEmpty() && proofValue[0] == PROOF_VALUE_PREFIX_BASE58BTC) {
             "eddsa-jcs-2022 proofValue must be base58btc-encoded (multibase prefix '$PROOF_VALUE_PREFIX_BASE58BTC')"
         }
-        return Multibase.decode(proofValue)
+        val raw = Multibase.decode(proofValue)
+        require(raw.size == ED25519_SIGNATURE_BYTES) {
+            "$ID proofValue must decode to exactly $ED25519_SIGNATURE_BYTES raw bytes"
+        }
+        return raw
     }
+
+    /** Require the JOSE key shape permitted by the Ed25519 data-integrity suite. */
+    fun requireEd25519Key(key: JwkType): JwkType {
+        require(key.kty == JwaKeyType.OKP) { "$ID requires an OKP verification key" }
+        require(key.crv == JwaCurve.Ed25519) { "$ID requires an Ed25519 verification key" }
+        require(key.alg == null || key.alg == JwaAlgorithm.EdDSA) {
+            "$ID key algorithm ${key.alg} must be EdDSA"
+        }
+        require(!key.x.isNullOrBlank()) { "$ID verification key is missing public key material" }
+        return key
+    }
+
+    private const val ED25519_SIGNATURE_BYTES = 64
 }

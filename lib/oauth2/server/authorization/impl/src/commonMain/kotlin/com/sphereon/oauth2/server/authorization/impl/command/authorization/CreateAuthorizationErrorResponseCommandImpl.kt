@@ -142,7 +142,6 @@ class CreateAuthorizationErrorResponseCommandImpl(
         args: CreateAuthorizationErrorResponseArgs,
         parameters: Map<String, String>,
     ): IdkResult<AuthorizationErrorResponseData, AuthorizationServerError> {
-        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         val config = configProvider.serverConfig
         // For error responses, downgrade to the underlying carrier without JARM packaging when
         // JARM cannot be honored (server feature off, client signing alg missing). Fail-open here
@@ -167,6 +166,17 @@ class CreateAuthorizationErrorResponseCommandImpl(
         if (signingAlg == null && encryptedAlg == null) {
             return shapeBareError(args, parameters, downgrade)
         }
+        if (signingAlg != null &&
+            config.authorizationSigningAlgValuesSupported?.none { it.equals(signingAlg, ignoreCase = true) } == true
+        ) {
+            return shapeBareError(args, parameters, downgrade)
+        }
+        val serverIdentifier =
+            if (signingAlg == null) {
+                null
+            } else {
+                runCatching { signingIdentifierResolver.resolveSigningIdentifier(signingAlg) }.getOrNull()
+            }
         if (signingAlg != null && serverIdentifier == null) {
             return shapeBareError(args, parameters, downgrade)
         }

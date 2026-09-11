@@ -219,8 +219,9 @@ interface MdocEngagementManager : MdocEngagementFactory.Holder {
      * - **Format**: `mdoc-openid4vp://?client_id=...&request_uri=...`
      * - **Protocol**: OAuth 2.0 / OpenID4VP with JWT
      * - **Use Case**: Verifier displays QR, wallet performs OAuth flow
-     * - **Note**: `response_uri`, `nonce`, and `dcql_query` are fetched from `request_uri`
-     *   (legacy `presentation_definition` may appear; use it only for legacy mdoc and keep PE optional)
+     * - **Profile**: the ISO 18013-7 Annex B request uses the restricted Presentation-Exchange
+     *   profile; `response_uri`, `nonce`, and `presentation_definition` are fetched from `request_uri`.
+     *   Regular `openid4vp://` OID4VP uses the separate DCQL profile and is not this path.
      *
      * ## Scheme Disambiguation
      *
@@ -266,11 +267,15 @@ interface MdocEngagementManager : MdocEngagementFactory.Holder {
      * @param mdocUri The URI from the reader's QR code or deep link
      * @param autoStart If true (default for OID4VP), automatically starts the engagement.
      *                  For OID4VP, starting is required to fetch the Authorization Request Object.
+     * @param trustedOriginDomain Domain obtained from a trusted user-agent/referrer
+     *                  context. It is used for Annex A OriginInfo and is never
+     *                  derived from the ReaderEngagement URI.
      * @return Result with EngagementInstance for TO_APP engagement
      */
     suspend fun toApp(
         mdocUri: String,
         autoStart: Boolean = true,
+        trustedOriginDomain: String? = null,
     ): IdkResult<EngagementInstance, IdkError> {
         fun parseReaderEngagementOrError(): IdkResult<com.sphereon.mdoc.transfer.reader.ReaderEngagement, IdkError> =
             IdkErrorResult(
@@ -368,6 +373,7 @@ interface MdocEngagementManager : MdocEngagementFactory.Holder {
 
                     val engagementResult =
                         createEngagement {
+                            this.trustedOriginDomain = trustedOriginDomain
                             engagement {
                                 reader {
                                     withReaderEngagement(readerEngagement)

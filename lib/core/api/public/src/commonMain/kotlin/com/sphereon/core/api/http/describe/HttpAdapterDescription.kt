@@ -191,6 +191,13 @@ data class HttpEndpointDescriptor(
     val operationId: String? = null,
     /** Transport routing command ID. Separate from [operationId] (which is for OpenAPI). */
     val commandId: String? = null,
+    /**
+     * Stable identity of the SessionScope [com.sphereon.core.api.http.command.HttpEndpointCommand]
+     * that handles this route. This is deliberately separate from [commandId], which identifies
+     * the service/transport authorization operation. Route-first dispatch uses this key to resolve
+     * exactly one lazy HTTP endpoint command after the request session has been established.
+     */
+    val handlerCommandId: String? = null,
     val tags: Set<String> = emptySet(),
     val summary: String? = null,
     /**
@@ -199,13 +206,19 @@ data class HttpEndpointDescriptor(
      * (a bearer token is required).
      */
     val authPolicy: EndpointAuthPolicy = EndpointAuthPolicy.PROTECTED,
+    /** Optional maximum bytes consumed from the request stream before dispatch. */
+    val maxRequestBodyBytes: Int? = null,
 ) {
     init {
+        require(maxRequestBodyBytes == null || maxRequestBodyBytes >= 0)
         require(pathPatterns.isNotEmpty()) {
             "HttpEndpointDescriptor requires at least one path pattern"
         }
         require(commandId == null || isValidCommandId(commandId)) {
             "Invalid command ID format: $commandId. Format: module.service.command"
+        }
+        require(handlerCommandId == null || isValidCommandId(handlerCommandId)) {
+            "Invalid HTTP handler command ID format: $handlerCommandId. Format: module.service.command"
         }
     }
 
@@ -233,9 +246,11 @@ data class HttpEndpointDescriptor(
         produces: Set<MediaType> = emptySet(),
         operationId: String? = null,
         commandId: String? = null,
+        handlerCommandId: String? = null,
         tags: Set<String> = emptySet(),
         summary: String? = null,
         authPolicy: EndpointAuthPolicy = EndpointAuthPolicy.PROTECTED,
+        maxRequestBodyBytes: Int? = null,
     ) : this(
         method = method,
         pathPatterns = listOf(pathPattern),
@@ -243,9 +258,11 @@ data class HttpEndpointDescriptor(
         produces = produces,
         operationId = operationId,
         commandId = commandId,
+        handlerCommandId = handlerCommandId,
         tags = tags,
         summary = summary,
         authPolicy = authPolicy,
+        maxRequestBodyBytes = maxRequestBodyBytes,
     )
 }
 

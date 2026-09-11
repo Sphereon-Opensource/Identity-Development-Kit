@@ -54,6 +54,7 @@ import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
+import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.CreateDpopProofOptions
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.HttpMethod
@@ -356,6 +357,7 @@ class OAuth2ClientImpl(
                 codeChallengeMethod = pkceData?.codeChallengeMethod?.value,
                 resource = resource?.joinToString(" "),
                 dpopJkt = dpopContext?.jwkThumbprint, // Add DPoP JWK thumbprint if using DPoP
+                additionalParameters = additionalParameters.mapValues { (_, value) -> JsonPrimitive(value) },
             )
 
         // Create authorization URL
@@ -455,6 +457,7 @@ class OAuth2ClientImpl(
 
         // Extract client credentials from authentication config
         val (clientId, clientSecret) = extractClientCredentials(clientAuthentication)
+        val tokenAuthMethod = resolveTokenAuthMethod(clientAuthentication)
 
         // Use helper method that handles DPoP nonce retry logic
         return exchangeTokenWithDpopRetry(
@@ -468,6 +471,7 @@ class OAuth2ClientImpl(
                     codeVerifier = pkceData?.codeVerifier,
                     clientId = clientId,
                     clientSecret = clientSecret,
+                    tokenEndpointAuthMethod = tokenAuthMethod,
                     resource = resource ?: emptyList(),
                     audience = audience ?: emptyList(),
                     dpop = dpopProof,
@@ -482,6 +486,20 @@ class OAuth2ClientImpl(
             is ClientAuthenticationConfig.Basic -> Pair(config.credentials.clientId, config.credentials.clientSecret)
             is ClientAuthenticationConfig.None -> Pair(config.clientId, null)
             else -> Pair(null, null)
+        }
+
+    /**
+     * Maps the registered client authentication configuration to the token endpoint method.
+     * The exchange command defaults to client_secret_post for backwards-compatible callers, so
+     * every high-level exchange that has an explicit client configuration must carry this method
+     * through instead of relying on credential presence to infer it.
+     */
+    private fun resolveTokenAuthMethod(config: ClientAuthenticationConfig): ClientAuthenticationMethod =
+        when (config) {
+            is ClientAuthenticationConfig.Basic -> ClientAuthenticationMethod.CLIENT_SECRET_BASIC
+            is ClientAuthenticationConfig.Post -> ClientAuthenticationMethod.CLIENT_SECRET_POST
+            is ClientAuthenticationConfig.None -> ClientAuthenticationMethod.NONE
+            else -> ClientAuthenticationMethod.CLIENT_SECRET_POST
         }
 
     override suspend fun exchangePreAuthorizedCode(
@@ -546,6 +564,7 @@ class OAuth2ClientImpl(
                 )
 
         // Use helper method that handles DPoP nonce retry logic
+        val (clientId, clientSecret) = extractClientCredentials(clientAuthentication)
         return exchangeTokenWithDpopRetry(
             tokenEndpoint = tokenEndpoint,
             dpopContext = dpopContext,
@@ -553,6 +572,9 @@ class OAuth2ClientImpl(
                 TokenRequest(
                     grantType = GrantType.REFRESH_TOKEN.value,
                     refreshToken = refreshToken,
+                    clientId = clientId,
+                    clientSecret = clientSecret,
+                    tokenEndpointAuthMethod = resolveTokenAuthMethod(clientAuthentication),
                     scope = scope,
                     resource = resource ?: emptyList(),
                     audience = audience ?: emptyList(),

@@ -17,7 +17,12 @@
 package com.sphereon.oauth2.server.authorization.impl.provider.storage
 
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
+import com.sphereon.oauth2.client.model.PkceData
 import com.sphereon.oauth2.server.authorization.provider.FlowContext
+import com.sphereon.oauth2.server.authorization.model.NormalizedAuthenticationEvidence
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRoute
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteBinding
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteDecision
 import com.sphereon.oauth2.server.authorization.storage.CachedUserInfo
 import com.sphereon.oauth2.server.authorization.storage.FederationSessionStoreError
 import com.sphereon.oauth2.server.authorization.storage.PendingFederation
@@ -27,6 +32,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -156,6 +162,7 @@ class InMemoryFederationSessionStoreTest {
                     userId = "user-1",
                     claims = userClaims,
                     claimsTtl = 1.minutes,
+                    evidence = evidence("s-ok"),
                 )
             assertTrue(completed.isOk)
 
@@ -196,6 +203,7 @@ class InMemoryFederationSessionStoreTest {
                     claimsTtl = 1.minutes,
                     upstreamAcr = "urn:example:acr:2",
                     upstreamAmr = listOf("pwd", "mfa"),
+                    evidence = evidence("s-acr"),
                 )
             assertTrue(completed.isOk)
 
@@ -218,6 +226,7 @@ class InMemoryFederationSessionStoreTest {
                     userId = "u",
                     claims = claims(userId = "u"),
                     claimsTtl = 1.minutes,
+                    evidence = evidence("ghost"),
                 )
             assertTrue(completed.isErr)
             val err = completed.error
@@ -240,6 +249,7 @@ class InMemoryFederationSessionStoreTest {
                     userId = "u",
                     claims = claims(userId = "u"),
                     claimsTtl = 1.minutes,
+                    evidence = evidence("s-late"),
                 )
             assertTrue(completed.isErr)
             assertIs<FederationSessionStoreError.StorageFailure>(completed.error)
@@ -266,6 +276,7 @@ class InMemoryFederationSessionStoreTest {
                     userId = "u-y",
                     claims = claims(userId = "u-y"),
                     claimsTtl = 5.minutes,
+                    evidence = evidence("Y"),
                 )
             assertTrue(completed.isOk)
 
@@ -318,6 +329,7 @@ class InMemoryFederationSessionStoreTest {
                         userId = "u-rm",
                         claims = claims(userId = "u-rm"),
                         claimsTtl = 5.minutes,
+                        evidence = evidence("s-rm"),
                     ).isOk,
             )
 
@@ -343,6 +355,7 @@ class InMemoryFederationSessionStoreTest {
                         userId = "u-cc",
                         claims = claims(userId = "u-cc"),
                         claimsTtl = 1.minutes,
+                        evidence = evidence("s-cc"),
                     ).isOk,
             )
 
@@ -360,20 +373,115 @@ class InMemoryFederationSessionStoreTest {
 
     // --- Helpers ---------------------------------------------------------------------------
 
+    @Test
+    fun callbackStateCanBeConsumedExactlyOnce() =
+        runTest {
+            val store = InMemoryFederationSessionStore(FakeClock())
+            assertTrue(store.storePendingFederation(pending("one-time"), 5.minutes).isOk)
+
+            val first = store.consumePendingFederation("one-time")
+            val replay = store.consumePendingFederation("one-time")
+
+            assertTrue(first.isOk)
+            assertNotNull(first.value)
+            assertTrue(replay.isOk)
+            assertNull(replay.value)
+        }
+
+    @Test
+    fun pendingTransactionRejectsUpstreamResourceSubstitution() {
+        val original = pending("resource-pin")
+
+        assertFailsWith<IllegalArgumentException> {
+            original.copy(upstreamAuthorizationServerId = "44444444-4444-4444-8444-444444444444")
+        }
+    }
+
+    @Test
+    fun pendingTransactionRejectsUpstreamRevisionSubstitution() {
+        val original = pending("revision-pin")
+
+        assertFailsWith<IllegalArgumentException> {
+            original.copy(upstreamAuthorizationServerRevision = original.upstreamAuthorizationServerRevision + 1)
+        }
+    }
+
+    @Test
+    fun pendingTransactionRejectsIssuerSubstitution() {
+        val original = pending("issuer-pin")
+
+        assertFailsWith<IllegalArgumentException> {
+            original.copy(upstreamIssuer = "https://attacker.example")
+        }
+    }
+
     private fun pending(
         state: String,
         sessionId: String = "sess-$state",
     ): PendingFederation =
         PendingFederation(
+            tenantId = "tenant-1",
+            hostedAuthorizationServerId = "11111111-1111-4111-8111-111111111111",
+            hostedAuthorizationServerRevision = 3,
+            federationBindingId = "22222222-2222-4222-8222-222222222222",
+            federationBindingRevision = 5,
+            upstreamAuthorizationServerId = "33333333-3333-4333-8333-333333333333",
+            upstreamAuthorizationServerRevision = 7,
+            upstreamIssuer = "https://idp.example",
+            downstreamClientId = "downstream-client",
+            authenticationRoute = route(),
             sessionId = sessionId,
             state = state,
             nonce = "nonce-$state",
-            pkceData = null,
+            pkceData = PkceData(
+                codeVerifier = "v".repeat(64),
+                codeChallenge = "c".repeat(43),
+            ),
             metadata = metadata(),
             returnUrl = "https://rp.example/return",
             callbackRedirectUri = "https://rp.example/callback",
+            providerId = "22222222-2222-4222-8222-222222222222",
             flowContext = FlowContext(flow = "federation"),
+            createdAt = Instant.fromEpochSeconds(0),
+            expiresAt = Instant.fromEpochSeconds(300),
         )
+
+    private fun route() = AuthenticationRouteDecision(
+        route = AuthenticationRoute.UPSTREAM_REDIRECT,
+        hostedAuthorizationServerId = "11111111-1111-4111-8111-111111111111",
+        hostedAuthorizationServerRevision = 3,
+        localLoginAllowed = false,
+        eligibleBindings = listOf(
+            AuthenticationRouteBinding(
+                bindingId = "22222222-2222-4222-8222-222222222222",
+                upstreamResourceId = "33333333-3333-4333-8333-333333333333",
+                displayName = "Upstream",
+                upstreamIssuer = "https://idp.example",
+                bindingRevision = 5,
+                upstreamResourceRevision = 7,
+                claimsMapping = emptyMap(),
+            ),
+        ),
+        selectedBindingId = "22222222-2222-4222-8222-222222222222",
+    )
+
+    private fun evidence(state: String) = NormalizedAuthenticationEvidence(
+        hostedAuthorizationServerId = "11111111-1111-4111-8111-111111111111",
+        federationBindingId = "22222222-2222-4222-8222-222222222222",
+        upstreamIssuer = "https://idp.example",
+        upstreamSubject = "user-$state",
+        localSubject = "user-$state",
+        acr = null,
+        amr = emptyList(),
+        authTime = Instant.fromEpochSeconds(0),
+        governedClaims = emptyMap(),
+        downstreamTransactionId = "sess-$state",
+        upstreamTransactionId = state,
+        validatedAt = Instant.fromEpochSeconds(0),
+        hostedAuthorizationServerRevision = 3,
+        federationBindingRevision = 5,
+        upstreamResourceRevision = 7,
+    )
 
     private fun claims(
         userId: String,

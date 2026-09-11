@@ -49,7 +49,7 @@ private fun String.toJoseKeyOperationsArray(): JoseKeyOperations {
     }
 }
 
-fun AzureKeyvaultKeyDetails.toJwaAlgorithm(): JwaAlgorithm {
+fun AzureKeyvaultKeyDetails.toJwaAlgorithm(): JwaAlgorithm? {
     return when (this.kty) {
         "EC" ->
             when (this.crv) {
@@ -62,10 +62,14 @@ fun AzureKeyvaultKeyDetails.toJwaAlgorithm(): JwaAlgorithm {
         "RSA", "RSA-HSM" ->
             when (this.alg) {
                 "PS256" -> JwaAlgorithm.PS256
+                "PS384" -> JwaAlgorithm.PS384
+                "PS512" -> JwaAlgorithm.PS512
                 "RS256" -> JwaAlgorithm.RS256
                 "RS384" -> JwaAlgorithm.RS384
                 "RS512" -> JwaAlgorithm.RS512
-                else -> JwaAlgorithm.PS256
+                // A Key Vault RSA descriptor may omit alg. Such a key is algorithm-neutral
+                // across RS*/PS*; do not fabricate PS256 metadata during lookup.
+                else -> null
             }
 
         else -> throw IllegalArgumentException("Unsupported key type: ${this.kty}")
@@ -97,9 +101,8 @@ fun AzureKeyvaultKeyDetails.getSignatureAlgorithmName(): String {
                 else -> throw IllegalArgumentException("Unsupported algorithm: ${this.kty}.${this.crv}")
             }
 
-        "RSA", "RSA-HSM" -> {
-            "PS256" // TODO how can we determine other RSA hash lengths?
-        }
+        "RSA", "RSA-HSM" ->
+            alg ?: throw IllegalArgumentException("RSA Azure key does not declare a signing algorithm; supply one explicitly")
 
         else -> throw IllegalArgumentException("Unsupported key type: ${this.kty}")
     }

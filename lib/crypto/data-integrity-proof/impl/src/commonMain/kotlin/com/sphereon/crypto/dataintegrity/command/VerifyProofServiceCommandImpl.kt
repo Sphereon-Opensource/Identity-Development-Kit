@@ -56,6 +56,7 @@ class VerifyProofServiceCommandImpl(
             securedDocument = input.securedDocument,
             expectedProofPurpose = input.expectedProofPurpose,
             expectedMediaType = input.expectedMediaType,
+            verificationMethodResolutionPolicy = input.verificationMethodResolutionPolicy,
         )
     }
 }

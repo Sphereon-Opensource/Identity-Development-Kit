@@ -36,7 +36,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.data.link.ble.test"
         compileSdk = 35
-        minSdk = 27
     }
 
     sourceSets {

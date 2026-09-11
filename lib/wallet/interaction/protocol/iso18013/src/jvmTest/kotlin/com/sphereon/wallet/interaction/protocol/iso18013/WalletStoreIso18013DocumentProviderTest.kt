@@ -28,6 +28,11 @@ import com.sphereon.mdoc.data.mso.MobileSecurityObject
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodecImpl
 import com.sphereon.mdoc.data.mso.MsoVersion
 import com.sphereon.mdoc.data.mso.ValidityInfo
+import com.sphereon.statuslist.CredentialStatusInput
+import com.sphereon.statuslist.CredentialStatusReference
+import com.sphereon.statuslist.ResolvedStatus
+import com.sphereon.statuslist.StatusValues
+import com.sphereon.statuslist.spi.CredentialStatusVerifier
 import com.sphereon.wallet.credential.BodyStorageKind
 import com.sphereon.wallet.credential.BodyStorageRef
 import com.sphereon.wallet.credential.CredentialFormat
@@ -36,6 +41,7 @@ import com.sphereon.wallet.credential.CredentialLifecycleState
 import com.sphereon.wallet.credential.CredentialMetadata
 import com.sphereon.wallet.credential.CredentialMetadataFilter
 import com.sphereon.wallet.credential.CredentialRecord
+import com.sphereon.wallet.credential.CredentialStatusSnapshot
 import com.sphereon.wallet.credential.CredentialTypeRef
 import com.sphereon.wallet.credential.CredentialTypeRefKind
 import com.sphereon.wallet.credential.CredentialTypeRefSource
@@ -44,10 +50,17 @@ import com.sphereon.wallet.credential.IdentifierRef
 import com.sphereon.wallet.credential.KeyRef
 import com.sphereon.wallet.credential.WalletCredentialStore
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Instant
 
+/**
+ * Focused provider plumbing tests. [buildTestMdocCredential] assembles a synthetic COSE signature,
+ * so these cases prove typed MSO extraction and fail-closed policy dispatch, not independent
+ * issuer-signature authentication. The product E2E suite supplies the stronger real KMS signing
+ * boundary.
+ */
 class WalletStoreIso18013DocumentProviderTest {
     @Test
     fun providerLoadsRequestedMdocDocumentFromWalletStore() =
@@ -73,6 +86,7 @@ class WalletStoreIso18013DocumentProviderTest {
                     credentialStore = store,
                     walletUnitId = WALLET_UNIT_ID,
                     issuerSignedCborCodec = codec,
+                    mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
                 )
 
             val documents = provider.getDocuments(Iso18013DocumentSelectorData(setOf(MDL_DOCTYPE)))
@@ -116,6 +130,7 @@ class WalletStoreIso18013DocumentProviderTest {
                     credentialStore = store,
                     walletUnitId = WALLET_UNIT_ID,
                     issuerSignedCborCodec = codec,
+                    mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
                 )
 
             val documents = provider.getDocuments(selectorData = null)
@@ -124,6 +139,172 @@ class WalletStoreIso18013DocumentProviderTest {
             assertEquals(DocType(MDL_DOCTYPE), documents.single().document.docType)
             assertEquals(listOf("list:$WALLET_UNIT_ID", "get:$WALLET_UNIT_ID:mdl-record"), store.calls)
         }
+
+    @Test
+    fun providerDoesNotPresentAnMdocWithAKnownNonValidStatus() =
+        runTest {
+            val codec = IssuerSignedCborCodecImpl()
+            val store =
+                RecordingWalletCredentialStore(
+                    credentialRecord(
+                        id = "revoked-record",
+                        docType = MDL_DOCTYPE,
+                        raw = buildTestMdocCredential(MDL_DOCTYPE, codec),
+                        holderKeyAlias = "holder-mdl-key",
+                        status = CredentialStatusSnapshot(status = "revoked", checkedAt = NOW, source = "https://status.example"),
+                    ),
+                )
+            val provider =
+                WalletStoreIso18013DocumentProvider(
+                    credentialStore = store,
+                    walletUnitId = WALLET_UNIT_ID,
+                    issuerSignedCborCodec = codec,
+                    mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
+                )
+
+            assertEquals(emptySet(), provider.getDocuments(Iso18013DocumentSelectorData(setOf(MDL_DOCTYPE))))
+        }
+
+    @Test
+    fun providerDoesNotPresentAStatusBearingMdocWithoutACompatibleVerifier() =
+        runTest {
+            val codec = IssuerSignedCborCodecImpl()
+            val status = com.sphereon.mdoc.data.mso.Status(
+                statusList = com.sphereon.mdoc.data.mso.StatusListInfo(
+                    idx = 7u,
+                    uri = "https://status.example/mdoc.cwt",
+                ),
+            )
+            val store =
+                RecordingWalletCredentialStore(
+                    credentialRecord(
+                        id = "status-bearing-record",
+                        docType = MDL_DOCTYPE,
+                        raw = buildTestMdocCredential(MDL_DOCTYPE, codec, status),
+                        holderKeyAlias = "holder-mdl-key",
+                    ),
+                )
+            val provider =
+                WalletStoreIso18013DocumentProvider(
+                    credentialStore = store,
+                    walletUnitId = WALLET_UNIT_ID,
+                    issuerSignedCborCodec = codec,
+                    mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
+                )
+
+            assertEquals(emptySet(), provider.getDocuments(Iso18013DocumentSelectorData(setOf(MDL_DOCTYPE))))
+        }
+
+    @Test
+    fun providerResolvesStatusBeforePresentingAStatusBearingMdoc() =
+        runTest {
+            val codec = IssuerSignedCborCodecImpl()
+            val status = com.sphereon.mdoc.data.mso.Status(
+                statusList = com.sphereon.mdoc.data.mso.StatusListInfo(
+                    idx = 7u,
+                    uri = "https://status.example/mdoc.cwt",
+                ),
+            )
+            val store =
+                RecordingWalletCredentialStore(
+                    credentialRecord(
+                        id = "status-bearing-record",
+                        docType = MDL_DOCTYPE,
+                        raw = buildTestMdocCredential(MDL_DOCTYPE, codec, status),
+                        holderKeyAlias = "holder-mdl-key",
+                    ),
+                )
+            val verifier = FixedMdocStatusVerifier(StatusValues.VALID)
+            val provider =
+                WalletStoreIso18013DocumentProvider(
+                    credentialStore = store,
+                    walletUnitId = WALLET_UNIT_ID,
+                    issuerSignedCborCodec = codec,
+                    mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
+                    credentialStatusVerifiers = setOf(verifier),
+                )
+
+            assertEquals(1, provider.getDocuments(Iso18013DocumentSelectorData(setOf(MDL_DOCTYPE))).size)
+            assertEquals(1, verifier.typedReferenceCalls, "authenticated MSO metadata must be inspected exactly once")
+            assertEquals(0, verifier.claimReferenceCalls, "MSO status must not be flattened into namespace claims")
+            assertEquals(1, verifier.resolveCalls, "the authenticated MSO status reference must be resolved exactly once")
+            assertEquals(7, verifier.lastResolvedReference?.index)
+            assertEquals("https://status.example/mdoc.cwt", verifier.lastResolvedReference?.uri)
+        }
+
+    @Test
+    fun providerDoesNotPresentAStatusBearingMdocWhenResolvedStatusIsInvalid() =
+        runTest {
+            val codec = IssuerSignedCborCodecImpl()
+            val status = com.sphereon.mdoc.data.mso.Status(
+                statusList = com.sphereon.mdoc.data.mso.StatusListInfo(
+                    idx = 7u,
+                    uri = "https://status.example/mdoc.cwt",
+                ),
+            )
+            val store =
+                RecordingWalletCredentialStore(
+                    credentialRecord(
+                        id = "status-bearing-record",
+                        docType = MDL_DOCTYPE,
+                        raw = buildTestMdocCredential(MDL_DOCTYPE, codec, status),
+                        holderKeyAlias = "holder-mdl-key",
+                    ),
+                )
+            val verifier = FixedMdocStatusVerifier(StatusValues.INVALID)
+            val provider =
+                WalletStoreIso18013DocumentProvider(
+                    credentialStore = store,
+                    walletUnitId = WALLET_UNIT_ID,
+                    issuerSignedCborCodec = codec,
+                    mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
+                    credentialStatusVerifiers = setOf(verifier),
+                )
+
+            assertEquals(emptySet(), provider.getDocuments(Iso18013DocumentSelectorData(setOf(MDL_DOCTYPE))))
+            assertEquals(1, verifier.typedReferenceCalls, "invalid authenticated status must still be inspected exactly once")
+            assertEquals(0, verifier.claimReferenceCalls, "invalid MSO status must not be projected into claims")
+            assertEquals(1, verifier.resolveCalls, "invalid authenticated status must be resolved exactly once before rejection")
+        }
+
+    private class FixedMdocStatusVerifier(private val value: Int) : CredentialStatusVerifier {
+        override val mechanism: String = "mdoc_status"
+        var typedReferenceCalls: Int = 0
+            private set
+        var claimReferenceCalls: Int = 0
+            private set
+        var resolveCalls: Int = 0
+            private set
+        var lastResolvedReference: CredentialStatusReference? = null
+            private set
+
+        override fun references(input: CredentialStatusInput): List<CredentialStatusReference> {
+            typedReferenceCalls += 1
+            return input.metadata?.mdoc?.references?.filter { it.mechanism == mechanism }
+                ?: references(input.claims)
+        }
+
+        override fun references(credentialClaims: JsonObject): List<CredentialStatusReference> {
+            claimReferenceCalls += 1
+            return if (credentialClaims["status"] != null) {
+                listOf(CredentialStatusReference(mechanism = mechanism, uri = "https://status.example/mdoc.cwt", index = 7))
+            } else {
+                emptyList()
+            }
+        }
+
+        override suspend fun resolve(reference: CredentialStatusReference): com.sphereon.core.api.IdkResult<ResolvedStatus, com.sphereon.core.api.error.IdkError> {
+            resolveCalls += 1
+            lastResolvedReference = reference
+            return com.sphereon.core.api.Ok(
+                ResolvedStatus(
+                    value = value,
+                    valid = value == StatusValues.VALID,
+                    statusListUri = reference.uri,
+                ),
+            )
+        }
+    }
 
     private class RecordingWalletCredentialStore(
         initialRecords: List<CredentialRecord>,
@@ -200,6 +381,7 @@ class WalletStoreIso18013DocumentProviderTest {
             docType: String,
             raw: String,
             holderKeyAlias: String,
+            status: CredentialStatusSnapshot? = null,
         ): CredentialRecord {
             val ref =
                 CredentialTypeRef(
@@ -227,6 +409,7 @@ class WalletStoreIso18013DocumentProviderTest {
                             holderKeyRef = KeyRef(alias = holderKeyAlias),
                             lifecycleState = CredentialLifecycleState.ACTIVE,
                             validity = CredentialValidityWindow(),
+                            status = status,
                             issuedAt = NOW,
                             storedAt = NOW,
                             updatedAt = NOW,
@@ -240,6 +423,7 @@ class WalletStoreIso18013DocumentProviderTest {
         private fun buildTestMdocCredential(
             docType: String,
             issuerSignedCodec: IssuerSignedCborCodecImpl,
+            status: com.sphereon.mdoc.data.mso.Status? = null,
         ): String {
             val mobileSecurityObjectCodec = MobileSecurityObjectCborCodecImpl()
             val now = TDate("2025-01-20T12:00:00Z")
@@ -272,6 +456,7 @@ class WalletStoreIso18013DocumentProviderTest {
                             expectedUpdate = null,
                         ),
                     original = null,
+                    status = status,
                 )
             val issuerSigned =
                 IssuerSigned(

@@ -7,6 +7,7 @@
 package com.sphereon.wallet.interaction.protocol.oid4vp
 
 import com.sphereon.wallet.interaction.WalletInteractionContext
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
 import com.sphereon.wallet.interaction.WalletInteractionState
 import kotlinx.serialization.json.JsonObject
 
@@ -24,7 +25,7 @@ interface Oid4vpPresentationExecutor {
                     state: WalletInteractionState,
                 ): Oid4vpPresentationExecutionResult =
                     Oid4vpPresentationExecutionResult.Failed(
-                        code = "oid4vp.execution_not_configured",
+                        code = WalletInteractionFailureCodes.OID4VP_EXECUTION_NOT_CONFIGURED,
                         messageKey = "wallet.interaction.error.oid4vp_execution_not_configured",
                         retryable = true,
                     )

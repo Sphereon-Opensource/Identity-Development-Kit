@@ -32,13 +32,15 @@ import com.sphereon.did.manager.command.MethodInput
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ListSupportedMethodsEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListSupportedMethodsEndpointCommand.COMMAND_ID)
 class ListSupportedMethodsEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: ListSupportedMethodsServiceCommand,
@@ -60,8 +62,8 @@ class ListSupportedMethodsEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetMethodCapabilitiesEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetMethodCapabilitiesEndpointCommand.COMMAND_ID)
 class GetMethodCapabilitiesEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: GetMethodCapabilitiesServiceCommand,
@@ -83,8 +85,8 @@ class GetMethodCapabilitiesEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetMethodCapabilitySummaryEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetMethodCapabilitySummaryEndpointCommand.COMMAND_ID)
 class GetMethodCapabilitySummaryEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: GetMethodCapabilitySummaryServiceCommand,

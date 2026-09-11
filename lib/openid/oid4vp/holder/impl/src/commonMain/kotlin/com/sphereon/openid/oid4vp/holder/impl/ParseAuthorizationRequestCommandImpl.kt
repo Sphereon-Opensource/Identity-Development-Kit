@@ -35,6 +35,7 @@ import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.AdditionalIdentifierLookup
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierDidOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.di.session.SessionScope
@@ -53,6 +54,7 @@ import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.Oid4vpJson
+import com.sphereon.openid.oid4vp.common.Oid4vpRequestTrustMaterialProvider
 import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommand
@@ -99,6 +101,7 @@ class ParseAuthorizationRequestCommandImpl(
     private val httpClientFactory: HttpClientFactory,
     private val externalIdentifierService: MultiExternalIdentifierService,
     private val jwtService: JwtService,
+    private val requestTrustMaterialProvider: Oid4vpRequestTrustMaterialProvider,
 ) : TypedServiceCommandAdapter<ParseAuthorizationRequestArgs, AuthorizationRequest, IdkError>(
         commandId = ParseAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
@@ -676,13 +679,42 @@ class ParseAuthorizationRequestCommandImpl(
                     x5cHeader?.takeIf { it.isNotEmpty() } ?: return Err(
                         IdkError.ILLEGAL_ARGUMENT_ERROR(message = "X.509-bound JAR missing x5c header"),
                     )
+                // The transmitted x5c is the identity evidence, never its own trust root.
+                // Resolve fresh governed roots at every request-object boundary so disable,
+                // removal, rotation, and validity changes are observed immediately.
+                val trustMaterial = requestTrustMaterialProvider.resolve().getOrElse {
+                    return Err(IdkError.fromString(
+                        message = "Governed X.509 request trust material is unavailable",
+                        code = "X5C_TRUST_MATERIAL_UNAVAILABLE",
+                    ))
+                }
+                val trustAnchors = trustMaterial.x509.map { it.certificatePem }
                 val resolved =
                     externalIdentifierService
-                        .resolve(ExternalIdentifierX5cOpts(identifier = chain))
+                        .resolve(ExternalIdentifierX5cOpts(identifier = chain, verify = true, trustAnchors = trustAnchors))
                         .getOrElse { err ->
                             return Err(IdkError.fromString(message = err.message.defaultMessage, code = "X5C_RESOLUTION_FAILED"))
                         }
-                return Ok(resolved.keyInfo)
+                val x5cResolved = resolved as? ExternalIdentifierResult.X5c ?: return Err(
+                    IdkError.fromString(
+                        message = "X.509 resolution returned an unexpected result type",
+                        code = "X5C_RESOLUTION_FAILED",
+                    ),
+                )
+                val verification = x5cResolved.verificationResult
+                if (verification.error ||
+                    verification.critical ||
+                    verification.message == "X509 verification has been disabled" ||
+                    verification.publicKey == null
+                ) {
+                    return Err(
+                        IdkError.fromString(
+                            message = "X.509 request-object certificate chain validation failed: ${verification.message}",
+                            code = "X5C_TRUST_VALIDATION_FAILED",
+                        ),
+                    )
+                }
+                return Ok(x5cResolved.keyInfo)
             }
 
             else -> Unit

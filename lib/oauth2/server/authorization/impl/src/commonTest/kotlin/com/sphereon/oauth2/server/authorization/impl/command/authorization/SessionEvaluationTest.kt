@@ -25,6 +25,8 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.StringResult
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
+import com.sphereon.oauth2.common.config.LoginInteraction
+import com.sphereon.oauth2.common.config.LoginPageConfig
 import com.sphereon.oauth2.common.model.OAuth2ResponseMode
 import com.sphereon.oauth2.common.model.ResponseType
 import com.sphereon.oauth2.server.authorization.command.AuthorizationErrorResponseData
@@ -47,6 +49,7 @@ import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.jar.StubVerifyRequestObjectCommand
 import com.sphereon.oauth2.server.authorization.impl.command.orchestration.StubAuthorizationServerService
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
+import com.sphereon.oauth2.server.authorization.impl.testutil.StubAuthenticationRoutePlanner
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
@@ -58,6 +61,10 @@ import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.provider.UserInfo
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRoute
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteBinding
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteDecision
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteRequest
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession
@@ -120,7 +127,7 @@ class SessionEvaluationTest {
     @Test
     fun promptNoneNoSessionFailsLoginRequired() =
         runTest {
-            val outcome = runOnce(prompt = "none", session = null)
+            val outcome = runOnce(prompt = "none", session = null, route = AuthenticationRoute.LOCAL_LOGIN)
             val err = assertIs<AuthorizationRequestOutcome.PostRedirectError>(outcome)
             assertEquals("login_required", err.error)
         }
@@ -128,7 +135,13 @@ class SessionEvaluationTest {
     @Test
     fun noSessionNoPromptFallsThroughToFederationWhenOAuthAvailable() =
         runTest {
-            val outcome = runOnce(prompt = null, session = null, oauthAvailable = true)
+            val outcome =
+                runOnce(
+                    prompt = null,
+                    session = null,
+                    oauthAvailable = true,
+                    route = AuthenticationRoute.UPSTREAM_REDIRECT,
+                )
             val initiated = assertIs<AuthorizationRequestOutcome.AuthInitiated>(outcome)
             assertEquals(FAKE_IDP_REDIRECT, initiated.authProviderRedirectUrl)
         }
@@ -136,9 +149,45 @@ class SessionEvaluationTest {
     @Test
     fun noSessionNoPromptRoutesToLoginWhenOAuthUnavailable() =
         runTest {
-            val outcome = runOnce(prompt = null, session = null, oauthAvailable = false)
+            val outcome =
+                runOnce(
+                    prompt = null,
+                    session = null,
+                    oauthAvailable = false,
+                    route = AuthenticationRoute.LOCAL_LOGIN,
+                )
             val needs = assertIs<AuthorizationRequestOutcome.NeedsLogin>(outcome)
             assertEquals(false, needs.forceReauth)
+        }
+
+    @Test
+    fun chooserInteractionRoutesToLoginBeforeFederation() =
+        runTest {
+            val outcome =
+                runOnce(
+                    prompt = null,
+                    session = null,
+                    oauthAvailable = true,
+                    loginConfig = LoginPageConfig(interaction = LoginInteraction.CHOOSER),
+                    route = AuthenticationRoute.CHOOSER,
+                )
+            assertIs<AuthorizationRequestOutcome.NeedsLogin>(outcome)
+        }
+
+    @Test
+    fun explicitProviderSkipsConfiguredChooser() =
+        runTest {
+            val outcome =
+                runOnce(
+                    prompt = null,
+                    session = null,
+                    oauthAvailable = true,
+                    loginConfig = LoginPageConfig(interaction = LoginInteraction.CHOOSER),
+                    providerId = EXPLICIT_BINDING_ID,
+                    route = AuthenticationRoute.UPSTREAM_REDIRECT,
+                )
+            assertIs<AuthorizationRequestOutcome.AuthInitiated>(outcome)
+            assertEquals(EXPLICIT_BINDING_ID, capturedAuthenticationHint?.providerId)
         }
 
     @Test
@@ -146,7 +195,7 @@ class SessionEvaluationTest {
         runTest {
             val authTime = Instant.fromEpochSeconds(1_700_000_000)
             val session = newLoginSession(authTime = authTime)
-            val outcome = runOnce(prompt = "none", session = session)
+            val outcome = runOnce(prompt = "none", session = session, route = AuthenticationRoute.LOCAL_LOGIN)
             val completed = assertIs<AuthorizationRequestOutcome.WalletCompleted>(outcome)
             assertEquals("https://client.example/cb?code=fake-code", completed.authorizationResponseData.redirectUri)
             assertEquals(authTime.epochSeconds, capturedCodeArgs?.session?.authTime)
@@ -159,7 +208,7 @@ class SessionEvaluationTest {
             val roles = JsonArray(listOf(JsonPrimitive("tenant-admin")))
             val session = newLoginSession(claims = mapOf("roles" to roles))
 
-            val outcome = runOnce(prompt = "none", session = session)
+            val outcome = runOnce(prompt = "none", session = session, route = AuthenticationRoute.LOCAL_LOGIN)
 
             assertIs<AuthorizationRequestOutcome.WalletCompleted>(outcome)
             assertEquals(
@@ -172,7 +221,7 @@ class SessionEvaluationTest {
     @Test
     fun promptLoginForcesReauthRegardlessOfSession() =
         runTest {
-            val outcome = runOnce(prompt = "login", session = newLoginSession())
+            val outcome = runOnce(prompt = "login", session = newLoginSession(), route = AuthenticationRoute.LOCAL_LOGIN)
             val needs = assertIs<AuthorizationRequestOutcome.NeedsLogin>(outcome)
             assertTrue(needs.forceReauth)
         }
@@ -180,7 +229,7 @@ class SessionEvaluationTest {
     @Test
     fun promptSelectAccountForcesReauth() =
         runTest {
-            val outcome = runOnce(prompt = "select_account", session = newLoginSession())
+            val outcome = runOnce(prompt = "select_account", session = newLoginSession(), route = AuthenticationRoute.LOCAL_LOGIN)
             val needs = assertIs<AuthorizationRequestOutcome.NeedsLogin>(outcome)
             assertTrue(needs.forceReauth)
         }
@@ -190,7 +239,12 @@ class SessionEvaluationTest {
         runTest {
             // Session authenticated 10 minutes ago, max_age = 60s -> stale.
             val tenMinutesAgo = NOW - kotlin.time.Duration.parse("PT10M")
-            val outcome = runOnce(maxAge = 60, session = newLoginSession(authTime = tenMinutesAgo))
+            val outcome =
+                runOnce(
+                    maxAge = 60,
+                    session = newLoginSession(authTime = tenMinutesAgo),
+                    route = AuthenticationRoute.LOCAL_LOGIN,
+                )
             val needs = assertIs<AuthorizationRequestOutcome.NeedsLogin>(outcome)
             assertTrue(needs.forceReauth)
         }
@@ -200,7 +254,12 @@ class SessionEvaluationTest {
         runTest {
             // Session authenticated 30 seconds ago, max_age = 300 -> within window.
             val thirtySecondsAgo = NOW - kotlin.time.Duration.parse("PT30S")
-            val outcome = runOnce(maxAge = 300, session = newLoginSession(authTime = thirtySecondsAgo))
+            val outcome =
+                runOnce(
+                    maxAge = 300,
+                    session = newLoginSession(authTime = thirtySecondsAgo),
+                    route = AuthenticationRoute.LOCAL_LOGIN,
+                )
             assertIs<AuthorizationRequestOutcome.WalletCompleted>(outcome)
         }
 
@@ -208,7 +267,12 @@ class SessionEvaluationTest {
     fun idTokenHintWithMatchingSubAcceptsSession() =
         runTest {
             val session = newLoginSession(sub = "alice")
-            val outcome = runOnce(idTokenHint = fauxIdTokenHint(sub = "alice"), session = session)
+            val outcome =
+                runOnce(
+                    idTokenHint = fauxIdTokenHint(sub = "alice"),
+                    session = session,
+                    route = AuthenticationRoute.LOCAL_LOGIN,
+                )
             assertIs<AuthorizationRequestOutcome.WalletCompleted>(outcome)
         }
 
@@ -216,7 +280,12 @@ class SessionEvaluationTest {
     fun idTokenHintWithDifferentSubFailsLoginRequired() =
         runTest {
             val session = newLoginSession(sub = "alice")
-            val outcome = runOnce(idTokenHint = fauxIdTokenHint(sub = "bob"), session = session)
+            val outcome =
+                runOnce(
+                    idTokenHint = fauxIdTokenHint(sub = "bob"),
+                    session = session,
+                    route = AuthenticationRoute.LOCAL_LOGIN,
+                )
             val err = assertIs<AuthorizationRequestOutcome.PostRedirectError>(outcome)
             assertEquals("login_required", err.error)
         }
@@ -230,11 +299,13 @@ class SessionEvaluationTest {
                 runOnce(
                     idTokenHint = fauxIdTokenHint(sub = "bob", iss = "https://other.example.com"),
                     session = session,
+                    route = AuthenticationRoute.LOCAL_LOGIN,
                 )
             assertIs<AuthorizationRequestOutcome.WalletCompleted>(outcome)
         }
 
     private var capturedCodeArgs: CreateAuthorizationCodeArgs? = null
+    private var capturedAuthenticationHint: AuthenticationHint? = null
 
     /**
      * Drive the command once with the given evaluation inputs. Returns the raw outcome so
@@ -245,9 +316,13 @@ class SessionEvaluationTest {
         maxAge: Int? = null,
         idTokenHint: String? = null,
         session: OidcLoginSession?,
+        route: AuthenticationRoute,
         oauthAvailable: Boolean = true,
+        loginConfig: LoginPageConfig = LoginPageConfig(),
+        providerId: String? = null,
     ): AuthorizationRequestOutcome {
         capturedCodeArgs = null
+        capturedAuthenticationHint = null
         val parsed =
             AuthorizationRequestData(
                 clientId = clientId,
@@ -316,23 +391,78 @@ class SessionEvaluationTest {
                 execution = ctx.execution,
                 authorizationServerService = service,
                 clientRegistry = StubClientRegistry(),
-                serversConfigProvider = configProvider,
-                userAuthProvider = StubUserAuthProvider(oauthAvailable = oauthAvailable),
+                serversConfigProvider =
+                    TestOAuth2ServersConfigProvider(
+                        OAuth2ServersConfig(
+                            servers = mapOf("default" to OAuth2ServerInstanceConfig(issuer = issuer, login = loginConfig)),
+                        ),
+                    ),
+                userAuthProvider =
+                    StubUserAuthProvider(
+                        oauthAvailable = oauthAvailable,
+                        onInitiateAuthentication = { hint -> capturedAuthenticationHint = hint },
+                    ),
                 pendingAuthorizationSessionStore = StubPendingStore(),
                 loginSessionStore = store,
                 loginSessionIdProvider = provider,
+                authenticationRoutePlanner = StubAuthenticationRoutePlanner { request -> routeDecision(route, request) },
                 verifyRequestObjectCommand = StubVerifyRequestObjectCommand(ctx.execution),
                 clock = FixedClock(NOW),
             )
         val result =
             command.execute(
                 HandleAuthorizeRequestArgs(
-                    queryParameters = mapOf("client_id" to clientId, "response_type" to "code"),
+                    queryParameters =
+                        buildMap {
+                            put("client_id", clientId)
+                            put("response_type", "code")
+                            providerId?.let { put("provider", it) }
+                        },
                     returnUrl = "https://as.example.com/authorize/callback",
                 ),
             )
         assertTrue(result.isOk)
         return result.value
+    }
+
+    /** Hosted routing policy is independent from the legacy redirect-provider availability. */
+    private fun routeDecision(
+        route: AuthenticationRoute,
+        request: AuthenticationRouteRequest,
+    ): AuthenticationRouteDecision {
+        val bindingId = request.requestedBindingId ?: "22222222-2222-4222-8222-222222222222"
+        return when (route) {
+            AuthenticationRoute.LOCAL_LOGIN ->
+                AuthenticationRouteDecision(
+                    route = route,
+                    hostedAuthorizationServerId = "11111111-1111-4111-8111-111111111111",
+                    hostedAuthorizationServerRevision = 1,
+                    localLoginAllowed = true,
+                )
+
+            AuthenticationRoute.UPSTREAM_REDIRECT,
+            AuthenticationRoute.CHOOSER,
+            -> {
+                val binding =
+                    AuthenticationRouteBinding(
+                        bindingId = bindingId,
+                        upstreamResourceId = "33333333-3333-4333-8333-333333333333",
+                        displayName = "Test upstream",
+                        upstreamIssuer = "https://idp.example",
+                        bindingRevision = 1,
+                        upstreamResourceRevision = 1,
+                        claimsMapping = emptyMap(),
+                    )
+                AuthenticationRouteDecision(
+                    route = route,
+                    hostedAuthorizationServerId = "11111111-1111-4111-8111-111111111111",
+                    hostedAuthorizationServerRevision = 1,
+                    localLoginAllowed = route == AuthenticationRoute.CHOOSER,
+                    eligibleBindings = listOf(binding),
+                    selectedBindingId = if (route == AuthenticationRoute.UPSTREAM_REDIRECT) bindingId else null,
+                )
+            }
+        }
     }
 
     private fun newLoginSession(
@@ -490,7 +620,8 @@ class SessionEvaluationTest {
     }
 
     private class StubUserAuthProvider(
-        private val oauthAvailable: Boolean = true
+        private val oauthAvailable: Boolean = true,
+        private val onInitiateAuthentication: (AuthenticationHint?) -> Unit = {},
     ) : UserAuthenticationProvider {
         override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> = Ok(null)
 
@@ -498,8 +629,11 @@ class SessionEvaluationTest {
             sessionId: String,
             returnUrl: String,
             hint: AuthenticationHint?,
-            context: AuthenticationContext?
-        ) = Ok(FAKE_IDP_REDIRECT)
+            context: AuthenticationContext?,
+        ): IdkResult<String, AuthenticationError> {
+            onInitiateAuthentication(hint)
+            return Ok(FAKE_IDP_REDIRECT)
+        }
 
         override suspend fun authenticateWithCredentials(
             credentials: UserCredentials,
@@ -530,5 +664,6 @@ class SessionEvaluationTest {
     companion object {
         private val NOW: Instant = Instant.fromEpochSeconds(1_700_000_000)
         private const val FAKE_IDP_REDIRECT = "https://idp.example/login"
+        private const val EXPLICIT_BINDING_ID = "22222222-2222-4222-8222-222222222223"
     }
 }

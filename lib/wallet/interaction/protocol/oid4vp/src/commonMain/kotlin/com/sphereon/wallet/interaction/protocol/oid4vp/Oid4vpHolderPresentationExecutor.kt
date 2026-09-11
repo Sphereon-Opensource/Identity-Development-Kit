@@ -16,6 +16,7 @@ import com.sphereon.openid.oid4vp.holder.SelectedCredential
 import com.sphereon.openid.oid4vp.holder.SubmissionResult
 import com.sphereon.openid.oid4vp.holder.WalletConfig
 import com.sphereon.wallet.interaction.WalletInteractionContext
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
 import com.sphereon.wallet.interaction.WalletInteractionState
 import kotlinx.serialization.decodeFromString
 
@@ -93,6 +94,7 @@ class Oid4vpHolderPresentationExecutor(
     private val holder: Oid4vpHolderService,
     private val selectedCredentialResolver: Oid4vpSelectedCredentialResolver,
     private val sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider,
+    private val dataIntegrityHolderBindingProvider: Oid4vpDataIntegrityHolderBindingProvider = Oid4vpDataIntegrityHolderBindingProvider.none,
     private val walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
     private val jarmOptionsProvider: Oid4vpJarmOptionsProvider = Oid4vpJarmOptionsProvider.none,
     private val responseMode: ResponseMode? = null,
@@ -109,7 +111,7 @@ class Oid4vpHolderPresentationExecutor(
         val rawRequest =
             privateValues["entry_point.raw"]
                 ?: return failed(
-                    code = "oid4vp.authorization_request_missing",
+                    code = WalletInteractionFailureCodes.OID4VP_AUTHORIZATION_REQUEST_MISSING,
                     messageKey = "wallet.interaction.error.oid4vp_authorization_request_missing",
                     retryable = true,
                 )
@@ -119,14 +121,14 @@ class Oid4vpHolderPresentationExecutor(
                 ?: run {
                     val parsed = holder.parseAuthorizationRequest(rawRequest, walletConfigProvider.walletConfig(context, state))
                     if (parsed.isErr) {
-                        return failed("oid4vp.request_parse_failed", "wallet.interaction.error.oid4vp_request_parse_failed", parsed.error)
+                        return failed(WalletInteractionFailureCodes.OID4VP_REQUEST_PARSE_FAILED, "wallet.interaction.error.oid4vp_request_parse_failed", parsed.error)
                     }
                     parsed.value
                 }
 
         val resolved = holder.resolveAuthorizationRequest(request)
         if (resolved.isErr) {
-            return failed("oid4vp.request_resolve_failed", "wallet.interaction.error.oid4vp_request_resolve_failed", resolved.error)
+            return failed(WalletInteractionFailureCodes.OID4VP_REQUEST_RESOLVE_FAILED, "wallet.interaction.error.oid4vp_request_resolve_failed", resolved.error)
         }
 
         val selectedCredentials =
@@ -139,34 +141,58 @@ class Oid4vpHolderPresentationExecutor(
                 )
             } catch (_: Exception) {
                 return failed(
-                    code = "oid4vp.credential_resolution_failed",
+                    code = WalletInteractionFailureCodes.OID4VP_CREDENTIAL_RESOLUTION_FAILED,
                     messageKey = "wallet.interaction.error.oid4vp_credential_resolution_failed",
                     retryable = true,
                 )
             }
 
+        val operationBinding =
+            state.adapterId?.let { namespace ->
+                context.privateSessionStore
+                    .get(context.sessionId, namespace)
+                    ?.values
+                    ?.get(Oid4vpWalletInteractionProtocolAdapter.SECURITY_OPERATION_BINDING_PRIVATE_KEY)
+            }
+        val selectedCredentialsWithBinding =
+            selectedCredentials.map {
+                it.copy(
+                    holderJwtVpOperationBinding = operationBinding,
+                    holderJwtVpWalletUnitId = context.walletUnitId,
+                )
+            }
+        val dataIntegrityBinding =
+            dataIntegrityHolderBindingProvider
+                .applyHolderBinding(
+                    Oid4vpDataIntegrityHolderBindingRequest(
+                        walletUnitId = context.walletUnitId,
+                        operationBinding = operationBinding,
+                        request = resolved.value,
+                        selectedCredentials = selectedCredentialsWithBinding,
+                    ),
+                ).getOrElse {
+                    return failed(WalletInteractionFailureCodes.OID4VP_RESPONSE_CREATION_FAILED, "wallet.interaction.error.oid4vp_response_creation_failed", it)
+                }
         val boundCredentials =
             sdJwtHolderBindingProvider
                 .applyHolderBinding(
                     Oid4vpSdJwtHolderBindingRequest(
                         walletUnitId = context.walletUnitId,
-                        operationBinding =
-                            state.adapterId?.let { namespace ->
-                                context.privateSessionStore
-                                    .get(context.sessionId, namespace)
-                                    ?.values
-                                    ?.get(Oid4vpWalletInteractionProtocolAdapter.SECURITY_OPERATION_BINDING_PRIVATE_KEY)
-                            },
+                        operationBinding = operationBinding,
                         request = resolved.value,
-                        selectedCredentials = selectedCredentials,
+                        selectedCredentials = dataIntegrityBinding.selectedCredentials,
                     ),
                 ).getOrElse {
-                    return failed("oid4vp.response_creation_failed", "wallet.interaction.error.oid4vp_response_creation_failed", it)
+                    return failed(WalletInteractionFailureCodes.OID4VP_RESPONSE_CREATION_FAILED, "wallet.interaction.error.oid4vp_response_creation_failed", it)
                 }
 
-        val response = holder.createAuthorizationResponse(resolved.value, boundCredentials)
+        val response = holder.createAuthorizationResponse(
+            resolved.value,
+            boundCredentials,
+            dataIntegrityBinding.preparedPresentations,
+        )
         if (response.isErr) {
-            return failed("oid4vp.response_creation_failed", "wallet.interaction.error.oid4vp_response_creation_failed", response.error)
+            return failed(WalletInteractionFailureCodes.OID4VP_RESPONSE_CREATION_FAILED, "wallet.interaction.error.oid4vp_response_creation_failed", response.error)
         }
 
         val submission =
@@ -177,7 +203,7 @@ class Oid4vpHolderPresentationExecutor(
                 jarmOptions = jarmOptionsProvider.jarmOptions(context, state, resolved.value),
             )
         if (submission.isErr) {
-            return failed("oid4vp.response_submission_failed", "wallet.interaction.error.oid4vp_response_submission_failed", submission.error)
+            return failed(WalletInteractionFailureCodes.OID4VP_RESPONSE_SUBMISSION_FAILED, "wallet.interaction.error.oid4vp_response_submission_failed", submission.error)
         }
 
         suspend fun recordPresentationSubmitted(): Oid4vpPresentationExecutionResult.Failed? =
@@ -192,7 +218,7 @@ class Oid4vpHolderPresentationExecutor(
                 null
             } catch (_: Exception) {
                 failed(
-                    code = "oid4vp.presentation_history_update_failed",
+                    code = WalletInteractionFailureCodes.OID4VP_PRESENTATION_HISTORY_UPDATE_FAILED,
                     messageKey = "wallet.interaction.error.oid4vp_presentation_history_update_failed",
                     retryable = false,
                 )
@@ -219,7 +245,7 @@ class Oid4vpHolderPresentationExecutor(
 
             is SubmissionResult.Error -> {
                 Oid4vpPresentationExecutionResult.Failed(
-                    code = "oid4vp.verifier_error",
+                    code = WalletInteractionFailureCodes.OID4VP_VERIFIER_ERROR,
                     messageKey = "wallet.interaction.error.oid4vp_verifier_error",
                     arguments = mapOf("protocolError" to result.error),
                 )

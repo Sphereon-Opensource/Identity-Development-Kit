@@ -99,11 +99,15 @@ class DefaultJwtValidationService(
 
         val idpConfig = (idpResult as Ok).value
 
-        val jwksResult = resolveJwksUri(idpConfig)
-        if (jwksResult is Err) {
-            return Err(jwksResult.error)
+        val jwksUri = if (options.trustedIdentifier == null) {
+            val jwksResult = resolveJwksUri(idpConfig)
+            if (jwksResult is Err) {
+                return Err(jwksResult.error)
+            }
+            (jwksResult as Ok).value
+        } else {
+            null
         }
-        val jwksUri = (jwksResult as Ok).value
 
         // Determine expected audience
         val expectedAudience = options.expectedAudience ?: idpConfig.audience
@@ -116,6 +120,7 @@ class DefaultJwtValidationService(
                     authorizationServer = idpConfig.issuer,
                     expectedAudience = expectedAudience,
                     jwksUri = jwksUri,
+                    trustedIdentifier = options.trustedIdentifier,
                 ),
             )
 

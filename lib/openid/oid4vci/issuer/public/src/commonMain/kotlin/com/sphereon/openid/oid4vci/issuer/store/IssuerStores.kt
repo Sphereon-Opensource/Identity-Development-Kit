@@ -21,6 +21,8 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.openid.oid4vci.common.model.CredentialNotificationEvent
 import com.sphereon.openid.oid4vci.common.model.CredentialOffer
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
+import com.sphereon.openid.oid4vci.issuer.config.requireCanonicalOid4vciIssuerInstanceId
 import kotlinx.serialization.Serializable
 
 /**
@@ -91,8 +93,11 @@ interface CredentialRequestIdentityStore {
     suspend fun resolveOrCreate(
         protocolSessionId: String,
         instanceId: String,
+        authorizationPolicySnapshot: Oid4vciAuthorizationPolicySnapshot,
         ttlSeconds: Long,
     ): IdkResult<CredentialRequestIdentity, IdkError>
+
+    suspend fun get(protocolSessionId: String): IdkResult<CredentialRequestIdentity?, IdkError>
 }
 
 @JsExportCompat
@@ -100,10 +105,14 @@ interface CredentialRequestIdentityStore {
 data class CredentialRequestIdentity(
     val protocolSessionId: String,
     val instanceId: String,
+    val authorizationPolicySnapshot: Oid4vciAuthorizationPolicySnapshot,
 ) {
     init {
         Oid4vciSessionIdentity.requireCanonical("protocolSessionId", protocolSessionId)
-        Oid4vciSessionIdentity.requireCanonical("instanceId", instanceId)
+        requireCanonicalOid4vciIssuerInstanceId(instanceId)
+        require(authorizationPolicySnapshot.issuerId.toString() == instanceId) {
+            "Credential-request authorization snapshot belongs to another issuer resource"
+        }
     }
 }
 

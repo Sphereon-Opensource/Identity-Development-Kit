@@ -17,11 +17,11 @@
 package com.sphereon.core.api.http.dispatch
 
 import com.sphereon.core.api.http.config.UniversalHttpConfig
+import com.sphereon.core.api.http.config.UniversalHttpConfigContribution
+import com.sphereon.core.api.http.config.DefaultUniversalHttpConfigAggregator
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.log.Log
-import com.sphereon.di.HasOrder
-import com.sphereon.di.Order
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -37,19 +37,8 @@ import dev.zacsweers.metro.binding
  * - Per-adapter mount overrides (serverPrefix, adapterBasePath, tenant settings)
  * - Adapter enablement (disabled adapters are excluded from the catalog)
  *
- * EDK can replace this by providing an implementation with lower [getOrder] value
- * (e.g., [Order.HIGH] vs this class's [Order.MEDIUM]).
- *
- * **Replacement pattern:**
- * ```kotlin
- * @Inject
- * @SingleIn(AppScope::class)
- * @ContributesBinding(AppScope::class, binding = binding<HttpAdapterCatalog>())
- * class EdkHttpAdapterCatalog(...) : HttpAdapterCatalog, HasOrder {
- *     override fun getOrder(): Int = Order.HIGH.orderValue // Wins over OSS default
- *     // ...
- * }
- * ```
+ * Construction fails closed when provider identities collide or a route lacks the stable
+ * endpoint-handler identity required by route-first dispatch.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -57,19 +46,14 @@ import dev.zacsweers.metro.binding
 class DefaultHttpAdapterCatalog(
     descriptorProviders: Set<HttpAdapterDescriptorProvider>,
     private val httpConfig: UniversalHttpConfig,
-) : HttpAdapterCatalog,
-    HasOrder {
+) : HttpAdapterCatalog {
     override val descriptions: List<HttpAdapterDescription> =
-        descriptorProviders
-            .filter { httpConfig.isAdapterEnabled(it.id) }
-            .map { provider ->
-                val desc = provider.describe()
-                desc.copy(mount = httpConfig.resolveMount(desc.id, desc.mount))
-            }.sortedBy { it.id }
+        buildDescriptions(descriptorProviders, httpConfig)
 
     override val diagnostics: HttpAdapterCatalogDiagnostics = HttpAdapterCatalogDiagnostics.from(descriptions)
 
     init {
+        requireNoCollisions()
         // The catalog decides every dispatchable route; one line at construction states what
         // this process actually serves, so a route-not-found never has to be guessed at.
         Log.app().withTag(LOG_TAG).info(
@@ -79,8 +63,6 @@ class DefaultHttpAdapterCatalog(
                 },
         )
     }
-
-    override fun getOrder(): Int = Order.MEDIUM.orderValue
 
     override fun describeAll(): List<HttpAdapterDescription> = descriptions
 
@@ -94,19 +76,128 @@ class DefaultHttpAdapterCatalog(
     }
 
     /**
-     * Default binding for [UniversalHttpConfig].
-     *
-     * Provides [UniversalHttpConfig.DEFAULT] (no overrides) when no explicit
-     * config is provided. VDX or EDK can replace this by contributing their
-     * own `@Provides` with a config loaded from ConfigService.
+     * Canonical AppScope binding for [UniversalHttpConfig]. An empty contribution set produces
+     * the fail-closed defaults; deployment components add disjoint configuration contributions
+     * instead of replacing this graph.
      */
     @ContributesTo(AppScope::class)
     interface DefaultConfigGraph {
         @Provides
-        fun provideUniversalHttpConfig(): UniversalHttpConfig = UniversalHttpConfig.DEFAULT
+        fun provideUniversalHttpConfig(
+            contributions: Set<UniversalHttpConfigContribution>,
+        ): UniversalHttpConfig = DefaultUniversalHttpConfigAggregator.aggregate(contributions)
     }
 
     private companion object {
         const val LOG_TAG = "HttpAdapterCatalog"
+
+        fun buildDescriptions(
+            descriptorProviders: Set<HttpAdapterDescriptorProvider>,
+            httpConfig: UniversalHttpConfig,
+        ): List<HttpAdapterDescription> {
+            val duplicateProviderIds =
+                descriptorProviders
+                    .groupBy(HttpAdapterDescriptorProvider::id)
+                    .filterValues { it.size > 1 }
+                    .keys
+                    .sorted()
+            require(duplicateProviderIds.isEmpty()) {
+                "Duplicate HTTP adapter descriptor provider ids: ${duplicateProviderIds.joinToString()}"
+            }
+
+            val contributedDescriptions =
+                descriptorProviders.map { provider ->
+                    val description = provider.describe()
+                    require(description.id == provider.id) {
+                        "HTTP adapter descriptor provider '${provider.id}' described '${description.id}'"
+                    }
+                    description
+                }
+
+            val enabledDescriptions = contributedDescriptions.filter { httpConfig.isAdapterEnabled(it.id) }
+            val missingHandlerByAdapter =
+                enabledDescriptions.mapNotNull { description ->
+                    val missing =
+                        description.endpoints
+                            .filter { it.handlerCommandId.isNullOrBlank() }
+                            .map { endpoint -> endpoint.operationId ?: "${endpoint.method} ${endpoint.pathPattern}" }
+                    if (missing.isEmpty()) {
+                        null
+                    } else {
+                        "'${description.id}' (${missing.joinToString()})"
+                    }
+                }
+            require(missingHandlerByAdapter.isEmpty()) {
+                "HTTP adapters have endpoints without handlerCommandId: " +
+                    missingHandlerByAdapter.joinToString(separator = "; ")
+            }
+
+            return enabledDescriptions
+                .map { description ->
+                    validateDescription(description)
+                    val resolvedMount = httpConfig.resolveMount(description.id, description.mount)
+                    val resolvedDescription =
+                        description.copy(
+                            mount = resolvedMount,
+                            endpoints =
+                                description.endpoints.map { endpoint ->
+                                    endpoint.copy(
+                                        pathPatterns =
+                                            endpoint.pathPatterns.map { pattern ->
+                                                remountPathPattern(
+                                                    pattern = pattern,
+                                                    declaredBasePath = description.mount.adapterBasePath,
+                                                    resolvedBasePath = resolvedMount.adapterBasePath,
+                                                )
+                                            },
+                                    )
+                                },
+                        )
+                    validateDescription(resolvedDescription)
+                    resolvedDescription
+                }.sortedBy { it.id }
+        }
+
+        fun validateDescription(description: HttpAdapterDescription) {
+            val missingHandlerOperations =
+                description.endpoints
+                    .filter { it.handlerCommandId.isNullOrBlank() }
+                    .map { endpoint -> endpoint.operationId ?: "${endpoint.method} ${endpoint.pathPattern}" }
+            require(missingHandlerOperations.isEmpty()) {
+                "HTTP adapter '${description.id}' has endpoints without handlerCommandId: " +
+                    missingHandlerOperations.joinToString()
+            }
+
+            val basePath = normalizePathPrefix(description.mount.adapterBasePath)
+            description.endpoints.forEach { endpoint ->
+                endpoint.pathPatterns.forEach { pattern ->
+                    require(pattern.startsWith('/')) {
+                        "HTTP adapter '${description.id}' endpoint pathPattern '$pattern' must be absolute"
+                    }
+                    require(basePath.isEmpty() || pattern == basePath || pattern.startsWith("$basePath/")) {
+                        "HTTP adapter '${description.id}' endpoint pathPattern '$pattern' is outside adapterBasePath '$basePath'"
+                    }
+                }
+            }
+        }
+
+        fun remountPathPattern(
+            pattern: String,
+            declaredBasePath: String,
+            resolvedBasePath: String,
+        ): String {
+            val declaredBase = normalizePathPrefix(declaredBasePath)
+            val resolvedBase = normalizePathPrefix(resolvedBasePath)
+            val suffix = if (declaredBase.isEmpty()) pattern else pattern.removePrefix(declaredBase)
+            return when {
+                resolvedBase.isEmpty() -> suffix.ifEmpty { "/" }
+                suffix.isEmpty() -> resolvedBase
+                // A relative root endpoint belongs to the adapter base itself. Keep one canonical
+                // identity for route selection and SessionScope handler validation instead of
+                // advertising a second trailing-slash spelling of the same route.
+                suffix == "/" -> resolvedBase
+                else -> resolvedBase + "/" + suffix.trimStart('/')
+            }
+        }
     }
 }

@@ -56,12 +56,12 @@ import kotlin.time.Clock
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<SignatureService>())
+@ContributesBinding(SessionScope::class, binding = binding<CoreSignatureService>())
 class DefaultSignatureService(
     private val execution: SessionExecution,
     private val keyManagerService: KeyManagerService,
     private val prepareJwsCommand: PrepareJwsCommand,
-) : SignatureService {
+) : CoreSignatureService {
     @dev.zacsweers.metro.ContributesTo(scope = SessionScope::class)
     interface Graph {
         val signatureService: SignatureService
@@ -193,3 +193,18 @@ class DefaultSignatureService(
         return Ok(output)
     }
 }
+
+/**
+ * Default unqualified signing binding for applications that do not select a richer signer.
+ *
+ * This is deliberately separate from [DefaultSignatureService].  Final applications can replace
+ * this one binding with a DSS decorator while retaining the ordinary implementation as the
+ * public [CoreSignatureService] dependency.  Replacing a class that contributed both bindings
+ * would also remove the delegate and either create a cycle or leave the decorator unresolved.
+ */
+@Inject
+@SingleIn(SessionScope::class)
+@ContributesBinding(SessionScope::class, binding = binding<SignatureService>())
+class DefaultSignatureServiceBinding(
+    private val coreSignatureService: CoreSignatureService,
+) : SignatureService by coreSignatureService

@@ -43,6 +43,7 @@ import com.sphereon.wallet.interaction.ObserveWalletInteractionEventsCommand
 import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputArgs
 import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputCommand
 import com.sphereon.wallet.interaction.RegisterWalletInteractionSensitiveInputResult
+import com.sphereon.wallet.interaction.ResolveWalletCounterpartyEncounterCommand
 import com.sphereon.wallet.interaction.ResumeWalletInteractionArgs
 import com.sphereon.wallet.interaction.ResumeWalletInteractionCommand
 import com.sphereon.wallet.interaction.StartWalletInteractionCommand
@@ -50,6 +51,9 @@ import com.sphereon.wallet.interaction.StartCapturedWalletInteractionCommand
 import com.sphereon.wallet.interaction.SubmitWalletInteractionActionArgs
 import com.sphereon.wallet.interaction.SubmitWalletInteractionActionCommand
 import com.sphereon.wallet.interaction.WalletInteractionClient
+import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry
+import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRequest
+import com.sphereon.wallet.interaction.WalletCounterpartyEncounterResult
 import com.sphereon.wallet.interaction.WalletInteractionActionAuthority
 import com.sphereon.wallet.interaction.WalletInteractionActionPermit
 import com.sphereon.wallet.interaction.WalletInteractionInput
@@ -60,6 +64,7 @@ import com.sphereon.wallet.interaction.WalletInteractionStateEventSource
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
+import com.sphereon.wallet.interaction.consumeOpenableAuthorizationHandoff
 import com.sphereon.wallet.interaction.WalletClientRegistrationKey
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.wsca.Wsca
@@ -155,6 +160,32 @@ class StartCapturedWalletInteractionCommandImpl(
         }
 }
 
+/**
+ * The app-side protocol engine calls this only after it has classified and resolved the
+ * counterparty from an OID4 interaction. The configured backend authority owns Party persistence;
+ * raw offers, authorization requests, credentials, and keys never cross this command boundary.
+ */
+@Inject
+@SingleIn(SessionScope::class)
+class ResolveWalletCounterpartyEncounterCommandImpl(
+    execution: SessionExecution,
+    private val counterpartyEncounterRegistry: WalletCounterpartyEncounterRegistry,
+) : TypedServiceCommandAdapter<WalletCounterpartyEncounterRequest, WalletCounterpartyEncounterResult, IdkError>(
+        commandId = ResolveWalletCounterpartyEncounterCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<WalletCounterpartyEncounterRequest>(),
+        outputTypeToken = typeToken<WalletCounterpartyEncounterResult>(),
+    ),
+    ResolveWalletCounterpartyEncounterCommand {
+    override val commandId: String get() = ResolveWalletCounterpartyEncounterCommand.COMMAND_ID
+
+    override suspend fun doExecute(
+        args: WalletCounterpartyEncounterRequest,
+        applyDuring: (WalletCounterpartyEncounterRequest) -> WalletCounterpartyEncounterRequest,
+    ): IdkResult<WalletCounterpartyEncounterResult, IdkError> =
+        walletInteractionCommand { counterpartyEncounterRegistry.encounter(applyDuring(args)) }
+}
+
 @Inject
 @SingleIn(SessionScope::class)
 class ResumeWalletInteractionCommandImpl(
@@ -221,7 +252,7 @@ class SubmitWalletInteractionActionCommandImpl(
         val input = applyDuring(args)
         val current =
             walletInteractionCommand {
-                client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
+                client.load(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
             }.getOrElse { return Err(it) }
         val highestPriority = actionAuthorities.maxOfOrNull(WalletInteractionActionAuthority::priority)
             ?: return Err(IdkError.INVALID_STATE(message = "wallet_interaction_action_authority_missing"))
@@ -238,7 +269,7 @@ class SubmitWalletInteractionActionCommandImpl(
         val executionResult =
             walletInteractionCommand {
                 client.dispatch(input.sessionId, input.action)
-                client.resume(input.sessionId).state.also { value -> value.requireWallet(input.walletUnitId) }
+                client.load(input.sessionId).state.also { value -> value.requireWallet(input.walletUnitId) }
             }
         val state = executionResult.getOrElse { error ->
             selected.single().abort(permit).getOrElse { return Err(it) }
@@ -269,11 +300,11 @@ class CancelWalletInteractionCommandImpl(
     ): IdkResult<CancelWalletInteractionResult, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).state.requireWallet(input.walletUnitId)
+            client.load(input.sessionId).state.requireWallet(input.walletUnitId)
             client.cancel(input.sessionId)
             CancelWalletInteractionResult(
                 sessionId = input.sessionId,
-                state = client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) },
+                state = client.load(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) },
             )
         }
 }
@@ -298,7 +329,7 @@ class GetWalletInteractionStateCommandImpl(
     ): IdkResult<WalletInteractionState, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
+            client.load(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
         }
 }
 
@@ -322,7 +353,7 @@ class GetWalletInteractionEventsCommandImpl(
     ): IdkResult<GetWalletInteractionEventsResult, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            val current = client.resume(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
+            val current = client.load(input.sessionId).state.also { state -> state.requireWallet(input.walletUnitId) }
             val afterRevision = input.afterRevision
             val events =
                 if (client is WalletInteractionStateEventSource) {
@@ -372,7 +403,7 @@ class ObserveWalletInteractionEventsCommandImpl(
         )
 
     override suspend fun executeStream(args: GetWalletInteractionEventsArgs): IdkResult<Flow<WalletInteractionStateEvent>, IdkError> {
-        walletInteractionCommand { client.resume(args.sessionId).state.requireWallet(args.walletUnitId) }
+        walletInteractionCommand { client.load(args.sessionId).state.requireWallet(args.walletUnitId) }
             .getOrElse { return Err(it) }
         val source =
             client as? WalletInteractionStateEventSource
@@ -411,7 +442,7 @@ class RegisterWalletInteractionSensitiveInputCommandImpl(
     ): IdkResult<RegisterWalletInteractionSensitiveInputResult, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).state.requireWallet(input.walletUnitId)
+            client.load(input.sessionId).state.requireWallet(input.walletUnitId)
             RegisterWalletInteractionSensitiveInputResult(
                 sensitiveInputAuthority.register(input.sessionId, input.purpose, input.value),
             )
@@ -439,11 +470,10 @@ class ConsumeWalletInteractionAuthorizationHandoffCommandImpl(
     ): IdkResult<ConsumeWalletInteractionHandoffResult, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).state.requireWallet(input.walletUnitId)
+            client.load(input.sessionId).state.requireWallet(input.walletUnitId)
             val value =
-                sensitiveInputAuthority.consume(
+                sensitiveInputAuthority.consumeOpenableAuthorizationHandoff(
                     input.sessionId,
-                    WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF,
                     input.ref,
                 ) ?: throw NoSuchElementException("wallet_interaction_authorization_handoff_unknown")
             ConsumeWalletInteractionHandoffResult(value)
@@ -472,7 +502,7 @@ class ConsumeWalletInteractionCompletionHandoffCommandImpl(
     ): IdkResult<ConsumeWalletInteractionHandoffResult, IdkError> =
         walletInteractionCommand {
             val input = applyDuring(args)
-            client.resume(input.sessionId).state.requireWallet(input.walletUnitId)
+            client.load(input.sessionId).state.requireWallet(input.walletUnitId)
             val value =
                 sensitiveInputAuthority.consume(
                     input.sessionId,
@@ -522,6 +552,13 @@ interface WalletInteractionCommandDescriptors {
     @IntoMap
     @StringKey(StartWalletInteractionCommand.COMMAND_ID)
     fun startWalletInteraction(impl: StartWalletInteractionCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides
+    @IntoMap
+    @StringKey(ResolveWalletCounterpartyEncounterCommand.COMMAND_ID)
+    fun resolveWalletCounterpartyEncounter(
+        impl: ResolveWalletCounterpartyEncounterCommandImpl,
+    ): ServiceCommand<*, *, *> = impl
 
     @Provides
     @IntoMap
@@ -588,6 +625,13 @@ private suspend fun <T : Any> walletInteractionCommand(block: suspend () -> T): 
         Err(
             IdkError.NOT_FOUND_ERROR(
                 message = expected.message ?: "wallet_interaction_session_unknown",
+                throwable = expected,
+            ),
+        )
+    } catch (expected: IllegalStateException) {
+        Err(
+            IdkError.INVALID_STATE(
+                message = expected.message ?: "wallet_interaction_command_invalid_state",
                 throwable = expected,
             ),
         )

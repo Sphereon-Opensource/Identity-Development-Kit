@@ -53,6 +53,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -465,7 +466,7 @@ class IssuerConformanceFixtureTest {
             val credentialSubject = vc["credentialSubject"] as kotlinx.serialization.json.JsonObject
             assertEquals("Bachelor of Science", (credentialSubject["degree"] as JsonPrimitive).content)
             assertEquals("Example University", (credentialSubject["university"] as JsonPrimitive).content)
-            assertEquals("did:example:holder123", (credentialSubject["id"] as JsonPrimitive).content)
+            assertFalse(credentialSubject.containsKey("id"), "proof/issuance subject must not become credentialSubject.id")
         }
 
     // ========================================================================

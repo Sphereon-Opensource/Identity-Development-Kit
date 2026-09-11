@@ -345,7 +345,7 @@ private fun decodeReaderEngagementSecurity(
     val readerKey = coseKeyCodec.decode(encodedReaderKey.value.taggedItem.value).getOrThrow().value as CoseKeyType
 
     return ReaderEngagementSecurity(
-        cipherSuite = structure.required<CborUInt>(0).value.toUInt(),
+        cipherSuite = toUIntExact(structure.required<CborUInt>(0).value, "ReaderEngagementSecurity.cipherSuite"),
         eReaderKeyBytes = encodedReaderKey.copy(readerKey),
     )
 }
@@ -370,8 +370,8 @@ private fun decodeDeviceRetrievalMethods(items: CborArray<CborItem<*>>): Array<D
     }
 
 private fun decodeDeviceRetrievalMethod(structure: CborArray<CborItem<*>>): DeviceRetrievalMethod {
-    val type = DeviceRetrievalMethodType.entries.first { it.type == structure.required<CborUInt>(0).value.toUInt() }
-    val version = DeviceRetrievalMethodVersion(structure.required<CborUInt>(1).value.toUInt())
+    val type = DeviceRetrievalMethodType.entries.first { it.type == toUIntExact(structure.required<CborUInt>(0).value, "DeviceRetrievalMethod.type") }
+    val version = DeviceRetrievalMethodVersion(toUIntExact(structure.required<CborUInt>(1).value, "DeviceRetrievalMethod.version"))
     val options = decodeDeviceRetrievalOptions(type, requireNumberLabelMap(structure.required(2), "DeviceRetrievalOptions"))
 
     return DeviceRetrievalMethod(
@@ -442,12 +442,12 @@ private fun decodeDeviceRetrievalOptions(
                     requireUInt(
                         structure.value[NfcOptions.MAX_COMMAND_DATA_FIELD_LENGTH],
                         "NfcOptions.maxCommandDataFieldLength",
-                    ).value.toUInt(),
+                    ).value.let { toUIntExact(it, "NfcOptions.maxCommandDataFieldLength") },
                 maxResponseDataFieldLength =
                     requireUInt(
                         structure.value[NfcOptions.MAX_RESPONSE_DATA_FIELD_LENGTH],
                         "NfcOptions.maxResponseDataFieldLength",
-                    ).value.toUInt(),
+                    ).value.let { toUIntExact(it, "NfcOptions.maxResponseDataFieldLength") },
             )
         }
 
@@ -478,12 +478,12 @@ private fun decodeDeviceRetrievalOptions(
                     optionalUInt(
                         structure.value[WifiAwareOptions.CHANNEL_INFO_OPERATING_CLASS],
                         "WifiAwareOptions.channelInfoOperatingClass",
-                    )?.value?.toUInt(),
+                    )?.value?.let { toUIntExact(it, "WifiAwareOptions.channelInfoOperatingClass") },
                 channelInfoChannelNumber =
                     optionalUInt(
                         structure.value[WifiAwareOptions.CHANNEL_INFO_CHANNEL_NUMBER],
                         "WifiAwareOptions.channelInfoChannelNumber",
-                    )?.value?.toUInt(),
+                    )?.value?.let { toUIntExact(it, "WifiAwareOptions.channelInfoChannelNumber") },
                 supportedBands = optionalByteString(structure.value[WifiAwareOptions.SUPPORTED_BANDS], "WifiAwareOptions.supportedBands")?.value,
             )
         }
@@ -539,8 +539,8 @@ private fun decodeOriginInfo(structure: CborMap<StringLabel, CborItem<*>>): Orig
         }
 
     return OriginInfo(
-        cat = OriginInfoCategory(requireUInt(structure.value[OriginInfo.CAT], "OriginInfo.cat").value.toUInt()),
-        type = OriginInfoType(requireUInt(structure.value[OriginInfo.TYPE], "OriginInfo.type").value.toUInt()),
+        cat = OriginInfoCategory(toUIntExact(requireUInt(structure.value[OriginInfo.CAT], "OriginInfo.cat").value, "OriginInfo.cat")),
+        type = OriginInfoType(toUIntExact(requireUInt(structure.value[OriginInfo.TYPE], "OriginInfo.type").value, "OriginInfo.type")),
         details = details,
         original = null,
     )
@@ -576,7 +576,17 @@ private fun decodeCapabilities(structure: CborMap<NumberLabel, CborItem<*>>): Ca
             )?.value,
         readerAuthAllSupport = optionalBool(structure.value[Capabilities.READER_AUTH_ALL_SUPPORT], "Capabilities.readerAuthAllSupport")?.value,
         extendedRequestSupport = optionalBool(structure.value[Capabilities.EXTENDED_REQUEST_SUPPORT], "Capabilities.extendedRequestSupport")?.value,
-        additionalItems = structure,
+        additionalItems =
+            extractAdditionalItems(
+                structure,
+                setOf(
+                    Capabilities.MAC_KEYS_SUPPORT,
+                    Capabilities.MAC_KEY_CURVES,
+                    Capabilities.HANDOVER_SESSION_ESTABLISHMENT_SUPPORT,
+                    Capabilities.READER_AUTH_ALL_SUPPORT,
+                    Capabilities.EXTENDED_REQUEST_SUPPORT,
+                ),
+            ),
     )
 
 private fun decodeCurves(item: CborItem<*>?): Array<CoseCurve>? =
@@ -723,7 +733,23 @@ private fun requireIntValue(
     fieldName: String,
 ): Int =
     when (item) {
-        is CborInt -> item.value.toInt()
-        is CborUInt -> item.value.toInt()
+        is CborInt -> toIntExact(item.value, fieldName)
+        is CborUInt -> toIntExact(item.value, fieldName)
         else -> throw IllegalArgumentException("$fieldName must be encoded as a CBOR integer")
     }
+
+private fun toIntExact(
+    value: Long,
+    field: String,
+): Int {
+    require(value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) { "$field is outside the Int range" }
+    return value.toInt()
+}
+
+private fun toUIntExact(
+    value: Long,
+    field: String,
+): UInt {
+    require(value in 0..UInt.MAX_VALUE.toLong()) { "$field is outside the UInt range" }
+    return value.toUInt()
+}

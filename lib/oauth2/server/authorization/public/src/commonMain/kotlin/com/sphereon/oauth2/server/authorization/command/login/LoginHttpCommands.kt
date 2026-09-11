@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.server.authorization.command.login
 
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.describe.EndpointAuthPolicy
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
@@ -43,6 +44,7 @@ interface LoginPageHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.Custom("text/html")),
                 operationId = "renderLoginPage",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("authorization", "login"),
                 summary = "Render the Authorization Server's first-party login page",
             )
@@ -68,8 +70,33 @@ interface LoginSubmitHttpEndpointCommand : HttpEndpointCommand {
                 consumes = setOf(MediaType.ApplicationFormUrlEncoded),
                 operationId = "submitLogin",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("authorization", "login"),
                 summary = "Submit password or WebAuthn credentials to the Authorization Server's login form",
+            )
+    }
+}
+
+/**
+ * `GET /account-action`: tenant-AS landing for owner/identity activation and password change.
+ * The invitation token stays in the URL fragment; the page posts to `/api/account-actions/v1`.
+ */
+@JsExportCompat
+interface AccountActionPageHttpEndpointCommand : HttpEndpointCommand {
+    companion object {
+        const val COMMAND_ID: String = "oauth2.authorization.account-action-page"
+
+        val ENDPOINT: HttpEndpointDescriptor =
+            HttpEndpointDescriptor(
+                method = HttpMethod.GET,
+                pathPattern = "/account-action",
+                produces = setOf(MediaType.Custom("text/html")),
+                operationId = "renderAccountActionPage",
+                commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
+                tags = setOf("authorization", "account-action"),
+                summary = "Render the Authorization Server's account-action landing page",
+                authPolicy = EndpointAuthPolicy.PUBLIC,
             )
     }
 }
@@ -92,6 +119,7 @@ interface LoginWebAuthnAssertionBeginHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "beginLoginWebAuthnAssertion",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("authorization", "login", "webauthn"),
                 summary = "Begin a WebAuthn assertion ceremony for Authorization Server login",
             )
@@ -117,6 +145,7 @@ interface LoginCancelHttpEndpointCommand : HttpEndpointCommand {
                 consumes = setOf(MediaType.ApplicationFormUrlEncoded),
                 operationId = "cancelLogin",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("authorization", "login"),
                 summary = "User cancelled the login flow; redirect back to the RP with error=access_denied",
             )
@@ -142,6 +171,7 @@ interface LoginAssetHttpEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/login/assets/{path...}",
                 operationId = "loginAsset",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("authorization", "login"),
                 summary = "Serve static assets bundled with the login renderer",
             )

@@ -18,12 +18,15 @@
 package com.sphereon.crypto.key.persistence.impl
 
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.ManagedKeyReferenceFilter
+import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.ResolvedKeyInfoType
+import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.core.kms.ManagedKeyStoreMode
 import com.sphereon.crypto.core.kms.ManagedKeyStoreMode.AUTO
 import com.sphereon.crypto.core.kms.ManagedKeyStoreMode.ITERATING
@@ -33,7 +36,12 @@ import com.sphereon.crypto.core.kms.ManagedKeyStoreService
 import com.sphereon.crypto.core.kms.model.KeyProviderSettings
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
+import com.sphereon.crypto.key.persistence.KeyReferenceRecord
+import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
+import com.sphereon.crypto.key.persistence.KeyReferenceResolutionException
+import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
 import com.sphereon.crypto.key.persistence.toKeyReference
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.kms.keystore.managed.ManagedKeyStoreWithProviderLookups
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
@@ -132,6 +140,27 @@ class ManagedKeyStoreSelector(
             }
         }
 
+    override suspend fun findRegisteredKeyReference(
+        aliasOrKid: String,
+        providerId: String?,
+    ): ManagedKeyReference? {
+        if (!keyReferenceStore.isAvailable) return null
+        val byAlias =
+            keyReferenceStore
+                .findByAlias(tenantId, aliasOrKid, providerId)
+                .getOrElse { error ->
+                    throw IllegalStateException("Failed to resolve registered key alias: ${error.message}")
+                }
+        val record =
+            byAlias
+                ?: keyReferenceStore
+                    .findByKid(tenantId, aliasOrKid, providerId)
+                    .getOrElse { error ->
+                        throw IllegalStateException("Failed to resolve registered key kid: ${error.message}")
+                    }
+        return record?.toKeyReference()
+    }
+
     /** Always resolves through providers regardless of mode. */
     override suspend fun getKey(keyInfo: KeyInfoType<*>): ManagedKeyInfoType<*> = iteratingStore.getKey(keyInfo)
 
@@ -152,14 +181,114 @@ class ManagedKeyStoreSelector(
         return result
     }
 
-    /** Delegates to the provider, then removes the reference from the store if available. */
+    /**
+     * Deletes according to the persisted ownership decision when one exists.
+     * External references are soft-deleted locally and never reach the provider.
+     * Platform-managed references are deleted provider-first and removed locally only after success.
+     */
     override suspend fun deleteKey(keyInfo: KeyInfoType<*>): Boolean {
+        requireDurableHistory()
+        val authorities = findOwnershipAuthorities(keyInfo)
+        if (authorities.size > 1) {
+            val identifier = keyInfo.alias ?: keyInfo.kid.orEmpty()
+            throw KeyReferenceResolutionException(
+                code = KeyReferenceStoreErrorCodes.AMBIGUOUS_REFERENCE,
+                message = "More than one key reference authority matches '$identifier' for this tenant",
+            )
+        }
+
+        val reference = authorities.singleOrNull()
+        if (reference?.deletedAt != null) {
+            // A repeated DELETE for an externally managed reference is idempotent. The persisted
+            // ownership decision is still authoritative after a new session or process restart;
+            // never fall through to a provider delete merely because the active row is gone.
+            return reference.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
+        }
+        if (reference == null && keyInfo.providerId == null) {
+            return false
+        }
+
+        if (reference == null) {
+            return deleteFromProvider(keyInfo)
+        }
+        if (reference.controlMode == ResourceControlMode.EXTERNALLY_MANAGED) {
+            return keyReferenceStore
+                .delete(tenantId, reference.alias, reference.providerId)
+                .getOrElse { error -> throw PKIException("Failed to delete key reference: ${error.code}") }
+        }
+        return deleteFromProvider(reference.toProviderKeyInfo())
+    }
+
+    private suspend fun deleteFromProvider(keyInfo: KeyInfoType<*>): Boolean {
         val deleted = iteratingStore.deleteKey(keyInfo)
         if (deleted) {
-            registrar.removeKeyReference(keyInfo)
+            registrar
+                .removeKeyReference(keyInfo)
+                .getOrElse { error -> throw PKIException("Failed to remove key reference: ${error.code}") }
         }
         return deleted
     }
+
+    private suspend fun findOwnershipAuthorities(keyInfo: KeyInfoType<*>): List<KeyReferenceRecord> {
+        val providerId = keyInfo.providerId
+        val identifier = keyInfo.alias ?: keyInfo.kid ?: return emptyList()
+        val history =
+            keyReferenceStore
+                .findAllByAliasIncludingDeleted(tenantId, identifier, providerId)
+                .getOrElse { error -> throwHistoryLookupFailure("alias", error.code) } +
+                keyReferenceStore
+                    .findAllByKidIncludingDeleted(tenantId, identifier, providerId)
+                    .getOrElse { error -> throwHistoryLookupFailure("kid", error.code) }
+
+        return history
+            .distinctBy { it.id }
+            .groupBy { it.providerId }
+            .values
+            .map { providerHistory ->
+                val active = providerHistory.filter { it.deletedAt == null }
+                if (active.size > 1) {
+                    throw KeyReferenceResolutionException(
+                        code = KeyReferenceStoreErrorCodes.AMBIGUOUS_REFERENCE,
+                        message = "More than one active key reference matches '$identifier' for this tenant and provider",
+                    )
+                }
+                active.singleOrNull()
+                    ?: providerHistory.maxWith(
+                        compareBy<KeyReferenceRecord> { it.deletedAt }
+                            .thenBy { it.updatedAt }
+                            .thenBy { it.createdAt }
+                            .thenBy { it.id },
+                    )
+            }
+    }
+
+    private fun throwHistoryLookupFailure(kind: String, code: String): Nothing {
+        if (code == KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED) {
+            throw KeyReferenceResolutionException(
+                code = code,
+                message = "Durable key reference ownership history is required for safe deletion",
+            )
+        }
+        throw PKIException("Failed to resolve key history by $kind: $code")
+    }
+
+    private fun requireDurableHistory() {
+        if (!keyReferenceStore.isAvailable ||
+            keyReferenceStore.ownershipHistoryCapability != KeyReferenceHistoryCapability.DURABLE
+        ) {
+            throw KeyReferenceResolutionException(
+                code = KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
+                message = "Durable key reference ownership history is required for safe deletion",
+            )
+        }
+    }
+
+    private fun KeyReferenceRecord.toProviderKeyInfo(): KeyInfoType<Jwk> =
+        if (kid != null) {
+            KeyInfo(kid = kid, providerId = providerId)
+        } else {
+            KeyInfo(alias = alias, providerId = providerId)
+        }
 
     /**
      * Replaces the default [ManagedKeyStoreWithProviderLookups.DefaultManagedKeyStoreModule]

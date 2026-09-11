@@ -18,6 +18,9 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.HttpAdapter
+import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelector
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
@@ -61,11 +64,12 @@ import com.sphereon.oauth2.server.authorization.impl.command.federation.HandleFe
 import com.sphereon.oauth2.server.authorization.impl.config.DirectFederationMetadataResolver
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2FederationHttpAdapter
 import com.sphereon.oauth2.server.authorization.impl.provider.AbstractFederatedUserAuthenticationProvider
-import com.sphereon.oauth2.server.authorization.impl.provider.DefaultEmptyFederationProviderRegistry
+import com.sphereon.oauth2.server.authorization.impl.provider.DefaultEmptyFederationProviderRuntimeResolver
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
-import com.sphereon.oauth2.server.authorization.provider.FederationProviderRegistry
+import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
+import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserInfo
 import dev.zacsweers.metro.ContributesBinding
@@ -86,13 +90,13 @@ import kotlin.test.assertTrue
  */
 @ContributesTo(SessionScope::class)
 interface FederationFlowAdaptersGraph {
-    val httpAdapters: Set<HttpAdapter>
+    val httpAdapters: Map<String, Lazy<HttpAdapter>>
 }
 
 /**
  * Gates the federation chain against the real Metro graph. Drives `/reconciliation/authorize`
  * through the [OAuth2FederationHttpAdapter] resolved from the session graph (not a hand-constructed
- * adapter), with a test-only [OAuth2Client], [FederationProviderRegistry], and
+ * adapter), with a test-only [OAuth2Client], exact-binding runtime resolver, and
  * [FederationMetadataResolver] contributed via `@ContributesBinding(replaces = ...)` so every
  * collaborator Metro needs to wire the federation provider has to be present in the graph.
  *
@@ -106,9 +110,11 @@ class FederationFlowIntegrationTest {
     private val adapter: OAuth2FederationHttpAdapter =
         (ctx.session.graph as FederationFlowAdaptersGraph)
             .httpAdapters
-            .filterIsInstance<OAuth2FederationHttpAdapter>()
-            .firstOrNull()
+            [OAuth2FederationHttpAdapter.ID]
+            ?.value as? OAuth2FederationHttpAdapter
             ?: error("OAuth2FederationHttpAdapter not present in the session graph")
+    private val routeSelector = (ctx.app as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
+    private val dispatcher = (ctx.session.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
     private val capturingClient =
         (ctx.session.graph as CapturingOAuth2ClientGraph).capturingOAuth2Client
     private val registry = (ctx.session.graph as SessionScopedCommandRegistry.Graph).sessionScopedCommandRegistry
@@ -159,7 +165,11 @@ class FederationFlowIntegrationTest {
                         ),
                 )
 
-            val response = adapter.handleRequest(request)
+            val selection = routeSelector.select(request.method, request.path)
+            val route = (selection as? HttpAdapterRouteSelection.Selected)?.match
+                ?: error("Expected selected federation route for ${request.method} ${request.path}, got $selection")
+            assertEquals(adapter.id, route.adapterId)
+            val response = dispatcher.dispatch(request, route)
 
             assertEquals(
                 302,
@@ -477,7 +487,7 @@ class ReplacingGetUserInfoCommand(
 }
 
 private object FederationTestFixtures {
-    const val PROVIDER_ID = "keycloak"
+    const val PROVIDER_ID = "11111111-1111-4111-8111-111111111111"
     const val CALLBACK_PATH = "/federation/callback"
     const val ISSUER_URL = "https://upstream.idp.test"
 
@@ -502,15 +512,19 @@ private object FederationTestFixtures {
 @SingleIn(SessionScope::class)
 @ContributesBinding(
     SessionScope::class,
-    binding = binding<FederationProviderRegistry>(),
-    replaces = [DefaultEmptyFederationProviderRegistry::class],
+    binding = binding<FederationProviderRuntimeResolver>(),
+    replaces = [DefaultEmptyFederationProviderRuntimeResolver::class],
 )
-class TestFederationProviderRegistry : FederationProviderRegistry {
-    override fun findById(providerId: String): FederationProviderConfig? = FederationTestFixtures.providerConfig.takeIf { it.id == providerId }
+class TestFederationProviderRuntimeResolver : FederationProviderRuntimeResolver {
+    override suspend fun resolve(bindingId: String): IdkResult<FederationProviderConfig, AuthenticationError> =
+        FederationTestFixtures.providerConfig.takeIf { it.id == bindingId }?.let(::Ok)
+            ?: Err(AuthenticationError.Generic(description = "not found"))
 
-    override fun all(): List<FederationProviderConfig> = listOf(FederationTestFixtures.providerConfig)
+    override suspend fun listEnabled(): IdkResult<List<FederationProviderConfig>, AuthenticationError> =
+        Ok(listOf(FederationTestFixtures.providerConfig))
 
-    override fun defaultProviderId(): String = FederationTestFixtures.PROVIDER_ID
+    override suspend fun clientAuthentication(bindingId: String, audience: String): IdkResult<ClientAuthenticationConfig, AuthenticationError> =
+        Ok(ClientAuthenticationConfig.None(FederationTestFixtures.providerConfig.clientId))
 }
 
 @Inject

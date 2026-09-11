@@ -29,6 +29,7 @@ interface ListSupportedMethodsEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listSupportedMethods",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Capabilities"),
                 summary = "List all registered DID methods with their capabilities",
             )
@@ -46,6 +47,7 @@ interface GetMethodCapabilitiesEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getMethodCapabilities",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Capabilities"),
                 summary = "Get full capability detail for a DID method",
             )
@@ -63,6 +65,7 @@ interface GetMethodCapabilitySummaryEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getMethodCapabilitySummary",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("Capabilities"),
                 summary = "Get a simplified capability matrix for a DID method",
             )

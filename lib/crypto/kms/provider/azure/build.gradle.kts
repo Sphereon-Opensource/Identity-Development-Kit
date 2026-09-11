@@ -1,4 +1,3 @@
-import com.codingfeline.buildkonfig.compiler.FieldSpec
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.targets.js.ir.JsIrBinary
 
@@ -8,7 +7,6 @@ plugins {
     alias(sphereonplug.plugins.org.jetbrains.kotlin.plugin.serialization)
     alias(sphereonplug.plugins.io.kotest.io.kotest.gradle.plugin)
     alias(sphereonplug.plugins.com.google.devtools.ksp.com.google.devtools.ksp.gradle.plugin)
-    alias(sphereonplug.plugins.com.codingfeline.buildkonfig)
     alias(sphereonplug.plugins.com.sphereon.gradle.plugin.project.publication)
     id("maven-publish")
 }
@@ -127,35 +125,5 @@ kotlin {
              dependencies {}
          }
          val nativeTest by getting*/
-    }
-}
-
-buildkonfig {
-    packageName = "com.sphereon.crypto.kms.azure"
-    defaultConfigs {
-        buildConfigField(
-            FieldSpec.Type.STRING,
-            "AZURE_KEYVAULT_URL",
-            System.getenv("AZURE_KEYVAULT_URL"),
-            nullable = true,
-        )
-        buildConfigField(
-            FieldSpec.Type.STRING,
-            "AZURE_KEYVAULT_TENANT_ID",
-            System.getenv("AZURE_KEYVAULT_TENANT_ID"),
-            nullable = true,
-        )
-        buildConfigField(
-            FieldSpec.Type.STRING,
-            "AZURE_KEYVAULT_CLIENT_ID",
-            System.getenv("AZURE_KEYVAULT_CLIENT_ID"),
-            nullable = true,
-        )
-        buildConfigField(
-            FieldSpec.Type.STRING,
-            "AZURE_KEYVAULT_CLIENT_SECRET",
-            System.getenv("AZURE_KEYVAULT_CLIENT_SECRET"),
-            nullable = true,
-        )
     }
 }

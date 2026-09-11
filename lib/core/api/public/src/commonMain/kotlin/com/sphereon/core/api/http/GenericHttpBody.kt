@@ -17,6 +17,8 @@
 package com.sphereon.core.api.http
 
 import com.sphereon.core.compat.JsExportCompat
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.toList
 import kotlin.jvm.JvmStatic
 
 /**
@@ -29,6 +31,7 @@ import kotlin.jvm.JvmStatic
  * - OSS uses [Text] for JSON payloads (default)
  * - EDK can use [Bytes] for binary formats (Protobuf, CBOR, etc.)
  * - Framework adapters can provide lazy variants ([LazyText], [LazyBytes]) to defer reading
+ * - [TextStream] streams text chunks (SSE / chunked responses) without buffering the full body
  *
  * **Usage:**
  * ```kotlin
@@ -38,6 +41,7 @@ import kotlin.jvm.JvmStatic
  *     is GenericHttpBody.Empty -> handleNoBody()
  *     is GenericHttpBody.LazyText -> processJson(body.value) // auto-evaluated
  *     is GenericHttpBody.LazyBytes -> processBinary(body.value) // auto-evaluated
+ *     is GenericHttpBody.TextStream -> body.flow.collect { writeChunk(it) }
  * }
  * ```
  */
@@ -163,6 +167,30 @@ sealed class GenericHttpBody {
         override fun asBytesOrNull(): ByteArray? = value
     }
 
+    /**
+     * Streaming text body backed by a [Flow] of UTF-8 text chunks.
+     *
+     * Used for Server-Sent Events and other chunked responses where the full body
+     * must not be buffered before the first byte is written. Synchronous accessors
+     * return null — collect [flow] (or [collectToText]) instead.
+     *
+     * @property flow Chunks as they become available (each chunk is typically one SSE frame)
+     * @property charset Character encoding advertised to adapters (defaults to UTF-8)
+     */
+    class TextStream(
+        val flow: Flow<String>,
+        val charset: String = "utf-8",
+    ) : GenericHttpBody() {
+        override val isEmpty: Boolean = false
+
+        override fun asTextOrNull(): String? = null
+
+        override fun asBytesOrNull(): ByteArray? = null
+
+        /** Collects every chunk into one string. Prefer incremental [flow] collection for large streams. */
+        suspend fun collectToText(): String = flow.toList().joinToString(separator = "")
+    }
+
     companion object {
         /**
          * Creates a [GenericHttpBody] from a nullable String.
@@ -200,5 +228,14 @@ sealed class GenericHttpBody {
          */
         @JvmStatic
         fun ofLazyBytes(supplier: () -> ByteArray?): GenericHttpBody = LazyBytes(supplier)
+
+        /**
+         * Creates a streaming text body from a flow of chunks.
+         */
+        @JvmStatic
+        fun ofTextStream(
+            flow: Flow<String>,
+            charset: String = "utf-8",
+        ): GenericHttpBody = TextStream(flow, charset)
     }
 }

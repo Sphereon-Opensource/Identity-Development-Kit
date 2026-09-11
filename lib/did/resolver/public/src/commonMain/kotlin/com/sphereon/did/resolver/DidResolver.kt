@@ -99,6 +99,7 @@ interface DidResolver {
  * will be automatically registered.
  */
 @JsExportCompat
+/** Registry contract shared by local DID managers, issuers, and resolver HTTP adapters. */
 interface DidResolverRegistry {
     /**
      * Gets the resolver for a specific DID method.

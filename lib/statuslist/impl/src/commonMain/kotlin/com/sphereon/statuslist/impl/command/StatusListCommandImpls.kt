@@ -40,6 +40,7 @@ import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.UpdateEntryStatusArgs
 import com.sphereon.statuslist.command.CheckCredentialStatusCommand
 import com.sphereon.statuslist.command.CreateStatusListCommand
+import com.sphereon.statuslist.command.DeleteStatusListCommand
 import com.sphereon.statuslist.command.GetStatusListCommand
 import com.sphereon.statuslist.command.GetStatusListEntryCommand
 import com.sphereon.statuslist.command.GetStatusListTokenCommand
@@ -101,6 +102,28 @@ class GetStatusListCommandImpl(
         val result = driver.getStatusList(ref).getOrElse { return Err(it) }
         return result?.let { Ok(it) } ?: Err(StatusListErrors.listNotFound(ref.id ?: ref.correlationId ?: "<none>"))
     }
+}
+
+@Inject
+@SingleIn(SessionScope::class)
+class DeleteStatusListCommandImpl(
+    execution: SessionExecution,
+    private val driver: StatusListDriver,
+) : TypedServiceCommandAdapter<StatusListRef, Boolean, IdkError>(
+        commandId = DeleteStatusListCommand.COMMAND_ID,
+        execution = execution,
+        inputTypeToken = typeToken<StatusListRef>(),
+        outputTypeToken = typeToken<Boolean>(),
+    ),
+    DeleteStatusListCommand {
+    override val commandId: String get() = DeleteStatusListCommand.COMMAND_ID
+
+    override suspend fun supports(args: Any): Boolean = args is StatusListRef
+
+    override suspend fun doExecute(
+        args: StatusListRef,
+        applyDuring: (StatusListRef) -> StatusListRef,
+    ): IdkResult<Boolean, IdkError> = driver.deleteStatusList(applyDuring(args))
 }
 
 @Inject

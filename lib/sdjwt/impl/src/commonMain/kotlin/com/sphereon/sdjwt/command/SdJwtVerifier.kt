@@ -84,6 +84,7 @@ internal class SdJwtVerifier(
     suspend fun verify(
         sdJwtString: String,
         identifier: IdentifierOptsOrResult? = null,
+        trustedJwks: JsonObject? = null,
         expectedAudience: String? = null,
         expectedNonce: String? = null,
         validateDisclosures: Boolean = true,
@@ -100,7 +101,7 @@ internal class SdJwtVerifier(
         val errorMessages = mutableListOf<String>()
 
         // Step 2: Verify JWT signature
-        val jwsValidation = verifyJwtSignature(sdJwt, identifier)
+        val jwsValidation = verifyJwtSignature(sdJwt, identifier, trustedJwks)
         // Track trust establishment vs. crypto separately so callers can tell whether
         // we couldn't even resolve the issuer's verification key (e.g. SD-JWT VC issued
         // a JWS with relative `kid: "#0"` and the resolver chain never composed it
@@ -183,6 +184,7 @@ internal class SdJwtVerifier(
     private suspend fun verifyJwtSignature(
         sdJwt: SdJwtCompact,
         identifier: IdentifierOptsOrResult?,
+        trustedJwks: JsonObject?,
     ): IdkResult<JwsValidationResult, IdkError> {
         val jws = sdJwt.jwt
         val effectiveIdentifier = identifier ?: qualifyRelativeKidIdentifier(jws, sdJwt.payload.fullPayload)
@@ -190,6 +192,7 @@ internal class SdJwtVerifier(
             VerifyJwsArgs(
                 jws = jws,
                 identifier = effectiveIdentifier,
+                trustedJwks = trustedJwks,
             )
         return verifyJwsCommand.execute(args)
     }

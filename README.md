@@ -169,7 +169,7 @@ dependencies {
 }
 ```
 
-See the [installation guide](https://docs.sphereon.com/idk/guides/installation) for per-platform setup and the [modules reference](https://docs.sphereon.com/idk/guides/modules) for the full module catalogue.
+See the [installation guide](https://docs.sphereon.com/idk/guides/installation) for per-platform setup and the [modules reference](https://docs.sphereon.com/idk/guides/modules) for the full module catalog.
 
 ### npm packages
 

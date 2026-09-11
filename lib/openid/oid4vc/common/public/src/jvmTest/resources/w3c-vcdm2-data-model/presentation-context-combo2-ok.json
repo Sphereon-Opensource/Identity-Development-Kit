@@ -1,0 +1,27 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    {
+      "ExampleVerifiablePresentation": "https://example.org/#ExampleVerifiablePresentation"
+    }
+  ],
+  "type": [
+    "VerifiablePresentation",
+    "ExampleVerifiablePresentation"
+  ],
+  "holder": "did:key:z6MkpJySvETLnxhQG9DzEdmKJtysBDjuuTeDfUj1uNNCUqcj",
+  "verifiableCredential": [
+    {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2"
+      ],
+      "type": [
+        "VerifiableCredential"
+      ],
+      "issuer": "did:example:issuer",
+      "credentialSubject": {
+        "id": "did:example:subject"
+      }
+    }
+  ]
+}

@@ -14,7 +14,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.mdoc.transport.ble"
         compileSdk = 35
-        minSdk = 27
     }
 
     configureIosTargetsIfEnabled()

@@ -19,8 +19,8 @@ package com.sphereon.ktor.server.inject
 import com.sphereon.core.api.http.GenericHttpBody
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import dev.zacsweers.metro.createGraph
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
@@ -37,6 +37,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
+import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.route
@@ -44,6 +45,8 @@ import io.ktor.server.routing.routing
 import io.ktor.util.AttributeKey
 import io.ktor.utils.io.core.readBytes
 import io.ktor.utils.io.readRemaining
+import io.ktor.utils.io.writeFully
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Per-call attribute holding the Layer 1 resolved base tenant id.
@@ -70,6 +73,36 @@ val BaseTenantIdAttribute: AttributeKey<String> = AttributeKey("sphereon.tenant.
 val ValidatedJwtClaimsAttribute: AttributeKey<com.sphereon.core.defaults.context.ValidatedJwtClaimsInput> =
     AttributeKey("sphereon.auth.validatedJwtClaims")
 
+/** Marks Ktor routes whose method/path must be selected from the AppScope HTTP catalog. */
+val UniversalHttpAdapterRouteAttribute: AttributeKey<Boolean> =
+    AttributeKey("sphereon.http.universalAdapterRoute")
+
+internal data class UniversalHttpAdapterRoutePolicy(
+    val pathPrefix: String?,
+    val allowedAdapterIds: Set<String>?,
+) {
+    fun selectionPath(requestPath: String): String {
+        val prefix = pathPrefix ?: return requestPath
+        require(requestPath == prefix || requestPath.startsWith("$prefix/")) {
+            "Request path '$requestPath' is outside universal HTTP mount '$prefix'"
+        }
+        return requestPath.removePrefix(prefix).ifEmpty { "/" }
+    }
+}
+
+/** Immutable route-mount policy consumed before SessionScope creation. */
+internal val UniversalHttpAdapterRoutePolicyAttribute: AttributeKey<UniversalHttpAdapterRoutePolicy> =
+    AttributeKey("sphereon.http.universalAdapterRoutePolicy")
+
+/**
+ * The immutable AppScope catalog result trusted by the SessionScope dispatcher.
+ *
+ * This is transport state, deliberately kept off [GenericHttpRequest] so the public KMP request
+ * contract and its JS export/equality semantics remain unchanged.
+ */
+val SelectedHttpAdapterRouteAttribute: AttributeKey<HttpAdapterRouteMatch> =
+    AttributeKey("sphereon.http.selectedAdapterRoute")
+
 /**
  * Configuration for the Universal HTTP Adapter exposure.
  */
@@ -80,6 +113,9 @@ class UniversalHttpAdapterConfig {
      * If set (e.g., "/api"), only routes starting with that prefix are handled.
      */
     var pathPrefix: String? = null
+
+    /** Optional explicit adapter allow-list for a narrowly mounted service surface. */
+    var allowedAdapterIds: Set<String>? = null
 
     /**
      * Whether to enable verbose logging for dispatched requests.
@@ -116,13 +152,21 @@ class UniversalHttpAdapterConfig {
  */
 private suspend fun ApplicationCall.dispatchUniversal(config: UniversalHttpAdapterConfig) {
     try {
+        val selectedRoute =
+            attributes.getOrNull(SelectedHttpAdapterRouteAttribute)
+                ?: error("Universal HTTP dispatch requires an AppScope-selected route")
         val dispatcher = (this.sessionInstance.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
-        val genericRequest = this.toGenericHttpRequest()
+        val genericRequest =
+            this.toGenericHttpRequest().let { request ->
+                request.copy(path = config.routePolicy().selectionPath(request.path))
+            }
         if (config.verboseLogging) {
             this.application.log.info("Dispatching: ${genericRequest.method} ${genericRequest.path}")
         }
-        val genericResponse = dispatcher.dispatch(genericRequest)
+        val genericResponse = dispatcher.dispatch(genericRequest, selectedRoute)
         this.respondWithGenericResponse(genericResponse)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (expected: Throwable) {
         val handler = config.errorHandler
         if (handler != null) {
@@ -130,7 +174,7 @@ private suspend fun ApplicationCall.dispatchUniversal(config: UniversalHttpAdapt
         } else {
             this.application.log.error("Error in UniversalHttpAdapter dispatch", expected)
             this.respondText(
-                text = "Internal server error: ${expected.message}",
+                text = "Internal server error",
                 contentType = ContentType.Text.Plain,
                 status = HttpStatusCode.InternalServerError,
             )
@@ -169,6 +213,7 @@ private suspend fun ApplicationCall.dispatchUniversal(config: UniversalHttpAdapt
  */
 fun Application.installUniversalHttpAdapters(configure: UniversalHttpAdapterConfig.() -> Unit = {}) {
     val config = UniversalHttpAdapterConfig().apply(configure)
+    val routePolicy = config.routePolicy()
 
     routing {
         // CORS-exempt navigation prefixes (e.g. the AS /login, /authorize) are routed WITHOUT the
@@ -178,14 +223,24 @@ fun Application.installUniversalHttpAdapters(configure: UniversalHttpAdapterConf
         val installer = config.corsInstaller
         if (installer != null) {
             for (prefix in config.corsExemptPrefixes) {
-                route(prefix) { handle { call.dispatchUniversal(config) } }
-                route("$prefix/{...}") { handle { call.dispatchUniversal(config) } }
+                route(prefix) {
+                    attributes.put(UniversalHttpAdapterRouteAttribute, true)
+                    attributes.put(UniversalHttpAdapterRoutePolicyAttribute, routePolicy)
+                    handle { call.dispatchUniversal(config) }
+                }
+                route("$prefix/{...}") {
+                    attributes.put(UniversalHttpAdapterRouteAttribute, true)
+                    attributes.put(UniversalHttpAdapterRoutePolicyAttribute, routePolicy)
+                    handle { call.dispatchUniversal(config) }
+                }
             }
         }
 
         // Catch-all route (XHR API surface). The caller's CORS installer, when present, is applied
         // route-scoped HERE — not globally — so it never reaches the exempt navigation prefixes.
         fun Route.installDispatchHandler() {
+            attributes.put(UniversalHttpAdapterRouteAttribute, true)
+            attributes.put(UniversalHttpAdapterRoutePolicyAttribute, routePolicy)
             installer?.invoke(this)
             handle { call.dispatchUniversal(config) }
         }
@@ -213,35 +268,47 @@ fun Application.installUniversalHttpAdapters(configure: UniversalHttpAdapterConf
  */
 fun Route.installUniversalHttpAdapters(configure: UniversalHttpAdapterConfig.() -> Unit = {}) {
     val config = UniversalHttpAdapterConfig().apply(configure)
+    val routePolicy = config.routePolicy()
 
     // Create a catch-all under this route
     route("{...}") {
-        handle {
-            try {
-                val dispatcher = (call.sessionInstance.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
-                val genericRequest = call.toGenericHttpRequest()
-
-                if (config.verboseLogging) {
-                    call.application.log.info("Dispatching: ${genericRequest.method} ${genericRequest.path}")
-                }
-
-                val genericResponse = dispatcher.dispatch(genericRequest)
-                call.respondWithGenericResponse(genericResponse)
-            } catch (expected: Throwable) {
-                val handler = config.errorHandler
-                if (handler != null) {
-                    handler(call, expected)
-                } else {
-                    call.application.log.error("Error in UniversalHttpAdapter dispatch", expected)
-                    call.respondText(
-                        text = "Internal server error: ${expected.message}",
-                        contentType = ContentType.Text.Plain,
-                        status = HttpStatusCode.InternalServerError,
-                    )
-                }
-            }
-        }
+        attributes.put(UniversalHttpAdapterRouteAttribute, true)
+        attributes.put(UniversalHttpAdapterRoutePolicyAttribute, routePolicy)
+        handle { call.dispatchUniversal(config) }
     }
+}
+
+/**
+ * Marks an explicit Ktor route for application-scoped HTTP catalog selection before request scope
+ * construction. The route handler must consume [SelectedHttpAdapterRouteAttribute] and dispatch
+ * that exact match; it must not repeat route selection after SessionScope exists.
+ */
+fun Route.markUniversalHttpAdapterRoute(
+    pathPrefix: String? = null,
+    allowedAdapterIds: Set<String>? = null,
+) {
+    val routePolicy =
+        UniversalHttpAdapterConfig()
+            .apply {
+                this.pathPrefix = pathPrefix
+                this.allowedAdapterIds = allowedAdapterIds
+            }.routePolicy()
+    attributes.put(UniversalHttpAdapterRouteAttribute, true)
+    attributes.put(UniversalHttpAdapterRoutePolicyAttribute, routePolicy)
+}
+
+private fun UniversalHttpAdapterConfig.routePolicy(): UniversalHttpAdapterRoutePolicy {
+    val normalizedPrefix =
+        pathPrefix
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() && it != "/" }
+            ?.let { if (it.startsWith('/')) it else "/$it" }
+            ?.trimEnd('/')
+    val normalizedAdapterIds = allowedAdapterIds?.toSet()
+    require(normalizedAdapterIds == null || normalizedAdapterIds.isNotEmpty()) {
+        "allowedAdapterIds must be null or non-empty"
+    }
+    return UniversalHttpAdapterRoutePolicy(normalizedPrefix, normalizedAdapterIds)
 }
 
 /**
@@ -329,7 +396,8 @@ private fun ContentType.isTextLikeRequestBody(): Boolean {
         value.startsWith("application/x-www-form-urlencoded")
 }
 
-private fun HttpMethod.mayCarryRequestBody(): Boolean = this == HttpMethod.Post || this == HttpMethod.Put || this == HttpMethod.Patch
+private fun HttpMethod.mayCarryRequestBody(): Boolean =
+    this == HttpMethod.Post || this == HttpMethod.Put || this == HttpMethod.Patch || this == HttpMethod.Delete
 
 /**
  * Platform hook for extracting the TLS client certificate chain (DER, leaf-first) from a
@@ -347,14 +415,17 @@ internal expect fun ApplicationCall.extractClientCertificateChain(): List<ByteAr
  * content type from the response headers.
  */
 suspend fun ApplicationCall.respondWithGenericResponse(response: GenericHttpResponse) {
-    // Set response headers
+    val repeatedNames = response.multiValueHeaders.keys.map(String::lowercase).toSet()
     response.headers.forEach { (name, value) ->
-        this.response.header(name, value)
+        if (name.lowercase() !in repeatedNames) this.response.headers.append(name, value)
+    }
+    response.multiValueHeaders.forEach { (name, values) ->
+        values.forEach { value -> this.response.headers.append(name, value) }
     }
 
     // Determine content type from response headers or default to application/json
     val contentType =
-        response.headers["Content-Type"]?.let {
+        response.contentType?.let {
             ContentType.parse(it)
         } ?: ContentType.Application.Json
 
@@ -389,6 +460,15 @@ suspend fun ApplicationCall.respondWithGenericResponse(response: GenericHttpResp
 
         is GenericHttpBody.Empty -> {
             respond(statusCode)
+        }
+
+        is GenericHttpBody.TextStream -> {
+            respondBytesWriter(contentType = contentType, status = statusCode) {
+                bodyContent.flow.collect { chunk ->
+                    writeFully(chunk.encodeToByteArray())
+                    flush()
+                }
+            }
         }
     }
 }

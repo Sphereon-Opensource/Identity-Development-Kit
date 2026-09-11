@@ -22,26 +22,34 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.common.config.isRequired
-import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
+import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseCommand
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys
 import com.sphereon.oauth2.server.authorization.impl.command.token.executeWithTrustedClientAuthorization
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.oidc.OidcScopeClaimsMapper
+import com.sphereon.oauth2.server.authorization.impl.command.putClaims
+import com.sphereon.oauth2.server.authorization.model.FederationTokenMetadata
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_ID_TOKEN
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_USERINFO
 import com.sphereon.oauth2.server.authorization.wallet.accessTokenClaims
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -61,12 +69,18 @@ import kotlin.uuid.Uuid
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<GrantHandler>())
+@ContributesIntoMap(SessionScope::class, binding = binding<GrantHandler>())
+@StringKey(GrantHandlerKeys.AUTHORIZATION_CODE)
 class AuthorizationCodeGrantHandlerImpl(
     private val authorizationCodeStorage: com.sphereon.oauth2.server.authorization.storage.AuthorizationCodeStorage,
+    private val verifyAuthorizationCodeGrant: VerifyAuthorizationCodeGrantCommand,
+    private val createAccessToken: CreateAccessTokenCommand,
+    private val createRefreshToken: Lazy<CreateRefreshTokenCommand>,
+    private val createIdToken: Lazy<CreateIdTokenCommand>,
+    private val createTokenResponse: CreateTokenResponseCommand,
     private val scopeClaimsMapper: OidcScopeClaimsMapper? = null,
 ) : GrantHandler {
-    override val grantType: String = GrantType.AUTHORIZATION_CODE.value
+    override val grantType: String = GrantHandlerKeys.AUTHORIZATION_CODE
 
     override fun supports(params: GrantParameters): Boolean = params is GrantParameters.AuthorizationCode
 
@@ -89,12 +103,11 @@ class AuthorizationCodeGrantHandlerImpl(
         val authParams = params as GrantParameters.AuthorizationCode
         val tokenRequest = context.tokenRequest
         val applied = context.applied
-        val commands = context.commands
         val proofJkt = context.proofJkt
         val certThumbprint = context.certThumbprintS256
 
         val verified =
-            commands.verifyAuthorizationCodeGrant
+            verifyAuthorizationCodeGrant
                 .executeWithTrustedClientAuthorization(
                     VerifyAuthorizationCodeGrantArgs(
                         code = authParams.code,
@@ -142,13 +155,14 @@ class AuthorizationCodeGrantHandlerImpl(
             (verified.additionalData["credential_configuration_ids"] as? List<*>)
                 ?.filterIsInstance<String>()
                 ?.ifEmpty { null }
-        val authCodeAuthorizationDetails =
-            buildAuthorizationCodeCredentialAuthorizationDetails(
-                credentialConfigurationIds = credentialConfigurationIds,
-            )
         val issuerState =
             (verified.additionalData["issuer_state"] as? String)
                 ?.takeIf(String::isNotBlank)
+        val authCodeAuthorizationDetails =
+            buildAuthorizationCodeCredentialAuthorizationDetails(
+                credentialConfigurationIds = credentialConfigurationIds,
+                issuanceSessionId = issuerState,
+            )
 
         // Access token: no identity claims (RFC 9068). The OIDC `claims` request parameter
         // (§5.5) carries through `additionalData` so /userinfo can union the requested per-
@@ -156,8 +170,12 @@ class AuthorizationCodeGrantHandlerImpl(
         // create-access-token command filters internal `oidc.*` keys out of the JWT payload
         // (would otherwise leak the userinfo-claim wishlist to RPs reading the JWT) but
         // keeps them on the stored token for the userinfo endpoint to read.
+        val federationClaims = FederationTokenMetadata.fromUserClaims(buildJsonObject {
+            putClaims(verified.userClaims)
+        })
         val accessTokenAdditional =
             buildMap<String, Any> {
+                federationClaims?.let { put(FederationTokenMetadata.KEY, it) }
                 (verified.codeData.additionalData[SESSION_KEY_OIDC_CLAIMS_USERINFO] as? List<*>)
                     ?.filterIsInstance<String>()
                     ?.takeIf { it.isNotEmpty() }
@@ -188,7 +206,7 @@ class AuthorizationCodeGrantHandlerImpl(
                 issuerState?.let { put(INTERNAL_OID4VCI_ISSUER_STATE_CLAIM, it) }
             }
         val accessToken =
-            commands.createAccessToken
+            createAccessToken
                 .execute(
                     CreateAccessTokenArgs(
                         subject = verified.subject,
@@ -209,7 +227,7 @@ class AuthorizationCodeGrantHandlerImpl(
         // refresh-token row so a future refresh-grant can reissue an id_token with
         // auth_time / acr / amr / nonce / sid pinned to the original authentication.
         val refreshToken =
-            commands.createRefreshToken
+            createRefreshToken.value
                 .execute(
                     CreateRefreshTokenArgs(
                         subject = verified.subject,
@@ -226,6 +244,7 @@ class AuthorizationCodeGrantHandlerImpl(
                         amr = verified.codeData.amr,
                         nonce = verified.codeData.nonce,
                         loginSessionId = verified.codeData.sessionId,
+                        federationClaims = federationClaims?.toString(),
                     ),
                 ).getOrElse { error -> return Err(error) }
 
@@ -278,7 +297,7 @@ class AuthorizationCodeGrantHandlerImpl(
                         emptyMap()
                     }
 
-                commands.createIdToken
+                createIdToken.value
                     .execute(
                         CreateIdTokenArgs(
                             subject = verified.subject,
@@ -303,7 +322,7 @@ class AuthorizationCodeGrantHandlerImpl(
         // OID4VCI 1.1 Section 7.2: include authorization_details with credential_identifiers
         // when the auth-code grant carried credential configuration IDs (e.g. from authorization_details
         // in the original authorization request), so the wallet knows which credentials to request.
-        return commands.createTokenResponse.execute(
+        return createTokenResponse.execute(
             CreateTokenResponseArgs(
                 accessToken = accessToken.value,
                 tokenType = tokenTypeFor(boundJkt),
@@ -325,18 +344,29 @@ class AuthorizationCodeGrantHandlerImpl(
 @OptIn(ExperimentalUuidApi::class)
 internal fun buildAuthorizationCodeCredentialAuthorizationDetails(
     credentialConfigurationIds: List<String>?,
-    credentialIdentifierProvider: (String) -> String = { "urn:vdx:oid4vci:credential:${Uuid.random()}" },
+    issuanceSessionId: String? = null,
+    credentialIdentifierProvider: ((String) -> String)? = null,
 ): JsonArray? =
     credentialConfigurationIds?.takeIf { it.isNotEmpty() }?.let { configIds ->
         JsonArray(
             configIds.map { configId ->
+                val identifier =
+                    credentialIdentifierProvider?.invoke(configId)
+                        ?: buildString {
+                            append("urn:vdx:oid4vci:credential:")
+                            issuanceSessionId?.takeIf(String::isNotBlank)?.let {
+                                append(it)
+                                append(':')
+                            }
+                            append(Uuid.random())
+                        }
                 buildJsonObject {
                     put("type", JsonPrimitive("openid_credential"))
                     put("credential_configuration_id", JsonPrimitive(configId))
                     // This is an authorization handle for one Credential Dataset, not the
                     // credential_configuration_id and not an OAuth scope value.
                     putJsonArray("credential_identifiers") {
-                        add(JsonPrimitive(credentialIdentifierProvider(configId)))
+                        add(JsonPrimitive(identifier))
                     }
                 }
             },

@@ -6,6 +6,7 @@
 
 package com.sphereon.wallet.interaction.presenter
 
+import com.sphereon.wallet.interaction.WalletFailureDisposition
 import com.sphereon.wallet.interaction.WalletInteractionActivityType
 import com.sphereon.wallet.interaction.WalletCounterpartyRole
 import com.sphereon.wallet.interaction.WalletCounterpartySummary
@@ -260,16 +261,24 @@ private fun projection(state: WalletInteractionState): WalletInteractionScreenPr
                         WalletInteractionErrorPresentation(
                             code = it.code,
                             messageKey = it.messageKey,
-                            retryable = it.retryable,
+                            disposition = it.disposition.toPresentation(),
                             arguments = it.arguments,
                         )
-                    },
+                },
                 receivedCredentials = state.receivedCredentialPreview.map { it.toPresentation() },
                 completionHandoffRef = state.completionHandoffRef?.let { WalletSensitiveInputRefPresentation(it.value) },
+                receiveContext = state.receiveTerminalContext(),
             )
         WalletInteractionStatus.ResolvingEntryPoint,
         WalletInteractionStatus.Sharing,
         -> WalletInteractionScreenProjection.Progress(state.status.toPresentation())
+    }
+
+private fun WalletFailureDisposition.toPresentation(): WalletFailureDispositionPresentation =
+    when (this) {
+        WalletFailureDisposition.TERMINAL -> WalletFailureDispositionPresentation.TERMINAL
+        WalletFailureDisposition.REPEATABLE -> WalletFailureDispositionPresentation.REPEATABLE
+        WalletFailureDisposition.RESUMABLE -> WalletFailureDispositionPresentation.RESUMABLE
     }
 
 private fun WalletInteractionFlowKind.toPresentation(): WalletInteractionFlowKindPresentation =
@@ -320,6 +329,19 @@ private fun WalletCounterpartySummary?.toPresentation(): WalletPartyPresentation
             retentionArguments = emptyMap(),
         )
     }
+
+private fun WalletInteractionState.receiveTerminalContext(): WalletReceiveTerminalContextPresentation? {
+    val offer = offerPresentation() ?: return null
+    val issuer = offer.issuer ?: counterparty.toPresentation() ?: return null
+    val encounter = counterpartyEncounter.toPresentation() ?: return null
+    if (issuer.role != WalletPartyRolePresentation.ISSUER) return null
+    return WalletReceiveTerminalContextPresentation(
+        issuer = issuer,
+        trust = trust.toPresentation(),
+        encounter = encounter,
+        offer = offer.copy(issuer = issuer),
+    )
+}
 
 private fun com.sphereon.wallet.interaction.WalletCounterpartyEncounterResult?.toPresentation(): WalletCounterpartyEncounterPresentation? =
     this
@@ -382,6 +404,21 @@ private fun com.sphereon.wallet.interaction.WalletCounterpartyTrustSummary?.toPr
                 )
             },
         markedTrustedByUser = this?.rememberedDecision == true,
+        chain =
+            this?.trustChain?.let { chain ->
+                WalletTrustChainPresentation(
+                    hops =
+                        chain.hops.map { hop ->
+                            WalletTrustChainHopPresentation(
+                                identifier = hop.identifier,
+                                displayName = hop.displayName,
+                                position = WalletTrustChainHopPositionPresentation.valueOf(hop.position.name),
+                                assertedBy = hop.assertedBy,
+                            )
+                        },
+                    links = WalletTrustChainLinksPresentation.valueOf(chain.links.name),
+                )
+            },
     )
 }
 

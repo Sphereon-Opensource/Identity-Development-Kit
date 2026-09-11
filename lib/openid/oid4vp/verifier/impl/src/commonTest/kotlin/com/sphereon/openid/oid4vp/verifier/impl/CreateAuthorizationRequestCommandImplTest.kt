@@ -18,11 +18,12 @@ package com.sphereon.openid.oid4vp.verifier.impl
 
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.dcqlQuery
-import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.ClaimsPathPointer
+import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.mdocMeta
@@ -462,6 +463,157 @@ class CreateAuthorizationRequestCommandImplTest {
 
             assertIs<Ok<*>>(result)
             assertEquals("x509_san_dns:caller.example.com", result.value.request.clientId)
+        }
+
+    /**
+     * The direct_post post-completion destination is pinned on the session, not on the request:
+     * `redirect_uri` and `response_uri` are mutually exclusive on the wire, so the request object
+     * must stay free of it while the value still has to survive to response time.
+     */
+    @Test
+    fun directPostResponseRedirectUriIsPinnedOnTheSessionAndKeptOutOfTheRequest() =
+        runTest {
+            val store = TestAuthorizationSessionStore()
+            val command =
+                CreateAuthorizationRequestCommandImpl(
+                    execution = testContext.execution,
+                    authorizationSessionStore = store,
+                    requestObjectSigningConfig =
+                        com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
+                            .disabled(),
+                )
+
+            val result =
+                command.createAuthorizationRequest(
+                    CreateAuthorizationRequestArgs(
+                        instanceId = "verifier-instance-direct-post-redirect",
+                        dcqlQuery =
+                            DcqlQuery(
+                                credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
+                            ),
+                        clientId = "https://verifier.example.com",
+                        responseUri = "https://verifier.example.com/response",
+                        responseMode = ResponseMode.DIRECT_POST,
+                        nonce = "nonce12345678",
+                        directPostResponseRedirectUri = "https://app.example.com/done",
+                    ),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertEquals(null, result.value.request.redirectUri)
+            val session = store.get(result.value.sessionId!!).getOrNull()
+            assertNotNull(session)
+            assertEquals("https://app.example.com/done", session.directPostResponseRedirectUri)
+        }
+
+    /** A caller TTL decides the session lifetime; without one the store default applies. */
+    @Test
+    fun callerTtlDrivesTheStoredSessionExpiry() =
+        runTest {
+            val store = TestAuthorizationSessionStore()
+            val command =
+                CreateAuthorizationRequestCommandImpl(
+                    execution = testContext.execution,
+                    authorizationSessionStore = store,
+                    requestObjectSigningConfig =
+                        com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
+                            .disabled(),
+                )
+
+            val result =
+                command.createAuthorizationRequest(
+                    CreateAuthorizationRequestArgs(
+                        instanceId = "verifier-instance-caller-ttl",
+                        dcqlQuery =
+                            DcqlQuery(
+                                credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
+                            ),
+                        clientId = "https://verifier.example.com",
+                        responseUri = "https://verifier.example.com/response",
+                        responseMode = ResponseMode.DIRECT_POST,
+                        nonce = "nonce12345678",
+                        ttlSeconds = 42,
+                    ),
+                )
+
+            assertIs<Ok<*>>(result)
+            val entry = store.getEntry(result.value.sessionId!!).getOrNull()
+            assertNotNull(entry)
+            // The store TTL and the session's own expiresAt must agree — both derived from the
+            // caller value, so a TTL no longer depends on whether a callback was configured.
+            assertEquals(42_000L, entry.expiresAt - entry.createdAt)
+            assertEquals(42_000L, entry.value.expiresAt - entry.value.createdAt)
+        }
+
+    @Test
+    fun invalidCallerTtlsAreRejectedBeforePersistence() =
+        runTest {
+            listOf(0L, -1L, Long.MAX_VALUE).forEachIndexed { index, ttlSeconds ->
+                val store = TestAuthorizationSessionStore()
+                val command = createTestCommand(store)
+                val result =
+                    command.createAuthorizationRequest(
+                        CreateAuthorizationRequestArgs(
+                            instanceId = "verifier-instance-invalid-ttl-$index",
+                            dcqlQuery =
+                                DcqlQuery(
+                                    credentials = listOf(DcqlCredentialQuery(id = "c", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential"))),
+                                ),
+                            clientId = "https://verifier.example.com",
+                            responseUri = "https://verifier.example.com/response",
+                            responseMode = ResponseMode.DIRECT_POST,
+                            nonce = "nonce12345678",
+                            state = "invalid-ttl-$index",
+                            ttlSeconds = ttlSeconds,
+                        ),
+                    )
+
+                assertEquals("ILLEGAL_ARGUMENT_ERROR", assertIs<Err<IdkError>>(result).error.code)
+                assertEquals(false, store.exists("invalid-ttl-$index").getOrNull())
+            }
+        }
+
+    @Test
+    fun duplicateCallerStateCannotOverwriteAnExistingSession() =
+        runTest {
+            val store = TestAuthorizationSessionStore()
+            val command = createTestCommand(store)
+            val firstArgs =
+                CreateAuthorizationRequestArgs(
+                    instanceId = "verifier-instance-duplicate-state",
+                    dcqlQuery =
+                        DcqlQuery(
+                            credentials = listOf(DcqlCredentialQuery(id = "first", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:first"))),
+                        ),
+                    clientId = "https://verifier.example.com",
+                    responseUri = "https://verifier.example.com/response",
+                    responseMode = ResponseMode.DIRECT_POST,
+                    nonce = "firstNonce123",
+                    state = "shared-business-key",
+                )
+
+            assertIs<Ok<*>>(command.createAuthorizationRequest(firstArgs))
+            val duplicate =
+                command.createAuthorizationRequest(
+                    firstArgs.copy(
+                        dcqlQuery =
+                            DcqlQuery(
+                                credentials = listOf(DcqlCredentialQuery(id = "second", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:second"))),
+                            ),
+                        nonce = "secondNonce123",
+                    ),
+                )
+
+            assertEquals("ALREADY_EXISTS_ERROR", assertIs<Err<IdkError>>(duplicate).error.code)
+            val persisted = store.get("shared-business-key").getOrNull()
+            assertNotNull(persisted)
+            assertEquals("firstNonce123", persisted.authorizationRequest.nonce)
+            assertEquals(
+                "first",
+                persisted.dcqlQuery.credentials
+                    .single()
+                    .id,
+            )
         }
 
     /** Helper: read client_id_scheme back out of the serialised request, because the

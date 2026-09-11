@@ -24,6 +24,7 @@ import com.sphereon.core.api.conf.ConfigService
 import com.sphereon.core.api.conf.DefaultPropertySources
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.MutableMapPropertySource
+import com.sphereon.core.api.conf.ProtectedMutableMapPropertySource
 import com.sphereon.core.api.conf.RefreshablePropertySource
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.api.conf.PropertySource
@@ -45,7 +46,11 @@ import com.sphereon.di.session.SessionContextManager
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.InternalClientConfig
+import com.sphereon.oauth2.common.config.LoginInteraction
+import com.sphereon.oauth2.common.config.LoginMethod
+import com.sphereon.oauth2.common.config.LoginRenderer
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.PublicClientConfig
 import com.sphereon.oauth2.common.config.SessionConfig
 import com.sphereon.oauth2.common.config.TokenFormat
@@ -53,6 +58,8 @@ import kotlinx.io.files.Path
 import kotlin.reflect.KClass
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -83,6 +90,62 @@ import kotlin.test.fail
 class OAuth2ServersConfigBinderRoundTripTest {
     private val asId = "test-as"
     private val prefix = "${OAuth2ServerInstanceConfig.CONFIG_PREFIX}.$asId"
+
+    @Test
+    fun internalClientRoleResolverReadsOpaqueClientIdWithoutPlaintextSecret() {
+        val tenantId = "tenant-123"
+        val properties =
+            mapOf(
+                "${OAuth2ServerInstanceConfig.CONFIG_PREFIX}.default-server" to asId,
+                "$prefix.mode" to "HOSTED",
+                "$prefix.internal-clients.issuer.client-id" to "issuer-service:$tenantId",
+                "$prefix.internal-clients.issuer.tenant-id" to tenantId,
+            )
+        val configService = TypeAwarePrincipalConfigService(properties)
+        val execution = TestSessionExecution(configService, tenantId = tenantId)
+        val serversConfigProvider = OAuth2ServersConfigBinder(execution)
+        val resolver =
+            ConfigBackedInternalClientRoleResolver(
+                execution = execution,
+                asInstanceIdProvider =
+                    object : OAuth2ServerInstanceIdProvider {
+                        override fun currentAsInstanceId(): String? = null
+                    },
+                serversConfigProvider = serversConfigProvider,
+            )
+
+        assertTrue(
+            serversConfigProvider.getDefaultServer().internalClients.isEmpty(),
+            "opaque client without client-secret must stay out of the legacy typed config",
+        )
+        assertEquals("issuer-service:$tenantId", resolver.resolveClientId("issuer"))
+    }
+
+    @Test
+    fun serverConfigIsResolvedOncePerPrincipalContentRevision() {
+        val configService =
+            TypeAwarePrincipalConfigService(
+                mapOf(
+                    "$prefix.mode" to "HOSTED",
+                    "$prefix.issuer" to "https://before.example.com",
+                ),
+            )
+        val binder = OAuth2ServersConfigBinder(TestSessionExecution(configService))
+
+        val first = binder.getConfig()
+        val readsAfterFirstBind = configService.propertyReadCount
+        val unchanged = binder.getConfig()
+
+        assertSame(first, unchanged, "an unchanged principal view must reuse the request-local bind")
+        assertEquals(readsAfterFirstBind, configService.propertyReadCount, "the same revision must not rescan server properties")
+
+        configService.putProperty("$prefix.issuer", "https://after.example.com")
+        val revised = binder.getConfig()
+
+        assertNotSame(first, revised, "a content revision must invalidate the request-local bind")
+        assertEquals("https://after.example.com", revised.servers[asId]?.issuer)
+        assertTrue(configService.propertyReadCount > readsAfterFirstBind)
+    }
 
     @Test
     fun everyServerInstanceConfigFieldIsReadByBinder() {
@@ -215,6 +278,14 @@ class OAuth2ServersConfigBinderRoundTripTest {
         assertEquals("require-backed-up", server.webAuthn.backupStatePolicy, "webAuthn.backupStatePolicy")
         assertEquals(7_003L, server.webAuthn.challengeTtlSeconds, "webAuthn.challengeTtlSeconds")
         assertEquals(true, server.webAuthn.level3PrfEnabled, "webAuthn.level3PrfEnabled")
+        assertEquals(LoginInteraction.CHOOSER, server.login.interaction, "login.interaction")
+        assertEquals(LoginRenderer.NEUTRAL, server.login.renderer, "login.renderer")
+        assertEquals(false, server.login.themeResolutionEnabled, "login.themeResolutionEnabled")
+        assertEquals(false, server.login.showPasswordForm, "login.showPasswordForm")
+        assertEquals(true, server.login.showFederation, "login.showFederation")
+        assertEquals(true, server.login.showWallet, "login.showWallet")
+        assertEquals("https://wallet.example/start", server.login.walletAuthorizationUrl, "login.walletAuthorizationUrl")
+        assertEquals(LoginMethod.WALLET, server.login.defaultMethod, "login.defaultMethod")
     }
 
     private fun buildSentinelProperties(): Map<String, Any> =
@@ -323,6 +394,14 @@ class OAuth2ServersConfigBinderRoundTripTest {
             "$prefix.webauthn.backup-state-policy" to "require-backed-up",
             "$prefix.webauthn.challenge-ttl-seconds" to 7_003L,
             "$prefix.webauthn.level3-prf-enabled" to true,
+            "$prefix.login.interaction" to "chooser",
+            "$prefix.login.renderer" to "neutral",
+            "$prefix.login.theme-resolution-enabled" to false,
+            "$prefix.login.methods.password" to false,
+            "$prefix.login.methods.federation" to true,
+            "$prefix.login.methods.wallet" to true,
+            "$prefix.login.wallet.authorization-url" to "https://wallet.example/start",
+            "$prefix.login.default-method" to "wallet",
         )
 
     @Test
@@ -428,7 +507,11 @@ internal class TypeAwarePrincipalConfigService(
     properties: Map<String, Any>,
     private val subPropertiesOverride: ((Set<String>, Boolean, Map<String, Any>) -> Map<String, Any>)? = null,
     private val normalizeKeys: Boolean = false,
+    tenantConfigOverride: TenantConfigService? = null,
+    principalScopedProperties: Map<String, Any> = emptyMap(),
 ) : PrincipalConfigService {
+    internal var propertyReadCount: Int = 0
+        private set
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
     private val properties: MutableMap<String, Any> =
         if (normalizeKeys) {
@@ -444,7 +527,21 @@ internal class TypeAwarePrincipalConfigService(
      */
     private val revisionSource = RevisionTrackingPropertySource("type-aware-principal-test")
 
-    private val propertySources = DefaultPropertySources(mutableListOf(revisionSource))
+    private val propertySources =
+        DefaultPropertySources(
+            mutableListOf<PropertySource<*>>(revisionSource).apply {
+                if (principalScopedProperties.isNotEmpty()) {
+                    add(
+                        ProtectedMutableMapPropertySource(
+                            sourceName = "type-aware-principal-owned-test",
+                            sourceLevel = ConfigLevel.PRINCIPAL,
+                        ).apply { addProperties(principalScopedProperties) },
+                    )
+                }
+            },
+        )
+    private val tenantConfig: TenantConfigService =
+        tenantConfigOverride ?: TypeAwareTenantConfigService(this)
 
     internal fun putProperty(
         key: String,
@@ -467,7 +564,7 @@ internal class TypeAwarePrincipalConfigService(
     }
 
     override val parent: TenantConfigService
-        get() = error("parent not used in this test")
+        get() = tenantConfig
 
     override val configLevel: ConfigLevel = ConfigLevel.PRINCIPAL
 
@@ -486,7 +583,10 @@ internal class TypeAwarePrincipalConfigService(
     @Suppress("DEPRECATION")
     override fun getNamespace(): String = ""
 
-    override fun containsProperty(key: String): Boolean = properties.containsKey(normalizeKey(key))
+    override fun containsProperty(key: String): Boolean {
+        propertyReadCount += 1
+        return properties.containsKey(normalizeKey(key))
+    }
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : Any> getProperty(
@@ -494,6 +594,7 @@ internal class TypeAwarePrincipalConfigService(
         targetType: KClass<T>,
         defaultValue: T?,
     ): T? {
+        propertyReadCount += 1
         val raw = properties[normalizeKey(key)] ?: return defaultValue
         if (targetType.isInstance(raw)) {
             return raw as T
@@ -535,7 +636,10 @@ internal class TypeAwarePrincipalConfigService(
     override fun getPropertyAsString(
         key: String,
         defaultValue: String?,
-    ): String? = properties[normalizeKey(key)]?.toString() ?: defaultValue
+    ): String? {
+        propertyReadCount += 1
+        return properties[normalizeKey(key)]?.toString() ?: defaultValue
+    }
 
     override fun <T : Any> getRequiredProperty(
         key: String,
@@ -560,6 +664,7 @@ internal class TypeAwarePrincipalConfigService(
         prefixes: Set<String>,
         stripPrefix: Boolean,
     ): Map<String, Any> {
+        propertyReadCount += 1
         subPropertiesOverride?.let { return it(prefixes, stripPrefix, properties) }
         val matched = mutableMapOf<String, Any>()
         for (prefix in prefixes) {
@@ -589,16 +694,87 @@ internal class TypeAwarePrincipalConfigService(
 }
 
 /**
+ * Tenant facade used by binder tests whose synthetic map historically represented the complete
+ * effective config view. Opaque internal-client tests now read the tenant parent explicitly,
+ * while principal-owned client tests continue to use the principal service itself.
+ */
+internal class TypeAwareTenantConfigService(
+    private val delegate: TypeAwarePrincipalConfigService,
+) : TenantConfigService {
+    override val parent: AppConfigService
+        get() = error("app parent not used in this test")
+
+    override val configLevel: ConfigLevel = ConfigLevel.TENANT
+
+    override fun addPropertySource(source: PropertySource<*>): ConfigService = delegate.addPropertySource(source)
+
+    override fun removePropertySource(source: PropertySource<*>): ConfigService = delegate.removePropertySource(source)
+
+    override fun getActiveProfile(): String = delegate.getActiveProfile()
+
+    override fun getAppName(): String = delegate.getAppName()
+
+    override fun getConfigLocation(): Path = delegate.getConfigLocation()
+
+    override fun getPropertySources(includeParents: Boolean): PropertySources = delegate.getPropertySources(includeParents)
+
+    override fun containsProperty(key: String): Boolean = delegate.containsProperty(key)
+
+    override fun <T : Any> getProperty(
+        key: String,
+        targetType: KClass<T>,
+        defaultValue: T?,
+    ): T? = delegate.getProperty(key, targetType, defaultValue)
+
+    override fun getPropertyAsString(
+        key: String,
+        defaultValue: String?,
+    ): String? = delegate.getPropertyAsString(key, defaultValue)
+
+    override fun <T : Any> getRequiredProperty(
+        key: String,
+        targetType: KClass<T>,
+        defaultValue: T?,
+    ): T = delegate.getRequiredProperty(key, targetType, defaultValue)
+
+    override fun getRequiredPropertyAsString(
+        key: String,
+        defaultValue: String?,
+    ): String = delegate.getRequiredPropertyAsString(key, defaultValue)
+
+    override fun getAllProperties(): Map<String, Any> = delegate.getAllProperties()
+
+    override fun getAllPropertiesAsString(redact: Boolean): Map<String, String> =
+        delegate.getAllPropertiesAsString(redact)
+
+    override fun getSubProperties(
+        prefixes: Set<String>,
+        stripPrefix: Boolean,
+    ): Map<String, Any> = delegate.getSubProperties(prefixes, stripPrefix)
+
+    override fun getSubPropertiesAsString(
+        prefixes: Set<String>,
+        stripPrefix: Boolean,
+        redact: Boolean,
+    ): Map<String, String> = delegate.getSubPropertiesAsString(prefixes, stripPrefix, redact)
+
+    @Suppress("DEPRECATION")
+    override fun getNamespace(): String = delegate.getNamespace()
+}
+
+/**
  * Minimal [SessionExecution] surface: only [conf] is exercised by the binder under test, so the
  * remaining members throw to flag accidental scope creep in [OAuth2ServersConfigBinder].
  */
 internal class TestSessionExecution(
     principal: PrincipalConfigService,
+    override val tenantId: String = NoOpSessionContext.context.tenant.tenantId,
+    override val principalId: String = NoOpSessionContext.context.principal.toString(),
+    override val log: SessionLogService = NoOpSessionLogService,
 ) : SessionExecution {
     override val sessionContext: SessionContext = NoOpSessionContext
     override val sessionContextManager: SessionContextManager
         get() = error("sessionContextManager not used in this test")
-    override val log: SessionLogService = NoOpSessionLogService
     override val conf: ContextConfig = TestContextConfig(principal)
 }
 
@@ -606,13 +782,35 @@ internal class TestContextConfig(
     override val principal: PrincipalConfigService,
 ) : ContextConfig {
     override val app: AppConfigService get() = error("app config not used in this test")
-    override val tenant: TenantConfigService get() = error("tenant config not used in this test")
+    override val tenant: TenantConfigService get() = principal.parent
 
     override fun conf(level: ConfigLevel): ConfigService =
         when (level) {
             ConfigLevel.PRINCIPAL -> principal
-            else -> error("only PRINCIPAL config is exercised by OAuth2ServersConfigBinder")
+            ConfigLevel.TENANT -> tenant
+            else -> error("APP config is not exercised by these OAuth2 config tests")
         }
+}
+
+/** Session log that keeps every emitted message so a test can assert on what was reported. */
+internal class RecordingSessionLogService : SessionLogService {
+    val messages = mutableListOf<LogMessage>()
+
+    override val sessionContext: SessionContext = NoOpSessionContext
+    override val id: String = "test-recording-log"
+    override val isEnabled: Boolean = true
+    override val scope: IdkScope = IdkScope.SESSION
+    override val logManager: SessionLogManager
+        get() = throw NotImplementedError("logManager not used in this test")
+
+    override suspend fun setConfig(config: LoggerConfig): LogService = this
+
+    override fun executeAsync(message: LogMessage): IdkResult<Unit, IdkErrorType> {
+        messages += message
+        return Ok(Unit)
+    }
+
+    override fun toAsync(): AsyncLogService = throw NotImplementedError("toAsync not used in this test")
 }
 
 internal object NoOpSessionLogService : SessionLogService {

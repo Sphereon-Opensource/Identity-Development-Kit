@@ -31,6 +31,7 @@ interface ListVerificationMethodsEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listVerificationMethods",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("VerificationMethods"),
                 summary = "List verification methods on a DID",
             )
@@ -49,6 +50,7 @@ interface AddVerificationMethodEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addVerificationMethod",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("VerificationMethods"),
                 summary = "Add a verification method to a DID",
             )
@@ -66,6 +68,7 @@ interface GetVerificationMethodEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getVerificationMethod",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("VerificationMethods"),
                 summary = "Get a verification method by id",
             )
@@ -84,6 +87,7 @@ interface UpdateVerificationMethodEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "updateVerificationMethod",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("VerificationMethods"),
                 summary = "Update a verification method",
             )
@@ -100,6 +104,7 @@ interface RemoveVerificationMethodEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}/verification-methods/{methodId}",
                 operationId = "removeVerificationMethod",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("VerificationMethods"),
                 summary = "Remove a verification method from a DID",
             )

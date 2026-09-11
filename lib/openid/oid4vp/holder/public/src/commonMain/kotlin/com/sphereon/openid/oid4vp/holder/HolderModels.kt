@@ -16,9 +16,12 @@
 
 package com.sphereon.openid.oid4vp.holder
 
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.openid.oid4vc.common.CredentialFormat
+import com.sphereon.openid.oid4vc.common.PresentationFormat
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientIdValidationError
 import com.sphereon.openid.oid4vp.common.ClientMetadata
@@ -26,6 +29,8 @@ import com.sphereon.openid.oid4vp.common.ParsedTransactionDataEntry
 import com.sphereon.openid.oid4vp.common.VerifierAttestation
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -108,13 +113,27 @@ data class VerifierInfo(
     val trustRoot: String? = null,
 )
 
+/** Explicit result artifact prepared by the holder signing surface. */
+@Serializable
+@JsExportCompat
+data class PreparedPresentation(
+    /** The already holder-secured presentation to place on the OID4VP wire. */
+    val presentation: JsonObject,
+    /** Format of the already secured presentation artifact. */
+    val presentationFormat: PresentationFormat,
+    /** DCQL query IDs satisfied by this presentation. */
+    val credentialQueryIds: List<String>,
+    /** Wallet credential IDs included in this presentation. */
+    val credentialIds: List<String>,
+)
+
 /**
  * A credential selected by the holder to include in the authorization response.
  *
  * Each selected credential must include:
  * - Credential query ID (from DCQL query)
  * - Identifier (local wallet ID)
- * - Presentation format (JWT, SD-JWT, mdoc)
+ * - Credential format of the stored credential
  * - Presentation payload (signed/serialized credential)
  * - Optional disclosed claims (for selective disclosure formats)
  *
@@ -123,8 +142,13 @@ data class VerifierInfo(
  * @property credentialQueryId The credential query ID from the DCQL query this presentation satisfies.
  *                             This is used as the key in the vp_token object.
  * @property credentialId Local identifier for the credential (wallet-specific)
- * @property presentation Serialized presentation (JWT, SD-JWT, or mdoc CBOR)
- * @property format Format identifier (e.g., "dc+sd-jwt", "mso_mdoc", "jwt_vp")
+ * @property presentation Credential/presentation wire value. Compact JWT, SD-JWT, and mdoc
+ *                        values are JSON strings; Data Integrity credentials and presentations
+ *                        are JSON objects. Keeping the protocol value as JSON preserves that
+ *                        distinction without stringifying JSON-LD.
+ * @property credentialFormat Credential format identifier of the stored credential. A VP format
+ *                              is never accepted here; a produced VP is represented by
+ *                              [PreparedPresentation.presentationFormat] or by the holder result.
  * @property disclosedClaims Optional map of disclosed claims (for SD-JWT)
  * @property holderKeyRef Opaque WSCA/WSCD reference for the holder key bound to this credential.
  *                        The holder signing surface resolves it; the protocol model does not select
@@ -137,18 +161,48 @@ data class VerifierInfo(
  *                                  SD-JWT presentation with its fresh KB-JWT applied by the holder's
  *                                  signing delegate. The holder validates the embedded KB-JWT request
  *                                  binding and submits that prepared artifact without signing it again.
+ * @property holderId The holder identifier to place in a VCDM Verifiable Presentation. This is
+ *                    deliberately separate from both the credential subject and [holderKeyRef]:
+ *                    a holder key reference is key lookup metadata, and a presentation holder is
+ *                    not inferred from the credentialSubject.
+ * @property holderVerificationMethod Absolute controlled-identifier URL placed in a Data
+ *                                    Integrity proof. It may resolve through DID, HTTPS/JWKS,
+ *                                    X.509-backed, or another configured identifier resolver;
+ *                                    it is never inferred from the private key alias.
+ * @property dataIntegrityCryptosuite Cryptosuite used for a holder Data Integrity proof.
  */
 @Serializable
 @JsExportCompat
 data class SelectedCredential(
     val credentialQueryId: String,
     val credentialId: String,
-    val presentation: String,
-    val format: String,
+    val presentation: JsonElement,
+    val credentialFormat: CredentialFormat,
     @JsExportIgnoreCompat
     val disclosedClaims: Map<String, String>? = null,
     val holderKeyRef: String? = null,
     val sdJwtKeyBindingApplied: Boolean = false,
+    val holderId: String? = null,
+    val holderVerificationMethod: String? = null,
+    /**
+     * Exact identifier source admitted for JWT VP signing. This runtime-only value keeps DID,
+     * JWKS/managed kid, and X.509 selection explicit instead of inferring trust semantics from a
+     * private key alias or from the spelling of [holderVerificationMethod].
+     */
+    @Transient
+    @JsExportIgnoreCompat
+    val holderJwtVpSigningIdentifier: HolderJwtVpSigningIdentifier? = null,
+    /** Exact WSCA key algorithm supplied by wallet key metadata, never inferred from an identifier. */
+    @Transient
+    @JsExportIgnoreCompat
+    val holderSigningAlgorithm: SignatureAlgorithm? = null,
+    val dataIntegrityCryptosuite: String? = null,
+    /** True only when a wallet WSCA binding provider already secured [presentation] as a VP. */
+    val dataIntegrityProofApplied: Boolean = false,
+    /** Attended wallet operation binding to carry into a WSCA-backed JWT VP signing provider. */
+    val holderJwtVpOperationBinding: String? = null,
+    /** Wallet unit owning [holderKeyRef]; never inferred from a key alias or tenant fallback. */
+    val holderJwtVpWalletUnitId: String? = null,
 )
 
 /**

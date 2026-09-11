@@ -91,7 +91,7 @@ The validator reads its configuration from `JwtValidationConfig`:
 |---|---|---|
 | `enabled` | `true` | Set `false` in local development when you want to disable auth wholesale. |
 | `defaultIdp` | `null` | The single upstream `IdpConfig`. Required for any production deployment. |
-| `tenantIdps` | empty map | Kept for interface compatibility. In IDK BYO the registry loads this map at startup and treats it as read-only. Dynamic per-tenant IdP overrides are an EDK feature. |
+| `tenantIdps` | empty map | Static IDK startup configuration only. It is not a lifecycle authority and EDK does not extend it with a mutable tenant registry. |
 | `anonymous` | `AnonymousAccessConfig(allowed=false)` | Opt-in list of path patterns that may be accessed without a token. |
 | `strictIssuerMatching` | `true` | When `true`, an unknown issuer returns `Err(UntrustedIssuer)`. When `false`, unknown issuers fall back to `defaultIdp`. Keep `true` in production. |
 
@@ -209,17 +209,18 @@ A-6 moved tenant resolution entirely into `IdentityResolutionPipeline`, and FU-9
 
 ## Upgrade path to EDK
 
-When any of the scope limits above becomes binding, switch to EDK. The upgrade is additive, not a rewrite: EDK modules provide `@ContributesBinding(..., replaces = [DefaultIdpRegistry::class])` style overrides that take over where IDK defaults sit today.
+When any of the scope limits above becomes binding, switch to EDK. EDK administers hosted and external authorization servers as UUID-native tenant resources. It does not add a mutable identity-provider lifecycle registry above the IDK startup map.
 
-Summary of what EDK adds (see WP-B in the action plan for details):
+EDK adds the following capabilities:
 
-- `TenantIdpRegistry` + `TenantAwareIdpRegistry`: per-tenant IdP mapping, replaces the IDK default at session scope.
+- Tenant-scoped hosted and external authorization-server resources under `/api/platform/config/v1/tenants/{tenantId}/authorization-servers`.
+- Typed federation bindings from a hosted authorization server to an external OIDC authorization server.
 - `FederationSessionStore` Postgres implementation: multi-replica-safe federation state.
 - `AssurancePolicyResolver`: per-tenant `acr`/`amr` to LoA mapping with trust-chain gating.
-- IdP admin REST API: runtime IdP management, hot reload.
-- Hybrid deployment dispatcher: routes tenant A to an own AS and tenant B to a BYO IdP in the same process.
+- Hosted `LOCAL_ONLY`, `FEDERATED_ONLY`, and `HYBRID` authentication modes with deterministic upstream selection.
+- Discovery validation, confidential-client references, and lifecycle operations through the authorization-server resource API.
 
-You keep the same service code; you swap classpath modules and the EDK bindings take effect automatically.
+Existing deployments are converted by the coded authorization-server authority migration. The retired tenant IdP tables are migration input only and are removed from ordinary runtime administration after successful conversion.
 
 ---
 

@@ -1,0 +1,2 @@
+ALTER TABLE key_reference
+ADD COLUMN control_mode TEXT NOT NULL DEFAULT 'platform_managed';

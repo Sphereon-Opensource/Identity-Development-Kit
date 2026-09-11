@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vci.issuer.impl.command
 
 import com.sphereon.core.api.Err
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
@@ -37,13 +38,22 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.openid.oid4vci.common.model.CredentialResponse
 import com.sphereon.openid.oid4vci.common.model.CredentialResponseItem
+import com.sphereon.openid.oid4vci.common.model.CredentialRequest
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationSelectionRequest
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerSelection
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciCredentialAuthorizationSelection
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciIssuerAuthorizationPolicyProvider
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContribution
 import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContributor
+import com.sphereon.openid.oid4vci.issuer.attribute.CredentialAttributeContributionWaiter
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedWalletInstanceAttestationEvidence
+import com.sphereon.openid.oid4vci.issuer.bridge.authorizationServerTarget
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleCredentialRequestCommand
 import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenArgs
@@ -51,7 +61,8 @@ import com.sphereon.openid.oid4vci.issuer.command.MintDeferralScopedTokenCommand
 import com.sphereon.openid.oid4vci.issuer.config.MissingRequiredClaimsPolicy
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
-import com.sphereon.openid.oid4vci.issuer.config.currentInstanceIdOrDefault
+import com.sphereon.openid.oid4vci.issuer.config.ResolveWalletProviderTrustArgs
+import com.sphereon.openid.oid4vci.issuer.config.requireCanonicalOid4vciIssuerInstanceId
 import com.sphereon.openid.oid4vci.issuer.Oid4vciIssuerSessionEventTypes
 import com.sphereon.openid.oid4vci.issuer.impl.event.emitOid4vciSessionHistoryEvent
 import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
@@ -71,6 +82,7 @@ import com.sphereon.openid.oid4vci.issuer.proof.VerifiedKeyAttestation
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.CredentialRequestIdentityStore
+import com.sphereon.openid.oid4vci.issuer.store.CredentialRequestIdentity
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialEntry
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStatus
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
@@ -85,8 +97,10 @@ import dev.zacsweers.metro.binding
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -137,6 +151,8 @@ class HandleCredentialRequestCommandImpl(
     private val credentialDesignService: CredentialDesignService? = null,
     private val eventService: SessionEventService? = null,
     private val instanceIdProvider: Oid4vciIssuerInstanceIdProvider,
+    private val authorizationPolicyProvider: Oid4vciIssuerAuthorizationPolicyProvider,
+    private val authorizationServerSelection: Oid4vciAuthorizationServerSelection,
     /**
      * Optional service-command registry for post-issuance hook dispatch. When
      * null (pure-IDK deployment that didn't wire the command-framework
@@ -181,6 +197,7 @@ class HandleCredentialRequestCommandImpl(
      * never reports pending sources).
      */
     private val clock: Clock,
+    private val contributionWaiter: CredentialAttributeContributionWaiter? = null,
 ) : TypedServiceCommandAdapter<HandleCredentialRequestArgs, CredentialResponse, IdkError>(
         commandId = HandleCredentialRequestCommand.COMMAND_ID,
         execution = execution,
@@ -356,11 +373,52 @@ class HandleCredentialRequestCommandImpl(
         issuerConfigProvider.prepare()
         val credentialConfigurations = issuerConfigProvider.credentialConfigurations
 
+        // A signed token's issuer_state is used only as an opaque lookup key here. No claim is
+        // trusted until the token is verified against the immutable target recovered from the
+        // session snapshot below.
+        val unverifiedIssuerState =
+            unverifiedIssuerState(
+                accessToken = applied.accessToken,
+                credentialIdentifier = request.credentialIdentifier,
+            )
+        val pinnedSession = unverifiedIssuerState?.let { state ->
+            sessionStore.getByIssuerState(state).getOrElse { return Err(it) }
+        }
+        val validationSnapshot = pinnedSession?.authorizationPolicySnapshot ?: run {
+            val explicitConfigId = request.credentialConfigurationId
+                ?: return Err(IdkError.fromString(code = "invalid_token", message = "Cannot resolve an immutable authorization-server target before token validation"))
+            val policyProvider = authorizationPolicyProvider
+            val selector = authorizationServerSelection
+            val instanceId = instanceIdProvider.currentInstanceId()
+                ?: return Err(IdkError.INVALID_STATE(message = "OID4VCI issuer instance is required"))
+            val tenantId = execution.sessionContext.context.tenant.tenantId
+            val policy = runCatching { policyProvider.resolve(tenantId, instanceId) }.getOrElse {
+                return Err(IdkError.INVALID_STATE(message = it.message ?: "Cannot resolve OID4VCI authorization policy"))
+            }
+            runCatching {
+                selector.select(
+                    policy,
+                    Oid4vciAuthorizationSelectionRequest(
+                        credentialSelections = listOf(
+                            Oid4vciCredentialAuthorizationSelection(
+                                credentialConfigurationId = explicitConfigId,
+                                authorizationServerId = issuerConfigProvider.credentialAuthorizationServerId(explicitConfigId),
+                                allowedGrants = issuerConfigProvider.credentialAuthorizationServerAllowedGrants(explicitConfigId),
+                            ),
+                        ),
+                        requiredGrants = setOf(Oid4vciAuthorizationGrant.AUTHORIZATION_CODE),
+                    ),
+                )
+            }.getOrElse { return Err(IdkError.INVALID_STATE(message = it.message ?: "Cannot select OID4VCI authorization server")) }
+        }
+
         // 1. Validate access token
         val tokenContext =
             asBridge
                 .validateAccessToken(
                     ValidateAccessTokenArgs(
+                        authorizationServer = validationSnapshot.authorizationServerTarget(),
+                        expectedAudience = applied.issuerIdentifier ?: issuerConfigProvider.issuerIdentifier,
                         accessToken = applied.accessToken,
                         dpopProof = applied.dpopProof,
                         httpUrl = applied.httpUrl,
@@ -403,6 +461,10 @@ class HandleCredentialRequestCommandImpl(
                 sessionStore = sessionStore,
             ).getOrElse { return Err(it) }
         val session = correlation.issuanceSession
+        validateAuthorizationServerSnapshot(
+            session?.authorizationPolicySnapshot ?: validationSnapshot,
+            tokenContext,
+        ).getOrElse { return Err(it) }
 
         // 3. Resolve credential configuration
         val configId =
@@ -440,25 +502,47 @@ class HandleCredentialRequestCommandImpl(
                 ),
             )
         }
+        if (session != null) {
+            validateIssuanceAuthorizationSnapshot(session, configId, request).getOrElse { return Err(it) }
+        }
         val protocolSessionId =
             try {
                 Oid4vciSessionIdentity.normalize("protocolSessionId", correlation.protocolSessionId)
             } catch (e: IllegalArgumentException) {
                 return Err(IdkError.INVALID_STATE(message = e.message ?: "Invalid protocolSessionId"))
             }
-        val instanceId =
-            if (session != null) {
-                session.instanceId
-            } else {
-                val routedInstanceId =
-                    try {
-                        Oid4vciSessionIdentity.normalize(
-                            "instanceId",
-                            instanceIdProvider.currentInstanceIdOrDefault(),
-                        )
-                    } catch (e: IllegalArgumentException) {
-                        return Err(IdkError.INVALID_STATE(message = e.message ?: "Invalid issuer instanceId"))
-                    }
+        val walletIdentity = if (session == null) {
+            credentialRequestIdentityStore.get(protocolSessionId).getOrElse { return Err(it) }
+        } else null
+        val selectedInstanceId = walletIdentity?.instanceId
+            ?: resolveCredentialRequestIssuerInstanceId(session, instanceIdProvider).getOrElse { return Err(it) }
+        val instanceId = if (session != null) {
+            selectedInstanceId
+        } else {
+            val immutableIdentity = walletIdentity ?: run {
+                val policyProvider = authorizationPolicyProvider
+                val selector = authorizationServerSelection
+                val tenantId = execution.sessionContext.context.tenant.tenantId
+                val policy = runCatching { policyProvider.resolve(tenantId, selectedInstanceId) }.getOrElse {
+                    return Err(IdkError.INVALID_STATE(message = it.message ?: "Cannot resolve OID4VCI authorization policy"))
+                }
+                val snapshot = runCatching {
+                    selector.select(
+                        policy,
+                        Oid4vciAuthorizationSelectionRequest(
+                            credentialSelections = listOf(
+                                Oid4vciCredentialAuthorizationSelection(
+                                    credentialConfigurationId = configId,
+                                    authorizationServerId = issuerConfigProvider.credentialAuthorizationServerId(configId),
+                                    allowedGrants = issuerConfigProvider.credentialAuthorizationServerAllowedGrants(configId),
+                                ),
+                            ),
+                            requiredGrants = setOf(Oid4vciAuthorizationGrant.AUTHORIZATION_CODE),
+                        ),
+                    )
+                }.getOrElse {
+                    return Err(IdkError.INVALID_STATE(message = it.message ?: "Cannot select OID4VCI authorization server"))
+                }
                 val nowEpochSeconds = clock.now().epochSeconds
                 val ttlSeconds =
                     ((tokenContext.expiresAtEpochSeconds ?: (nowEpochSeconds + WALLET_INITIATED_SESSION_TTL_SECONDS)) - nowEpochSeconds)
@@ -466,11 +550,14 @@ class HandleCredentialRequestCommandImpl(
                 credentialRequestIdentityStore
                     .resolveOrCreate(
                         protocolSessionId = protocolSessionId,
-                        instanceId = routedInstanceId,
+                        instanceId = selectedInstanceId,
+                        authorizationPolicySnapshot = snapshot,
                         ttlSeconds = ttlSeconds,
                     ).getOrElse { return Err(it) }
-                    .instanceId
             }
+            validateWalletInitiatedAuthorizationSnapshot(immutableIdentity, configId, request).getOrElse { return Err(it) }
+            immutableIdentity.instanceId
+        }
         pendingHistoryProtocolSessionId = protocolSessionId
         pendingHistoryInstanceId = instanceId
 
@@ -567,7 +654,7 @@ class HandleCredentialRequestCommandImpl(
         ).getOrElse { return Err(it) }
 
         // 5. Verify proof of possession
-        val expectedAudience = applied.issuerIdentifier ?: tokenContext.subject
+        val expectedAudience = applied.issuerIdentifier ?: issuerConfigProvider.issuerIdentifier
 
         val proofs = request.proofs
         val isBatch = proofs != null && proofs.proofValues.size > 1
@@ -600,6 +687,7 @@ class HandleCredentialRequestCommandImpl(
                     audience = expectedAudience,
                     expectedClientId = tokenContext.clientId.takeIf { it.isNotEmpty() },
                     credentialConfigId = configId,
+                    session = session,
                     proofTypeSupported = proofTypeSupported,
                 ).getOrElse { return Err(it) }
             } else {
@@ -628,7 +716,23 @@ class HandleCredentialRequestCommandImpl(
         // the contributor-reported `syncWaitWindow` for ALL of them to land. On success, re-run
         // the contributor so the freshly-contributed attributes flow into the merge. On timeout
         // (TimeoutCancellationException) fall through to the §6.1 deferral decision.
-        val effectiveContribution = initialContribution
+        val contributionRefreshed =
+            awaitPendingCredentialContributions(
+                waiter = contributionWaiter,
+                correlationId = session?.lifecycleCorrelationId,
+                contribution = initialContribution,
+            )
+        val effectiveContribution =
+            if (contributionRefreshed) {
+                attributeContributor
+                    .contribute(requireNotNull(session), tokenContext, configId)
+                    .getOrElse { return Err(it) }
+            } else {
+                initialContribution
+            }
+        val contributedVcdmProperties = effectiveContribution.vcdmProperties
+        val contributedCredentialId = effectiveContribution.credentialId
+        val contributedCredentialSubjects = effectiveContribution.credentialSubjects
 
         // 6. Merge attributes (priority: preSeeded → accumulated → contributed)
         val mergedAttributes = mutableMapOf<String, JsonElement>()
@@ -739,7 +843,7 @@ class HandleCredentialRequestCommandImpl(
         // status list whose binding cannot be resolved must abort the request — issuing without
         // the status claim would produce a credential that can never be revoked.
         val statusListBinding =
-            issuerConfigProvider.statusListBindingFor(configId).getOrElse { return Err(it) }
+            issuerConfigProvider.statusListBindingForIssuance(configId).getOrElse { return Err(it) }
 
         contributeOid4vciPhase(
             session = session,
@@ -778,12 +882,16 @@ class HandleCredentialRequestCommandImpl(
                                             holderKeyId = verifiedProof.keyId,
                                             keyAttestation = verifiedProof.keyAttestation,
                                             attributes = mergedAttributes,
+                                            vcdmProperties = contributedVcdmProperties,
+                                            credentialId = contributedCredentialId,
+                                            credentialSubjects = contributedCredentialSubjects,
                                             sdPolicies = sdPolicies,
                                             mandatoryClaims = mandatoryClaims,
                                             signingKeyAlias = signingConfig.signingKeyAlias,
                                             signingKeyMode = signingConfig.signingKeyMode,
                                             signingVerificationMethodId = signingConfig.signingVerificationMethodId,
-                                            signingCertChainPath = signingConfig.signingCertChainPath,
+                                            dataIntegrityCryptosuite = signingConfig.dataIntegrityCryptosuite,
+                                            signingX5c = signingConfig.signingX5c,
                                             issuanceClockSkewInSeconds = issuerConfigProvider.issuanceClockSkewInSeconds,
                                             expirationInDays = expirationInDays,
                                             statusListBinding = statusListBinding,
@@ -833,12 +941,16 @@ class HandleCredentialRequestCommandImpl(
                         holderKeyId = verifiedProof?.keyId,
                         keyAttestation = verifiedProof?.keyAttestation,
                         attributes = mergedAttributes,
+                        vcdmProperties = contributedVcdmProperties,
+                        credentialId = contributedCredentialId,
+                        credentialSubjects = contributedCredentialSubjects,
                         sdPolicies = sdPolicies,
                         mandatoryClaims = mandatoryClaims,
                         signingKeyAlias = signingConfig.signingKeyAlias,
                         signingKeyMode = signingConfig.signingKeyMode,
                         signingVerificationMethodId = signingConfig.signingVerificationMethodId,
-                        signingCertChainPath = signingConfig.signingCertChainPath,
+                        dataIntegrityCryptosuite = signingConfig.dataIntegrityCryptosuite,
+                        signingX5c = signingConfig.signingX5c,
                         expirationInDays = expirationInDays,
                         statusListBinding = statusListBinding,
                     )
@@ -1172,8 +1284,18 @@ class HandleCredentialRequestCommandImpl(
         audience: String,
         expectedClientId: String?,
         credentialConfigId: String,
+        session: IssuanceSession?,
         proofTypeSupported: com.sphereon.openid.oid4vci.common.model.ProofTypeSupported? = null,
     ): IdkResult<List<VerifiedProof>, IdkError> {
+        val walletProviderTrustArgs =
+            session?.issuanceTemplateResourceId?.let { templateId ->
+                ResolveWalletProviderTrustArgs(
+                    tenantId = execution.sessionContext.context.tenant.tenantId,
+                    issuerInstanceId = session.instanceId,
+                    issuanceTemplateResourceId = templateId,
+                    credentialConfigurationId = credentialConfigId,
+                )
+            }
         return CredentialRequestProofBatchVerifier(proofVerifiers, nonceManager)
             .verify(
                 proofType = proofType,
@@ -1181,6 +1303,7 @@ class HandleCredentialRequestCommandImpl(
                 audience = audience,
                 expectedClientId = expectedClientId,
                 credentialConfigId = credentialConfigId,
+                walletProviderTrustArgs = walletProviderTrustArgs,
                 proofTypeSupported = proofTypeSupported,
             )
     }
@@ -1210,11 +1333,130 @@ class HandleCredentialRequestCommandImpl(
     }
 }
 
+/**
+ * Selects the issuer UUID for a credential request. Offer-linked requests are pinned to the
+ * immutable issuance session and never consult ambient routing. Wallet-initiated requests require
+ * the currently routed canonical issuer resource UUID and fail closed when it is absent or invalid.
+ */
+internal fun resolveCredentialRequestIssuerInstanceId(
+    session: IssuanceSession?,
+    instanceIdProvider: Oid4vciIssuerInstanceIdProvider,
+): IdkResult<String, IdkError> =
+    try {
+        Ok(requireCanonicalOid4vciIssuerInstanceId(session?.instanceId ?: instanceIdProvider.currentInstanceId()))
+    } catch (error: IllegalArgumentException) {
+        Err(IdkError.INVALID_STATE(message = error.message ?: "Invalid issuer instanceId"))
+    }
+
+/** Decode-only correlation hint. The returned value is never authorized until JWT verification succeeds. */
+internal fun unverifiedIssuerState(
+    accessToken: String,
+    credentialIdentifier: String? = null,
+): String? {
+    val jwtHint = runCatching {
+        val payload = accessToken.split('.').takeIf { it.size == 3 }?.get(1)
+            ?: error("Access token is not a compact JWT")
+        val objectValue = Json.parseToJsonElement(payload.decodeFromBase64Url().decodeToString()) as? JsonObject
+            ?: error("Access token payload is not a JSON object")
+        (objectValue["oid4vci.internal.issuer_state"] as? JsonPrimitive)?.content
+    }.getOrNull()
+    if (jwtHint != null) return jwtHint
+
+    val identifier = credentialIdentifier ?: return null
+    val prefix = "urn:vdx:oid4vci:credential:"
+    if (!identifier.startsWith(prefix)) return null
+    val sessionId = identifier.removePrefix(prefix).substringBefore(':').takeIf(String::isNotBlank) ?: return null
+    return runCatching { Uuid.parse(sessionId).toString() }.getOrNull()
+}
+
+/** Binds verified issuer/resource provenance to the immutable issuance selection. */
+internal fun validateAuthorizationServerSnapshot(
+    snapshot: Oid4vciAuthorizationPolicySnapshot,
+    tokenContext: ValidatedTokenContext,
+): IdkResult<Unit, IdkError> {
+    if (tokenContext.authorizationServerId != snapshot.authorizationServerId.toString()) {
+        return Err(IdkError.fromString(code = "invalid_token", message = "Access token was verified by a different authorization-server resource"))
+    }
+    if (tokenContext.authorizationServerIssuer != snapshot.authorizationServerIssuer) {
+        return Err(IdkError.fromString(code = "invalid_token", message = "Access token issuer does not match the immutable authorization-server snapshot"))
+    }
+    return Ok(Unit)
+}
+
+/**
+ * Enforces the immutable authorization-server/profile decision at the credential endpoint.
+ * Offer-linked authorization-code and pre-authorized-code requests must never re-resolve mutable
+ * issuer configuration, and a session without the decision is invalid greenfield state.
+ */
+internal fun validateIssuanceAuthorizationSnapshot(
+    session: IssuanceSession,
+    credentialConfigurationId: String,
+    request: CredentialRequest,
+): IdkResult<Oid4vciAuthorizationPolicySnapshot, IdkError> {
+    val snapshot = session.authorizationPolicySnapshot
+        ?: return Err(IdkError.INVALID_STATE(message = "Issuance session has no immutable authorization-server/profile snapshot"))
+    val issuerId = runCatching { Uuid.parse(session.instanceId) }.getOrElse {
+        return Err(IdkError.INVALID_STATE(message = "Issuance session instanceId must be the issuer resource UUID"))
+    }
+    if (snapshot.issuerId != issuerId) {
+        return Err(IdkError.INVALID_STATE(message = "Issuance session authorization snapshot belongs to another issuer"))
+    }
+    if (credentialConfigurationId !in session.credentialConfigurationIds) {
+        return Err(IdkError.INVALID_STATE(message = "Credential configuration is outside the immutable issuance snapshot"))
+    }
+    val requiredGrant = if (session.preAuthCode != null) {
+        Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE
+    } else {
+        Oid4vciAuthorizationGrant.AUTHORIZATION_CODE
+    }
+    if (requiredGrant !in snapshot.applicableGrants) {
+        return Err(IdkError.INVALID_STATE(message = "Immutable authorization snapshot does not permit the issuance grant"))
+    }
+    val encryption = request.credentialResponseEncryption
+    if (encryption != null) {
+        if (snapshot.profile.credentialResponseEncryptionAlgorithmRequired && encryption.alg.isNullOrBlank()) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "${snapshot.profile.name} requires credential_response_encryption.alg"))
+        }
+        if (!snapshot.profile.credentialResponseEncryptionCompressionAllowed && encryption.zip != null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "${snapshot.profile.name} does not define credential_response_encryption.zip"))
+        }
+    }
+    return Ok(snapshot)
+}
+
+/** Validates the immutable first-use decision for a sessionless wallet-initiated request. */
+internal fun validateWalletInitiatedAuthorizationSnapshot(
+    identity: CredentialRequestIdentity,
+    credentialConfigurationId: String,
+    request: CredentialRequest,
+): IdkResult<Oid4vciAuthorizationPolicySnapshot, IdkError> {
+    val snapshot = identity.authorizationPolicySnapshot
+    if (snapshot.issuerId.toString() != identity.instanceId) {
+        return Err(IdkError.INVALID_STATE(message = "Credential-request authorization snapshot belongs to another issuer"))
+    }
+    if (Oid4vciAuthorizationGrant.AUTHORIZATION_CODE !in snapshot.applicableGrants) {
+        return Err(IdkError.INVALID_STATE(message = "Immutable authorization snapshot does not permit authorization_code"))
+    }
+    if (credentialConfigurationId.isBlank()) {
+        return Err(IdkError.INVALID_STATE(message = "Credential configuration is missing from wallet-initiated authorization snapshot"))
+    }
+    val encryption = request.credentialResponseEncryption
+    if (encryption != null) {
+        if (snapshot.profile.credentialResponseEncryptionAlgorithmRequired && encryption.alg.isNullOrBlank()) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "${snapshot.profile.name} requires credential_response_encryption.alg"))
+        }
+        if (!snapshot.profile.credentialResponseEncryptionCompressionAllowed && encryption.zip != null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "${snapshot.profile.name} does not define credential_response_encryption.zip"))
+        }
+    }
+    return Ok(snapshot)
+}
+
 /*
  * §6.5.7 sync-wait fast-path. Returns true when every pending async-callback source resolved
- * via [CallbackCoordinator.awaitContribution] within the contribution's
+ * via [CredentialAttributeContributionWaiter.awaitContribution] within the contribution's
  * [CredentialAttributeContribution.syncWaitWindow]. Returns false when any precondition was
- * missing (no [coordinator] wired, no [correlationId] join key, empty pending set, zero or
+ * missing (no [waiter] wired, no [correlationId] join key, empty pending set, zero or
  * negative window) OR when [withTimeout] fires before all awaits resolve.
  *
  * A `false` return signals the caller to keep the original contribution and fall through to the
@@ -1227,6 +1469,36 @@ class HandleCredentialRequestCommandImpl(
  * the issuer command. TODO(phase-3-followup): wire those bounds in once the issuer config
  * provider exposes them.
  */
+internal suspend fun awaitPendingCredentialContributions(
+    waiter: CredentialAttributeContributionWaiter?,
+    correlationId: String?,
+    contribution: CredentialAttributeContribution,
+): Boolean {
+    if (
+        waiter == null ||
+        correlationId.isNullOrBlank() ||
+        contribution.pendingAsyncCallbackSources.isEmpty() ||
+        contribution.syncWaitWindow <= kotlin.time.Duration.ZERO
+    ) {
+        return false
+    }
+
+    return withTimeoutOrNull(contribution.syncWaitWindow) {
+        coroutineScope {
+            contribution.pendingAsyncCallbackSources
+                .sorted()
+                .map { contributorId ->
+                    async {
+                        waiter.awaitContribution(
+                            correlationId = correlationId,
+                            contributorId = contributorId,
+                        )
+                    }
+                }.awaitAll()
+        }
+        true
+    } ?: false
+}
 
 /**
  * Pure decision function for the OID4VCI §6.1 completeness gate at the credential endpoint.

@@ -30,6 +30,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialNotification
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
+import com.sphereon.openid.oid4vci.issuer.bridge.authorizationServerTarget
 import com.sphereon.openid.oid4vci.issuer.command.HandleNotificationArgs
 import com.sphereon.openid.oid4vci.issuer.command.HandleNotificationCommand
 import com.sphereon.openid.oid4vci.issuer.impl.event.emitOid4vciSessionHistoryEvent
@@ -139,34 +140,38 @@ class HandleNotificationCommandImpl(
         val applied = applyDuring(args)
         val notification = applied.notification
 
+        if (notification.notificationId.isBlank()) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_request"))
+        }
+        val identity = notificationStore.getNotificationIdentity(notification.notificationId).getOrElse { return Err(it) }
+            ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_id"))
+        val session = sessionStore.get(identity.protocolSessionId).getOrElse { return Err(it) }
+            ?: return Err(IdkError.INVALID_STATE(message = "Notification has no immutable issuance-session authorization snapshot"))
+        val snapshot = session.authorizationPolicySnapshot
+            ?: return Err(IdkError.INVALID_STATE(message = "Notification session has no immutable authorization-server snapshot"))
+
         // 0. Validate access token
         val tokenContext =
             asBridge
                 .validateAccessToken(
                     ValidateAccessTokenArgs(
+                        authorizationServer = snapshot.authorizationServerTarget(),
+                        expectedAudience = session.issuerId,
                         accessToken = applied.accessToken,
                         dpopProof = applied.dpopProof,
                         httpUrl = applied.httpUrl,
                         httpMethod = applied.httpMethod,
                     ),
                 ).getOrElse { return Err(it) }
+        validateAuthorizationServerSnapshot(snapshot, tokenContext).getOrElse { return Err(it) }
 
         // 1. Validate notification_id is not blank — malformed request per OID4VCI spec
-        if (notification.notificationId.isBlank()) {
-            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_request"))
-        }
         pendingNotificationEvent = notification.event.value
 
         // 2. Resolve and consume the issuer-generated notification identifier atomically. The
         // returned protocolSessionId is the only valid history correlation; configuration IDs
         // and subjects are deliberately not consulted.
-        val identity =
-            notificationStore
-                .getNotificationIdentity(notification.notificationId)
-                .getOrElse { return Err(it) }
-                ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "invalid_notification_id"))
-        val session = sessionStore.get(identity.protocolSessionId).getOrElse { return Err(it) }
-        if (session != null && session.instanceId != identity.instanceId) {
+        if (session.instanceId != identity.instanceId) {
             return Err(IdkError.INVALID_STATE(message = "Notification identity does not match its issuance session"))
         }
 

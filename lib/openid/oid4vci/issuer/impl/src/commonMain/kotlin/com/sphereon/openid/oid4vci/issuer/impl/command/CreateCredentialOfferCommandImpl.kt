@@ -37,17 +37,19 @@ import com.sphereon.openid.oid4vci.common.model.TxCodeConfig
 import com.sphereon.openid.oid4vci.issuer.bridge.CreateAuthContextArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerBridge
 import com.sphereon.openid.oid4vci.issuer.bridge.RegisterPreAuthCodeArgs
+import com.sphereon.openid.oid4vci.issuer.bridge.authorizationServerTarget
+import com.sphereon.oauth2.server.authorization.command.token.validatePreAuthorizedCodeExpiry
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
 import com.sphereon.openid.oid4vci.issuer.command.CreatedCredentialOffer
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
+import com.sphereon.openid.oid4vci.issuer.config.requireCanonicalOid4vciIssuerInstanceId
 import com.sphereon.openid.oid4vci.issuer.impl.lifecycle.OfferLifecycleInitializer
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.CredentialOfferStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSessionStatus
-import com.sphereon.openid.oid4vci.issuer.store.Oid4vciSessionIdentity
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -78,6 +80,7 @@ class CreateCredentialOfferCommandImpl(
      * resolved, and the wallet-auth invariant is skipped, matching the prior inlined behaviour.
      */
     private val lifecycleInitializer: OfferLifecycleInitializer,
+    private val clock: Clock = Clock.System,
 ) : TypedServiceCommandAdapter<CreateCredentialOfferArgs, CreatedCredentialOffer, IdkError>(
         commandId = CreateCredentialOfferCommand.COMMAND_ID,
         execution = execution,
@@ -134,18 +137,26 @@ class CreateCredentialOfferCommandImpl(
         args: CreateCredentialOfferArgs,
     ): IdkResult<CreatedCredentialOffer, IdkError> {
         validateRequestShape(args).getOrElse { return Err(it) }
-        lifecycleInitializer.validateGrants(args).getOrElse { return Err(it) }
 
-        val now = Clock.System.now()
+        val now = clock.now()
+        if (now.epochSeconds > Long.MAX_VALUE - args.offerTtlSeconds) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "offer_ttl_seconds overflows the expiry boundary"))
+        }
+        val candidateExpiryEpochSeconds = now.epochSeconds + args.offerTtlSeconds
+        val expiresAtEpochSeconds =
+            validatePreAuthorizedCodeExpiry(candidateExpiryEpochSeconds, now)
+                .getOrElse { return Err(it) }
+                .epochSeconds
+        lifecycleInitializer.validateGrants(args).getOrElse { return Err(it) }
         val offerId = Uuid.random().toString()
         val sessionId = Uuid.random().toString()
 
         // Resolve a pipeline configuration and initialise a pipeline session when one is
-        // configured. A failure here does not block offer creation; the session is
-        // created without a pipeline link instead.
-        val lifecycleCorrelationId = lifecycleInitializer.initializeLifecycle(args, sessionId)
+        // configured. Propagate initialization errors before writing a session, grant, or offer.
+        val lifecycleCorrelationId =
+            lifecycleInitializer.initializeLifecycle(args, sessionId).getOrElse { return Err(it) }
 
-        val session = buildSession(args, sessionId, lifecycleCorrelationId, now.epochSeconds)
+        val session = buildSession(args, sessionId, lifecycleCorrelationId, now.epochSeconds, expiresAtEpochSeconds)
         sessionStore.create(session).getOrElse { return Err(it) }
 
         val grantsAndTxCode = buildGrants(args, sessionId, session).getOrElse { return Err(it) }
@@ -175,12 +186,18 @@ class CreateCredentialOfferCommandImpl(
 
     private fun validateRequestShape(args: CreateCredentialOfferArgs): IdkResult<Unit, IdkError> {
         try {
-            Oid4vciSessionIdentity.normalize("instanceId", args.instanceId)
+            val instanceId = requireCanonicalOid4vciIssuerInstanceId(args.instanceId)
+            require(args.authorizationPolicySnapshot.issuerId.toString() == instanceId) {
+                "Authorization policy snapshot belongs to another OID4VCI issuer resource"
+            }
         } catch (e: IllegalArgumentException) {
             return Err(IdkError.INVALID_STATE(message = e.message ?: "Invalid issuer instanceId"))
         }
         if (args.credentialConfigurationIds.isEmpty()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "At least one credential_configuration_id is required"))
+        }
+        if (args.offerTtlSeconds <= 0L) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "offer_ttl_seconds must be positive"))
         }
         if (args.uriLifecycle != OfferUriLifecycle.SINGLE_USE && args.rateLimit == null) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "rate_limit is mandatory for a reusable offer"))
@@ -199,12 +216,14 @@ class CreateCredentialOfferCommandImpl(
         sessionId: String,
         lifecycleCorrelationId: String?,
         nowEpochSeconds: Long,
+        expiresAtEpochSeconds: Long,
     ): IssuanceSession =
         IssuanceSession(
             sessionId = sessionId,
-            instanceId = Oid4vciSessionIdentity.normalize("instanceId", args.instanceId),
+            instanceId = requireCanonicalOid4vciIssuerInstanceId(args.instanceId),
             issuerId = args.issuerId,
             credentialConfigurationIds = args.credentialConfigurationIds,
+            issuanceTemplateResourceId = args.issuanceTemplateResourceId,
             issuerState =
                 if (args.authorizationCodeGrant || args.preAuthorizedCodeGrant) {
                     sessionId
@@ -218,8 +237,9 @@ class CreateCredentialOfferCommandImpl(
             callback = args.callback,
             state = args.state,
             lifecycleCorrelationId = lifecycleCorrelationId,
+            authorizationPolicySnapshot = args.authorizationPolicySnapshot,
             createdAt = nowEpochSeconds,
-            expiresAt = nowEpochSeconds + args.offerTtlSeconds,
+            expiresAt = expiresAtEpochSeconds,
         )
 
     /**
@@ -279,8 +299,10 @@ class CreateCredentialOfferCommandImpl(
             asBridge
                 .registerPreAuthorizedCode(
                     RegisterPreAuthCodeArgs(
+                        authorizationServer = args.authorizationPolicySnapshot.authorizationServerTarget(),
                         sessionId = sessionId,
                         credentialConfigurationIds = args.credentialConfigurationIds,
+                        expiresAtEpochSeconds = session.expiresAt,
                         txCodeRequired = args.txCodeRequired,
                         txCodeLength = args.txCodeLength,
                         txCodeInputMode = args.txCodeInputMode,
@@ -301,6 +323,7 @@ class CreateCredentialOfferCommandImpl(
                     } else {
                         null
                     },
+                authorizationServer = args.authorizationPolicySnapshot.grantAuthorizationServer,
             )
         // Stash the registered pre-auth code on the session so post-issuance
         // hooks can correlate the signed credential to the code that
@@ -319,11 +342,17 @@ class CreateCredentialOfferCommandImpl(
             asBridge
                 .createAuthorizationContext(
                     CreateAuthContextArgs(
+                        authorizationServer = args.authorizationPolicySnapshot.authorizationServerTarget(),
                         issuerState = sessionId,
                         credentialConfigurationIds = args.credentialConfigurationIds,
                     ),
                 ).getOrElse { return Err(it) }
-        return Ok(AuthorizationCodeOfferGrant(issuerState = authContext.issuerState))
+        return Ok(
+            AuthorizationCodeOfferGrant(
+                issuerState = authContext.issuerState,
+                authorizationServer = args.authorizationPolicySnapshot.grantAuthorizationServer,
+            ),
+        )
     }
 
     /**

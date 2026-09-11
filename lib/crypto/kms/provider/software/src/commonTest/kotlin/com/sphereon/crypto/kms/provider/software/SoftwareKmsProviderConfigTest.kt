@@ -256,8 +256,12 @@ class SoftwareKmsProviderConfigTest {
             val sessionGraph = contextInstance.sessionContextManager.createOrGetFromId("test-2kms", principalType = com.sphereon.di.context.PrincipalType.USER).graph
             val kms = sessionGraph.asKeyManagerServiceGraph().keyManagerService
             assertNotNull(kms.defaultProviderId())
-            assertEquals(2, kms.getProviderIds().size)
+            // Secrets v3 can also install default/platform software providers on the graph.
+            // This test only needs the two named providers to be present and usable.
+            assertTrue(kms.getProviderIds().contains("test-software"))
+            assertTrue(kms.getProviderIds().contains("test-software2"))
             assertNotNull(kms.getProvider("test-software"))
+            assertNotNull(kms.getProvider("test-software2"))
             assertNotNull(kms.generateKeyAsync())
         }
 

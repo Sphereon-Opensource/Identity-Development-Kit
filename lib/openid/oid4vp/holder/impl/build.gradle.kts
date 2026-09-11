@@ -24,6 +24,9 @@ kotlin {
                 implementation(sphereonlib.co.touchlab.skie.configuration.annotations)
                 api(projects.libCoreApiPublic)
                 api(projects.libCryptoCore)
+                api(projects.libCryptoDataIntegrityProofPublic)
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
 
                 // OAuth2 common and client (for JAR support)
                 api(projects.libOauth2CommonPublic)

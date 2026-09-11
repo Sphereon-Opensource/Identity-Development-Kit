@@ -31,7 +31,7 @@ import com.sphereon.crypto.resolution.extern.MultiExternalIdentifierService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.common.model.KeyAttestationsRequired
 import com.sphereon.openid.oid4vci.common.model.Oid4vciErrors
-import com.sphereon.trust.x509.X509TrustAnchorLoader
+import com.sphereon.openid.oid4vci.issuer.config.ResolvedWalletProviderTrust
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
@@ -57,12 +57,11 @@ import kotlin.time.Clock
 class Oid4vciKeyAttestationVerifier(
     private val verifyJwsCommand: VerifyJwsCommand,
     private val externalIdentifierResolver: MultiExternalIdentifierService,
-    private val x509TrustAnchorLoader: X509TrustAnchorLoader,
 ) {
     @Suppress("LongMethod", "ReturnCount")
     suspend fun verify(
         keyAttestationJwt: String,
-        trustConfig: Oid4vciKeyAttesterTrustConfig?,
+        walletProviderTrust: ResolvedWalletProviderTrust,
         policy: KeyAttestationsRequired?,
         expectedNonce: String? = null,
         clockSkewSeconds: Long = DEFAULT_CLOCK_SKEW_SECONDS,
@@ -82,35 +81,34 @@ class Oid4vciKeyAttestationVerifier(
                     if (element is JsonPrimitive) JsonArray(listOf(element)) else null
                 }
         val kid = headerJson["kid"]?.jsonPrimitive?.contentOrNull
+        val mechanismRegistry = WalletProviderTrustMechanismRegistry.from(walletProviderTrust)
 
-        val mode =
-            trustConfig?.mode?.lowercase()
-                ?: return invalidProof("key attester trust mode is not configured (expected 'x5c' or 'jwks')")
-        val pinnedJwks = trustConfig.trustedJwks?.takeIf { it.isNotEmpty() }
         val trustedJwks: JsonObject =
-            when (mode) {
-                "x5c" -> {
-                    if (x5cHeader == null || x5cHeader.isEmpty()) {
-                        return invalidProof("key attestation trust mode 'x5c' requires a non-empty x5c header")
+            when {
+                x5cHeader != null -> {
+                    if (x5cHeader.isEmpty()) {
+                        return invalidProof("key attestation x5c header must not be empty")
                     }
+                    val presentedRoot = (x5cHeader.lastOrNull() as? JsonPrimitive)?.contentOrNull
+                    val anchors = mechanismRegistry.x509AnchorPemCertificates(presentedRoot)
+                    if (anchors.isEmpty()) return invalidProof("key attestation x5c signer is not admitted by resolved trust")
                     resolveAttesterViaX5c(
                         x5c = x5cHeader,
                         kid = kid,
-                        additionalTrustAnchorPaths = trustConfig.x509TrustAnchorPaths.orEmpty(),
+                        trustedAnchorCertificates = anchors,
                     ).getOrElse { return Err(it) }
                 }
 
-                "jwks" -> {
-                    if (pinnedJwks == null) {
-                        return invalidProof("key attestation trust mode 'jwks' requires configured attester JWKS")
-                    }
-                    pinAttesterJwks(pinnedJwks, kid)
+                else -> {
+                    val presentedJwkJson = headerJson["jwk"] as? JsonObject ?: JsonObject(emptyMap())
+                    val presentedJwk = runCatching { Jwk.fromJsonObject(presentedJwkJson) }.getOrNull()
+                    val candidates = mechanismRegistry.jwkCandidates(presentedJwk, presentedJwkJson)
+                    if (candidates.isEmpty()) return invalidProof("key attestation signer is not admitted by resolved trust")
+                    pinAttesterJwks(candidates, kid)
                         ?: return invalidProof(
-                            "key attestation kid '$kid' does not match any pinned attester JWK",
+                            "key attestation kid '$kid' does not match resolved attester material",
                         )
                 }
-
-                else -> return invalidProof("unsupported key attester trust mode '$mode' (expected 'x5c' or 'jwks')")
             }
 
         val verifyResult =
@@ -161,8 +159,8 @@ class Oid4vciKeyAttestationVerifier(
         }
 
         val issClaim = claims["iss"]?.jsonPrimitive?.contentOrNull
-        val trustedIssuers = trustConfig?.trustedIssuers
-        if (!trustedIssuers.isNullOrEmpty() && (issClaim == null || issClaim !in trustedIssuers)) {
+        val trustedIssuers = mechanismRegistry.issuers
+        if (trustedIssuers.isNotEmpty() && (issClaim == null || issClaim !in trustedIssuers)) {
             return invalidProof(
                 "key attestation 'iss' '$issClaim' is not in the configured trusted-issuer allow-list",
             )
@@ -193,19 +191,18 @@ class Oid4vciKeyAttestationVerifier(
     private suspend fun resolveAttesterViaX5c(
         x5c: JsonArray,
         kid: String?,
-        additionalTrustAnchorPaths: List<String>,
+        trustedAnchorCertificates: List<String>,
     ): IdkResult<JsonObject, IdkError> {
         val x5cStrings =
             x5c.map { entry ->
                 (entry as? JsonPrimitive)?.contentOrNull
                     ?: return invalidProof("key attestation x5c entries must be strings")
             }
-        val trustedAnchors = x509TrustAnchorLoader.loadTrustedCerts(additionalTrustAnchorPaths)
         val opts =
             ExternalIdentifierX5cOpts(
                 identifier = x5cStrings,
                 verify = true,
-                trustAnchors = trustedAnchors,
+                trustAnchors = trustedAnchorCertificates,
             )
         val resolved =
             externalIdentifierResolver.resolve(opts).getOrElse {
@@ -283,13 +280,6 @@ class Oid4vciKeyAttestationVerifier(
         private const val DEFAULT_CLOCK_SKEW_SECONDS = 300L
     }
 }
-
-data class Oid4vciKeyAttesterTrustConfig(
-    val mode: String? = null,
-    val trustedJwks: List<Jwk>? = null,
-    val trustedIssuers: List<String>? = null,
-    val x509TrustAnchorPaths: List<String>? = null,
-)
 
 data class ValidatedOid4vciKeyAttestation(
     val attestedKeys: List<Jwk>,

@@ -124,6 +124,7 @@ class CreateRefreshTokenCommandImpl(
                 nonce = args.nonce,
                 loginSessionId = args.loginSessionId,
                 additionalData = emptyMap(),
+                federationClaims = args.federationClaims,
             )
 
         // Store token

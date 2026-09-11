@@ -157,7 +157,6 @@ class CreateAuthorizationResponseCommandImpl(
         args: CreateAuthorizationResponseArgs,
         parameters: Map<String, String>,
     ): IdkResult<AuthorizationResponseData, AuthorizationServerError> {
-        val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         val config = configProvider.serverConfig
         if (!config.jarm.isEnabled) {
             return Err(
@@ -192,7 +191,30 @@ class CreateAuthorizationResponseCommandImpl(
                 ),
             )
         }
-        // The server signing key is only required when the JARM mode actually signs.
+        if (signingAlg != null &&
+            config.authorizationSigningAlgValuesSupported?.none { it.equals(signingAlg, ignoreCase = true) } == true
+        ) {
+            return Err(
+                AuthorizationServerError.InvalidRequest(
+                    details = "Client '$clientId' requests JARM signing alg '$signingAlg', which this server does not advertise",
+                ),
+            )
+        }
+        val serverIdentifier =
+            if (signingAlg == null) {
+                null
+            } else {
+                try {
+                    signingIdentifierResolver.resolveSigningIdentifier(signingAlg)
+                } catch (expected: Exception) {
+                    return Err(
+                        AuthorizationServerError.ServerError(
+                            details = "Cannot mint JARM response for client '$clientId': ${expected.message}",
+                            exception = expected,
+                        ),
+                    )
+                }
+            }
         if (signingAlg != null && serverIdentifier == null) {
             return Err(
                 AuthorizationServerError.ServerError(

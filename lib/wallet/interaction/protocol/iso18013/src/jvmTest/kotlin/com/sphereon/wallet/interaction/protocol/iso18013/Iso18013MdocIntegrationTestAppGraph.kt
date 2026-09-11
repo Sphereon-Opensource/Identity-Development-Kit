@@ -11,6 +11,7 @@ import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.interaction.WalletInteractionClient
+import com.sphereon.wallet.interaction.WalletCounterpartyEncounterRegistry
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
 import com.sphereon.wallet.interaction.impl.DefaultWalletInteractionEngine
@@ -29,6 +30,11 @@ import dev.zacsweers.metro.createGraphFactory
 
 @ContributesTo(SessionScope::class)
 interface Iso18013MdocIntegrationWalletInteractionBindings {
+    @Provides
+    @SingleIn(SessionScope::class)
+    fun counterpartyEncounterRegistry(): WalletCounterpartyEncounterRegistry =
+        WalletCounterpartyEncounterRegistry.none
+
     @Provides
     @SingleIn(SessionScope::class)
     fun privateSessionStore(): WalletInteractionPrivateSessionStore = InMemoryWalletInteractionPrivateSessionStore()

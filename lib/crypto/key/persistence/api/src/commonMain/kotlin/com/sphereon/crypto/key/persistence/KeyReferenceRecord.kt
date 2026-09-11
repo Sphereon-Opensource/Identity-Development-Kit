@@ -22,6 +22,7 @@ import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
+import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import kotlinx.serialization.Serializable
@@ -38,6 +39,8 @@ import kotlin.time.Instant
  * @property kid Key identifier (provider-specific, e.g. AWS key UUID, Azure name/version)
  * @property providerId ID of the KMS provider that owns this key
  * @property origin Whether this key was managed natively or discovered from an external source
+ * @property controlMode Whether EDK controls the provider resource lifecycle. This is separate
+ *   from origin; externally managed DELETE removes only the local reference.
  * @property publicKeyJwk Serialized public JWK, so reading public verification material never has
  *   to open the provider's key store. A public key is not a secret: it is published to every
  *   verifier, so holding it next to the reference discloses nothing that resolving it would not.
@@ -67,6 +70,9 @@ data class KeyReferenceRecord(
     val updatedById: String? = null,
     val deletedAt: Instant? = null,
     val deletedById: String? = null,
+    val controlMode: ResourceControlMode = ResourceControlMode.PLATFORM_MANAGED,
+    /** Authoritative wallet secure-component owner for wallet-held keys. */
+    val walletUnitId: String? = null,
 ) {
     companion object {
         /**
@@ -86,6 +92,7 @@ data class KeyReferenceRecord(
             tenantId: String,
             origin: Origin = Origin.MANAGED,
             principalId: String? = null,
+            walletUnitId: String? = null,
         ): KeyReferenceRecord {
             val now = Clock.System.now()
             return KeyReferenceRecord(
@@ -98,6 +105,7 @@ data class KeyReferenceRecord(
                 kid = key.kid,
                 providerId = key.providerId,
                 origin = origin,
+                controlMode = ResourceControlMode.PLATFORM_MANAGED,
                 keyType = key.keyType,
                 signatureAlgorithm = key.signatureAlgorithm,
                 keyVisibility = key.keyVisibility,
@@ -106,6 +114,7 @@ data class KeyReferenceRecord(
                 createdById = principalId,
                 updatedAt = now,
                 updatedById = principalId,
+                walletUnitId = walletUnitId,
             )
         }
 
@@ -121,8 +130,10 @@ fun KeyReferenceRecord.toKeyReference(): ManagedKeyReference =
         kid = kid,
         providerId = providerId,
         origin = origin,
+        controlMode = controlMode,
         signatureAlgorithm = signatureAlgorithm,
         keyType = keyType,
         keyVisibility = keyVisibility,
         keyEncoding = keyEncoding,
+        walletUnitId = walletUnitId,
     )

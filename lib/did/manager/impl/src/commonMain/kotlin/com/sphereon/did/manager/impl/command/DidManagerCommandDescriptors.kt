@@ -58,7 +58,7 @@ import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.StringKey
 
 /**
- * `@IntoMap` provider catalogue for every DID Manager `ServiceCommand`. Mirrors the KMS
+ * `@IntoMap` provider catalog for every DID Manager `ServiceCommand`. Mirrors the KMS
  * pattern in `services-kms-rest`'s `KmsCommandDescriptors` so the
  * `SessionScopedCommandRegistry` can dispatch by command id.
  *

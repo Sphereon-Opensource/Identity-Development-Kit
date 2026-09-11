@@ -19,21 +19,17 @@ package com.sphereon.openid.oid4vp.verifier.impl.http
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.di.session.SessionScope
-import com.sphereon.openid.oid4vp.verifier.impl.http.command.DirectPostResponseEndpointCommand
-import com.sphereon.openid.oid4vp.verifier.impl.http.command.GetRequestObjectEndpointCommand
-import com.sphereon.openid.oid4vp.verifier.impl.http.command.PostRequestObjectEndpointCommand
-import com.sphereon.openid.oid4vp.verifier.impl.http.command.ReadyEndpointCommand
 import com.sphereon.openid.oid4vp.verifier.config.MutableOid4vpVerifierInstanceIdProvider
 import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceResolver
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.binding
 
 /**
@@ -59,19 +55,18 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(Oid4vpVerifierHttpAdapter.ID)
 class Oid4vpVerifierHttpAdapter(
     execution: SessionExecution,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
     verifierInstanceResolver: Oid4vpVerifierInstanceResolver,
     verifierInstanceIdProvider: MutableOid4vpVerifierInstanceIdProvider,
     // Commands are INJECTED via DI
-    private val getRequestObjectCommand: GetRequestObjectEndpointCommand,
-    private val postRequestObjectCommand: PostRequestObjectEndpointCommand,
-    private val directPostResponseCommand: DirectPostResponseEndpointCommand,
-    private val readyCommand: ReadyEndpointCommand,
 ) : AbstractOid4vpVerifierHttpAdapter(
         id = ID,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount =
             HttpAdapterMount(
                 serverPrefix = "",
@@ -101,13 +96,6 @@ class Oid4vpVerifierHttpAdapter(
      *
      * Commands are injected via constructor following the standard IDK DI pattern.
      */
-    override val endpointCommands: List<HttpEndpointCommand> =
-        listOf(
-            getRequestObjectCommand,
-            postRequestObjectCommand,
-            directPostResponseCommand,
-            readyCommand,
-        )
 
     /**
      * Contributes this adapter as a property to the SessionGraph.

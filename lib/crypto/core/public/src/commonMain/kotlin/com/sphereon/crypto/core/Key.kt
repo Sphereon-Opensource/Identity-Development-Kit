@@ -36,10 +36,16 @@ import kotlinx.serialization.PolymorphicSerializer
 import kotlinx.serialization.SealedSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Transient
 import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.descriptors.element
+import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.encoding.decodeStructure
+import kotlinx.serialization.encoding.encodeStructure
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmOverloads
@@ -529,6 +535,14 @@ sealed interface ManagedKeyReferenceType : KeyInfoType<Nothing> {
     override val alias: String
     override val providerId: String
     val origin: com.sphereon.core.api.model.Origin?
+
+    /**
+     * Lifecycle control is separate from [origin]: external DELETE removes only EDK's
+     * reference and never deletes the provider resource. The default is
+     * [ResourceControlMode.PLATFORM_MANAGED] for source compatibility with existing
+     * implementations.
+     */
+    val controlMode: ResourceControlMode get() = ResourceControlMode.PLATFORM_MANAGED
 }
 
 /**
@@ -552,6 +566,8 @@ ManagedKeyReference
         override val keyType: com.sphereon.crypto.core.generic.KeyTypeMapping? = null,
         override val keyVisibility: KeyVisibility? = null,
         override val keyEncoding: KeyEncoding? = null,
+        override val controlMode: ResourceControlMode = ResourceControlMode.PLATFORM_MANAGED,
+        val walletUnitId: String? = null,
     ) : ManagedKeyReferenceType {
         @Transient
         override val key: Nothing? = null
@@ -593,33 +609,134 @@ private class RenamedSerialDescriptor(
     override fun isElementOptional(index: Int): Boolean = original.isElementOptional(index)
 }
 
-/**
- * A little serializer that simply delegates
- * to the ManagedKeyInfoImpl.serializer() generated for your data class.
- *
- * Uses a wrapper descriptor with serial name "ManagedKeyInfoType" to avoid
- * polymorphic naming conflicts with ManagedKeyInfo in the ResolvedKeyInfoType sealed hierarchy.
- */
 @OptIn(ExperimentalSerializationApi::class)
 internal class ManagedKeyInfoSerializer<KT : KeyType>(
     private val keySerializer: KSerializer<KT>,
 ) : KSerializer<ManagedKeyInfoType<KT>> {
-    private val delegate: KSerializer<ManagedKeyInfo<KT>> =
-        ManagedKeyInfo.serializer(keySerializer)
+    private val resolvedKeyInfoSerializer = ResolvedKeyInfo.serializer(keySerializer)
 
-    // Wrap the descriptor with "ManagedKeyInfoType" serial name to avoid conflict with ManagedKeyInfo
-    override val descriptor: SerialDescriptor = RenamedSerialDescriptor(delegate.descriptor, "ManagedKeyInfoType")
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("ManagedKeyInfoType") {
+            element<String>("alias")
+            element<String>("providerId")
+            element("resolvedKeyInfo", resolvedKeyInfoSerializer.descriptor)
+        }
 
     override fun serialize(
         encoder: Encoder,
         value: ManagedKeyInfoType<KT>,
     ) {
-        // We know at runtime it is a ManagedKeyInfoImpl
-        @Suppress("UNCHECKED_CAST")
-        encoder.encodeSerializableValue(delegate, value as ManagedKeyInfo<KT>)
+        encoder.encodeStructure(descriptor) {
+            encodeStringElement(descriptor, 0, value.alias)
+            encodeStringElement(descriptor, 1, value.providerId)
+            encodeSerializableElement(
+                descriptor,
+                2,
+                resolvedKeyInfoSerializer,
+                ResolvedKeyInfo.fromDTO(value),
+            )
+        }
     }
 
-    override fun deserialize(decoder: Decoder): ManagedKeyInfoType<KT> = decoder.decodeSerializableValue(delegate)
+    override fun deserialize(decoder: Decoder): ManagedKeyInfoType<KT> {
+        var alias: String? = null
+        var providerId: String? = null
+        var resolvedKeyInfo: ResolvedKeyInfo<KT>? = null
+
+        decoder.decodeStructure(descriptor) {
+            while (true) {
+                when (val index = decodeElementIndex(descriptor)) {
+                    CompositeDecoder.DECODE_DONE -> break
+                    0 -> alias = decodeStringElement(descriptor, 0)
+                    1 -> providerId = decodeStringElement(descriptor, 1)
+                    2 ->
+                        resolvedKeyInfo =
+                            decodeSerializableElement(
+                                descriptor,
+                                2,
+                                resolvedKeyInfoSerializer,
+                            )
+                    else -> throw SerializationException("Unknown ManagedKeyInfoType field index: $index")
+                }
+            }
+        }
+
+        return ManagedKeyInfo(
+            alias = requireNotNull(alias) { "Missing alias for ManagedKeyInfoType" },
+            providerId = requireNotNull(providerId) { "Missing providerId for ManagedKeyInfoType" },
+            resolvedKeyInfo = requireNotNull(resolvedKeyInfo) { "Missing resolvedKeyInfo for ManagedKeyInfoType" },
+        )
+    }
+}
+
+/**
+ * Serializer for the concrete [ManagedKeyInfo] implementation.
+ *
+ * [ManagedKeyInfoType] deliberately has its own interface serializer because callers commonly
+ * hold managed keys behind that interface. The concrete data class must not use the generated
+ * serializer for its delegated [ResolvedKeyInfoType] field: that serializer can lose the concrete
+ * key serializer on JVM and materialize the delegated key as [Unit]. Keep the wire shape the same
+ * as the interface serializer, but decode the nested value as the concrete [ResolvedKeyInfo] with
+ * the caller-supplied key serializer.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+internal class ManagedKeyInfoConcreteSerializer<KT : KeyType>(
+    private val keySerializer: KSerializer<KT>,
+) : KSerializer<ManagedKeyInfo<KT>> {
+    private val resolvedKeyInfoSerializer = ResolvedKeyInfo.serializer(keySerializer)
+
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("ManagedKeyInfo") {
+            element<String>("alias")
+            element<String>("providerId")
+            element("resolvedKeyInfo", resolvedKeyInfoSerializer.descriptor)
+        }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: ManagedKeyInfo<KT>,
+    ) {
+        encoder.encodeStructure(descriptor) {
+            encodeStringElement(descriptor, 0, value.alias)
+            encodeStringElement(descriptor, 1, value.providerId)
+            encodeSerializableElement(
+                descriptor,
+                2,
+                resolvedKeyInfoSerializer,
+                ResolvedKeyInfo.fromDTO(value),
+            )
+        }
+    }
+
+    override fun deserialize(decoder: Decoder): ManagedKeyInfo<KT> {
+        var alias: String? = null
+        var providerId: String? = null
+        var resolvedKeyInfo: ResolvedKeyInfo<KT>? = null
+
+        decoder.decodeStructure(descriptor) {
+            while (true) {
+                when (val index = decodeElementIndex(descriptor)) {
+                    CompositeDecoder.DECODE_DONE -> break
+                    0 -> alias = decodeStringElement(descriptor, 0)
+                    1 -> providerId = decodeStringElement(descriptor, 1)
+                    2 ->
+                        resolvedKeyInfo =
+                            decodeSerializableElement(
+                                descriptor,
+                                2,
+                                resolvedKeyInfoSerializer,
+                            )
+                    else -> throw SerializationException("Unknown ManagedKeyInfo field index: $index")
+                }
+            }
+        }
+
+        return ManagedKeyInfo(
+            alias = requireNotNull(alias) { "Missing alias for ManagedKeyInfo" },
+            providerId = requireNotNull(providerId) { "Missing providerId for ManagedKeyInfo" },
+            resolvedKeyInfo = requireNotNull(resolvedKeyInfo) { "Missing resolvedKeyInfo for ManagedKeyInfo" },
+        )
+    }
 }
 
 @JsExportCompat
@@ -975,7 +1092,7 @@ data class ResolvedKeyInfo<
  * @property providerId The identifier of the KMS provider managing this key
  * @property resolvedKeyInfo The underlying resolved key information (delegated)
  */
-@Serializable
+@Serializable(with = ManagedKeyInfoConcreteSerializer::class)
 @SerialName("ManagedKeyInfo")
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ManagedKeyInfo", exact = true)

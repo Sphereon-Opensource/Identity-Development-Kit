@@ -45,6 +45,7 @@ import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentication
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
+import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.resolver.ClientJwksResolver
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAttestationChallengeStorage
@@ -104,11 +105,11 @@ class VerifyClientAuthenticationCommandImplTest {
         return VerifyClientAuthenticationCommandImpl(
             ctx.execution,
             clientRegistry,
-            jwtService,
+            lazyOf(jwtService),
             configProvider,
-            clientJwksResolver,
-            jtiStore,
-            attestationCommand,
+            lazyOf(clientJwksResolver),
+            lazyOf(jtiStore),
+            lazyOf(attestationCommand),
         )
     }
 
@@ -147,6 +148,78 @@ class VerifyClientAuthenticationCommandImplTest {
             assertEquals("client1", result.value.clientId)
             assertEquals(ClientAuthenticationMethod.CLIENT_SECRET_BASIC, result.value.method)
             assertNull(result.value.clientInstanceKey)
+        }
+
+    @Test
+    fun basicAuthDoesNotConstructJwtJwksReplayOrAttestationClosures() =
+        runTest {
+            val registry =
+                StubClientRegistry(
+                    client =
+                        ClientRegistration(
+                            clientId = "client1",
+                            tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                            grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                        ),
+                    verifyResult = true,
+                )
+            val configProvider =
+                TestOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(
+                        servers =
+                            mapOf(
+                                "default" to
+                                    OAuth2ServerInstanceConfig(
+                                        issuer = "https://auth.example.com",
+                                        attestation = FeaturePolicy.SUPPORTED,
+                                    ),
+                            ),
+                    ),
+                )
+            var jwtConstructions = 0
+            var jwksConstructions = 0
+            var replayStoreConstructions = 0
+            var attestationConstructions = 0
+            val command =
+                VerifyClientAuthenticationCommandImpl(
+                    ctx.execution,
+                    registry,
+                    lazy {
+                        jwtConstructions++
+                        StubJwtService()
+                    },
+                    configProvider,
+                    lazy {
+                        jwksConstructions++
+                        StubClientJwksResolver(emptyList())
+                    },
+                    lazy {
+                        replayStoreConstructions++
+                        InMemoryClientAssertionJtiStore()
+                    },
+                    lazy<VerifyAttestationClientAuthCommand> {
+                        attestationConstructions++
+                        error("Basic authentication must not construct attestation verification")
+                    },
+                )
+
+            val result =
+                command.execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication =
+                            ClientAuthenticationConfig.Basic(
+                                ClientCredentials("client1", "secret1"),
+                            ),
+                        clientId = "client1",
+                        tokenEndpointUrl = "https://auth.example.com/token",
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(0, jwtConstructions)
+            assertEquals(0, jwksConstructions)
+            assertEquals(0, replayStoreConstructions)
+            assertEquals(0, attestationConstructions)
         }
 
     @Test

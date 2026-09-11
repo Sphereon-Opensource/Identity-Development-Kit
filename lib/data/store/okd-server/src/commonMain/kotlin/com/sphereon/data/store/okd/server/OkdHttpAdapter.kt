@@ -19,19 +19,11 @@ package com.sphereon.data.store.okd.server
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
-import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.describe.HttpAdapterMount
-import com.sphereon.data.store.okd.server.command.OkdDeleteDocumentCommand
-import com.sphereon.data.store.okd.server.command.OkdGetDocumentCommand
-import com.sphereon.data.store.okd.server.command.OkdGetDocumentMetadataCommand
-import com.sphereon.data.store.okd.server.command.OkdGetPersonCommand
-import com.sphereon.data.store.okd.server.command.OkdListPersonsCommand
-import com.sphereon.data.store.okd.server.command.OkdServiceMetadataCommand
-import com.sphereon.data.store.okd.server.command.OkdUpdateDocumentCommand
-import com.sphereon.data.store.okd.server.command.OkdUploadDocumentCommand
 import com.sphereon.di.session.SessionScope
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -56,35 +48,19 @@ import kotlin.native.ObjCName
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(OkdHttpAdapter.ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdHttpAdapter", exact = true)
 class OkdHttpAdapter(
     execution: SessionExecution,
-    private val getDocumentCommand: OkdGetDocumentCommand,
-    private val updateDocumentCommand: OkdUpdateDocumentCommand,
-    private val deleteDocumentCommand: OkdDeleteDocumentCommand,
-    private val uploadDocumentCommand: OkdUploadDocumentCommand,
-    private val getDocumentMetadataCommand: OkdGetDocumentMetadataCommand,
-    private val listPersonsCommand: OkdListPersonsCommand,
-    private val getPersonCommand: OkdGetPersonCommand,
-    private val serviceMetadataCommand: OkdServiceMetadataCommand,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
 ) : CommandBackedHttpAdapter(
         id = ID,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/okd"),
     ) {
-    override val endpointCommands: List<HttpEndpointCommand> =
-        listOf(
-            getDocumentMetadataCommand, // Must be before getDocumentCommand (more specific path)
-            getDocumentCommand,
-            updateDocumentCommand,
-            deleteDocumentCommand,
-            uploadDocumentCommand,
-            getPersonCommand, // Must be before listPersonsCommand (more specific path)
-            listPersonsCommand,
-            serviceMetadataCommand,
-        )
 
     @OptIn(ExperimentalObjCName::class)
     @ObjCName("OkdHttpAdapterGraph", exact = true)

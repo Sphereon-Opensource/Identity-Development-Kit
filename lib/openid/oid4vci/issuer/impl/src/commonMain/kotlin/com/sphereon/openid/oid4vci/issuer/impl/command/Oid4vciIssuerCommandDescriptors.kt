@@ -35,29 +35,29 @@ import dev.zacsweers.metro.StringKey
 interface Oid4vciIssuerCommandDescriptors {
     @Provides @IntoMap
     @StringKey(CreateCredentialOfferCommand.COMMAND_ID)
-    fun createCredentialOffer(impl: CreateCredentialOfferCommandImpl): ServiceCommand<*, *, *> = impl
+    fun createCredentialOffer(impl: CreateCredentialOfferCommand): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(BuildIssuerMetadataCommand.COMMAND_ID)
-    fun buildIssuerMetadata(impl: BuildIssuerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
+    fun buildIssuerMetadata(impl: BuildIssuerMetadataCommand): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(IssueNonceCommand.COMMAND_ID)
-    fun issueNonce(impl: IssueNonceCommandImpl): ServiceCommand<*, *, *> = impl
+    fun issueNonce(impl: IssueNonceCommand): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(HandleCredentialRequestCommand.COMMAND_ID)
-    fun handleCredentialRequest(impl: HandleCredentialRequestCommandImpl): ServiceCommand<*, *, *> = impl
+    fun handleCredentialRequest(impl: HandleCredentialRequestCommand): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(HandleDeferredCredentialRequestCommand.COMMAND_ID)
-    fun handleDeferredCredentialRequest(impl: HandleDeferredCredentialRequestCommandImpl): ServiceCommand<*, *, *> = impl
+    fun handleDeferredCredentialRequest(impl: HandleDeferredCredentialRequestCommand): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(HandleNotificationCommand.COMMAND_ID)
-    fun handleNotification(impl: HandleNotificationCommandImpl): ServiceCommand<*, *, *> = impl
+    fun handleNotification(impl: HandleNotificationCommand): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(BuildSignedIssuerMetadataCommand.COMMAND_ID)
-    fun buildSignedIssuerMetadata(impl: BuildSignedIssuerMetadataCommandImpl): ServiceCommand<*, *, *> = impl
+    fun buildSignedIssuerMetadata(impl: BuildSignedIssuerMetadataCommand): ServiceCommand<*, *, *> = impl
 }

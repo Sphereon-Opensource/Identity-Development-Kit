@@ -34,6 +34,16 @@ interface WalletUnitStore : WalletStorageProfileResolver {
 
     suspend fun getWalletUnit(walletUnitId: String): IdkResult<WalletUnitProfile?, IdkError>
 
+    /**
+     * Atomically associates a freshly provisioned opaque WSCA key alias with its exact public
+     * verification method. Identical re-registration is idempotent; conflicting metadata fails.
+     */
+    suspend fun registerHolderVerificationMethod(
+        walletUnitId: String,
+        keyAlias: String,
+        method: WalletHolderVerificationMethod,
+    ): IdkResult<WalletUnitProfile, IdkError>
+
     suspend fun getStorageProfile(walletUnitId: String): IdkResult<StorageProfile?, IdkError>
 
     suspend fun listWalletUnits(includeArchived: Boolean = false): IdkResult<List<WalletUnitProfile>, IdkError>

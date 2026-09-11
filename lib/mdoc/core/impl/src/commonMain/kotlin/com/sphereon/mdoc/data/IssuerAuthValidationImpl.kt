@@ -35,6 +35,7 @@ import com.sphereon.crypto.core.x509.X509VerificationRequest
 import com.sphereon.crypto.core.x509.X509VerificationResult
 import com.sphereon.crypto.core.x509.X509VerificationResultType
 import com.sphereon.crypto.core.x509.X509VerifyService
+import com.sphereon.crypto.core.x509.certificateFromDer
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.MdocConst
 import com.sphereon.mdoc.data.device.Document
@@ -47,8 +48,6 @@ import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
-
-private const val CERT_VALIDITY_OFFSET_SECONDS = 600
 
 /**
  * 9.3.1 Inspection procedure for issuer data authentication
@@ -267,10 +266,31 @@ class IssuerAuthValidationImpl(
         val validUntilStr =
             validUntil.toLocalDateTimeKMP(dateTimeUtils).toInstant(dateTimeUtils, timeZoneId).toString()
 
-        // FIXME: Offset used as we cannot inspect cert valid from - to yet. Needs a function on the x509Service.
-        val fixmeOffset = CERT_VALIDITY_OFFSET_SECONDS
-        val certValidFrom = validFrom - fixmeOffset
-        val certValidUntil = validUntil + fixmeOffset
+        val issuerChain = issuerAuth.protectedHeader.x5chain ?: issuerAuth.unprotectedHeader?.x5chain
+        val issuerCertificate =
+            try {
+                issuerChain?.value?.firstOrNull()?.value?.let(::certificateFromDer)
+            } catch (expected: Exception) {
+                return VerifyResult(
+                    error = true,
+                    critical = true,
+                    message = "The issuer certificate in the MSO header could not be parsed: ${expected.message}",
+                    name = MdocConst.MDOC_LITERAL,
+                )
+            }
+                ?: return VerifyResult(
+                    error = true,
+                    critical = true,
+                    message = "The MSO header does not contain an issuer certificate for validity checks",
+                    name = MdocConst.MDOC_LITERAL,
+                )
+
+        // The certificate's actual validity interval is authoritative for the MSO signed date.
+        // The caller's clock-skew policy is applied only at the boundary; a fixed offset could
+        // accept an MSO signed outside a short-lived issuer certificate.
+        val certificateSkew = clockSkewAllowedInSec.toLong()
+        val certValidFrom = issuerCertificate.notBefore.epochSeconds - certificateSkew
+        val certValidUntil = issuerCertificate.notAfter.epochSeconds + certificateSkew
 
         // the 'signed' date is within the validity period of the certificate in the MSO header
         // Let's not do a clock skew on dates that typically are far away

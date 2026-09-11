@@ -436,6 +436,7 @@ class SubmitAuthorizationResponseCommandImpl(
                 signingKey = jarmOptions.signingKey,
                 encryptionRecipient = encryptionRecipient,
                 jarmConfig = jarmConfig,
+                protectedHeaderOverrides = jarmOptions.protectedHeaderOverrides,
             )
 
         val jarmResult =
@@ -610,7 +611,12 @@ class SubmitAuthorizationResponseCommandImpl(
         // Prefer an encryption-capable key from embedded JWKS when present. If no suitable key exists there,
         // fall back to resolving jwks_uri via external identifier resolution (it may contain a different key set
         // than the signing/JAR keys).
-        val embeddedEncKey = clientMetadata.selectEncryptedResponseJwk()
+        // An ISO 18013-7 Annex B verifier advertises the JWE alg in the
+        // profile-specific client_metadata member rather than requiring it on
+        // every JWK. An explicit JarmConfig therefore permits an embedded
+        // encryption key without a JWK alg; regular OID4VP's automatic config
+        // derivation still requires the JWK alg.
+        val embeddedEncKey = clientMetadata.selectEncryptedResponseJwk(requireAlgorithm = jarmConfig.encryptionAlgorithm == null)
 
         val selectedKeyInfo =
             when {

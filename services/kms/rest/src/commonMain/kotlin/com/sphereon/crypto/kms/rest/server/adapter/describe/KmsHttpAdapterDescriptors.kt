@@ -65,6 +65,7 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "getKey",
                         commandId = "kms.keys.get",
+                        handlerCommandId = "kms.keys.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -72,6 +73,7 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "listKeys",
                         commandId = "kms.keys.list",
+                        handlerCommandId = "kms.keys.list",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -80,6 +82,7 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "generateKey",
                         commandId = "kms.keys.generate",
+                        handlerCommandId = "kms.keys.generate",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -88,6 +91,7 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "importKey",
                         commandId = "kms.keys.import",
+                        handlerCommandId = "kms.keys.import",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -96,12 +100,14 @@ class KeysHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "registerKeyReference",
                         commandId = "kms.keys.register",
+                        handlerCommandId = "kms.keys.register",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.DELETE,
                         pathPattern = "/keys/{aliasOrKid}",
                         operationId = "deleteKey",
                         commandId = "kms.keys.delete",
+                        handlerCommandId = "kms.keys.delete",
                     ),
                 ),
         )
@@ -132,6 +138,7 @@ class ProvidersHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "listKeyProviders",
                         commandId = "kms.providers.list",
+                        handlerCommandId = "kms.providers.list",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -139,6 +146,7 @@ class ProvidersHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "getKeyProvider",
                         commandId = "kms.providers.get",
+                        handlerCommandId = "kms.providers.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -146,6 +154,7 @@ class ProvidersHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "providerListKeys",
                         commandId = "kms.providers.list-keys",
+                        handlerCommandId = "kms.providers.list-keys",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -153,6 +162,7 @@ class ProvidersHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "providerGetKey",
                         commandId = "kms.providers.get-key",
+                        handlerCommandId = "kms.providers.get-key",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -161,6 +171,7 @@ class ProvidersHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "providerGenerateKey",
                         commandId = "kms.providers.generate-key",
+                        handlerCommandId = "kms.providers.generate-key",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -169,12 +180,14 @@ class ProvidersHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "providerImportKey",
                         commandId = "kms.providers.import-key",
+                        handlerCommandId = "kms.providers.import-key",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.DELETE,
                         pathPattern = "/providers/{providerId}/keys/{aliasOrKid}",
                         operationId = "providerDeleteKey",
                         commandId = "kms.providers.delete-key",
+                        handlerCommandId = "kms.providers.delete-key",
                     ),
                 ),
         )
@@ -201,6 +214,7 @@ class CapabilitiesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "listCapabilities",
                         commandId = "kms.capabilities.list",
+                        handlerCommandId = "kms.capabilities.list",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -208,6 +222,7 @@ class CapabilitiesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "getProviderCapabilities",
                         commandId = "kms.capabilities.get",
+                        handlerCommandId = "kms.capabilities.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -216,6 +231,7 @@ class CapabilitiesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "queryProviders",
                         commandId = "kms.providers.query",
+                        handlerCommandId = "kms.providers.query",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -224,6 +240,7 @@ class CapabilitiesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "queryBestProvider",
                         commandId = "kms.provider.query",
+                        handlerCommandId = "kms.provider.query",
                     ),
                 ),
         )
@@ -251,6 +268,7 @@ class EncryptionHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "encrypt",
                         commandId = "kms.encryption.encrypt",
+                        handlerCommandId = "kms.encryption.encrypt",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -259,6 +277,7 @@ class EncryptionHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "decrypt",
                         commandId = "kms.encryption.decrypt",
+                        handlerCommandId = "kms.encryption.decrypt",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -267,6 +286,7 @@ class EncryptionHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "wrapKey",
                         commandId = "kms.encryption.wrap",
+                        handlerCommandId = "kms.encryption.wrap",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -275,6 +295,7 @@ class EncryptionHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "unwrapKey",
                         commandId = "kms.encryption.unwrap",
+                        handlerCommandId = "kms.encryption.unwrap",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -283,6 +304,7 @@ class EncryptionHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "performKeyAgreement",
                         commandId = "kms.encryption.agree",
+                        handlerCommandId = "kms.encryption.agree",
                     ),
                 ),
         )
@@ -310,6 +332,7 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "generateCertificateSigningRequest",
                         commandId = "kms.certificates.csr",
+                        handlerCommandId = "kms.certificates.csr",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -318,6 +341,7 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "issueCertificate",
                         commandId = "kms.certificates.issue",
+                        handlerCommandId = "kms.certificates.issue",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -326,6 +350,32 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "issueCertificateFromCsr",
                         commandId = "kms.certificates.issue-from-csr",
+                        handlerCommandId = "kms.certificates.issue-from-csr",
+                    ),
+                    HttpEndpointDescriptor(
+                        method = HttpMethod.POST,
+                        pathPattern = "/certificates/register",
+                        consumes = setOf(MediaType.ApplicationJson),
+                        produces = setOf(MediaType.ApplicationJson),
+                        operationId = "registerCertificateReference",
+                        commandId = "kms.certificates.register",
+                        handlerCommandId = "kms.certificates.register",
+                    ),
+                    HttpEndpointDescriptor(
+                        method = HttpMethod.GET,
+                        pathPattern = "/certificate-references",
+                        produces = setOf(MediaType.ApplicationJson),
+                        operationId = "listCertificateReferences",
+                        commandId = "kms.certificate-references.list",
+                        handlerCommandId = "kms.certificate-references.list",
+                    ),
+                    HttpEndpointDescriptor(
+                        method = HttpMethod.GET,
+                        pathPattern = "/certificate-references/{id}",
+                        produces = setOf(MediaType.ApplicationJson),
+                        operationId = "getCertificateReference",
+                        commandId = "kms.certificate-references.get",
+                        handlerCommandId = "kms.certificate-references.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -333,6 +383,7 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "listTrustedCertificateAliases",
                         commandId = "kms.certificates.list",
+                        handlerCommandId = "kms.certificates.list",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -340,6 +391,7 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "getTrustedCertificate",
                         commandId = "kms.certificates.get",
+                        handlerCommandId = "kms.certificates.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -348,12 +400,14 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "storeTrustedCertificate",
                         commandId = "kms.certificates.store",
+                        handlerCommandId = "kms.certificates.store",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.DELETE,
                         pathPattern = "/certificates/{alias}",
                         operationId = "deleteTrustedCertificate",
                         commandId = "kms.certificates.delete",
+                        handlerCommandId = "kms.certificates.delete",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -361,6 +415,7 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "listCertificateChainAliases",
                         commandId = "kms.certificate-chains.list",
+                        handlerCommandId = "kms.certificate-chains.list",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -368,6 +423,7 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "getCertificateChain",
                         commandId = "kms.certificate-chains.get",
+                        handlerCommandId = "kms.certificate-chains.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -376,12 +432,14 @@ class CertificatesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider 
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "storeCertificateChain",
                         commandId = "kms.certificate-chains.store",
+                        handlerCommandId = "kms.certificate-chains.store",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.DELETE,
                         pathPattern = "/certificate-chains/{alias}",
                         operationId = "deleteCertificateChain",
                         commandId = "kms.certificate-chains.delete",
+                        handlerCommandId = "kms.certificate-chains.delete",
                     ),
                 ),
         )
@@ -412,6 +470,7 @@ class ResolversHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "listResolvers",
                         commandId = "kms.resolvers.list",
+                        handlerCommandId = "kms.resolvers.list",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.GET,
@@ -419,6 +478,7 @@ class ResolversHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "getResolver",
                         commandId = "kms.resolvers.get",
+                        handlerCommandId = "kms.resolvers.get",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -427,6 +487,7 @@ class ResolversHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "resolvePublicKey",
                         commandId = "kms.resolvers.resolve",
+                        handlerCommandId = "kms.resolvers.resolve",
                     ),
                 ),
         )
@@ -458,6 +519,7 @@ class SignaturesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "createRawSignature",
                         commandId = "kms.signatures.create-raw",
+                        handlerCommandId = "kms.signatures.create-raw",
                     ),
                     HttpEndpointDescriptor(
                         method = HttpMethod.POST,
@@ -466,6 +528,7 @@ class SignaturesHttpAdapterDescriptorProvider : HttpAdapterDescriptorProvider {
                         produces = setOf(MediaType.ApplicationJson),
                         operationId = "verifyRawSignature",
                         commandId = "kms.signatures.verify-raw",
+                        handlerCommandId = "kms.signatures.verify-raw",
                     ),
                 ),
         )

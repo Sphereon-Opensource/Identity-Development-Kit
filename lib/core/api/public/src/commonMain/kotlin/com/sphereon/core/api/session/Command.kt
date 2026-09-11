@@ -27,12 +27,14 @@ import com.sphereon.core.api.events.EventSubsystem
 import com.sphereon.core.api.events.EventSubsystems
 import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.core.compat.JsExportCompat
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import software.amazon.app.platform.scope.Scope
 import software.amazon.app.platform.scope.Scoped
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.TimeSource
 
 fun interface CommandSupports {
     suspend fun supports(args: Any): Boolean
@@ -512,7 +514,7 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
         val interceptors = interceptorChain.interceptors.sortedBy { it.order }
         val context = commandExecutionContext()
 
-        val startTimeMs = currentTimeMillis()
+        val startMark = TimeSource.Monotonic.markNow()
         var commandResult: IdkResult<SuccessResult, ErrorResult>? = null
         var firstDenial: InterceptorVerdict.Deny? = null
         var executionCoroutineContext: CoroutineContext = EmptyCoroutineContext
@@ -605,7 +607,9 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
             return finalResult
         }
 
-        return withContext(executionCoroutineContext) {
+        val parentInvocation = currentCoroutineContext()[CommandInvocationContext]
+        val commandInvocation = parentInvocation?.enterCommand() ?: CommandInvocationContext.internalRoot()
+        return withContext(executionCoroutineContext + commandInvocation) {
             var lifecycleFailure: Throwable? = null
             var lifecycleResult: IdkResult<SuccessResult, ErrorResult>? = null
             try {
@@ -647,7 +651,7 @@ abstract class CommandAdapter<Arg : Any, SuccessResult : Any, ErrorResult : IdkE
             }
 
             // Phase 3: attempt every after hook in reverse order.
-            val durationMs = currentTimeMillis() - startTimeMs
+            val durationMs = startMark.elapsedNow().inWholeMilliseconds.coerceAtLeast(0L)
             var afterCancellation: CancellationException? = null
             for (interceptor in interceptors.asReversed()) {
                 var afterFailure: Throwable? = null

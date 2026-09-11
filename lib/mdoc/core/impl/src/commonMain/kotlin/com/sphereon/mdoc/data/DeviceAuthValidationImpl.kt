@@ -27,6 +27,7 @@ import com.sphereon.cbor.toCborItem
 import com.sphereon.crypto.core.CoseCryptoService
 import com.sphereon.crypto.core.CryptoConst
 import com.sphereon.crypto.core.cose.CoseKeyType
+import com.sphereon.crypto.core.cose.defaultVerifyMac0
 import com.sphereon.crypto.core.generic.VerifySignatureResult
 import com.sphereon.crypto.core.generic.VerifySignatureResultType
 import com.sphereon.di.session.SessionScope
@@ -80,12 +81,46 @@ class DeviceAuthValidationImpl(
         document: Document,
         expectedSessionTranscript: SessionTranscript,
     ): VerifySignatureResultType<CoseKeyType> {
+        return verifyDeviceAuthInternal(
+            document = document,
+            expectedSessionTranscript = expectedSessionTranscript,
+            macKey = null,
+        )
+    }
+
+    override suspend fun verifyDeviceAuthWithMac(
+        document: Document,
+        expectedSessionTranscript: SessionTranscript,
+        macKey: ByteArray,
+    ): VerifySignatureResultType<CoseKeyType> {
+        if (macKey.isEmpty()) {
+            return failure("Cannot verify mdoc deviceMac with an empty EMacKey.")
+        }
+        return verifyDeviceAuthInternal(
+            document = document,
+            expectedSessionTranscript = expectedSessionTranscript,
+            macKey = macKey,
+        )
+    }
+
+    private suspend fun verifyDeviceAuthInternal(
+        document: Document,
+        expectedSessionTranscript: SessionTranscript,
+        macKey: ByteArray?,
+    ): VerifySignatureResultType<CoseKeyType> {
         val deviceSigned =
             document.deviceSigned
                 ?: return failure("Document has no deviceSigned structure; cannot verify device authentication.")
 
         val deviceAuth = deviceSigned.deviceAuth
         if (deviceAuth.deviceMac != null) {
+            if (macKey != null) {
+                return verifyDeviceMac(
+                    document = document,
+                    expectedSessionTranscript = expectedSessionTranscript,
+                    macKey = macKey,
+                )
+            }
             return failure(
                 "Device authentication uses COSE_Mac0 (deviceMac); OID4VP requires deviceSignature " +
                     "(COSE_Sign1) because there is no shared secret to derive the EMacKey.",
@@ -153,6 +188,66 @@ class DeviceAuthValidationImpl(
             name = DEVICE_AUTH_NAME,
             keyInfo = verifyResult.keyInfo,
         )
+    }
+
+    private suspend fun verifyDeviceMac(
+        document: Document,
+        expectedSessionTranscript: SessionTranscript,
+        macKey: ByteArray,
+    ): VerifySignatureResultType<CoseKeyType> {
+        val deviceSigned =
+            document.deviceSigned
+                ?: return failure("Document has no deviceSigned structure; cannot verify device authentication.")
+        val coseMac0 =
+            deviceSigned.deviceAuth.deviceMac?.coseMac0
+                ?: return failure("DeviceAuth contains a legacy MAC value; only COSE_Mac0 can be authenticated.")
+
+        val reconstructedPayload =
+            try {
+                encodeDeviceAuthenticationPayload(
+                    sessionTranscript = expectedSessionTranscript,
+                    docType = document.docType.toString(),
+                    deviceNamespaces = deviceSigned.nameSpaces,
+                )
+            } catch (expected: Exception) {
+                return failure(
+                    "Failed to reconstruct expected DeviceAuthentication payload for MAC verification: ${expected.message}",
+                )
+            }
+
+        // COSE_Mac0 is sent detached in mdoc.  If a non-conforming attached payload is supplied,
+        // compare it with the verifier-reconstructed bytes before verifying so an attacker cannot
+        // choose the attached payload over the protocol context.
+        val reattachedPayload = CborEncodedItem(reconstructedPayload, reconstructedPayload).value.toBstr()
+        val attachedPayload = coseMac0.payload
+        if (attachedPayload != null && !attachedPayload.value.contentEquals(reattachedPayload.value)) {
+            return failure("DeviceAuthentication COSE_Mac0 payload does not match the expected session context.")
+        }
+
+        val verified =
+            try {
+                defaultVerifyMac0(
+                    value = coseMac0,
+                    sharedSecret = macKey,
+                    detachedPayload = reattachedPayload.value,
+                )
+            } catch (expected: Throwable) {
+                return failure(
+                    message = "DeviceAuthentication MAC verification threw: ${expected.message ?: expected::class.simpleName}",
+                    detailMessage = expected.message,
+                )
+            }
+
+        return if (verified) {
+            VerifySignatureResult(
+                error = false,
+                critical = false,
+                message = "DeviceAuthentication COSE_Mac0 verified against the supplied EMacKey and session transcript.",
+                name = DEVICE_AUTH_NAME,
+            )
+        } else {
+            failure("DeviceAuthentication COSE_Mac0 failed to verify against the supplied EMacKey.")
+        }
     }
 
     private fun decodeMso(document: Document): MobileSecurityObject {

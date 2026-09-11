@@ -16,13 +16,29 @@
 
 package com.sphereon.openid.oid4vci.issuer.command
 
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerSpecProfile
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalUuidApi::class)
 class CreateCredentialOfferArgsStaticOfferFieldsTest {
-    private val instanceId = "issuer-instance-static-offer-fields"
+    private val instanceId = "00000000-0000-4000-8000-000000000051"
+    private val snapshot = Oid4vciAuthorizationPolicySnapshot(
+        issuerId = Uuid.parse(instanceId),
+        authorizationServerId = Uuid.parse("00000000-0000-4000-8000-000000000052"),
+        authorizationServerIssuer = "https://as.example.com",
+        applicableGrants = setOf(Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE),
+        profile = Oid4vciIssuerSpecProfile.OID4VCI_1_0_FINAL,
+        profileRevision = 1,
+        authorizationServerRevision = 2,
+        bindingRevision = 3,
+    )
 
     @Test
     fun uriLifecycleDefaultsToSingleUse() {
@@ -31,6 +47,7 @@ class CreateCredentialOfferArgsStaticOfferFieldsTest {
                 instanceId = instanceId,
                 issuerId = "https://issuer.example.com/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
+                authorizationPolicySnapshot = snapshot,
             )
         assertEquals(OfferUriLifecycle.SINGLE_USE, args.uriLifecycle)
         assertEquals(instanceId, args.instanceId)
@@ -43,6 +60,7 @@ class CreateCredentialOfferArgsStaticOfferFieldsTest {
                 instanceId = instanceId,
                 issuerId = "https://issuer.example.com/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
+                authorizationPolicySnapshot = snapshot,
             )
         assertTrue(args.initialLifecycleFields.isEmpty())
     }
@@ -54,6 +72,7 @@ class CreateCredentialOfferArgsStaticOfferFieldsTest {
                 instanceId = instanceId,
                 issuerId = "https://issuer.example.com/oid4vci",
                 credentialConfigurationIds = listOf("PID"),
+                authorizationPolicySnapshot = snapshot,
             )
         assertNull(args.rateLimit)
     }
@@ -68,6 +87,7 @@ class CreateCredentialOfferArgsStaticOfferFieldsTest {
                 credentialConfigurationIds = listOf("PID"),
                 uriLifecycle = OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH,
                 rateLimit = rateLimit,
+                authorizationPolicySnapshot = snapshot,
             )
         assertEquals(OfferUriLifecycle.REUSABLE_FRESH_PER_FETCH, args.uriLifecycle)
         assertEquals(rateLimit, args.rateLimit)

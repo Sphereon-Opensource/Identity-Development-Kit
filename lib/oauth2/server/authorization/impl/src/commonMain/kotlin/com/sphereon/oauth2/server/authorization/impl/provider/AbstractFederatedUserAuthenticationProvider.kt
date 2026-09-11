@@ -34,7 +34,7 @@ import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
-import com.sphereon.oauth2.server.authorization.provider.FederationProviderRegistry
+import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
 import com.sphereon.oauth2.server.authorization.provider.FlowContext
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
@@ -55,17 +55,13 @@ import com.sphereon.oauth2.server.authorization.storage.FederationSessionStore
  * a typed wrapper for `String` payloads.
  */
 abstract class AbstractFederatedUserAuthenticationProvider(
-    private val providerRegistry: FederationProviderRegistry,
+    private val providerResolver: FederationProviderRuntimeResolver,
     private val sessionStore: FederationSessionStore,
     private val initiateProviderAuthenticationCommand: InitiateProviderAuthenticationCommand,
     private val handleFederationCallbackCommand: HandleFederationCallbackCommand,
     private val getAuthenticatedUserCommand: GetAuthenticatedUserCommand,
     private val getUserInfoCommand: GetUserInfoCommand,
 ) : UserAuthenticationProvider {
-    fun resolveKnownProvider(providerId: String): FederationProviderConfig? = providerRegistry.findById(providerId)
-
-    fun getEnabledProviders(): List<FederationProviderConfig> = providerRegistry.enabled()
-
     override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> =
         getAuthenticatedUserCommand
             .execute(GetAuthenticatedUserArgs(sessionId = sessionId))
@@ -77,10 +73,8 @@ abstract class AbstractFederatedUserAuthenticationProvider(
         hint: AuthenticationHint?,
         context: AuthenticationContext?,
     ): IdkResult<String, AuthenticationError> {
-        val providerId =
-            hint?.providerId
-                ?: providerRegistry.defaultProviderId()
-                ?: return Err(AuthenticationError.Generic(description = "No federation provider specified and no default configured"))
+        val providerId = hint?.providerId
+            ?: return Err(AuthenticationError.Generic(description = "An exact federation binding UUID is required"))
         return initiateProviderAuthentication(
             sessionId = sessionId,
             returnUrl = returnUrl,

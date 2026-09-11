@@ -6,6 +6,7 @@ package com.sphereon.wallet.party.local
 
 import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.data.store.party.model.IdentityRole
+import com.sphereon.data.store.party.model.PartyOrigin
 import com.sphereon.data.store.party.model.PartyType
 import com.sphereon.wallet.party.WalletCounterpartyEvidence
 import com.sphereon.wallet.party.WalletOrganizationIdentityRole
@@ -16,6 +17,10 @@ import com.sphereon.wallet.party.WalletPartyScope
 import com.sphereon.wallet.party.WalletBusinessUnitProvisioningRequest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -61,6 +66,8 @@ class LocalWalletPartyDirectoryTest {
         assertEquals(100, second.lastInteractionAtEpochSeconds)
         assertEquals(first.organization.party.partyId, second.organization.party.partyId)
         assertEquals(PartyType.ORGANIZATION, second.organization.party.partyType)
+        assertEquals(PartyOrigin.CEREMONY_DISCOVERY, first.organization.party.origin)
+        assertEquals(PartyOrigin.CEREMONY_DISCOVERY, second.organization.party.origin)
         assertEquals(null, second.organization.party.uri, "A protocol endpoint is not an Organization website")
         assertEquals(scope.organizationUnitRef.partyId, second.organization.party.organizationUnitId.toString())
         assertEquals(IdentityRole.ISSUER, second.organization.identities.single().identity.identityRole)
@@ -68,6 +75,42 @@ class LocalWalletPartyDirectoryTest {
             setOf(IdentifierType.OID4VCI_ISSUER, IdentifierType.URL),
             second.organization.identities.single().identifiers.map { it.identifierType }.toSet(),
         )
+    }
+
+    @Test
+    fun `a discovered counterparty stores identity and origin, and no attributed fact`() = runTest {
+        val store = MemoryDocumentStore()
+        val directory = LocalWalletPartyDirectory(store, backgroundScope)
+        val scope = directory.localScope()
+        val evidence = issuer("https://issuer.example").copy(displayName = "Self asserted issuer")
+
+        val created = directory.resolveOrCreateOrganization(scope, evidence, 100).getOrThrow()
+        val saved =
+            requireNotNull(
+                LocalWalletPartyDirectory(store, backgroundScope)
+                    .getOrganization(scope, created.organization.party.partyId)
+                    .getOrThrow(),
+            )
+
+        val party = saved.party
+        assertEquals(PartyOrigin.CEREMONY_DISCOVERY, created.organization.party.origin)
+        assertEquals(PartyOrigin.CEREMONY_DISCOVERY, party.origin)
+        assertEquals(PartyType.ORGANIZATION, party.partyType)
+        assertEquals(scope.organizationUnitRef.partyId, party.organizationUnitId.toString())
+        assertEquals(null, party.jurisdiction)
+        assertEquals(null, party.uri, "A protocol endpoint is not an Organization website")
+        assertEquals(
+            setOf(IdentifierType.OID4VCI_ISSUER, IdentifierType.URL),
+            saved.identities.single().identifiers.map { it.identifierType }.toSet(),
+        )
+        assertEquals("Self asserted issuer", party.displayName)
+        val storedKeys = walletPartyJson.parseToJsonElement(walletPartyJson.encodeToString(saved)).propertyNames()
+        attributedOrganizationFields.forEach { field ->
+            assertFalse(
+                field in storedKeys,
+                "an attributed fact must not be stored where its source cannot travel with it: $field",
+            )
+        }
     }
 
     @Test
@@ -385,6 +428,25 @@ class LocalWalletPartyDirectoryTest {
                     sharedLei?.let { add(WalletPartyIdentifierEvidence(IdentifierType.LEI, it, verified = true)) }
                 },
         )
+
+    private val attributedOrganizationFields =
+        setOf(
+            "legalName",
+            "organizationType",
+            "industry",
+            "contactEmail",
+            "websiteUrl",
+            "websiteUri",
+            "privacyPolicyUri",
+            "tosUri",
+        )
+
+    private fun JsonElement.propertyNames(): Set<String> =
+        when (this) {
+            is JsonObject -> keys + values.flatMap { it.propertyNames() }
+            is JsonArray -> this.flatMap { it.propertyNames() }.toSet()
+            else -> emptySet()
+        }
 
     private suspend fun LocalWalletPartyDirectory.localScope(): WalletPartyScope {
         val businessUnit =

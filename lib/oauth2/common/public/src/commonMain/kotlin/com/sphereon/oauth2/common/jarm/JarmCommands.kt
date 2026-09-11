@@ -19,6 +19,7 @@ package com.sphereon.oauth2.common.jarm
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.crypto.jose.jwe.JweHeader
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -59,6 +60,9 @@ data class CreateJarmResponseArgs(
     val encryptionRecipient: ManagedIdentifierOptsOrResult? = null,
     val jarmConfig: JarmConfig = JarmConfig.signed(),
     val expirationSeconds: Long = 300,
+    /** Additional protected JWE headers required by a profile-specific JARM profile. */
+    @kotlinx.serialization.Transient
+    val protectedHeaderOverrides: JweHeader? = null,
 )
 
 /**

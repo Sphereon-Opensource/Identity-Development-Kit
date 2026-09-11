@@ -62,6 +62,7 @@ class DefaultSessionContextFactoryTest {
         val sessionContext = factory.create(sessionId = "s1", correlationId = "corr-s1", resolution = resolution)
 
         assertEquals(PrincipalType.SERVICE, sessionContext.context.principalType)
+        assertFalse(sessionContext.isAnonymous())
     }
 
     @Test
@@ -79,6 +80,23 @@ class DefaultSessionContextFactoryTest {
         assertEquals("s-anon", sessionContext.sessionId)
         assertEquals(IdentityConstants.ANONYMOUS_TENANT_ID, sessionContext.context.tenant.tenantId)
         assertEquals(IdentityConstants.ANONYMOUS_PRINCIPAL_ID, sessionContext.context.principal)
+        assertTrue(sessionContext.isAnonymous())
+    }
+
+    @Test
+    fun resolvedTenantDoesNotAuthenticateAnAnonymousPrincipal() {
+        val sessionContext = factory.create(
+            sessionId = "http-request-42",
+            resolution = IdentityResolutionResult(
+                tenantId = "acme-tenant",
+                principalId = null,
+                principalType = PrincipalType.ANONYMOUS,
+                metadata = IdentityMetadata(),
+            ),
+        )
+
+        assertEquals("acme-tenant", sessionContext.context.tenant.tenantId)
+        assertTrue(sessionContext.isAnonymous())
     }
 
     @Test

@@ -73,7 +73,7 @@ class StaticCredentialOfferE2ETest {
         }
 
     private fun issuerAdapter(): Oid4vciIssuerProtocolHttpAdapter {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
+        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters.values.map { it.value }
         return adapters.filterIsInstance<Oid4vciIssuerProtocolHttpAdapter>().firstOrNull()
             ?: error("Oid4vciIssuerProtocolHttpAdapter not found in DI graph")
     }
@@ -144,7 +144,7 @@ class StaticCredentialOfferE2ETest {
                     pathParameters = mapOf("offerId" to offerId),
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val walletAResponse = issuerHttpAdapter.handleRequest(walletARequest)
+            val walletAResponse = ctx.dispatchInProcessHttp(walletARequest)
             assertEquals(
                 200,
                 walletAResponse.statusCode,
@@ -166,7 +166,7 @@ class StaticCredentialOfferE2ETest {
                     pathParameters = mapOf("offerId" to offerId),
                     headers = mapOf("host" to issuerHost, "x-forwarded-proto" to "https"),
                 )
-            val walletBResponse = issuerHttpAdapter.handleRequest(walletBRequest)
+            val walletBResponse = ctx.dispatchInProcessHttp(walletBRequest)
             assertEquals(
                 200,
                 walletBResponse.statusCode,
@@ -231,7 +231,7 @@ class StaticCredentialOfferE2ETest {
 
             val offerId = storedSession.offerId
             val response =
-                issuerHttpAdapter.handleRequest(
+                ctx.dispatchInProcessHttp(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/oid4vci/credentials/offers/$offerId",

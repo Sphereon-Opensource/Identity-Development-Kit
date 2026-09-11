@@ -20,9 +20,13 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.ConfigService
 import com.sphereon.core.api.conf.OpaqueSecretResolver
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
+import com.sphereon.core.api.conf.ScopedPropertySource
+import com.sphereon.core.api.conf.TenantConfigService
+import com.sphereon.core.api.conf.configContentRevision
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.crypto.core.jose.JoseKeyOperations
 import com.sphereon.crypto.core.jose.JwaAlgorithm
@@ -44,15 +48,22 @@ import kotlin.time.TimeSource
 class OAuth2ClientsConfigBinder(
     private val execution: SessionExecution,
     private val opaqueSecretResolver: OpaqueSecretResolver,
+    private val metadataCache: OAuth2ClientMetadataCache,
 ) {
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
 
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
 
-    suspend fun loadClientRegistrations(serverId: String? = null): IdkResult<Map<String, ClientRegistration>, AuthorizationServerError.StorageError> =
+    private val tenantConfigService: TenantConfigService
+        get() = configService.parent
+
+    suspend fun loadClientRegistrations(
+        serverId: String? = null,
+        activeServerId: String? = serverId,
+    ): IdkResult<Map<String, ClientRegistration>, AuthorizationServerError.StorageError> =
         try {
-            val configuredClients = loadConfiguredClients(serverId)
+            val configuredClients = loadConfiguredClients(serverId, activeServerId)
             val registrations = linkedMapOf<String, ClientRegistration>()
             val ownersByClientId = linkedMapOf<String, String>()
 
@@ -90,10 +101,10 @@ class OAuth2ClientsConfigBinder(
      * identity. Deployment bootstrap clients with a plaintext `client-secret` originate from the
      * server configuration model and are loaded separately by the authorization-server registry.
      *
-     * This loader deliberately re-reads principal configuration for every registry operation.
-     * Tenant onboarding can therefore publish a new tenant-bound workload client and have the
-     * platform authorization server recognize it after config invalidation, without a process
-     * restart or a shared ambient client.
+     * Parsed non-secret metadata is revision-addressed in AppScope. Tenant onboarding can
+     * therefore publish a new tenant-bound workload client and have the platform authorization
+     * server recognize it immediately after config invalidation, without repeatedly enumerating
+     * every client on an unchanged request path.
      */
     suspend fun loadOpaqueInternalClientRegistrations(serverId: String): IdkResult<Map<String, OpaqueInternalClientRegistration>, AuthorizationServerError.StorageError> =
         try {
@@ -101,52 +112,15 @@ class OAuth2ClientsConfigBinder(
             val registrations = linkedMapOf<String, OpaqueInternalClientRegistration>()
             val ownersByClientId = linkedMapOf<String, String>()
 
-            loadGroupedProperties(configPrefix).forEach { (entryKey, properties) ->
-                val clientSecretId = readString(properties, "clientSecretId")
-                if (readString(properties, "clientSecret") != null) {
-                    require(clientSecretId == null) {
-                        "Internal client '$entryKey' cannot configure both client-secret and client-secret-id"
-                    }
-                    // Deployment bootstrap client owned by the typed server configuration model;
-                    // the authorization-server registry loads it from there.
-                    return@forEach
-                }
-                val clientId =
-                    readString(properties, "clientId")
-                        ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.client-id'")
-                val tenantId =
-                    readString(properties, "tenantId")
-                        ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.tenant-id'")
-                val registration =
-                    ClientRegistration(
-                        clientId = clientId,
-                        clientSecret = null,
-                        clientType = ClientType.CONFIDENTIAL,
-                        grantTypes =
-                            readStringList(properties, "grantTypes")
-                                ?.map { parseGrantType(it, entryKey) }
-                                ?.takeIf { it.isNotEmpty() }
-                                ?: listOf(GrantType.CLIENT_CREDENTIALS),
-                        defaultAccessTokenAudience = readString(properties, "defaultAccessTokenAudience"),
-                        allowedAccessTokenAudiences = readStringList(properties, "allowedAccessTokenAudiences")?.toSet().orEmpty(),
-                        tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
-                        additionalMetadata = mapOf(TENANT_ID_CLAIM to tenantId),
-                    )
+            loadOpaqueInternalClientMetadata(configPrefix, serverId).forEach { (entryKey, configured) ->
+                val registration = configured.registration
+                val clientId = registration.clientId
                 val previous = registrations[clientId]
                 require(previous == null) {
                     val previousOwner = ownersByClientId[clientId] ?: "unknown"
                     "Duplicate internal clientId '$clientId' configured under '$previousOwner' and '$entryKey'"
                 }
-                registrations[clientId] =
-                    OpaqueInternalClientRegistration(
-                        registration = registration,
-                        credential =
-                            OpaqueInternalClientCredential(
-                                clientId = clientId,
-                                tenantId = tenantId,
-                                secretId = clientSecretId,
-                            ),
-                    )
+                registrations[clientId] = configured
                 ownersByClientId[clientId] = entryKey
             }
 
@@ -161,6 +135,110 @@ class OAuth2ClientsConfigBinder(
             )
         }
 
+    private suspend fun loadOpaqueInternalClientMetadata(
+        configPrefix: String,
+        serverId: String,
+    ): Map<String, OpaqueInternalClientRegistration> =
+        revisionedTenantMetadata(
+            configPartition = "opaque:$configPrefix",
+            activeServerId = serverId,
+        ) { key ->
+            metadataCache.opaqueInternalClients(key) {
+                val parsed = linkedMapOf<String, OpaqueInternalClientRegistration>()
+                loadGroupedProperties(tenantConfigService, configPrefix).forEach { (entryKey, properties) ->
+                    val clientSecretId = readString(properties, "clientSecretId")
+                    if (readString(properties, "clientSecret") != null) {
+                        require(clientSecretId == null) {
+                            "Internal client '$entryKey' cannot configure both client-secret and client-secret-id"
+                        }
+                        // Deployment bootstrap client owned by the typed server configuration model;
+                        // the authorization-server registry loads it from there.
+                        return@forEach
+                    }
+                    val clientId =
+                        readString(properties, "clientId")
+                            ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.client-id'")
+                    val tenantId =
+                        readString(properties, "tenantId")
+                            ?: throw IllegalArgumentException("Missing required property '$configPrefix.$entryKey.tenant-id'")
+                    val registration =
+                        ClientRegistration(
+                            clientId = clientId,
+                            clientSecret = null,
+                            clientType = ClientType.CONFIDENTIAL,
+                            grantTypes =
+                                readStringList(properties, "grantTypes")
+                                    ?.map { parseGrantType(it, entryKey) }
+                                    ?.takeIf { it.isNotEmpty() }
+                                    ?: listOf(GrantType.CLIENT_CREDENTIALS),
+                            defaultAccessTokenAudience = readString(properties, "defaultAccessTokenAudience"),
+                            allowedAccessTokenAudiences = readStringList(properties, "allowedAccessTokenAudiences")?.toSet().orEmpty(),
+                            principalRoles = readStringList(properties, "principalRoles").orEmpty(),
+                            tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
+                            additionalMetadata = mapOf(TENANT_ID_CLAIM to tenantId),
+                        )
+                    parsed[entryKey] =
+                        OpaqueInternalClientRegistration(
+                            registration = registration,
+                            credential =
+                                OpaqueInternalClientCredential(
+                                    clientId = clientId,
+                                    tenantId = tenantId,
+                                    secretId = clientSecretId,
+                                ),
+                        )
+                }
+                parsed
+            }
+        }
+
+    /**
+     * Opaque internal clients represent tenant-owned workload identities. A principal-scoped
+     * definition would make the accepted Basic credential depend on the unauthenticated request's
+     * UserScope and would make a tenant cache unsafe, so reject that configuration explicitly.
+     */
+    private fun requireNoPrincipalOwnedInternalClients(configPrefix: String) {
+        val normalizedPrefix = keyNormalizer.normalize(configPrefix)
+        val principalDefinition =
+            configService
+                .getPropertySources(includeParents = false)
+                .asSequence()
+                .filterIsInstance<ScopedPropertySource<*>>()
+                .filter { it.configLevel == ConfigLevel.PRINCIPAL }
+                .flatMap { source -> source.getAllPropertyNames().asSequence() }
+                .map(keyNormalizer::normalize)
+                .firstOrNull { key -> key == normalizedPrefix || key.startsWith("$normalizedPrefix.") }
+        require(principalDefinition == null) {
+            "Opaque internal OAuth clients are tenant-owned and cannot be defined at PRINCIPAL scope"
+        }
+    }
+
+    /**
+     * Resolve tenant-owned metadata against the shared tenant source revision. Tenant config
+     * invalidation advances this revision; request principal identity is deliberately absent
+     * because [requireNoPrincipalOwnedInternalClients] excludes that input.
+     */
+    private suspend fun <T> revisionedTenantMetadata(
+        configPartition: String,
+        activeServerId: String,
+        resolve: suspend (TenantClientMetadataKey) -> T,
+    ): T {
+        requireNoPrincipalOwnedInternalClients(internalClientsConfigPrefix(activeServerId))
+        while (true) {
+            val tenantConfig = tenantConfigService
+            val revision = tenantConfig.configContentRevision()
+            val key =
+                TenantClientMetadataKey(
+                    tenantId = execution.tenantId,
+                    asInstanceId = activeServerId,
+                    configRevision = revision,
+                    configPartition = configPartition,
+                )
+            val resolved = resolve(key)
+            if (tenantConfig.configContentRevision(refresh = false) == revision) return resolved
+        }
+    }
+
     /** Resolves only a validated opaque handle in the authenticated runtime session. */
     private suspend fun resolveClientSecret(client: ConfiguredOAuth2Client): String? {
         val secretId = client.clientSecretId ?: return null
@@ -174,16 +252,61 @@ class OAuth2ClientsConfigBinder(
         return resolved.value
     }
 
-    private fun loadConfiguredClients(serverId: String?): Map<String, ConfiguredOAuth2Client> {
+    private suspend fun loadConfiguredClients(
+        serverId: String?,
+        activeServerId: String?,
+    ): Map<String, ConfiguredOAuth2Client> {
         val configPrefix = configPrefix(serverId)
-        return loadGroupedProperties(configPrefix).mapValues { (entryKey, entryProperties) ->
-            parseClient(configPrefix, entryKey, entryProperties)
+        return revisionedMetadata(
+            configPartition = "clients:$configPrefix",
+            activeServerId = activeServerId,
+        ) { key ->
+            metadataCache.configuredClients(key) {
+                loadGroupedProperties(configPrefix).mapValues { (entryKey, entryProperties) ->
+                    parseClient(configPrefix, entryKey, entryProperties)
+                }
+            }
         }
     }
 
-    private fun loadGroupedProperties(configPrefix: String): Map<String, Map<String, Any>> {
+    /**
+     * Resolves metadata under the exact principal-view revision and retries if invalidation races
+     * parsing. The cache key mirrors principal property-source construction, which is authored
+     * from tenantId and principalId; principal classification and active AS are included as
+     * additional authorization-context boundaries.
+     */
+    private suspend fun <T> revisionedMetadata(
+        configPartition: String,
+        activeServerId: String?,
+        resolve: suspend (ClientMetadataKey) -> T,
+    ): T {
+        while (true) {
+            val principalConfig = configService
+            val revision = principalConfig.configContentRevision()
+            val key =
+                ClientMetadataKey(
+                    tenantId = execution.tenantId,
+                    principalId = execution.principalId,
+                    principalType = execution.sessionContext.context.principalType.name,
+                    configViewIdentity = PrincipalConfigViewIdentity(principalConfig),
+                    asInstanceId = activeServerId ?: UNRESOLVED_AS_INSTANCE,
+                    configRevision = revision,
+                    configPartition = configPartition,
+                )
+            val resolved = resolve(key)
+            if (principalConfig.configContentRevision(refresh = false) == revision) return resolved
+        }
+    }
+
+    private fun loadGroupedProperties(configPrefix: String): Map<String, Map<String, Any>> =
+        loadGroupedProperties(configService, configPrefix)
+
+    private fun loadGroupedProperties(
+        source: ConfigService,
+        configPrefix: String,
+    ): Map<String, Map<String, Any>> {
         val started = TimeSource.Monotonic.markNow()
-        val properties = configService.getSubProperties(setOf(configPrefix), stripPrefix = true)
+        val properties = source.getSubProperties(setOf(configPrefix), stripPrefix = true)
         execution.log.debug(
             "OAuth2ClientConfig read prefix '$configPrefix' in " +
                 "${started.elapsedNow().inWholeMilliseconds}ms (properties=${properties.size})",
@@ -270,6 +393,7 @@ class OAuth2ClientsConfigBinder(
             allowedScopes = readStringList(properties, "allowedScopes"),
             defaultAccessTokenAudience = readString(properties, "defaultAccessTokenAudience"),
             allowedAccessTokenAudiences = readStringList(properties, "allowedAccessTokenAudiences")?.toSet().orEmpty(),
+            principalRoles = readStringList(properties, "principalRoles").orEmpty(),
             tokenEndpointAuthMethod = tokenEndpointAuthMethod,
             tokenEndpointAuthSigningAlg = readStringList(properties, "tokenEndpointAuthSigningAlg"),
             jwks = readJwks(configPrefix, properties, "jwks", entryKey),
@@ -286,6 +410,7 @@ class OAuth2ClientsConfigBinder(
             postLogoutRedirectUris = readStringList(properties, "postLogoutRedirectUris").orEmpty(),
             frontchannelLogoutUri = readString(properties, "frontchannelLogoutUri"),
             frontchannelLogoutSessionRequired = readBoolean(properties, "frontchannelLogoutSessionRequired") ?: false,
+            idTokenSignedResponseAlg = readString(properties, "idTokenSignedResponseAlg"),
             backchannelLogoutUri = readString(properties, "backchannelLogoutUri"),
             backchannelLogoutSessionRequired = readBoolean(properties, "backchannelLogoutSessionRequired") ?: false,
             authorizationSignedResponseAlg = readString(properties, "authorizationSignedResponseAlg"),
@@ -641,6 +766,7 @@ class OAuth2ClientsConfigBinder(
          */
         private const val CLIENT_ID_LEAF: String = "client.id"
         private const val TENANT_ID_CLAIM: String = "tenant_id"
+        private const val UNRESOLVED_AS_INSTANCE: String = "<unresolved>"
         private val OPAQUE_SECRET_ID_PATTERN = Regex("^sec_[A-Za-z0-9_-]{16,128}$")
     }
 }

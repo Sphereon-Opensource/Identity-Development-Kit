@@ -37,9 +37,18 @@ import com.sphereon.openid.oid4vci.issuer.impl.signing.IssuerKeyIdResolver
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class JwtVcJsonFormatHandlerTest {
@@ -104,7 +113,7 @@ class JwtVcJsonFormatHandlerTest {
 
     private fun makeContext(
         config: CredentialConfigurationSupported,
-        attributes: Map<String, kotlinx.serialization.json.JsonElement> = emptyMap(),
+        attributes: Map<String, kotlinx.serialization.json.JsonElement> = mapOf("name" to JsonPrimitive("Holder")),
     ) = IssuanceContext(
         subject = "did:example:holder123",
         clientId = "client-1",
@@ -185,12 +194,109 @@ class JwtVcJsonFormatHandlerTest {
         }
 
     @Test
+    fun vcdm11JwtVcJsonKeepsVcWrapperRegisteredClaimMappingsAndV11ProtectedType() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val vcdm11Handler =
+                JwtVcJsonFormatHandler(
+                    jwtService = jwtService,
+                    kms = TestKmsMock(),
+                    issuerKeyIdResolver = StubIssuerKeyIdResolver,
+                )
+
+            val result = vcdm11Handler.issueCredential(makeRequest("jwt_vc_json"), makeContext(makeConfig("jwt_vc_json")))
+
+            assertTrue(result.isOk)
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            val vc = assertNotNull(payload["vc"]?.jsonObject)
+            assertNotNull(vc["issuanceDate"])
+            assertNull(vc["validFrom"])
+            assertEquals(
+                60L,
+                payload["nbf"]!!.jsonPrimitive.content.toLong() - payload["iat"]!!.jsonPrimitive.content.toLong(),
+            )
+            assertEquals(
+                vc["credentialSubject"]?.jsonObject?.get("id")?.jsonPrimitive?.content,
+                payload["sub"]?.jsonPrimitive?.content,
+            )
+            val protectedHeader = jwtService.lastArgs?.opts?.protectedHeader
+            assertEquals("JWT", protectedHeader?.get("typ")?.jsonPrimitive?.content)
+            assertNull(protectedHeader?.get("cty"))
+        }
+
+    @Test
+    fun vcdm11IssueKeepsFutureDataValiditySeparateFromSigningIat() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val vcdm11Handler =
+                JwtVcJsonFormatHandler(
+                    jwtService = jwtService,
+                    kms = TestKmsMock(),
+                    issuerKeyIdResolver = StubIssuerKeyIdResolver,
+                )
+            val futureValidFrom = Instant.parse("2099-01-01T00:00:00Z")
+            val futureValidUntil = Instant.parse("2100-01-01T00:00:00Z")
+            val context =
+                makeContext(makeConfig("jwt_vc_json")).copy(
+                    validFrom = futureValidFrom,
+                    validUntil = futureValidUntil,
+                )
+
+            val result = vcdm11Handler.issueCredential(makeRequest("jwt_vc_json"), context)
+
+            assertTrue(result.isOk)
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            val vc = assertNotNull(payload["vc"]?.jsonObject)
+            assertEquals(futureValidFrom.toString(), vc["issuanceDate"]?.jsonPrimitive?.content)
+            assertEquals(futureValidFrom.epochSeconds, payload["nbf"]?.jsonPrimitive?.long)
+            assertTrue(payload["iat"]!!.jsonPrimitive.long < futureValidFrom.epochSeconds)
+            assertEquals(futureValidUntil.toString(), vc["expirationDate"]?.jsonPrimitive?.content)
+            assertEquals(futureValidUntil.epochSeconds, payload["exp"]?.jsonPrimitive?.long)
+        }
+
+    @Test
+    fun vcdm11JwtVcJsonPreservesApplicablePropertiesWithoutV2DateTranslation() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val vcdm11Handler =
+                JwtVcJsonFormatHandler(
+                    jwtService = jwtService,
+                    kms = TestKmsMock(),
+                    issuerKeyIdResolver = StubIssuerKeyIdResolver,
+                )
+            val context =
+                makeContext(makeConfig("jwt_vc_json")).copy(
+                    vcdmProperties = buildJsonObject {
+                        put("credentialSchema", buildJsonObject {
+                            put("id", "https://issuer.example/schema")
+                            put("type", "JsonSchema")
+                        })
+                        put("termsOfUse", buildJsonObject {
+                            put("type", "IssuerPolicy")
+                        })
+                        put("https://issuer.example/ext", JsonPrimitive("preserved"))
+                    },
+                )
+
+            val result = vcdm11Handler.issueCredential(makeRequest("jwt_vc_json"), context)
+
+            assertTrue(result.isOk)
+            val vc = assertNotNull((jwtService.lastArgs?.payload as JsonObject)["vc"]?.jsonObject)
+            assertNotNull(vc["credentialSchema"])
+            assertNotNull(vc["termsOfUse"])
+            assertEquals("preserved", vc["https://issuer.example/ext"]?.jsonPrimitive?.content)
+            assertNull(vc["validFrom"])
+            assertNull(vc["validUntil"])
+        }
+
+    @Test
     fun didSigningUsesTheExactSelectedAssertionMethod() =
         runTest {
             val resolver = RecordingIssuerKeyIdResolver()
+            val jwtService = RecordingJwtService()
             val didWebHandler =
                 JwtVcJsonFormatHandler(
-                    jwtService = FakeJwtService(),
+                    jwtService = jwtService,
                     kms = TestKmsMock(),
                     issuerKeyIdResolver = resolver,
                 )
@@ -205,16 +311,152 @@ class JwtVcJsonFormatHandlerTest {
 
             assertTrue(result.isOk)
             assertEquals("did:web:issuer.example.com#issuer-assertion", resolver.validatedVerificationMethodId)
+            assertEquals(
+                "did:web:issuer.example.com#issuer-assertion",
+                jwtService.lastArgs?.opts?.protectedHeader?.get("kid")?.jsonPrimitive?.content,
+            )
+            assertEquals("JWT", jwtService.lastArgs?.opts?.protectedHeader?.get("typ")?.jsonPrimitive?.content)
+        }
+
+    @Test
+    fun permitsAnonymousCredentialSubjectObject() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val handler = JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver)
+            val result = handler.issueCredential(
+                makeRequest("jwt_vc_json"),
+                makeContext(makeConfig("jwt_vc_json"), attributes = mapOf("name" to JsonPrimitive("Holder"))),
+            )
+
+            assertTrue(result.isOk)
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            assertNull(payload["sub"])
+            assertFalse(payload["vc"]!!.jsonObject["credentialSubject"]!!.jsonObject.containsKey("id"))
+        }
+
+    @Test
+    fun emitsSubOnlyFromTheSingleCredentialSubjectId() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val result = JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver)
+                .issueCredential(
+                    makeRequest("jwt_vc_json"),
+                    makeContext(makeConfig("jwt_vc_json"), attributes = emptyMap()).copy(
+                        credentialSubjects = listOf(
+                            buildJsonObject {
+                                put("id", "https://example.com/subjects/one")
+                                put("name", "Holder")
+                            },
+                        ),
+                    ),
+                )
+            assertTrue(result.isOk)
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            assertEquals("https://example.com/subjects/one", payload["sub"]?.jsonPrimitive?.content)
+            assertEquals(
+                "https://example.com/subjects/one",
+                payload["vc"]!!.jsonObject["credentialSubject"]!!.jsonObject["id"]?.jsonPrimitive?.content,
+            )
+        }
+
+    @Test
+    fun rejectsMultipleCredentialSubjectsBecauseV11JwtCannotEncodeThem() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val result = JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver)
+                .issueCredential(
+                    makeRequest("jwt_vc_json"),
+                    makeContext(makeConfig("jwt_vc_json"), attributes = emptyMap()).copy(
+                        credentialSubjects = listOf(
+                            buildJsonObject { put("name", "One") },
+                            buildJsonObject { put("name", "Two") },
+                        ),
+                    ),
+                )
+            assertTrue(result.isErr)
+            assertTrue(result.error.message.defaultMessage.contains("exactly one credentialSubject"))
+            assertNull(jwtService.lastArgs)
+        }
+
+    @Test
+    fun keepsCredentialIdAndSubjectIdIndependentAndMapsOnlySubjectIdToV11Sub() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val subjectId = "https://example.com/subjects/v11"
+            val handler =
+                JwtVcJsonFormatHandler(
+                    jwtService = jwtService,
+                    kms = TestKmsMock(),
+                    issuerKeyIdResolver = StubIssuerKeyIdResolver,
+                )
+            val result =
+                handler.issueCredential(
+                    makeRequest("jwt_vc_json"),
+                    makeContext(makeConfig("jwt_vc_json"), attributes = emptyMap()).copy(
+                        subject = "urn:proof-holder:v11",
+                        credentialId = "https://example.com/credentials/v11",
+                        credentialSubjects = listOf(
+                            buildJsonObject {
+                                put("id", subjectId)
+                                put("name", "V11 subject")
+                            },
+                        ),
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            val payload = assertNotNull(jwtService.lastArgs?.payload as? JsonObject)
+            val vc = assertNotNull(payload["vc"]?.jsonObject)
+            val credentialId = assertNotNull(vc["id"]?.jsonPrimitive?.content)
+            assertEquals(credentialId, payload["jti"]?.jsonPrimitive?.content)
+            assertNotEquals(subjectId, credentialId)
+            assertEquals(subjectId, vc["credentialSubject"]!!.jsonObject["id"]?.jsonPrimitive?.content)
+            assertEquals(subjectId, payload["sub"]?.jsonPrimitive?.content)
+            assertNotEquals(payload["iss"]?.jsonPrimitive?.content, subjectId)
+            assertNotEquals(payload["iss"]?.jsonPrimitive?.content, "urn:proof-holder:v11")
+        }
+
+    @Test
+    fun rejectsAmbiguousExplicitSubjectsAndAttributes() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val result =
+                JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver).issueCredential(
+                    makeRequest("jwt_vc_json"),
+                    makeContext(makeConfig("jwt_vc_json"), attributes = mapOf("name" to JsonPrimitive("attribute"))).copy(
+                        credentialSubjects = listOf(buildJsonObject { put("name", "explicit") }),
+                    ),
+                )
+            assertTrue(result.isErr)
+            assertTrue(result.error.message.defaultMessage.contains("cannot both be supplied"))
+            assertNull(jwtService.lastArgs)
+        }
+
+    @Test
+    fun rejectsNonUriCredentialId() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val result =
+                JwtVcJsonFormatHandler(jwtService, TestKmsMock(), StubIssuerKeyIdResolver).issueCredential(
+                    makeRequest("jwt_vc_json"),
+                    makeContext(makeConfig("jwt_vc_json")).copy(credentialId = "not a URI"),
+                )
+            assertTrue(result.isErr)
+            assertEquals("invalid_vcdm_identifier", result.error.code)
+            assertNull(jwtService.lastArgs)
         }
 
     /**
      * Fake JwtService that produces deterministic JWT compact output for testing.
      */
-    private class FakeJwtService : JwtService {
+    private open class FakeJwtService : JwtService {
+        var lastArgs: CreateJwsArgs? = null
+
         override val commands: JwtService.Commands
             get() = throw UnsupportedOperationException("not used in tests")
 
-        override suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError> {
+        open override suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError> {
+            lastArgs = args
             // Produce a fake but structurally valid JWT (3 dot-separated parts)
             return Ok(JwtCompactResult(jwt = "eyJhbGciOiJFUzI1NiJ9.eyJ2YyI6e319.fakesignature"))
         }
@@ -242,4 +484,7 @@ class JwtVcJsonFormatHandlerTest {
             signatureBytes: ByteArray,
         ) = throw UnsupportedOperationException("not used in tests")
     }
+
+    private class RecordingJwtService : FakeJwtService()
+
 }

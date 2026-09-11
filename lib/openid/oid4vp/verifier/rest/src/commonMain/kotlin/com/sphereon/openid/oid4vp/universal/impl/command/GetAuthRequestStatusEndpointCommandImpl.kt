@@ -24,6 +24,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusEndpointCommand
@@ -32,6 +33,8 @@ import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusServiceCommand
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.Json
@@ -41,7 +44,8 @@ import kotlinx.serialization.json.Json
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetAuthRequestStatusEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetAuthRequestStatusEndpointCommand.COMMAND_ID)
 class GetAuthRequestStatusEndpointCommandImpl(
     execution: SessionExecution,
     private val getAuthRequestStatusServiceCommand: GetAuthRequestStatusServiceCommand,

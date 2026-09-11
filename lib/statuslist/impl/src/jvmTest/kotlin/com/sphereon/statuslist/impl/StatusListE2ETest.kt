@@ -66,6 +66,7 @@ import com.sphereon.statuslist.impl.envelope.TokenStatusListEnvelope
 import com.sphereon.statuslist.impl.sign.CwtStatusListSigner
 import com.sphereon.statuslist.impl.sign.JwsStatusListSigner
 import com.sphereon.statuslist.impl.sign.LocalStatusListJwsSigningService
+import com.sphereon.statuslist.impl.sign.MdocCwtStatusListSigner
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonObject
@@ -119,6 +120,7 @@ class StatusListE2ETest {
                 NoopDidProviderRegistry,
                 NoopDidResolverRegistry,
                 CwtStatusListSigner(coseCryptoService, CoseSign1CborCodecImpl(), keyManagerService, NoopDidProviderRegistry),
+                MdocCwtStatusListSigner(coseCryptoService, CoseSign1CborCodecImpl(), keyManagerService),
             ),
             (session.graph as SessionExecution.Graph).sessionExecution,
         ) to alias

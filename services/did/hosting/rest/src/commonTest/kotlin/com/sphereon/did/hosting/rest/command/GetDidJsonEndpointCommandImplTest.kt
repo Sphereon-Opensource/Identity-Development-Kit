@@ -11,10 +11,11 @@ import com.sphereon.core.api.context.IdkScope
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
-import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.LogService
 import com.sphereon.core.api.log.LoggerConfig
@@ -72,7 +73,7 @@ class GetDidJsonEndpointCommandImplTest {
             val adapter = TestAdapter(UnusedExecution, listOf(command))
 
             val response =
-                adapter.handleRequest(
+                adapter.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/.well-known/did.json",
@@ -104,7 +105,7 @@ class GetDidJsonEndpointCommandImplTest {
             val adapter = TestAdapter(UnusedExecution, listOf(command))
 
             val response =
-                adapter.handleRequest(
+                adapter.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/.well-known/did.json",
@@ -236,15 +237,39 @@ class GetDidJsonEndpointCommandImplTest {
         execution: SessionExecution,
         private val endpoints: List<HttpEndpointCommand>,
     ) : CommandBackedHttpAdapter(
-            id = "did-hosting-test",
+            id = "test.did.hosting",
             execution = execution,
+            endpointCommandRegistry = TestEndpointCommandRegistry(endpoints),
             mount =
                 HttpAdapterMount(
                     serverPrefix = "",
                     adapterBasePath = "",
                 ),
-        ),
-        HttpAdapter {
-        override val endpointCommands: List<HttpEndpointCommand> = endpoints
+        ) {
+        suspend fun dispatch(request: GenericHttpRequest) =
+            endpoints.single().let { endpoint ->
+                handleResolvedRequest(
+                    request,
+                    HttpAdapterRouteMatch(
+                        adapterId = id,
+                        method = request.method,
+                        originalPath = request.path,
+                        normalizedPath = request.path,
+                        matchedPathPattern = endpoint.endpoint.pathPattern,
+                        handlerCommandId = endpoint.id,
+                        tenantIdFromPath = null,
+                    ),
+                )
+            }
+    }
+
+    private class TestEndpointCommandRegistry(
+        endpoints: List<HttpEndpointCommand>,
+    ) : HttpEndpointCommandRegistry {
+        private val endpointsById = endpoints.associateBy { it.id }
+
+        override fun get(handlerCommandId: String): HttpEndpointCommand? = endpointsById[handlerCommandId]
+
+        override fun listHandlerCommandIds(): Set<String> = endpointsById.keys
     }
 }

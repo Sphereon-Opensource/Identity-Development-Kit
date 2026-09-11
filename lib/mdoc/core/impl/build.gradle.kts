@@ -62,6 +62,7 @@ kotlin {
                 implementation(projects.libCborImpl)
                 api(projects.libCryptoCoreImpl)
                 api(projects.libDataLinkHttpClientImpl)
+                implementation(projects.libCompression)
 
                 implementation(sphereonlib.org.jetbrains.kotlinx.serialization.cbor)
                 implementation(sphereonlib.dev.whyoleg.cryptography.provider.optimal)
@@ -89,6 +90,7 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(sphereonlib.io.mockk.mockk)
+                implementation("io.ktor:ktor-client-mock:3.5.0")
                 implementation(sphereonlib.io.kotest.framework.engine)
             }
         }

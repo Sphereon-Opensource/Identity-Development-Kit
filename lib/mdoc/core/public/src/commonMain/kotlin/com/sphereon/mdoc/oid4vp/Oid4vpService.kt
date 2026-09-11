@@ -54,6 +54,8 @@ data class DocumentDescriptorMatchResult(
     var deviceNamespaces: DeviceNameSpaces? = null,
     // No default/uuid as the nonce's needs to match in case multiple mdocs are returned
     val mdocNonce: String,
+    /** The transcript used by the most recent successful device-auth signature. */
+    var sessionTranscript: SessionTranscript? = null,
 )
 
 @JsExportCompat
@@ -67,6 +69,8 @@ interface MdocOid4vpService {
         responseUri: String,
         authorizationRequestNonce: String,
         verifierEncryptionJwkThumbprint: ByteArray?,
+        /** Non-null only for the ISO/IEC TS 18013-7 Annex B profile. */
+        iso18013MdocGeneratedNonce: String? = null,
     ): DeviceResponse
 
     suspend fun signDocument(
@@ -81,6 +85,8 @@ interface MdocOid4vpService {
         docType: DocType,
         deviceKeyInfo: KeyInfoType<*>?,
         presentationDefinition: IOid4VPPresentationDefinition,
+        /** Non-null only for the ISO/IEC TS 18013-7 Annex B profile. */
+        iso18013MdocGeneratedNonce: String? = null,
     ): Oid4vpSignResult
 
     fun filterApplicableDocumentsPerInputDescriptor(

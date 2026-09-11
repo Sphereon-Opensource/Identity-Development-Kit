@@ -76,6 +76,7 @@ kotlin {
         val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(sphereonlib.io.ktor.client.mock)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
                 implementation(projects.libCoreApiDefault)
             }

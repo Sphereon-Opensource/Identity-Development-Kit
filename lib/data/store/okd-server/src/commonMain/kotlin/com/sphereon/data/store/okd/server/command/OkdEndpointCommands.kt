@@ -38,7 +38,8 @@ import com.sphereon.data.store.blob.PutOptions
 import com.sphereon.data.store.blob.okd.OkdBlobMapping
 import com.sphereon.data.store.okd.generated.models.DocumentMetadata
 import com.sphereon.di.session.SessionScope
-import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -79,6 +80,7 @@ interface OkdGetDocumentCommand : HttpEndpointCommand {
                 pathPattern = "/documents/{documentId}",
                 produces = setOf(MediaType.ApplicationOctetStream),
                 operationId = "getDocumentById",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("documents"),
                 summary = "Get binary document content",
             )
@@ -87,7 +89,8 @@ interface OkdGetDocumentCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<OkdGetDocumentCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(OkdGetDocumentCommand.COMMAND_ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdGetDocumentCommandImpl", exact = true)
 class OkdGetDocumentCommandImpl(
@@ -143,6 +146,7 @@ interface OkdUpdateDocumentCommand : HttpEndpointCommand {
                 pathPattern = "/documents/{documentId}",
                 consumes = setOf(MediaType.ApplicationOctetStream),
                 operationId = "patchDocumentById",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("documents"),
                 summary = "Replace document binary content",
             )
@@ -151,7 +155,8 @@ interface OkdUpdateDocumentCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<OkdUpdateDocumentCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(OkdUpdateDocumentCommand.COMMAND_ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdUpdateDocumentCommandImpl", exact = true)
 class OkdUpdateDocumentCommandImpl(
@@ -210,6 +215,7 @@ interface OkdDeleteDocumentCommand : HttpEndpointCommand {
                 method = HttpMethod.DELETE,
                 pathPattern = "/documents/{documentId}",
                 operationId = "deleteDocumentById",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("documents"),
                 summary = "Delete document from DMS",
             )
@@ -218,7 +224,8 @@ interface OkdDeleteDocumentCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<OkdDeleteDocumentCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(OkdDeleteDocumentCommand.COMMAND_ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdDeleteDocumentCommandImpl", exact = true)
 class OkdDeleteDocumentCommandImpl(
@@ -262,6 +269,7 @@ interface OkdGetDocumentMetadataCommand : HttpEndpointCommand {
                 pathPattern = "/documents/{documentId}/metadata",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDocumentMetadataById",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("documents"),
                 summary = "Get document metadata",
             )
@@ -270,7 +278,8 @@ interface OkdGetDocumentMetadataCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<OkdGetDocumentMetadataCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(OkdGetDocumentMetadataCommand.COMMAND_ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdGetDocumentMetadataCommandImpl", exact = true)
 class OkdGetDocumentMetadataCommandImpl(
@@ -317,6 +326,7 @@ interface OkdUploadDocumentCommand : HttpEndpointCommand {
                 consumes = setOf(MediaType.ApplicationOctetStream),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "postFileOnAssociationById",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("associations"),
                 summary = "Upload document to association",
             )
@@ -325,7 +335,8 @@ interface OkdUploadDocumentCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<OkdUploadDocumentCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(OkdUploadDocumentCommand.COMMAND_ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdUploadDocumentCommandImpl", exact = true)
 class OkdUploadDocumentCommandImpl(
@@ -391,6 +402,7 @@ interface OkdListPersonsCommand : HttpEndpointCommand {
                 pathPattern = "/persons",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listPersons",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("persons"),
                 summary = "List persons filtered by primaryCode",
             )
@@ -399,7 +411,8 @@ interface OkdListPersonsCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<OkdListPersonsCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(OkdListPersonsCommand.COMMAND_ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdListPersonsCommandImpl", exact = true)
 class OkdListPersonsCommandImpl(
@@ -463,6 +476,7 @@ interface OkdGetPersonCommand : HttpEndpointCommand {
                 pathPattern = "/persons/{personId}",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getPersonById",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("persons"),
                 summary = "Get person by ID",
             )
@@ -471,7 +485,8 @@ interface OkdGetPersonCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<OkdGetPersonCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(OkdGetPersonCommand.COMMAND_ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdGetPersonCommandImpl", exact = true)
 class OkdGetPersonCommandImpl(
@@ -527,6 +542,7 @@ interface OkdServiceMetadataCommand : HttpEndpointCommand {
                 pathPattern = "/",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getServiceMetadata",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("service"),
                 summary = "OKD service metadata and version info",
             )
@@ -535,7 +551,8 @@ interface OkdServiceMetadataCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<OkdServiceMetadataCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(OkdServiceMetadataCommand.COMMAND_ID)
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("OkdServiceMetadataCommandImpl", exact = true)
 class OkdServiceMetadataCommandImpl(

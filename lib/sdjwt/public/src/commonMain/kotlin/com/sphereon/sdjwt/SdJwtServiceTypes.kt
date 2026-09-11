@@ -26,6 +26,7 @@ import com.sphereon.sdjwt.command.PresentSdJwtCommand
 import com.sphereon.sdjwt.command.VerifySdJwtCommand
 import com.sphereon.sdjwt.dsl.SdJwtPayload
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -114,6 +115,8 @@ interface IssueSdJwtCommandService {
  *
  * @property sdJwt The SD-JWT in compact format (JWT~disclosure1~disclosure2~...~kbJwt)
  * @property identifier Optional identifier for verification (if not in JWT header)
+ * @property trustedJwks Optional verifier-admitted issuer JWKS. When supplied, issuer
+ *   signature verification is restricted to this set and external resolution is not used.
  * @property expectedAudience Expected audience for KB-JWT verification (if KB-JWT present)
  * @property expectedNonce Expected nonce for KB-JWT verification (if KB-JWT present)
  * @property validateDisclosures Whether to validate disclosure digests (default true)
@@ -136,6 +139,7 @@ data class VerifySdJwtArgs(
     val validateDisclosures: Boolean = true,
     val kbJwtMaxAgeSeconds: Long = 300L,
     val kbJwtFutureSkewSeconds: Long = 60L,
+    val trustedJwks: JsonObject? = null,
 )
 
 /**

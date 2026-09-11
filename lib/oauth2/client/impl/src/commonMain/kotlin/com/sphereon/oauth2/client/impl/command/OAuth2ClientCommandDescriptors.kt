@@ -31,10 +31,12 @@ import com.sphereon.oauth2.client.command.FetchUserInfoCommand
 import com.sphereon.oauth2.client.command.MergeRequestObjectCommand
 import com.sphereon.oauth2.client.command.ParseAuthorizationResponseCommand
 import com.sphereon.oauth2.client.command.ParseJarCommand
+import com.sphereon.oauth2.client.command.PrivateKeyJwtClientAssertionServiceCommand
 import com.sphereon.oauth2.client.command.VerifyPkceCommand
 import com.sphereon.oauth2.client.impl.authorization.CreateAuthorizationRequestUrlCommandImpl
 import com.sphereon.oauth2.client.impl.authorization.ParseAuthorizationResponseCommandImpl
 import com.sphereon.oauth2.client.impl.clientauth.ApplyClientAuthenticationCommandImpl
+import com.sphereon.oauth2.client.impl.clientauth.PrivateKeyJwtClientAssertionServiceCommandImpl
 import com.sphereon.oauth2.client.impl.dpop.ClientVerifyDpopProofCommandImpl
 import com.sphereon.oauth2.client.impl.dpop.CreateDpopProofCommandImpl
 import com.sphereon.oauth2.client.impl.introspection.ClientIntrospectTokenCommandImpl
@@ -121,6 +123,10 @@ interface OAuth2ClientCommandDescriptors {
     @StringKey(ExchangeTokenCommand.COMMAND_ID)
     fun exchangeToken(impl: ExchangeTokenCommandImpl): ServiceCommand<*, *, *> = impl
 
+    @Provides @IntoMap
+    @StringKey(PrivateKeyJwtClientAssertionServiceCommand.COMMAND_ID)
+    fun privateKeyJwtClientAssertion(impl: PrivateKeyJwtClientAssertionServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
     // Client auth commands
     @Provides @IntoMap
     @StringKey(ApplyClientAuthenticationCommand.COMMAND_ID)
@@ -144,3 +150,5 @@ interface OAuth2ClientCommandDescriptors {
     @StringKey(CompleteOidcLoginCommand.COMMAND_ID)
     fun completeOidcLogin(impl: CompleteOidcLoginCommandImpl): ServiceCommand<*, *, *> = impl
 }
+
+

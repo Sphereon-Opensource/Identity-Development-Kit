@@ -33,6 +33,15 @@ kotlin {
                 // OID4VP Verifier + Universal service logic
                 implementation(projects.libOpenidOid4vpVerifierPublic)
                 implementation(projects.libOpenidOid4vpVerifierImpl)
+                // This standalone service owns the Metro composition root. VCDM verification and
+                // each supported Data Integrity cryptosuite are implementation details of library
+                // modules, so their contributions are not visible through verifier-impl's
+                // transitive `implementation` edges. Keep the complete verifier graph explicit.
+                implementation(project(":lib-openid-oid4vp-verifier-vcdm-impl"))
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
 
                 // Credential status verification: brings the StatusListResolver binding + the two
                 // CredentialStatusVerifier set members so the verifier actually checks status lists.

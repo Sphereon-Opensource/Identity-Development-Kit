@@ -175,7 +175,7 @@ class VpTokenTest {
     }
 
     /**
-     * OID4VP §8.1: an `ldp_vc`/`ldp_vp` Presentation value is a JSON object, not a string.
+     * OID4VP §8.1: an `ldp_vc` Presentation value is a JSON object, not a string.
      * Parsing such a vp_token MUST NOT crash and MUST preserve the object shape.
      */
     @Test
@@ -212,7 +212,7 @@ class VpTokenTest {
     }
 
     /**
-     * A single `ldp_vp` remains an object Presentation, but section 8.1 still requires the
+     * A single `ldp_vc` remains an object Presentation, but section 8.1 still requires the
      * credential-query value containing it to be an array.
      */
     @Test

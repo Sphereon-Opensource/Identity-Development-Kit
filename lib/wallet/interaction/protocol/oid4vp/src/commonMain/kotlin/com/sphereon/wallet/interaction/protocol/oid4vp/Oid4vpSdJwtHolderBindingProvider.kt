@@ -19,8 +19,10 @@ import com.sphereon.openid.oid4vp.holder.credentialDisclosurePathOptions
 import com.sphereon.sdjwt.SdJwtPresentation
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.wsca.Wsca
+import com.sphereon.wallet.wsca.WscaSigningRequest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Clock
@@ -61,8 +63,12 @@ fun interface Oid4vpSdJwtHolderBindingProvider {
  * The KMS implementation and local or remote routing remain hidden behind the WSCA/WSCD boundary.
  */
 class SecureComponentOid4vpSdJwtHolderBindingProvider(
-    private val secureComponentCryptoSurface: Wsca,
+    private val secureComponentCryptoSurfaceProvider: () -> Wsca,
 ) : Oid4vpSdJwtHolderBindingProvider {
+    constructor(secureComponentCryptoSurface: Wsca) : this({ secureComponentCryptoSurface })
+
+    private val secureComponentCryptoSurface: Wsca by lazy { secureComponentCryptoSurfaceProvider() }
+
     override suspend fun applyHolderBinding(
         request: Oid4vpSdJwtHolderBindingRequest,
     ): IdkResult<List<SelectedCredential>, IdkError> {
@@ -71,7 +77,7 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
         val bound = mutableListOf<SelectedCredential>()
         for (credential in request.selectedCredentials) {
             val holderKeyAlias = credential.holderKeyRef
-            val format = CredentialFormat.fromValueLenient(credential.format)
+            val format = credential.credentialFormat
             if (format?.isSdJwt != true || holderKeyAlias.isNullOrBlank() || nonce.isNullOrBlank()) {
                 // Nothing for this seam to add (no holder key, not an SD-JWT format), or the
                 // downstream generic command will produce its own typed error (e.g. missing
@@ -91,14 +97,22 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
                                     message = "OID4VP holder binding requires attended operation binding",
                                 ),
                             ),
-                    sdJwtPresentation = credential.presentation,
+                    sdJwtPresentation =
+                        (credential.presentation as? JsonPrimitive)
+                            ?.takeIf { it.isString }
+                            ?.contentOrNull
+                            ?: return Err(
+                                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                    message = "Selected SD-JWT credential '${credential.credentialId}' must be a JSON string",
+                                ),
+                            ),
                     audience = audience,
                     nonce = nonce,
                     holderKeyAlias = holderKeyAlias,
                 ).getOrElse { return Err(it) }
             bound +=
                 credential.copy(
-                    presentation = presentation,
+                    presentation = JsonPrimitive(presentation),
                     holderKeyRef = null,
                     sdJwtKeyBindingApplied = true,
                 )
@@ -163,15 +177,17 @@ class SecureComponentOid4vpSdJwtHolderBindingProvider(
                 algorithm = keyRef.algorithm,
                 issuedAtEpochSeconds = Clock.System.now().epochSeconds,
             )
-        val signature =
-            secureComponentCryptoSurface
-                .sign(
-                    walletUnitId = walletUnitId,
-                    keyRef = keyRef,
-                    signingInput = keyBindingInput.signingInput,
-                    operationBinding = operationBinding,
-                )
-                .getOrElse { return Err(it) }
+        val signingRequest =
+            WscaSigningRequest(
+                walletUnitId = walletUnitId,
+                keyRef = keyRef,
+                signingInput = keyBindingInput.signingInput,
+                operationBinding = operationBinding,
+                audience = audience,
+                nonce = nonce,
+            )
+        val prepared = secureComponentCryptoSurface.prepareSign(signingRequest).getOrElse { return Err(it) }
+        val signature = secureComponentCryptoSurface.sign(prepared, signingRequest).getOrElse { return Err(it) }
         return Ok(keyBindingInput.complete(signature))
     }
 

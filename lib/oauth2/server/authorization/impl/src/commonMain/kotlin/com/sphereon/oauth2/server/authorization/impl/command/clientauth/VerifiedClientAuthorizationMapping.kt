@@ -26,6 +26,7 @@ internal fun ClientRegistration.toVerifiedClientAuthorization(): VerifiedClientA
         allowedScopes = allowedScopes,
         defaultAccessTokenAudience = defaultAccessTokenAudience,
         allowedAccessTokenAudiences = allowedAccessTokenAudiences,
+        principalRoles = principalRoles,
         requirePkce = requirePkce,
         tlsClientCertificateBoundAccessTokens = tlsClientCertificateBoundAccessTokens,
         tenantId = additionalMetadata[TENANT_ID_CLAIM] as? String,

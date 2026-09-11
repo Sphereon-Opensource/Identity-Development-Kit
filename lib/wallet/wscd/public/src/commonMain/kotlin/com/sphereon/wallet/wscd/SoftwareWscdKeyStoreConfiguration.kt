@@ -13,6 +13,12 @@ sealed interface SoftwareWscdKeyStoreConfiguration {
     /** Explicitly test-only. Product composition roots must never select this mode. */
     data object InMemoryForTestingOnly : SoftwareWscdKeyStoreConfiguration
 
+    /**
+     * Fail-closed product policy for an assembly that has not installed durable WSCD custody.
+     * The software provider remains unregistered and every key operation is refused.
+     */
+    data object PersistentStorageRequired : SoftwareWscdKeyStoreConfiguration
+
     /** Non-exportable signing keys held by the Apple Keychain/Secure Enclave implementation. */
     data object AppleKeychain : SoftwareWscdKeyStoreConfiguration
 

@@ -19,9 +19,11 @@ import kotlinx.serialization.Serializable
 data class UnitProvisioningRequest(
     val profileId: String,
     val wscdProfile: WscdProfile,
+    /** Trusted provider route selected by the profile provisioner; never infer this from assignment metadata. */
+    val providerKind: WalletProviderKind,
     /** Display name used when the provider provisions or resolves the Wallet Unit's Business Unit. */
     val businessUnitDisplayName: String = profileId,
-    /** Required assignment for managed providers; local providers create and return one. */
+    /** Optional Business Unit assignment; managed personal units legitimately omit this value. */
     val assignedOrganizationUnitRef: PartyRef? = null,
     /** Opaque provider-specific options (e.g. tenant, install-link token). */
     val options: Map<String, String> = emptyMap(),

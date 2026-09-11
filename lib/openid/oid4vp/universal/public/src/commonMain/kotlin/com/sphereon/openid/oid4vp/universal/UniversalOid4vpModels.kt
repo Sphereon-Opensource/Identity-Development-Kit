@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.universal
 
+import com.sphereon.core.api.http.callback.CallbackSigningAlgorithm
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
@@ -132,7 +133,10 @@ data class CreateAuthorizationRequestInput(
     @SerialName("authorization_request_method")
     val authorizationRequestMethod: AuthorizationRequestMethod = AuthorizationRequestMethod.REQUEST_URI,
     /**
-     * Response type: "vp_token" or "id_token". Default: "vp_token".
+     * Response type. This verifier currently supports only "vp_token", which is also the default.
+     * Values containing "id_token" are rejected because no ID Token response handling is implemented.
+     * End-to-end `vp_token id_token` support is tracked by
+     * [VDX-203](https://4sure.atlassian.net/browse/VDX-203).
      */
     @SerialName("response_type")
     val responseType: String? = null,
@@ -197,6 +201,45 @@ data class CreateAuthorizationRequestInput(
      */
     @SerialName("credential_status_policies")
     val credentialStatusPolicies: Map<String, CredentialStatusPolicy>? = null,
+    /** Stable operation identity for durable, idempotent creation. Requires a persistent tenant store. */
+    @SerialName("operation_id")
+    val operationId: String? = null,
+    @SerialName("template_revision")
+    val templateRevision: String? = null,
+)
+
+/**
+ * The way verified data is represented in a callback, per the FIDES Universal OID4VP spec.
+ *
+ * @see <a href="https://github.com/FIDEScommunity/universal-oid4vp">Universal OID4VP spec</a>
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("VerifiedDataMode", exact = true)
+@Serializable
+@JsExportCompat
+enum class VerifiedDataMode {
+    @SerialName("authorization_response")
+    AUTHORIZATION_RESPONSE,
+
+    @SerialName("vp_token")
+    VP_TOKEN,
+
+    @SerialName("credential_claims_deserialized")
+    CREDENTIAL_CLAIMS_DESERIALIZED,
+}
+
+/**
+ * Controls which verified data representations a callback carries. Only applies to the
+ * `authorization_response_verified` status. Omitting it, or leaving [modes] empty, carries none.
+ *
+ * @see <a href="https://github.com/FIDEScommunity/universal-oid4vp">Universal OID4VP spec</a>
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("VerifiedDataOpts", exact = true)
+@JsExportCompat
+@Serializable
+data class VerifiedDataOpts(
+    val modes: List<VerifiedDataMode> = emptyList(),
 )
 
 /**
@@ -212,14 +255,28 @@ data class CallbackConfig(
      */
     val url: String,
     /**
-     * Filter callbacks to only these statuses. Empty list means all statuses.
+     * Filter callbacks to only these statuses. Empty list means all statuses. The wire name is the
+     * singular `status` the Universal OID4VP spec defines for this array.
      */
+    @SerialName("status")
     val statuses: List<AuthorizationSessionStatus> = emptyList(),
     /**
-     * Include verified credential data in callback payload when status is VERIFIED.
+     * Which verified credential data representations the callback carries when the status is
+     * verified.
      */
-    @SerialName("include_verified_data")
-    val includeVerifiedData: Boolean = false,
+    @SerialName("verified_data")
+    val verifiedData: VerifiedDataOpts? = null,
+    /**
+     * Per-session override of the webhook registry: reference of the secret used to sign this
+     * session's callbacks. Absent means the matching registered endpoint secret is used, or the
+     * callback is sent unsigned when there is none.
+     */
+    @SerialName("secret_ref")
+    val secretRef: String? = null,
+    /**
+     * Signature scheme for this session's callbacks.
+     */
+    val signing: CallbackSigningAlgorithm? = null,
 )
 
 /**
@@ -275,6 +332,8 @@ data class CreateAuthorizationRequestOutput(
     @SerialName("qr_uri")
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val qrUri: String? = null,
+    @SerialName("verification_binding")
+    val verificationBinding: VerificationSessionBinding? = null,
 ) {
     init {
         require(!request.isNullOrBlank() || !requestUri.isNullOrBlank()) {
@@ -321,6 +380,8 @@ data class GetAuthorizationRequestStatusOutput(
     val createdAt: Long? = null,
     @SerialName("expires_at")
     val expiresAt: Long? = null,
+    @SerialName("verification_binding")
+    val verificationBinding: VerificationSessionBinding? = null,
     /**
      * Error details when status is "error".
      */
@@ -391,6 +452,8 @@ data class VerifiedClaimsValue(
      * Can be used to extract the holder binding key (kid/x5c) from the JWT header.
      */
     val presentation: String? = null,
+    /** Verifier-owned evidence; never populated from disclosed credential claims. */
+    val verificationEvidence: com.sphereon.openid.oid4vp.verifier.VerifiedCredentialEvidence? = null,
 ) {
     /**
      * Convert to [VerifiedCredential] for unified handling.

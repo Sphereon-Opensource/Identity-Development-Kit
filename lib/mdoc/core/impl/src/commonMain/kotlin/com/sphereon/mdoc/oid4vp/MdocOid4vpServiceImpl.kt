@@ -22,6 +22,7 @@ import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.SigningException
+import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.MdocSignService
@@ -59,6 +60,7 @@ class MdocOid4vpServiceImpl(
         responseUri: String,
         authorizationRequestNonce: String,
         verifierEncryptionJwkThumbprint: ByteArray?,
+        iso18013MdocGeneratedNonce: String?,
     ): DeviceResponse {
         var documentErrors = arrayOf<DeviceResponseDocumentErrorAlias>()
         var documents = arrayOf<Document>()
@@ -73,14 +75,16 @@ class MdocOid4vpServiceImpl(
                         responseUri = responseUri,
                         authorizationRequestNonce = authorizationRequestNonce,
                         verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
+                        iso18013MdocGeneratedNonce = iso18013MdocGeneratedNonce,
                         mdocNonce = doc.mdocNonce,
                         document = doc.document,
                         inputDescriptor = doc.inputDescriptor,
                         docType = docType,
                         deviceKeyInfo = doc.deviceKeyInfo,
                         deviceNamespaces = doc.deviceNamespaces ?: DeviceNameSpaces(mapOf()),
-                    )
+                )
                 error = signed.documentError
+                doc.sessionTranscript = signed.sessionTranscript
                 val mdoc = signed.document
                 if (mdoc === null && error === null) {
                     error = mapOf(Pair(docType, DocumentError(0)))
@@ -124,10 +128,20 @@ class MdocOid4vpServiceImpl(
         docType: DocType,
         deviceKeyInfo: KeyInfoType<*>?,
         presentationDefinition: IOid4VPPresentationDefinition,
+        iso18013MdocGeneratedNonce: String?,
     ): Oid4vpSignResult {
         val request = Oid4VPPresentationDefinition.fromDTO(presentationDefinition).toDocRequest()
         val deviceAuthentication =
-            DeviceAuthentication.Companion.fromOid4vp(
+            iso18013MdocGeneratedNonce?.let {
+                DeviceAuthentication.fromIso18013Oid4vp(
+                    clientId = clientId,
+                    responseUri = responseUri,
+                    mdocGeneratedNonce = it,
+                    nonce = authorizationRequestNonce,
+                    docType = docType,
+                    deviceNamespaces = deviceNamespaces,
+                )
+            } ?: DeviceAuthentication.fromOid4vp(
                 clientId = clientId,
                 nonce = authorizationRequestNonce,
                 jwkThumbprint = verifierEncryptionJwkThumbprint,
@@ -158,7 +172,7 @@ class MdocOid4vpServiceImpl(
                             }
                         }.filterNotNull()
                         .filter { enumValue ->
-                            (enumValue.cose?.keyType == resolvedKeyInfo.keyType) ||
+                            (enumValue.cose?.keyType?.let(KeyTypeMapping::fromCose) == resolvedKeyInfo.keyType) ||
                                 (enumValue.cose?.keyType?.let { CborUInt(it.value.toLong()) } == resolvedKeyInfo.key.kty)
                         }
                 }

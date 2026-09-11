@@ -197,9 +197,15 @@ class PrepareJwsCommandImpl(
             }
 
             JwsIdentifierMode.KID -> {
-                val kid = identifier.keyInfo.kid
-                require(kid != null) { "Kid mode without an kid value is not possible" }
-                header["kid"] = JsonPrimitive(kid)
+                // An explicit protected-header kid is a protocol coordinate and may differ from
+                // the resolved provider/KMS key kid: an authorization server publishes its
+                // signing-key-store kid while KMS resolves the key by alias. With a kid already in
+                // the header the identifier only has to sign; otherwise it must carry the kid.
+                if (!header.containsKey("kid")) {
+                    val kid = identifier.keyInfo.kid
+                    require(kid != null) { "Kid mode without an kid value is not possible" }
+                    header["kid"] = JsonPrimitive(kid)
+                }
             }
 
             JwsIdentifierMode.AUTO -> {

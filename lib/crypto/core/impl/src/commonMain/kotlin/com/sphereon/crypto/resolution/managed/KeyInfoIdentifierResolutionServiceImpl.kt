@@ -118,31 +118,8 @@ class KeyInfoIdentifierResolutionServiceImpl(
             managedKeyInfo = managedKeyInfo.withRequestedKid(requestedKid)
         }
 
-        // If the opts.identifier has a signatureAlgorithm hint (e.g., from JWT header),
-        // and the retrieved key doesn't have one (or has a different default), prefer the hint
-        val algorithmHint = opts.identifier.signatureAlgorithm
-        if (algorithmHint != null && managedKeyInfo.signatureAlgorithm != algorithmHint) {
-            log.debug("Overriding key algorithm from ${managedKeyInfo.signatureAlgorithm} to $algorithmHint based on identifier hint")
-            // Create a new ManagedKeyInfo with the algorithm from the hint
-            // Use alias and providerId from the original managedKeyInfo (which came from KMS)
-            val updatedResolvedKeyInfo =
-                ResolvedKeyInfo(
-                    key = managedKeyInfo.key,
-                    signatureAlgorithm = algorithmHint,
-                    kid = managedKeyInfo.kid,
-                    alias = managedKeyInfo.alias,
-                    providerId = managedKeyInfo.providerId,
-                    keyVisibility = managedKeyInfo.keyVisibility,
-                    keyType = managedKeyInfo.keyType,
-                    keyEncoding = managedKeyInfo.keyEncoding,
-                )
-            managedKeyInfo =
-                ManagedKeyInfo(
-                    alias = managedKeyInfo.alias,
-                    providerId = managedKeyInfo.providerId,
-                    resolvedKeyInfo = updatedResolvedKeyInfo,
-                )
-        }
+        // A protected JWS alg is only a request. Never rewrite metadata resolved by KMS;
+        // the signing/verification boundary validates compatibility separately.
 
         @Suppress("UNCHECKED_CAST")
         return ManagedIdentifierKeyResult(

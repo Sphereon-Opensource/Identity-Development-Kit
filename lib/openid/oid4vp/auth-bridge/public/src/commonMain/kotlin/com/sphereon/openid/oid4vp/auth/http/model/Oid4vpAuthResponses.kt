@@ -89,6 +89,7 @@ data class CreateOid4vpAuthSessionResponse(
 @JsExportCompat
 data class Oid4vpAuthStatusResponse(
     val sessionId: String,
+    val oauthSessionId: String? = null,
     val correlationId: String? = null,
     val status: Oid4vpAuthSessionStatus,
     @JsExportIgnoreCompat
@@ -121,6 +122,7 @@ data class Oid4vpAuthStatusResponse(
 
             return Oid4vpAuthStatusResponse(
                 sessionId = session.sessionId,
+                oauthSessionId = session.oauthSessionId,
                 correlationId = session.correlationId,
                 status = session.status,
                 mappedClaims = claims,

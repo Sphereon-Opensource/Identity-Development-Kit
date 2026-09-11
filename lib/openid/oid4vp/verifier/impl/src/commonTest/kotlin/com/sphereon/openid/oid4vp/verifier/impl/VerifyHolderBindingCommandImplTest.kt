@@ -20,11 +20,14 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.DateTimeUtils
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.cbor.CborUInt
+import com.sphereon.crypto.core.cose.CoseKey
 import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.crypto.core.cose.CoseSign1
 import com.sphereon.crypto.core.generic.VerifyResults
@@ -32,8 +35,10 @@ import com.sphereon.crypto.core.generic.VerifyResultsType
 import com.sphereon.crypto.core.generic.VerifySignatureResult
 import com.sphereon.crypto.core.generic.VerifySignatureResultType
 import com.sphereon.crypto.jose.jws.JwsValidationResult
+import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.mdoc.data.DeviceAuthValidation
 import com.sphereon.mdoc.data.MdocVerification
 import com.sphereon.mdoc.data.MdocValidations
@@ -41,17 +46,33 @@ import com.sphereon.mdoc.data.MdocVerificationTypes
 import com.sphereon.mdoc.data.device.DeviceResponse
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.mdoc.data.device.Document
+import com.sphereon.mdoc.data.device.DocType
+import com.sphereon.mdoc.data.device.DocumentResponseEncryptionProvider
+import com.sphereon.mdoc.data.device.EncryptedDocuments
+import com.sphereon.mdoc.data.device.EncryptedDocumentsPlaintext
+import com.sphereon.mdoc.data.device.EncryptionParameters
+import com.sphereon.mdoc.data.device.ZkDocument
+import com.sphereon.mdoc.data.device.ZkDocumentData
+import com.sphereon.mdoc.data.device.ZkProofProvider
+import com.sphereon.mdoc.data.device.ZkRequest
+import com.sphereon.mdoc.data.device.ZkSystemSpec
 import com.sphereon.mdoc.data.mso.MobileSecurityObject
+import com.sphereon.mdoc.DecodedMdoc
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
+import com.sphereon.openid.oid4vc.common.CredentialFormat
+import com.sphereon.openid.oid4vc.common.PresentationFormat
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.impl.testutil.Oid4vpVerifierTestContext
 import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.sdjwt.SdJwtVerificationResult
 import com.sphereon.sdjwt.VerifySdJwtArgs
 import com.sphereon.sdjwt.command.VerifySdJwtCommand
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -66,6 +87,11 @@ class VerifyHolderBindingCommandImplTest {
     private val testContext = Oid4vpVerifierTestContext("verify-holder-binding-test", this)
     private val command = createTestCommand(verificationShouldSucceed = true)
     private val failingCommand = createTestCommand(verificationShouldSucceed = false)
+
+    private companion object {
+        const val MDL_DOC_TYPE = "org.iso.18013.5.1.mDL"
+        const val WRONG_DOC_TYPE = "org.iso.18013.5.1.wrong"
+    }
 
     @Test
     fun `mdoc holder binding excludes certificate trust but retains crypto and content checks`() {
@@ -97,7 +123,7 @@ class VerifyHolderBindingCommandImplTest {
             val args =
                 VerifyHolderBindingArgs(
                     presentation = sdJwt,
-                    format = "dc+sd-jwt",
+                    credentialFormat = CredentialFormat.SD_JWT_VC,
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
@@ -123,7 +149,7 @@ class VerifyHolderBindingCommandImplTest {
             val args =
                 VerifyHolderBindingArgs(
                     presentation = sdJwtWithoutKb,
-                    format = "dc+sd-jwt",
+                    credentialFormat = CredentialFormat.SD_JWT_VC,
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
@@ -147,7 +173,7 @@ class VerifyHolderBindingCommandImplTest {
             val args =
                 VerifyHolderBindingArgs(
                     presentation = sdJwt,
-                    format = "vc+sd-jwt",
+                    credentialFormat = CredentialFormat.W3C_VC_SD_JWT,
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
@@ -156,6 +182,31 @@ class VerifyHolderBindingCommandImplTest {
 
             assertIs<Ok<*>>(result)
             assertEquals("kb-jwt", result.value.bindingMethod)
+        }
+
+    @Test
+    fun `SD-JWT issuer JWT never treats embedded jwk as an issuer trust anchor`() =
+        runTest {
+            val attackerHeader =
+                """{"alg":"ES256","jwk":{"kty":"EC","crv":"P-256","x":"attacker","y":"attacker"}}"""
+                    .encodeToByteArray()
+                    .encodeToBase64Url()
+            val sdJwt =
+                "$attackerHeader.eyJpc3MiOiJkaWQ6ZXhhbXBsZTppc3N1ZXIifQ.signature~"
+
+            val result =
+                command.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = sdJwt,
+                        credentialFormat = CredentialFormat.SD_JWT_VC,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                    ),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(result.value.errors.any { it.contains("embedded jwk", ignoreCase = true) })
         }
 
     @Test
@@ -176,24 +227,34 @@ class VerifyHolderBindingCommandImplTest {
                         ),
                     ),
                 )
+            // Issuer authenticity is an independent verifier admission decision.  The
+            // optional-KB assertion must therefore use an admitted external issuer source;
+            // disabling holder binding must not turn an untrusted issuer into a valid VC.
+            val issuerAuthentication =
+                TrustedAuthenticationResolution(
+                    controller = "https://issuer.example",
+                    trustedJwks = testTrustedJwks(),
+                )
 
             val optionalResult =
                 verifier.execute(
                     VerifyHolderBindingArgs(
                         presentation = sdJwtWithoutKb,
-                        format = "dc+sd-jwt",
+                    credentialFormat = CredentialFormat.SD_JWT_VC,
                         expectedNonce = "nonce123",
                         expectedAudience = "https://verifier.example.com",
                         requireCryptographicHolderBinding = false,
+                        trustedAuthentications = listOf(issuerAuthentication),
                     ),
                 )
             val requiredResult =
                 verifier.execute(
                     VerifyHolderBindingArgs(
                         presentation = sdJwtWithoutKb,
-                        format = "dc+sd-jwt",
+                    credentialFormat = CredentialFormat.SD_JWT_VC,
                         expectedNonce = "nonce123",
                         expectedAudience = "https://verifier.example.com",
+                        trustedAuthentications = listOf(issuerAuthentication),
                     ),
                 )
 
@@ -223,7 +284,7 @@ class VerifyHolderBindingCommandImplTest {
             val args =
                 VerifyHolderBindingArgs(
                     presentation = mdocPresentation,
-                    format = "mso_mdoc",
+                    credentialFormat = CredentialFormat.MSO_MDOC,
                     expectedNonce = "nonce456",
                     expectedAudience = "https://verifier.example.com",
                     clientId = "x509_san_dns:verifier.example.com",
@@ -241,6 +302,287 @@ class VerifyHolderBindingCommandImplTest {
         }
 
     @Test
+    fun `mDoc holder binding fails closed when the persisted query has no document type`() =
+        runTest {
+            val command = commandForMdocResponse(DeviceResponse(documents = arrayOf(testDocument(MDL_DOC_TYPE)), original = null))
+
+            val result = command.execute(mdocArgs(expectedDocumentType = null))
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(
+                result.value.errors.any {
+                    it == "mDoc document type validation requires the verifier's persisted DCQL meta.doctype_value."
+                },
+                "Missing persisted document type must be identified: ${result.value.errors}",
+            )
+        }
+
+    @Test
+    fun `mDoc holder binding rejects a clear Document with the wrong document type`() =
+        runTest {
+            val command = commandForMdocResponse(DeviceResponse(documents = arrayOf(testDocument(WRONG_DOC_TYPE)), original = null))
+
+            val result = command.execute(mdocArgs())
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(
+                result.value.errors.any { it == "mDoc document type mismatch: expected '$MDL_DOC_TYPE', got '$WRONG_DOC_TYPE'" },
+                "Clear Document mismatch must be identified: ${result.value.errors}",
+            )
+        }
+
+    @Test
+    fun `mDoc holder binding requires every clear Document to match the persisted document type`() =
+        runTest {
+            val allMatching =
+                commandForMdocResponse(
+                    DeviceResponse(
+                        documents = arrayOf(testDocument(MDL_DOC_TYPE), testDocument(MDL_DOC_TYPE)),
+                        original = null,
+                    ),
+                ).execute(mdocArgs())
+            val oneMismatch =
+                commandForMdocResponse(
+                    DeviceResponse(
+                        documents = arrayOf(testDocument(MDL_DOC_TYPE), testDocument(WRONG_DOC_TYPE)),
+                        original = null,
+                    ),
+                ).execute(mdocArgs())
+
+            assertIs<Ok<*>>(allMatching)
+            assertTrue(allMatching.value.verified, "Every matching clear Document must remain accepted")
+            assertIs<Ok<*>>(oneMismatch)
+            assertFalse(oneMismatch.value.verified)
+            assertTrue(
+                oneMismatch.value.errors.any { it == "mDoc document type mismatch: expected '$MDL_DOC_TYPE', got '$WRONG_DOC_TYPE'" },
+                "One mismatching Document must reject the whole response: ${oneMismatch.value.errors}",
+            )
+        }
+
+    @Test
+    fun `mDoc holder binding rejects an encrypted plaintext clear Document with the wrong document type`() =
+        runTest {
+            val encryption = testEncryptionContext(EncryptedDocumentsPlaintext(documents = listOf(testDocument(WRONG_DOC_TYPE))))
+            val response =
+                DeviceResponse(
+                    documents = null,
+                    encryptedDocuments = arrayOf(encryption.envelope),
+                    original = null,
+                )
+
+            val result = commandForMdocResponse(response).execute(mdocArgs(encryption))
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(
+                result.value.errors.any { it == "mDoc document type mismatch: expected '$MDL_DOC_TYPE', got '$WRONG_DOC_TYPE'" },
+                "Decrypted clear Document mismatch must be identified: ${result.value.errors}",
+            )
+        }
+
+    @Test
+    fun `mDoc holder binding rejects mixed clear and encrypted representations when one document type mismatches`() =
+        runTest {
+            val encryption = testEncryptionContext(EncryptedDocumentsPlaintext(documents = listOf(testDocument(WRONG_DOC_TYPE))))
+            val response =
+                DeviceResponse(
+                    documents = arrayOf(testDocument(MDL_DOC_TYPE)),
+                    encryptedDocuments = arrayOf(encryption.envelope),
+                    original = null,
+                )
+
+            val result = commandForMdocResponse(response).execute(mdocArgs(encryption))
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(
+                result.value.errors.any { it == "mDoc document type mismatch: expected '$MDL_DOC_TYPE', got '$WRONG_DOC_TYPE'" },
+                "A decrypted mismatch must reject an otherwise matching clear representation: ${result.value.errors}",
+            )
+        }
+
+    @Test
+    fun `mDoc holder binding routes requested ZKP documents to the configured provider`() =
+        runTest {
+            val systemId = "example-zk-system"
+            val request =
+                ZkRequest(
+                    systemSpecs = listOf(ZkSystemSpec(zkSystemId = systemId, system = "example")),
+                    zkRequired = true,
+                )
+            val zkDocument =
+                ZkDocument(
+                    documentData =
+                        ZkDocumentData(
+                            docType = DocType("org.iso.18013.5.1.mDL"),
+                            zkSystemId = systemId,
+                            timestamp = "2026-01-01",
+                        ),
+                    proof = byteArrayOf(0x01),
+                )
+            val response = DeviceResponse(documents = null, original = null, zkDocuments = arrayOf(zkDocument))
+            val provider =
+                object : ZkProofProvider {
+                    override val supportedSystemIds: Set<String> = setOf(systemId)
+
+                    override suspend fun createProof(
+                        request: ZkRequest,
+                        documentData: ZkDocumentData,
+                        sessionTranscript: SessionTranscript?,
+                    ): IdkResult<ByteArray, IdkError> = Ok(byteArrayOf(0x02))
+
+                    override suspend fun verifyProof(
+                        request: ZkRequest,
+                        document: ZkDocument,
+                        sessionTranscript: SessionTranscript?,
+                    ): IdkResult<Boolean, IdkError> = Ok(document.proof.contentEquals(byteArrayOf(0x01)))
+                }
+            val command =
+                createTestCommand(
+                    verifySdJwtCommand = MockVerifySdJwtCommand(true),
+                    verificationShouldSucceed = true,
+                    deviceResponseCborCodec =
+                        object : DeviceResponseCborCodec {
+                            override fun encode(value: DeviceResponse): IdkResult<ByteArray, IdkError> = Ok(byteArrayOf(0x01))
+
+                            override fun decode(bytes: ByteArray): IdkResult<DecodedMdoc<DeviceResponse>, IdkError> =
+                                Ok(DecodedMdoc(response, bytes))
+                        },
+                )
+
+            val result =
+                command.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = byteArrayOf(0x01).encodeToBase64Url(),
+                        credentialFormat = CredentialFormat.MSO_MDOC,
+                        expectedNonce = "nonce456",
+                        expectedAudience = "https://verifier.example.com",
+                        clientId = "x509_san_dns:verifier.example.com",
+                        responseUri = "https://verifier.example.com/response",
+                        expectedMdocDocumentType = "org.iso.18013.5.1.mDL",
+                        mdocZkRequests = listOf(request),
+                        mdocZkProofProviders = listOf(provider),
+                    ),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.verified, "A requested proof accepted by the configured provider must verify")
+            assertTrue(result.value.signatureValid)
+            assertTrue(result.value.nonceValid)
+            assertTrue(result.value.audienceValid)
+        }
+
+    @Test
+    fun `mDoc holder binding decrypts an encrypted response with verifier session context`() =
+        runTest {
+            val systemId = "encrypted-zk-system"
+            val request =
+                ZkRequest(
+                    systemSpecs = listOf(ZkSystemSpec(zkSystemId = systemId, system = "example")),
+                    zkRequired = true,
+                )
+            val zkDocument =
+                ZkDocument(
+                    documentData =
+                        ZkDocumentData(
+                            docType = DocType("org.iso.18013.5.1.mDL"),
+                            zkSystemId = systemId,
+                            timestamp = "2026-01-01",
+                        ),
+                    proof = byteArrayOf(0x01),
+                )
+            val response =
+                DeviceResponse(
+                    documents = null,
+                    zkDocuments = null,
+                    encryptedDocuments = arrayOf(EncryptedDocuments(enc = byteArrayOf(1), cipherText = byteArrayOf(2), docRequestID = 0u)),
+                    original = null,
+                )
+            val key = CoseKey(kty = CborUInt(2))
+            val parameters = EncryptionParameters(recipientPublicKey = key)
+            val provider =
+                object : DocumentResponseEncryptionProvider {
+                    override fun supports(parameters: EncryptionParameters): Boolean = true
+
+                    override suspend fun encrypt(
+                        plaintext: EncryptedDocumentsPlaintext,
+                        parameters: EncryptionParameters,
+                        sessionTranscript: SessionTranscript,
+                        docRequestID: UInt,
+                    ): IdkResult<EncryptedDocuments, IdkError> = Err(IdkError.UNKNOWN_ERROR(message = "not used"))
+
+                    override suspend fun decrypt(
+                        encrypted: EncryptedDocuments,
+                        recipientPrivateKey: CoseKey,
+                        sessionTranscript: SessionTranscript,
+                        parameters: EncryptionParameters,
+                    ): IdkResult<EncryptedDocumentsPlaintext, IdkError> =
+                        Ok(EncryptedDocumentsPlaintext(zkDocuments = listOf(zkDocument)))
+                }
+            val command =
+                createTestCommand(
+                    verifySdJwtCommand = MockVerifySdJwtCommand(true),
+                    verificationShouldSucceed = true,
+                    deviceResponseCborCodec =
+                        object : DeviceResponseCborCodec {
+                            override fun encode(value: DeviceResponse): IdkResult<ByteArray, IdkError> = Ok(byteArrayOf(0x01))
+
+                            override fun decode(bytes: ByteArray): IdkResult<DecodedMdoc<DeviceResponse>, IdkError> =
+                                Ok(DecodedMdoc(response, bytes))
+                        },
+                )
+
+            val args =
+                VerifyHolderBindingArgs(
+                    presentation = byteArrayOf(0x01).encodeToBase64Url(),
+                    credentialFormat = CredentialFormat.MSO_MDOC,
+                    expectedNonce = "nonce456",
+                    expectedAudience = "https://verifier.example.com",
+                    clientId = "x509_san_dns:verifier.example.com",
+                    responseUri = "https://verifier.example.com/response",
+                    expectedMdocDocumentType = "org.iso.18013.5.1.mDL",
+                    mdocZkRequests = listOf(request),
+                    mdocZkProofProviders =
+                        listOf(
+                            object : ZkProofProvider {
+                                override val supportedSystemIds: Set<String> = setOf(systemId)
+
+                                override suspend fun createProof(
+                                    request: ZkRequest,
+                                    documentData: ZkDocumentData,
+                                    sessionTranscript: SessionTranscript?,
+                                ): IdkResult<ByteArray, IdkError> = Ok(byteArrayOf(0x02))
+
+                                override suspend fun verifyProof(
+                                    request: ZkRequest,
+                                    document: ZkDocument,
+                                    sessionTranscript: SessionTranscript?,
+                                ): IdkResult<Boolean, IdkError> = Ok(document.proof.contentEquals(byteArrayOf(0x01)))
+                            },
+                        ),
+                    mdocDocumentResponseDecryptionKey = key,
+                    mdocDocumentResponseEncryptionParameters = mapOf(0u to parameters),
+                    mdocDocumentResponseEncryptionProviders = listOf(provider),
+                )
+            val result = command.execute(args)
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.verified)
+            assertTrue(result.value.signatureValid)
+
+            val mismatched = command.execute(args.copy(expectedMdocDocumentType = "org.iso.18013.5.1.wrong"))
+            assertIs<Ok<*>>(mismatched)
+            assertFalse(mismatched.value.verified)
+            assertTrue(
+                mismatched.value.errors.any {
+                    it == "mDoc document type mismatch: expected 'org.iso.18013.5.1.wrong', got 'org.iso.18013.5.1.mDL'"
+                },
+            )
+        }
+
+    @Test
     fun `mDoc holder binding fails fast when OID4VP context is missing`() =
         runTest {
             // Without clientId / responseUri / mdoc_generated_nonce there is no SessionTranscript
@@ -248,7 +590,7 @@ class VerifyHolderBindingCommandImplTest {
             val args =
                 VerifyHolderBindingArgs(
                     presentation = "ignored",
-                    format = "mdoc",
+                    credentialFormat = CredentialFormat.MSO_MDOC,
                     expectedNonce = "nonce789",
                     expectedAudience = "https://verifier.example.com",
                 )
@@ -275,12 +617,12 @@ class VerifyHolderBindingCommandImplTest {
             // Given: JWT VP presentation with valid aud and nonce claims
             // Header: {"alg":"ES256","typ":"JWT"}
             // Payload: {"aud":"https://verifier.example.com","nonce":"nonce123"}
-            val jwtVp = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUuY29tIiwibm9uY2UiOiJub25jZTEyMyJ9.signature"
+            val jwtVp = v1VpJwt()
 
             val args =
                 VerifyHolderBindingArgs(
                     presentation = jwtVp,
-                    format = "jwt_vp_json",
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
@@ -301,16 +643,376 @@ class VerifyHolderBindingCommandImplTest {
         }
 
     @Test
+    fun `VCDM 2 JWT presentation uses the final jwt_vc_json-ld query format`() =
+        runTest {
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v2VpJwt(),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(testHolderAuthentication()),
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.nonceValid)
+            assertTrue(result.value.audienceValid)
+        }
+
+    @Test
+    fun `VCDM 2 JWT presentation derives an omitted holder from the secured JWT issuer`() =
+        runTest {
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v2VpJwt(includeHolder = false),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(testHolderAuthentication()),
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertTrue(result.value.nonceValid)
+            assertTrue(result.value.audienceValid)
+            assertTrue(result.value.errors.any { it.contains("signature verification failed", ignoreCase = true) })
+            assertFalse(result.value.errors.any { it.contains("holder/controller is required", ignoreCase = true) })
+        }
+
+    @Test
+    fun `VCDM 2 JWT presentation accepts an omitted recommended typ header`() =
+        runTest {
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v2VpJwt(header = "{\"alg\":\"ES256\"}"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(testHolderAuthentication()),
+                ),
+            )
+
+            assertTrue(result.isOk)
+            // The default test verifier deliberately returns a verification error. The
+            // omitted typ header is accepted by classification and claim validation; the
+            // separate signature result remains false until a real verifier proves the JWS.
+            assertFalse(result.value.verified)
+            assertTrue(result.value.nonceValid)
+            assertTrue(result.value.audienceValid)
+        }
+
+    @Test
+    fun `VCDM 2 JWT presentation rejects a credential media type header`() =
+        runTest {
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v2VpJwt(header = "{\"alg\":\"ES256\",\"typ\":\"vc+jwt\",\"cty\":\"vc\"}"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(testHolderAuthentication()),
+                ),
+            )
+
+            // VCDM classification rejects contradictory JOSE media types before holder
+            // binding can run. This is the fail-closed contract for malformed envelopes.
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("typ", ignoreCase = true))
+        }
+
+    @Test
+    fun `VCDM 2 JWT presentation rejects a profile-invalid child before holder verification`() =
+        runTest {
+            val invalidPresentation =
+                compact(
+                    """{"@context":"https://www.w3.org/ns/credentials/v2","type":"VerifiablePresentation","holder":"https://holder.example","iss":"https://holder.example","aud":"https://verifier.example.com","nonce":"nonce123","verifiableCredential":["urn:example:not-an-enveloped-credential"]}""",
+                    """{"alg":"ES256","typ":"vp+jwt","cty":"vp"}""",
+                )
+
+            val result =
+                command.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = invalidPresentation,
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                        trustedAuthentications = listOf(testHolderAuthentication()),
+                    ),
+                )
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("profile", ignoreCase = true))
+        }
+
+    @Test
+    fun `VCDM 2 JWT presentation rejects a mismatched received presentation format`() =
+        runTest {
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v2VpJwt(),
+                    presentationFormat = PresentationFormat.LDP_VP,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                ),
+            )
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("does not match classified VCDM presentation format"))
+        }
+
+    @Test
+    fun `VCDM 2 JWT presentation applies NumericDate validation`() =
+        runTest {
+            val now = Clock.System.now().epochSeconds.toDouble()
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v2VpJwt(timeClaims = "\"iat\":${now + 60},"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(testHolderAuthentication()),
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(result.value.errors.any { it.contains("future", ignoreCase = true) })
+        }
+
+    @Test
+    fun `compact VCDM VP requires an exact configured holder authentication source`() =
+        runTest {
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v1VpJwt(holder = "https://holder.example"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(result.value.errors.any { it.contains("holder", ignoreCase = true) && it.contains("source", ignoreCase = true) })
+        }
+
+    @Test
+    fun `compact VCDM VP passes the exact holder source to JWS verification`() =
+        runTest {
+            val jws = RecordingVerifyJwsCommand()
+            val configured = TrustedAuthenticationResolution(
+                controller = "https://holder.example",
+                trustedJwks = testTrustedJwks(),
+            )
+            val result = createTestCommand(MockVerifySdJwtCommand(true), verifyJwsCommand = jws).execute(
+                VerifyHolderBindingArgs(
+                    presentation = v1VpJwt(holder = "https://holder.example"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(configured),
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertEquals(configured.trustedJwks, jws.lastArgs?.trustedJwks)
+            assertFalse(result.value.verified)
+        }
+
+    @Test
+    fun `compact VCDM VP rejects embedded JOSE key material without configured source`() =
+        runTest {
+            listOf(
+                "{\"alg\":\"ES256\",\"typ\":\"JWT\",\"jwk\":{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"attacker\",\"y\":\"attacker\"}}",
+                "{\"alg\":\"ES256\",\"typ\":\"JWT\",\"jku\":\"https://attacker.example/jwks\"}",
+                "{\"alg\":\"ES256\",\"typ\":\"JWT\",\"x5u\":\"https://attacker.example/cert\"}",
+            ).forEach { header ->
+                val result = command.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = v1VpJwt(header = header),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                    ),
+                )
+
+                assertIs<Ok<*>>(result)
+                assertFalse(result.value.verified)
+                assertTrue(
+                    result.value.errors.any {
+                        it.contains("trust", ignoreCase = true) || it.contains("configured", ignoreCase = true)
+                    },
+                )
+            }
+        }
+
+    @Test
+    fun `compact VCDM VP does not treat token x5c as trust without configured X509 source`() =
+        runTest {
+            val configuredJwks = TrustedAuthenticationResolution(
+                controller = "https://holder.example",
+                trustedJwks = testTrustedJwks(),
+            )
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v1VpJwt(
+                        holder = "https://holder.example",
+                        header = "{\"alg\":\"ES256\",\"typ\":\"JWT\",\"x5c\":[\"ZmFrZQ\"]}",
+                    ),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(configuredJwks),
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(result.value.errors.any { it.contains("X.509", ignoreCase = true) })
+        }
+
+    @Test
+    fun `compact VCDM VP requires token x5c to match the configured X509 chain`() =
+        runTest {
+            val jws = RecordingVerifyJwsCommand()
+            val configuredX509 =
+                TrustedAuthenticationResolution(
+                    controller = "https://holder.example",
+                    identifier = ExternalIdentifierX5cOpts(identifier = listOf("Y29uZmlndXJlZA")),
+                )
+            val result =
+                createTestCommand(MockVerifySdJwtCommand(true), verifyJwsCommand = jws).execute(
+                    VerifyHolderBindingArgs(
+                        presentation =
+                            v1VpJwt(
+                                holder = "https://holder.example",
+                                header = """{"alg":"ES256","typ":"JWT","x5c":["cHJlc2VudGVk"]}""",
+                            ),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                        trustedAuthentications = listOf(configuredX509),
+                    ),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(result.value.errors.any { it.contains("does not match", ignoreCase = true) })
+            assertTrue(jws.lastArgs == null, "mismatched certificate chains must fail before signature verification")
+        }
+
+    @Test
+    fun `compact VCDM VP rejects x5c combined with kid`() =
+        runTest {
+            val jws = RecordingVerifyJwsCommand()
+            val configuredX509 =
+                TrustedAuthenticationResolution(
+                    controller = "https://holder.example",
+                    identifier = ExternalIdentifierX5cOpts(identifier = listOf("cHJlc2VudGVk")),
+                )
+            val result =
+                createTestCommand(MockVerifySdJwtCommand(true), verifyJwsCommand = jws).execute(
+                    VerifyHolderBindingArgs(
+                        presentation =
+                            v1VpJwt(
+                                holder = "https://holder.example",
+                                header = """{"alg":"ES256","typ":"JWT","kid":"holder-key","x5c":["cHJlc2VudGVk"]}""",
+                            ),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                        trustedAuthentications = listOf(configuredX509),
+                    ),
+                )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(result.value.errors.any { it.contains("cannot be combined", ignoreCase = true) })
+            assertTrue(jws.lastArgs == null, "x5c plus kid must fail before signature verification")
+        }
+
+    @Test
+    fun `compact VCDM VP rejects duplicate exact holder authentication sources`() =
+        runTest {
+            val configured = TrustedAuthenticationResolution(
+                controller = "https://holder.example",
+                trustedJwks = testTrustedJwks(),
+            )
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v1VpJwt(holder = "https://holder.example"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(configured, configured.copy()),
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(result.value.errors.any { it.contains("multiple", ignoreCase = true) })
+        }
+
+    @Test
+    fun `compact VCDM VP rejects a source for a different controller`() =
+        runTest {
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v1VpJwt(holder = "https://holder.example"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(
+                        TrustedAuthenticationResolution(
+                            controller = "https://other-holder.example",
+                            trustedJwks = testTrustedJwks(),
+                        ),
+                    ),
+                ),
+            )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.verified)
+            assertTrue(result.value.errors.any { it.contains("exact configured", ignoreCase = true) })
+        }
+
+    @Test
+    fun `VCDM 2 JWT presentation rejects payload issuer that differs from holder`() =
+        runTest {
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v2VpJwt(
+                        holder = "https://holder.example",
+                        issuer = "https://other-holder.example",
+                    ),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    trustedAuthentications = listOf(
+                        TrustedAuthenticationResolution(
+                            controller = "https://holder.example",
+                            trustedJwks = testTrustedJwks(),
+                        ),
+                    ),
+                ),
+            )
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("iss", ignoreCase = true))
+        }
+
+    @Test
     fun `test JWT VP with nonce mismatch`() =
         runTest {
             // Given: JWT VP with nonce that doesn't match expected
             // Payload: {"aud":"https://verifier.example.com","nonce":"wrong-nonce"}
-            val jwtVp = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUuY29tIiwibm9uY2UiOiJ3cm9uZy1ub25jZSJ9.signature"
+            val jwtVp = v1VpJwt(nonce = "\"wrong-nonce\"")
 
             val args =
                 VerifyHolderBindingArgs(
                     presentation = jwtVp,
-                    format = "jwt_vp_json",
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
@@ -335,39 +1037,159 @@ class VerifyHolderBindingCommandImplTest {
             val args =
                 VerifyHolderBindingArgs(
                     presentation = invalidJwt,
-                    format = "jwt_vp_json",
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
 
             val result = command.execute(args)
 
-            assertIs<Ok<*>>(result)
-            val binding = result.value
-
-            assertFalse(binding.verified)
-            assertEquals("jwt-proof", binding.bindingMethod)
-            assertTrue(binding.errors.any { it.contains("format") || it.contains("parts") })
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("classification", ignoreCase = true))
         }
 
     @Test
-    fun `test JWT VC format detection`() =
+    fun `JWT VC is not routed through JWT VP holder binding`() =
         runTest {
-            // Payload: {"aud":"https://verifier.example.com","nonce":"nonce123"}
-            val jwtVc = "eyJhbGciOiJFUzI1NiJ9.eyJhdWQiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUuY29tIiwibm9uY2UiOiJub25jZTEyMyJ9.signature"
+            // A credential must not be interpreted as a presentation merely because it is JWT-shaped.
+            val jwtVc = v1VcJwt()
 
             val args =
                 VerifyHolderBindingArgs(
                     presentation = jwtVc,
-                    format = "jwt_vc_json",
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
 
             val result = command.execute(args)
 
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("not a holder-bound presentation"))
+        }
+
+    @Test
+    fun `arbitrary signed JWT is rejected even when caller requests the JWT VC query format`() =
+        runTest {
+            val arbitraryJwt = compact("{\"aud\":\"https://verifier.example.com\",\"nonce\":\"nonce123\"}")
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = arbitraryJwt,
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                ),
+            )
+
+            assertIs<Err<*>>(result)
+            assertTrue(result.error.message.defaultMessage.contains("classification", ignoreCase = true))
+        }
+
+    @Test
+    fun `JWT VP claim types are strict`() =
+        runTest {
+            val invalidNonces = listOf("123", "true", "null", "{\"value\":\"nonce123\"}")
+            invalidNonces.forEach { nonce ->
+                val result = command.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = v1VpJwt(nonce = nonce),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                    ),
+                )
+                assertIs<Ok<*>>(result)
+                assertFalse(result.value.nonceValid, "nonce=$nonce must be rejected")
+            }
+
+            // Audience shape is part of VCDM classification, so malformed values are rejected
+            // as an Err before a HolderBindingResult can be produced.
+            val invalidAudiences = listOf("123", "true", "null", "{\"value\":\"https://verifier.example.com\"}", "[]", "[\"https://verifier.example.com\",1]")
+            invalidAudiences.forEach { aud ->
+                val result = command.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = v1VpJwt(aud = aud),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                    ),
+                )
+                assertIs<Err<*>>(result)
+                assertTrue(result.error.message.defaultMessage.contains("aud", ignoreCase = true), "aud=$aud must be rejected")
+            }
+
+            listOf("[\"https://verifier.example.com\",\"https://verifier.example.com\"]", "[\"https://verifier.example.com\",\"\"]").forEach { aud ->
+                val result = command.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = v1VpJwt(aud = aud),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                    ),
+                )
+                assertIs<Err<*>>(result)
+                assertTrue(result.error.message.defaultMessage.contains("aud", ignoreCase = true), "aud=$aud must be rejected")
+            }
+        }
+
+    @Test
+    fun `compact VCDM VP rejects malformed and non-finite temporal NumericDate claims`() =
+        runTest {
+            listOf("\"not-a-number\"", "true", "null", "1e309").forEach { iat ->
+                val result = command.execute(
+                    VerifyHolderBindingArgs(
+                        presentation = v1VpJwt(timeClaims = "\"iat\":$iat,"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                        expectedNonce = "nonce123",
+                        expectedAudience = "https://verifier.example.com",
+                    ),
+                )
+                assertIs<Err<*>>(result)
+                assertTrue(result.error.message.defaultMessage.contains("iat", ignoreCase = true))
+            }
+        }
+
+    @Test
+    fun `compact VCDM VP rejects future and expired temporal NumericDate claims`() =
+        runTest {
+            val now = Clock.System.now().epochSeconds.toDouble()
+            val future = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v1VpJwt(timeClaims = "\"iat\":${now + 60},"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                ),
+            )
+            assertIs<Ok<*>>(future)
+            assertTrue(future.value.errors.any { it.contains("future", ignoreCase = true) })
+
+            val expired = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v1VpJwt(timeClaims = "\"exp\":${now - 60},"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                ),
+            )
+            assertIs<Ok<*>>(expired)
+            assertTrue(expired.value.errors.any { it.contains("expired", ignoreCase = true) })
+        }
+
+    @Test
+    fun `compact VCDM VP permits nbf before token issuance time`() =
+        runTest {
+            val now = Clock.System.now().epochSeconds.toDouble()
+            val result = command.execute(
+                VerifyHolderBindingArgs(
+                    presentation = v1VpJwt(timeClaims = "\"iat\":${now - 10},\"nbf\":${now - 20},\"exp\":${now + 60},"),
+                    presentationFormat = PresentationFormat.JWT_VP_JSON,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                ),
+            )
             assertIs<Ok<*>>(result)
-            assertEquals("jwt-proof", result.value.bindingMethod)
+            assertFalse(result.value.errors.any { it.contains("chronological", ignoreCase = true) })
         }
 
     // ============================================================================
@@ -377,42 +1199,109 @@ class VerifyHolderBindingCommandImplTest {
     @Test
     fun `test unsupported format returns error`() =
         runTest {
-            val args =
+            assertFailsWith<IllegalArgumentException> {
                 VerifyHolderBindingArgs(
                     presentation = "some_presentation",
-                    format = "unknown_format",
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
-
-            val result = command.execute(args)
-
-            assertIs<Err<*>>(result)
-            assertTrue(
-                result.error.message.defaultMessage
-                    .contains("Unsupported"),
-            )
+            }
         }
 
     @Test
     fun `test empty format returns error`() =
         runTest {
-            val args =
+            assertFailsWith<IllegalArgumentException> {
                 VerifyHolderBindingArgs(
                     presentation = "eyJhbGciOiJFUzI1NiJ9.payload.signature",
-                    format = "",
                     expectedNonce = "nonce123",
                     expectedAudience = "https://verifier.example.com",
                 )
-
-            val result = command.execute(args)
-
-            assertIs<Err<*>>(result)
-            assertTrue(
-                result.error.message.defaultMessage
-                    .contains("Unsupported"),
-            )
+            }
         }
+
+    private fun commandForMdocResponse(response: DeviceResponse): VerifyHolderBindingCommandImpl =
+        createTestCommand(
+            verifySdJwtCommand = MockVerifySdJwtCommand(true),
+            verificationShouldSucceed = true,
+            mdocValidations = AlwaysPassMdocValidations,
+            deviceAuthValidation = AlwaysPassDeviceAuthValidation,
+            deviceResponseCborCodec =
+                object : DeviceResponseCborCodec {
+                    override fun encode(value: DeviceResponse): IdkResult<ByteArray, IdkError> = Ok(byteArrayOf(0x01))
+
+                    override fun decode(bytes: ByteArray): IdkResult<DecodedMdoc<DeviceResponse>, IdkError> =
+                        Ok(DecodedMdoc(response, bytes))
+                },
+        )
+
+    private fun mdocArgs(
+        encryption: TestEncryptionContext? = null,
+        expectedDocumentType: String? = MDL_DOC_TYPE,
+    ): VerifyHolderBindingArgs =
+        VerifyHolderBindingArgs(
+            presentation = byteArrayOf(0x01).encodeToBase64Url(),
+            credentialFormat = CredentialFormat.MSO_MDOC,
+            expectedNonce = "nonce456",
+            expectedAudience = "https://verifier.example.com",
+            clientId = "x509_san_dns:verifier.example.com",
+            responseUri = "https://verifier.example.com/response",
+            expectedMdocDocumentType = expectedDocumentType,
+            mdocDocumentResponseDecryptionKey = encryption?.key,
+            mdocDocumentResponseEncryptionParameters = encryption?.let { mapOf(it.envelope.docRequestID to it.parameters) }.orEmpty(),
+            mdocDocumentResponseEncryptionProviders = encryption?.let { listOf(it.provider) }.orEmpty(),
+        )
+
+    private fun testDocument(docType: String): Document =
+        Document(
+            docType = DocType(docType),
+            issuerSigned =
+                com.sphereon.mdoc.data.device.IssuerSigned(
+                    nameSpaces = emptyMap(),
+                    issuerAuth =
+                        CoseSign1<MobileSecurityObject>(
+                            protectedHeader = com.sphereon.crypto.core.cose.CoseHeaderCbor(),
+                            unprotectedHeader = null,
+                            payload = null,
+                            signature = com.sphereon.cbor.CborByteString(byteArrayOf(0x01)),
+                        ),
+                    original = null,
+                ),
+            deviceSigned = null,
+            original = null,
+        )
+
+    private fun testEncryptionContext(plaintext: EncryptedDocumentsPlaintext): TestEncryptionContext {
+        val key = CoseKey(kty = CborUInt(2))
+        val parameters = EncryptionParameters(recipientPublicKey = key)
+        val envelope = EncryptedDocuments(enc = byteArrayOf(0x01), cipherText = byteArrayOf(0x02), docRequestID = 0u)
+        val provider =
+            object : DocumentResponseEncryptionProvider {
+                override fun supports(parameters: EncryptionParameters): Boolean = true
+
+                override suspend fun encrypt(
+                    plaintext: EncryptedDocumentsPlaintext,
+                    parameters: EncryptionParameters,
+                    sessionTranscript: SessionTranscript,
+                    docRequestID: UInt,
+                ): IdkResult<EncryptedDocuments, IdkError> = Err(IdkError.UNKNOWN_ERROR(message = "not used"))
+
+                override suspend fun decrypt(
+                    encrypted: EncryptedDocuments,
+                    recipientPrivateKey: CoseKey,
+                    sessionTranscript: SessionTranscript,
+                    parameters: EncryptionParameters,
+                ): IdkResult<EncryptedDocumentsPlaintext, IdkError> = Ok(plaintext)
+            }
+        return TestEncryptionContext(key, parameters, envelope, provider)
+    }
+
+    private data class TestEncryptionContext(
+        val key: CoseKey,
+        val parameters: EncryptionParameters,
+        val envelope: EncryptedDocuments,
+        val provider: DocumentResponseEncryptionProvider,
+    )
 
     /**
      * Creates a test command with mock dependencies.
@@ -427,18 +1316,81 @@ class VerifyHolderBindingCommandImplTest {
     private fun createTestCommand(
         verifySdJwtCommand: VerifySdJwtCommand,
         verificationShouldSucceed: Boolean = true,
+        verifyJwsCommand: VerifyJwsCommand? = null,
+        mdocValidations: MdocValidations = AlwaysFailMdocValidations,
+        deviceAuthValidation: DeviceAuthValidation = AlwaysFailDeviceAuthValidation,
+        deviceResponseCborCodec: DeviceResponseCborCodec = AlwaysFailDeviceResponseCborCodec,
     ): VerifyHolderBindingCommandImpl {
-        val mockJwsCommand = MockVerifyJwsCommand(verificationShouldSucceed)
+        val mockJwsCommand = verifyJwsCommand ?: MockVerifyJwsCommand(verificationShouldSucceed)
 
         return VerifyHolderBindingCommandImpl(
             execution = testContext.execution,
             verifySdJwtCommand = verifySdJwtCommand,
             verifyJwsCommand = mockJwsCommand,
-            mdocValidations = AlwaysFailMdocValidations,
-            deviceAuthValidation = AlwaysFailDeviceAuthValidation,
-            deviceResponseCborCodec = AlwaysFailDeviceResponseCborCodec,
+            mdocValidations = mdocValidations,
+            deviceAuthValidation = deviceAuthValidation,
+            deviceResponseCborCodec = deviceResponseCborCodec,
         )
     }
+
+    private fun v1VpJwt(
+        aud: String = "\"https://verifier.example.com\"",
+        nonce: String = "\"nonce123\"",
+        holder: String = "did:example:holder",
+        issuer: String = holder,
+        header: String = "{\"alg\":\"ES256\",\"typ\":\"JWT\"}",
+        timeClaims: String = "",
+    ): String =
+        compact(
+            """{"iss":"$issuer","aud":$aud,"nonce":$nonce,$timeClaims"vp":{"@context":["https://www.w3.org/2018/credentials/v1"],"type":["VerifiablePresentation"],"verifiableCredential":["urn:example:credential"]}}""",
+            header,
+        )
+
+    private fun v1VcJwt(): String =
+        compact(
+            """{"iss":"did:example:issuer","sub":"did:example:subject","jti":"urn:uuid:credential-123","nbf":1700000000,"vc":{"@context":["https://www.w3.org/2018/credentials/v1"],"id":"urn:uuid:credential-123","type":["VerifiableCredential"],"credentialSubject":{"id":"did:example:subject"}}}""",
+        )
+
+    private fun v2VpJwt(
+        timeClaims: String = "",
+        holder: String = "https://holder.example",
+        issuer: String = holder,
+        header: String = "{\"alg\":\"ES256\",\"typ\":\"vp+jwt\",\"cty\":\"vp\"}",
+        includeHolder: Boolean = true,
+    ): String =
+        compact(
+            """{"@context":"https://www.w3.org/ns/credentials/v2","type":"VerifiablePresentation",${if (includeHolder) "\"holder\":\"$holder\"," else ""}"iss":"$issuer","aud":"https://verifier.example.com","nonce":"nonce123",$timeClaims"verifiableCredential":[{"@context":"https://www.w3.org/ns/credentials/v2","id":"data:application/vc+jwt,eyJhbGciOiJFUzI1NiJ9.e30.AQID","type":"EnvelopedVerifiableCredential"}]}""",
+            header,
+        )
+
+    private fun testHolderAuthentication(): TrustedAuthenticationResolution =
+        TrustedAuthenticationResolution(
+            controller = "https://holder.example",
+            trustedJwks = testTrustedJwks(),
+        )
+
+    private fun compact(payload: String, header: String = "{\"alg\":\"ES256\",\"typ\":\"JWT\"}"): String {
+        return "${JwsUtils.encodeBytesToBase64Url(header.encodeToByteArray())}.${JwsUtils.encodeBytesToBase64Url(payload.encodeToByteArray())}.AQID"
+    }
+
+    private fun testTrustedJwks() =
+        kotlinx.serialization.json.JsonObject(
+            mapOf(
+                "keys" to kotlinx.serialization.json.JsonArray(
+                    listOf(
+                        kotlinx.serialization.json.JsonObject(
+                            mapOf(
+                                "kty" to kotlinx.serialization.json.JsonPrimitive("EC"),
+                                "crv" to kotlinx.serialization.json.JsonPrimitive("P-256"),
+                                "x" to kotlinx.serialization.json.JsonPrimitive("WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA"),
+                                "y" to kotlinx.serialization.json.JsonPrimitive("F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I"),
+                                "kid" to kotlinx.serialization.json.JsonPrimitive("holder-key"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
 
     private class FixedVerifySdJwtCommand(
         private val result: SdJwtVerificationResult,
@@ -449,6 +1401,61 @@ class VerifyHolderBindingCommandImplTest {
         override val outputTypeToken: TypeToken<SdJwtVerificationResult> = typeToken<SdJwtVerificationResult>()
 
         override suspend fun execute(args: VerifySdJwtArgs): IdkResult<SdJwtVerificationResult, IdkError> = Ok(result)
+    }
+
+    private object AlwaysPassMdocValidations : MdocValidations {
+        override suspend fun fromDocument(
+            document: Document,
+            trustedCerts: Array<String>?,
+            verificationTime: LocalDateTimeKMP?,
+            keyInfo: KeyInfoType<CoseKeyType>?,
+            allowNotYetValidDocuments: Boolean,
+            allowExpiredDocuments: Boolean,
+            dateTimeUtils: DateTimeUtils,
+            timeZoneId: String?,
+            clockSkewAllowedInSec: Int,
+        ): VerifyResultsType<CoseKeyType> = pass()
+
+        override suspend fun fromIssuerAuth(
+            issuerAuth: CoseSign1<MobileSecurityObject>,
+            keyInfo: KeyInfoType<CoseKeyType>?,
+            trustedCerts: Array<String>?,
+            verificationTime: LocalDateTimeKMP?,
+            allowNotYetValidDocuments: Boolean,
+            allowExpiredDocuments: Boolean,
+            dateTimeUtils: DateTimeUtils,
+            timeZoneId: String?,
+            clockSkewAllowedInSec: Int,
+        ): VerifyResultsType<CoseKeyType> = pass()
+
+        override suspend fun withParams(
+            issuerAuth: CoseSign1<MobileSecurityObject>?,
+            document: Document?,
+            mdocVerificationTypes: MdocVerificationTypes,
+            keyInfo: KeyInfoType<CoseKeyType>?,
+            trustedCerts: Array<String>?,
+            verificationTime: LocalDateTimeKMP?,
+            allowNotYetValidDocuments: Boolean?,
+            allowExpiredDocuments: Boolean?,
+            dateTimeUtils: DateTimeUtils,
+            timeZoneId: String?,
+            clockSkewAllowedInSec: Int,
+        ): VerifyResultsType<CoseKeyType> = pass()
+
+        private fun pass(): VerifyResults<CoseKeyType> = VerifyResults(error = false, keyInfo = null, verifications = emptyArray())
+    }
+
+    private object AlwaysPassDeviceAuthValidation : DeviceAuthValidation {
+        override suspend fun verifyDeviceAuth(
+            document: Document,
+            expectedSessionTranscript: SessionTranscript,
+        ): VerifySignatureResultType<CoseKeyType> =
+            VerifySignatureResult<CoseKeyType>(
+                error = false,
+                critical = true,
+                message = null,
+                name = "test-device-auth",
+            )
     }
 
     /**
@@ -574,6 +1581,19 @@ class VerifyHolderBindingCommandImplTest {
             } else {
                 Err(IdkError.fromString("Mock JWS verification failed"))
             }
+        }
+    }
+
+    private class RecordingVerifyJwsCommand : VerifyJwsCommand {
+        override val id: String = "recording-verify-jws"
+        override val isEnabled: Boolean = true
+        override val inputTypeToken: TypeToken<VerifyJwsArgs> = typeToken<VerifyJwsArgs>()
+        override val outputTypeToken: TypeToken<JwsValidationResult> = typeToken<JwsValidationResult>()
+        var lastArgs: VerifyJwsArgs? = null
+
+        override suspend fun execute(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> {
+            lastArgs = args
+            return Err(IdkError.fromString("recording verifier"))
         }
     }
 }

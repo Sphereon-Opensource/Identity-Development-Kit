@@ -19,6 +19,7 @@ package com.sphereon.crypto.dataintegrity
 
 import com.sphereon.crypto.dataintegrity.model.ProofOptions
 import com.sphereon.crypto.dataintegrity.model.ProofPurpose
+import com.sphereon.crypto.dataintegrity.resolution.VerificationMethodResolutionPolicy
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -27,6 +28,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class VerifyProofAlgorithmTest {
@@ -45,6 +47,33 @@ class VerifyProofAlgorithmTest {
             val result = env.verifyProof.verify(secured).value
             assertTrue(result.verified, "errors=${result.errors}")
             assertEquals(unsecured, result.verifiedDocument)
+        }
+
+    @Test
+    fun verifierOwnedResolutionPolicyReachesCryptosuiteVerifier() =
+        runTest {
+            var capturedPolicy: VerificationMethodResolutionPolicy? = null
+            val env =
+                makeTestEnvironment(
+                    verifiers =
+                        setOf(
+                            TestCryptosuiteVerifier(
+                                onResolutionPolicy = { capturedPolicy = it },
+                            ),
+                        ),
+                )
+            val secured = env.addProof.addProofs(unsecured, listOf(option(null))).value
+            val policy = VerificationMethodResolutionPolicy.empty()
+
+            val result =
+                env.verifyProof
+                    .verify(
+                        securedDocument = secured,
+                        verificationMethodResolutionPolicy = policy,
+                    ).value
+
+            assertTrue(result.verified, "errors=${result.errors}")
+            assertSame(policy, capturedPolicy)
         }
 
     @Test

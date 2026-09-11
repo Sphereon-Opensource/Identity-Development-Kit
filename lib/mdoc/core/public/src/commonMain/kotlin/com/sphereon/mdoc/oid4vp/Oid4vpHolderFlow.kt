@@ -27,23 +27,27 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * OID4VP Holder Flow Implementation for ISO 18013-7.
+ * mdoc holder-flow coordinator for the profile selected by its caller.
  *
  @OptIn(ExperimentalObjCName::class)
  @ObjCName("implements", exact = true)
- * This class implements the holder-side OpenID4VP presentation flow as defined in Annex B of ISO 18013-7.
+ * This class contains the shared document-signing coordinator used by the ISO
+ * 18013-7 Annex B restricted Presentation-Exchange flow. It is not the regular
+ * OpenID4VP/DCQL request router; that route remains in the regular OID4VP
+ * holder stack. Callers select the Annex B transcript by supplying the optional
+ * ISO mdoc-generated nonce.
  * It coordinates:
- * - Parsing the Authorization Request with DCQL (default) or Presentation Definition (legacy)
+ * - Processing the mdoc Presentation Exchange definition supplied by the caller
  * - Matching documents to requested input descriptors
- * - Creating the SessionTranscript from OID4VP parameters
+ * - Creating the profile-selected SessionTranscript from OID4VP parameters
  * - Signing documents with device authentication
  * - Building the DeviceResponse with presentation_submission
  *
- * The flow follows ISO 18013-7 B.1.2 sequence diagram (holder perspective):
+ * When invoked by the ISO adapter, the flow follows ISO 18013-7 B.1.2 (holder perspective):
  * 1. Receive Authorization Request (with request_uri)
  * 2. Fetch Authorization Request Object
  * 3. Verify JWT signature
- * 4. Resolve DCQL (default) or Presentation Definition (legacy)
+ * 4. Resolve the profile-selected Presentation Exchange definition
  * 5. Match available documents
  * 6. User authentication and consent
  * 7. Sign documents with mdoc authentication
@@ -65,7 +69,7 @@ class Oid4vpHolderFlow(
      *
      * This method:
      * 1. Matches available documents against the resolved request definition
-     * 2. Creates appropriate SessionTranscript for OID4VP
+     * 2. Creates the profile-selected SessionTranscript; Annex B is opt-in
      * 3. Signs each document with device authentication
      * 4. Returns the complete DeviceResponse ready for transmission
      *
@@ -74,14 +78,16 @@ class Oid4vpHolderFlow(
      * - Each document type can only appear once in the presentation definition
      * - The `mso_mdoc` format MUST be present in the input descriptor
      *
-     * @param presentationDefinition The OID4VP presentation definition from Authorization Request (legacy)
+     * @param presentationDefinition The Presentation Exchange definition selected by the caller
      * @param availableDocuments Array of documents available to present
      * @param clientId The client_id from Authorization Request
      * @param responseUri The response_uri from Authorization Request
      * @param authorizationRequestNonce The nonce from Authorization Request
      * @param verifierEncryptionJwkThumbprint Raw RFC 7638 SHA-256 thumbprint of the verifier's
      * encryption JWK for encrypted response modes; null for unencrypted responses
-     * @param mdocNonce Optional mdoc-generated nonce (UUID v4 by default per ISO 18013-7)
+     * @param mdocNonce mdoc nonce used for matching documents. It is also retained in the result.
+     * @param iso18013MdocGeneratedNonce Optional ISO 18013-7 Annex B mdoc-generated nonce. When
+     * non-null, the ISO restricted-PE transcript is used; null preserves regular OID4VP behavior.
      * @return DeviceResponse containing signed documents and/or errors
      */
     suspend fun processAuthorizationRequest(
@@ -92,6 +98,7 @@ class Oid4vpHolderFlow(
         authorizationRequestNonce: String,
         verifierEncryptionJwkThumbprint: ByteArray?,
         mdocNonce: String = Uuid.v4String(),
+        iso18013MdocGeneratedNonce: String? = null,
     ): Oid4vpHolderResult {
         logService.info("[OID4VP Holder] Processing Authorization Request for client: $clientId")
         logService.debug("[OID4VP Holder] Presentation Definition ID: ${presentationDefinition.id}")
@@ -126,6 +133,7 @@ class Oid4vpHolderFlow(
                 responseUri = responseUri,
                 authorizationRequestNonce = authorizationRequestNonce,
                 verifierEncryptionJwkThumbprint = verifierEncryptionJwkThumbprint,
+                iso18013MdocGeneratedNonce = iso18013MdocGeneratedNonce,
             )
 
         // Create presentation submission
@@ -157,12 +165,7 @@ class Oid4vpHolderFlow(
         // All documents share the same session transcript in OID4VP
         // Extract from the first document that has device namespaces (indicating it was processed)
         val signedMatch = matchedDocuments.firstOrNull { it.document != null }
-        return signedMatch?.let {
-            // The session transcript is created during device authentication
-            // We need to recreate it here or extract it from the signed document
-            // Since we don't store it in DocumentDescriptorMatchResult, we'll need to get it another way
-            null // TODO: Extract from signed document or store in result
-        }
+        return signedMatch?.sessionTranscript
     }
 }
 

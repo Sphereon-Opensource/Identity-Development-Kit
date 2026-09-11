@@ -53,6 +53,9 @@ import com.sphereon.wallet.unit.attestation.WalletProviderAttestationSignerResol
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationProfile
 import com.sphereon.wallet.wsca.WscaClientAttestationAuthRequest
 import com.sphereon.wallet.wsca.WscaDpopProofRequest
+import com.sphereon.wallet.wsca.Wsca
+import com.sphereon.wallet.wsca.WscaSigningRequest
+import com.sphereon.wallet.wsca.WscaPreparedSigningFactory
 import com.sphereon.wallet.wsca.WscaUserAuthenticationStatus
 import com.sphereon.wallet.wscd.ActivationProof
 import com.sphereon.wallet.wscd.ActivationProofKind
@@ -131,7 +134,7 @@ class LocalWscaTest {
                     }
 
             val signingInput = "wallet-unit-signing-input".encodeToByteArray()
-            val signature = setup.wsca.sign("wallet-sign", ref, signingInput, "test:sign")
+            val signature = prepareAndSign(setup.wsca, "wallet-sign", ref, signingInput, "test:sign")
             assertTrue(signature.isOk, "sign failed: ${if (signature.isErr) signature.error else ""}")
 
             // Verify through the existing KMS signature-verification path, resolving the key by its
@@ -166,7 +169,7 @@ class LocalWscaTest {
                         it.value
                     }
 
-            val signature = setup.wsca.sign("wallet-auth-state", ref, "signing-input".encodeToByteArray(), "test:auth-state")
+            val signature = prepareAndSign(setup.wsca, "wallet-auth-state", ref, "signing-input".encodeToByteArray(), "test:auth-state")
 
             assertTrue(signature.isOk, "sign failed: ${if (signature.isErr) signature.error else ""}")
             assertEquals(WscaUserAuthenticationStatus.AUTHENTICATED, setup.wsca.userAuthentication.state.value.status)
@@ -186,11 +189,84 @@ class LocalWscaTest {
                         it.value
                     }
 
-            val signature = setup.wsca.sign("wallet-auth-denied", ref, "signing-input".encodeToByteArray(), "test:auth-denied")
+            val signature = prepareAndSign(setup.wsca, "wallet-auth-denied", ref, "signing-input".encodeToByteArray(), "test:auth-denied")
 
             assertTrue(signature.isErr, "sign must fail closed when the user-authentication ceremony is denied")
             assertEquals("test.wallet_user_authenticator.denied", signature.error.code)
             assertEquals(WscaUserAuthenticationStatus.FAILED, setup.wsca.userAuthentication.state.value.status)
+        }
+
+    @Test
+    fun preparedSignRejectsEveryRequestAndContextMutationBeforeAuthentication() =
+        runTest {
+            var authenticationCalls = 0
+            val setup =
+                newLocalWsca(
+                    userAuthenticator = WalletUserAuthenticator {
+                        authenticationCalls++
+                        Err(IdkError.fromString(code = "test.unexpected_authentication", message = "must not authenticate"))
+                    },
+                )
+            val keyRef = WalletAttestedKeyRef("prepared-key", "ES256", walletUnitId = "wallet-prepared")
+            val request =
+                WscaSigningRequest(
+                    walletUnitId = "wallet-prepared",
+                    keyRef = keyRef,
+                    walletAccountId = "account-prepared",
+                    signingInput = "exact prepared bytes".encodeToByteArray(),
+                    operationBinding = "prepared-operation",
+                    audience = "prepared-audience",
+                    nonce = "prepared-nonce",
+                )
+            val prepared = setup.wsca.prepareSign(request).getOrElse { error("prepare failed: $it") }
+
+            val mutations =
+                listOf(
+                    "wallet unit" to request.copy(walletUnitId = "other-wallet"),
+                    "key ref" to request.copy(keyRef = keyRef.copy(keyRef = "other-key")),
+                    "wallet account" to request.copy(walletAccountId = "other-account"),
+                    "operation binding" to request.copy(operationBinding = "other-operation"),
+                    "audience" to request.copy(audience = "other-audience"),
+                    "nonce" to request.copy(nonce = "other-nonce"),
+                    "signing bytes" to request.copy(signingInput = "changed bytes".encodeToByteArray()),
+                )
+            mutations.forEach { (label, mutated) ->
+                val result = setup.wsca.sign(prepared, mutated)
+                assertTrue(result.isErr, "$label mutation must be rejected")
+                assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code, "$label mutation error")
+            }
+
+            val foreignFactory = WscaPreparedSigningFactory.create()
+            val forgedContexts =
+                listOf(
+                    "digest" to prepared.digestBinding.replace("sha256:", "sha512:"),
+                    "operation type" to "wallet.wsca.forged.sign",
+                )
+            forgedContexts.forEach { (label, value) ->
+                val forged =
+                    foreignFactory.mint(
+                        walletUnitId = prepared.walletUnitId,
+                        keyRef = prepared.keyRef,
+                        walletAccountId = prepared.walletAccountId,
+                        operationBinding = prepared.operationBinding,
+                        operationType = if (label == "operation type") value else prepared.operationType,
+                        digestBinding = if (label == "digest") value else prepared.digestBinding,
+                        nonce = prepared.nonce,
+                        audience = prepared.audience,
+                        signingInput = prepared.signingInput,
+                    )
+                val result = setup.wsca.sign(forged, request)
+                assertTrue(result.isErr, "$label mutation must be rejected")
+                assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code, "$label mutation error")
+            }
+            val foreignInstance = newLocalWsca(userAuthenticator = WalletUserAuthenticator {
+                authenticationCalls++
+                Err(IdkError.fromString(code = "test.unexpected_foreign_authentication", message = "must not authenticate"))
+            }).wsca
+            val foreignInstanceResult = foreignInstance.sign(prepared, request)
+            assertTrue(foreignInstanceResult.isErr, "a prepared context from another WSCA instance must be rejected")
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", foreignInstanceResult.error.code)
+            assertEquals(0, authenticationCalls, "all prepared-context failures must precede authentication")
         }
 
     @Test
@@ -253,7 +329,7 @@ class LocalWscaTest {
                     }
 
             val signingInput = "wallet-unit-credential-signing-input".encodeToByteArray()
-            val signature = setup.wsca.sign("wallet-credential-sign", ref, signingInput, "test:credential-sign")
+            val signature = prepareAndSign(setup.wsca, "wallet-credential-sign", ref, signingInput, "test:credential-sign")
             assertTrue(signature.isOk, "sign failed: ${if (signature.isErr) signature.error else ""}")
 
             val verify =
@@ -264,6 +340,25 @@ class LocalWscaTest {
                 )
             assertTrue(verify.isOk, "verify failed: ${if (verify.isErr) verify.error else ""}")
             assertTrue(verify.value.isValid, "signature over the signing input must verify against the freshly minted credential key")
+        }
+
+    @Test
+    fun discardCredentialKeyPermanentlyRemovesAnUnboundFreshKey() =
+        runTest {
+            val setup = newLocalWsca()
+            val ref =
+                setup.wsca
+                    .createCredentialKey("wallet-discard", SecureComponentUsage.WALLET_CREDENTIAL_PROOF, SignatureAlgorithm.ECDSA_SHA256)
+                    .let {
+                        assertTrue(it.isOk, "createCredentialKey failed")
+                        it.value
+                    }
+
+            val discarded = setup.wsca.discardCredentialKey("wallet-discard", ref)
+            val signature = prepareAndSign(setup.wsca, "wallet-discard", ref, "must-fail".encodeToByteArray(), "test:discard")
+
+            assertTrue(discarded.isOk, "discardCredentialKey failed: ${if (discarded.isErr) discarded.error else ""}")
+            assertTrue(signature.isErr, "a discarded credential key must no longer sign")
         }
 
     @Test
@@ -586,6 +681,57 @@ class LocalWscaTest {
             val header = Json.parseToJsonElement(parts[0].decodeFromBase64Url().decodeToString()).jsonObject
             assertEquals("ES256", header["alg"]?.jsonPrimitive?.content)
             assertEquals("local-wscd-leaf", header["x5c"]?.jsonArray?.single()?.jsonPrimitive?.content)
+        }
+
+    @Test
+    fun holderAttestKeysRejectsCrossUnitProviderAliasAndArbitraryIssuer() =
+        runTest {
+            val setup = newLocalWsca()
+            val providerWalletUnitId = "wallet-provider-holder-surface"
+            val holderWalletUnitId = "wallet-holder-holder-surface"
+            val providerKey =
+                setup.wsca
+                    .ensureKey(
+                        providerWalletUnitId,
+                        SecureComponentUsage.WALLET_ATTESTATION,
+                        SignatureAlgorithm.ECDSA_SHA256,
+                        keyAlias = "provider-holder-surface-key",
+                    )
+                    .let {
+                        assertTrue(it.isOk, "provider ensureKey failed")
+                        it.value
+                    }
+            val holderKey =
+                setup.wsca
+                    .createCredentialKey(holderWalletUnitId, SecureComponentUsage.WALLET_CREDENTIAL_PROOF, SignatureAlgorithm.ECDSA_SHA256)
+                    .let {
+                        assertTrue(it.isOk, "holder createCredentialKey failed")
+                        it.value
+                    }
+
+            val result =
+                setup.wsca.attestKeys(
+                    KeyAttestationIssueRequest(
+                        walletUnitId = holderWalletUnitId,
+                        walletAccountId = holderWalletUnitId,
+                        operationBinding = "test:holder-cross-unit-provider-signing",
+                        profile = WalletUnitAttestationProfile.TS03_JWT,
+                        attestedKeys = listOf(holderKey),
+                        signer =
+                            WalletProviderAttestationSignerRef(
+                                signerId = "arbitrary-provider",
+                                issuer = "arbitrary-issuer",
+                                keyId = providerKey.keyRef,
+                                signingAlgorithm = "ES256",
+                                signerProfile = WalletAttestationSignerProfile.LOCAL_WSCD.name,
+                            ),
+                        audience = "https://issuer.example.com",
+                        nonce = "nonce-holder-cross-unit-provider-signing",
+                    ),
+                )
+
+            assertTrue(result.isErr, "holder-facing attestKeys must reject a cross-unit provider alias")
+            assertEquals("WALLET_WSCA_PROVIDER_KEY_CROSS_UNIT_NOT_AUTHORIZED", result.error.code)
         }
 
     // ---------------------------------------------------------------------------------------
@@ -1074,6 +1220,7 @@ class LocalWscaTest {
                 DpopProofAssembly(defaultSecureRandom()),
                 userAuthenticator,
                 signerResolver,
+                defaultSecureRandom(),
             )
         return LocalWscaSetup(wsca = wsca, kms = kms)
     }
@@ -1082,6 +1229,18 @@ class LocalWscaTest {
         val wsca: LocalWsca,
         val kms: KeyManagerService,
     )
+
+    private suspend fun prepareAndSign(
+        wsca: Wsca,
+        walletUnitId: String,
+        keyRef: WalletAttestedKeyRef,
+        signingInput: ByteArray,
+        operationBinding: String,
+    ) = wsca.run {
+        val request = WscaSigningRequest(walletUnitId, keyRef, signingInput, operationBinding, audience = operationBinding)
+        val prepared = prepareSign(request).getOrElse { return@run Err(it) }
+        sign(prepared, request)
+    }
 
     private fun successfulTestUserAuthenticator(): WalletUserAuthenticator =
         WalletUserAuthenticator { request ->

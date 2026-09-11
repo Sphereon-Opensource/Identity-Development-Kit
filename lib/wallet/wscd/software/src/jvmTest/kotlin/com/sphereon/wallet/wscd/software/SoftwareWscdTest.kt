@@ -13,10 +13,12 @@ package com.sphereon.wallet.wscd.software
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.core.compat.Uuid
 import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
+import com.sphereon.crypto.key.persistence.KeyReferenceStore
 import com.sphereon.wallet.wscd.testfixtures.createWalletAppGraph
 import com.sphereon.wallet.wscd.SoftwareWscdKeyStoreConfiguration
 import com.sphereon.wallet.unit.SecureComponentUsage
@@ -28,6 +30,7 @@ import com.sphereon.wallet.wscd.WscdProfile
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -46,6 +49,86 @@ import kotlin.test.assertTrue
  * they never touch KMS themselves.
  */
 class SoftwareWscdTest {
+    @Test
+    fun sameKeyManagerResolvesImmediatelyIndexedDurableReference() =
+        runTest {
+            val harness = newHarness()
+            harness.bootstrap.ensureRegistered()
+            val providerId = harness.kms.getProviderIds().single()
+            val alias = "same-key-manager-index-diagnostic"
+            val generated =
+                harness.kms.generateKeyResult(
+                    providerId = providerId,
+                    alias = alias,
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    walletUnitId = "wallet-same-key-manager-owner",
+                )
+            assertTrue(generated.isOk, "GenerateKeyCommand failed: $generated")
+            val keyPair = generated.value.keyPair ?: error("GenerateKeyCommand returned no key pair")
+            val rows = harness.keyReferenceStore.findAll(harness.tenantId, null).getOrThrow()
+            val row = rows.singleOrNull { it.alias == alias }
+            assertTrue(
+                row != null,
+                "Immediate shared-store row missing; storeTenant=${harness.tenantId}, " +
+                    "keyManagerTenant=${harness.keyManagerTenantId}, alias=$alias, " +
+                    "provider=$providerId, rows=" + rows.joinToString { it.toDiagnosticString() },
+            )
+            assertEquals(providerId, row!!.providerId)
+            assertEquals("wallet-same-key-manager-owner", row.walletUnitId)
+
+            val resolved = harness.kms.findRegisteredKeyReference(alias, keyPair.providerId)
+            assertTrue(
+                resolved != null,
+                "Same KeyManagerService authority lookup missed indexed row; " +
+                    "storeTenant=${harness.tenantId}, keyManagerTenant=${harness.keyManagerTenantId}, " +
+                    "alias=$alias, keyPairProvider=${keyPair.providerId}, row=${row.toDiagnosticString()}, " +
+                    "keyManagerClass=${harness.kms::class.simpleName}, " +
+                    "keyStoreClass=${harness.kms.keyStore::class.simpleName}, " +
+                    "resolved=$resolved",
+            )
+            assertEquals("wallet-same-key-manager-owner", resolved!!.walletUnitId)
+        }
+
+    @Test
+    fun generateKeyCommandIndexesDurableOwnerInSharedReferenceStore() =
+        runTest {
+            val harness = newHarness()
+            harness.bootstrap.ensureRegistered()
+            val providerId = harness.kms.getProviderIds().single()
+            val provider = harness.kms.getProviderById(providerId)
+            assertFalse(
+                provider.maintainsKeyReferenceIndex,
+                "Software provider must use generic GenerateKeyCommand indexing",
+            )
+
+            val alias = "generate-command-index-diagnostic"
+            val generated =
+                harness.kms.generateKeyResult(
+                    providerId = providerId,
+                    alias = alias,
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    walletUnitId = "wallet-command-index-owner",
+                )
+            assertTrue(generated.isOk, "GenerateKeyCommand failed: $generated")
+
+            val records = harness.keyReferenceStore.findAll(harness.tenantId, null).getOrThrow()
+            val matching = records.filter { it.alias == alias }
+            assertTrue(
+                matching.isNotEmpty(),
+                "GenerateKeyCommand index missing immediately after generateKeyResult; " +
+                    "providerMaintainsKeyReferenceIndex=${provider.maintainsKeyReferenceIndex}, " +
+                    "expected=(tenant=${harness.tenantId}, alias=$alias, provider=$providerId, " +
+                    "owner=wallet-command-index-owner), records=" +
+                    records.joinToString { record ->
+                        "(tenant=${record.tenantId}, alias=${record.alias}, provider=${record.providerId}, owner=${record.walletUnitId})"
+                    },
+            )
+            assertEquals("wallet-command-index-owner", matching.single().walletUnitId)
+            assertEquals(providerId, matching.single().providerId)
+        }
+
     @Test
     fun generateKeyIsIdempotentByAliasAndReturnsUsableHandle() =
         runTest {
@@ -127,6 +210,86 @@ class SoftwareWscdTest {
                     signature = signature.value,
                 )
             assertTrue(verified.isOk && verified.value.isValid, "signature must verify with the original KMS key")
+        }
+
+    @Test
+    fun restartedWscdCannotRelabelDurableKmsKeyToAnotherWalletUnit() =
+        runTest {
+            val harness = newHarness()
+            val alias = "durable-owner-alias"
+            val ownerSpec =
+                WscdKeySpec(
+                    walletUnitId = "wallet-unit-a",
+                    usage = SecureComponentUsage.WALLET_CREDENTIAL_PROOF,
+                    algorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    alias = alias,
+                )
+            val created = harness.wscd.generateKey(ownerSpec)
+            assertTrue(created.isOk, "initial durable key generation failed")
+
+            val restartedWscd = SoftwareWscd(harness.kms, KmsProviderBootstrap {})
+            val foreignLookup = restartedWscd.generateKey(ownerSpec.copy(walletUnitId = "wallet-unit-b"))
+
+            assertTrue(
+                foreignLookup.isErr,
+                "a foreign wallet unit must not relabel an existing durable KMS alias: $foreignLookup",
+            )
+            assertEquals("WALLET_WSCD_KEY_OWNER_MISMATCH", foreignLookup.error.code)
+        }
+
+    @Test
+    fun rehydrationRejectsTamperedDurableOwnerMetadata() =
+        runTest {
+            val harness = newHarness()
+            val alias = "tampered-owner-alias"
+            val spec =
+                WscdKeySpec(
+                    walletUnitId = "wallet-unit-a",
+                    usage = SecureComponentUsage.WALLET_CREDENTIAL_PROOF,
+                    algorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    alias = alias,
+                )
+            val created = harness.wscd.generateKey(spec)
+            assertTrue(created.isOk, "initial durable key generation failed")
+            val reference =
+                harness.keyReferenceStore
+                    .findByAlias(harness.tenantId, alias, created.value.providerId)
+                    .getOrThrow()
+            requireNotNull(reference)
+            harness.keyReferenceStore.upsert(reference.copy(walletUnitId = "wallet-unit-tampered"))
+
+            val restartedWscd = SoftwareWscd(harness.kms, KmsProviderBootstrap {})
+            val result = restartedWscd.generateKey(spec)
+
+            assertTrue(result.isErr)
+            assertEquals("WALLET_WSCD_KEY_OWNER_MISMATCH", result.error.code)
+        }
+
+    @Test
+    fun rehydrationRejectsDurableKeyWhenOwnerMetadataIsMissing() =
+        runTest {
+            val harness = newHarness()
+            val alias = "missing-owner-alias"
+            val spec =
+                WscdKeySpec(
+                    walletUnitId = "wallet-unit-a",
+                    usage = SecureComponentUsage.WALLET_CREDENTIAL_PROOF,
+                    algorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    alias = alias,
+                )
+            val created = harness.wscd.generateKey(spec)
+            assertTrue(created.isOk, "initial durable key generation failed")
+            harness.keyReferenceStore.delete(
+                harness.tenantId,
+                alias,
+                created.value.providerId ?: error("generated durable key has no provider id"),
+            )
+
+            val restartedWscd = SoftwareWscd(harness.kms, KmsProviderBootstrap {})
+            val result = restartedWscd.generateKey(spec)
+
+            assertTrue(result.isErr)
+            assertEquals("WALLET_WSCD_KEY_OWNER_METADATA_MISSING", result.error.code)
         }
 
     @Test
@@ -328,6 +491,10 @@ class SoftwareWscdTest {
     private class SoftwareWscdHarness(
         val wscd: SoftwareWscd,
         val kms: KeyManagerService,
+        val bootstrap: KmsProviderBootstrap,
+        val keyReferenceStore: KeyReferenceStore,
+        val tenantId: String,
+        val keyManagerTenantId: String,
     )
 
     /**
@@ -359,6 +526,17 @@ class SoftwareWscdTest {
                 keyStoreConfiguration = SoftwareWscdKeyStoreConfiguration.InMemoryForTestingOnly,
                 sessionId = sessionId,
             )
-        return SoftwareWscdHarness(wscd = SoftwareWscd(kms, registrar), kms = kms)
+        val execution = session.asCoreApiServiceGraph().serviceExecution
+        return SoftwareWscdHarness(
+            wscd = SoftwareWscd(kms, registrar),
+            kms = kms,
+            bootstrap = registrar,
+            keyReferenceStore = app.keyReferenceStoreFactory.store,
+            tenantId = execution.sessionContext.context.tenant.tenantId,
+            keyManagerTenantId = execution.sessionContext.context.tenant.tenantId,
+        )
     }
+
+    private fun com.sphereon.crypto.key.persistence.KeyReferenceRecord.toDiagnosticString(): String =
+        "(tenant=$tenantId, alias=$alias, provider=$providerId, owner=$walletUnitId)"
 }

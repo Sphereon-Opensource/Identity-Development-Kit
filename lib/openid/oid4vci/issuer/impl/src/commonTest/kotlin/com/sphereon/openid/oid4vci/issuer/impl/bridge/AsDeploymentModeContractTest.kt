@@ -19,6 +19,7 @@
 package com.sphereon.openid.oid4vci.issuer.impl.bridge
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.conf.AppConfigService
@@ -36,10 +37,6 @@ import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.oauth2.common.command.VerifyDpopProofCommand
-import com.sphereon.oauth2.common.config.InternalClientConfig
-import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
-import com.sphereon.oauth2.common.config.OAuth2ServersConfig
-import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
 import com.sphereon.oauth2.common.model.VerifyDpopProofResult
@@ -71,18 +68,39 @@ import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifiedPreAuthCodeGrant
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
+import com.sphereon.oauth2.server.authorization.service.InternalClientRoleResolver
+import com.sphereon.oauth2.server.authorization.impl.command.oidc.GetUserInfoCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.oidc.OidcScopeClaimsMapperImpl
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryTokenStorageImpl
+import com.sphereon.oauth2.server.authorization.model.AccessTokenData
+import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_USERINFO
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
+import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
+import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
+import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
+import com.sphereon.oauth2.server.authorization.provider.UserCredentials
+import com.sphereon.oauth2.server.authorization.provider.UserInfo
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
+import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
+import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
+import com.sphereon.oauth2.server.resource.model.TokenPayload
 import com.sphereon.openid.oid4vci.issuer.bridge.ConsumePreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.RegisterPreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
+import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerTarget
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
 import com.sphereon.openid.oid4vci.issuer.impl.command.NoOpSessionLogService
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.files.Path
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -95,6 +113,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.hours
 
 /**
  * Contract tests for the Oid4vciAuthorizationServerBridge across AS deployment modes.
@@ -118,16 +138,36 @@ class AsDeploymentModeContractTest {
      */
     private class FakePreAuthorizedCodeStorage : PreAuthorizedCodeStorage {
         private val codes = mutableMapOf<String, PreAuthorizedCodeData>()
+        var lastStoredData: PreAuthorizedCodeData? = null
+        var rawConsumeCount: Int = 0
+            private set
 
         override suspend fun storePreAuthorizedCode(
             code: String,
             data: PreAuthorizedCodeData,
         ): IdkResult<Unit, AuthorizationServerError.StorageError> {
             codes[code] = data
+            lastStoredData = data
             return Ok(Unit)
         }
 
-        override suspend fun consumePreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> = Ok(codes.remove(code))
+        override suspend fun findPreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> = Ok(codes[code])
+
+        override suspend fun consumePreAuthorizedCodeIfValid(
+            code: String,
+            expectedData: PreAuthorizedCodeData,
+            now: kotlin.time.Instant,
+        ): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> =
+            Ok(
+                codes[code]?.takeIf { it == expectedData && it.expiresAt > now }?.also {
+                    codes.remove(code)
+                },
+            )
+
+        override suspend fun consumePreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> {
+            rawConsumeCount++
+            return Ok(codes.remove(code))
+        }
 
         override suspend fun isCodeUsed(code: String): IdkResult<Boolean, AuthorizationServerError.StorageError> = Ok(code !in codes)
     }
@@ -138,12 +178,22 @@ class AsDeploymentModeContractTest {
      */
     private class FakeAuthorizationServerService(
         private var introspectionResult: IdkResult<TokenIntrospectionResponse, IdkError>,
+        private val userInfoHandler: (suspend (GetUserInfoArgs) -> IdkResult<com.sphereon.oauth2.server.authorization.command.UserInfoResponse, IdkError>)? = null,
     ) : AuthorizationServerService {
         var lastIntrospectTokenArgs: IntrospectTokenArgs? = null
             private set
+        var lastVerifyPreAuthorizedCodeArgs: VerifyPreAuthCodeArgs? = null
+            private set
+        var userInfoCalls: Int = 0
+            private set
+        private var preAuthorizedCodeVerifier: (suspend (VerifyPreAuthCodeArgs) -> IdkResult<VerifiedPreAuthCodeGrant, IdkError>)? = null
 
         fun setIntrospectionResult(result: IdkResult<TokenIntrospectionResponse, IdkError>) {
             introspectionResult = result
+        }
+
+        fun setPreAuthorizedCodeVerifier(verifier: suspend (VerifyPreAuthCodeArgs) -> IdkResult<VerifiedPreAuthCodeGrant, IdkError>) {
+            preAuthorizedCodeVerifier = verifier
         }
 
         override suspend fun introspectToken(args: IntrospectTokenArgs): IdkResult<TokenIntrospectionResponse, IdkError> {
@@ -162,7 +212,10 @@ class AsDeploymentModeContractTest {
 
         override suspend fun verifyTokenExchangeGrant(args: VerifyTokenExchangeGrantArgs) = notUsed()
 
-        override suspend fun verifyPreAuthorizedCodeGrant(args: VerifyPreAuthCodeArgs) = notUsed()
+        override suspend fun verifyPreAuthorizedCodeGrant(args: VerifyPreAuthCodeArgs): IdkResult<VerifiedPreAuthCodeGrant, IdkError> {
+            lastVerifyPreAuthorizedCodeArgs = args
+            return preAuthorizedCodeVerifier?.invoke(args) ?: notUsed()
+        }
 
         override suspend fun createAccessToken(args: CreateAccessTokenArgs) = notUsed()
 
@@ -206,7 +259,10 @@ class AsDeploymentModeContractTest {
 
         override suspend fun createIdToken(args: CreateIdTokenArgs) = notUsed()
 
-        override suspend fun getUserInfo(args: GetUserInfoArgs) = notUsed()
+        override suspend fun getUserInfo(args: GetUserInfoArgs): IdkResult<com.sphereon.oauth2.server.authorization.command.UserInfoResponse, IdkError> {
+            userInfoCalls++
+            return userInfoHandler?.invoke(args) ?: notUsed()
+        }
 
         override suspend fun getJwks(args: GetJwksArgs) = notUsed()
 
@@ -315,29 +371,13 @@ class AsDeploymentModeContractTest {
 
     private class FakeSessionExecution(
         configProperties: Map<String, String> = emptyMap(),
+        override val tenantId: String = "test-tenant",
     ) : SessionExecution {
         private val principalConfig = FakePrincipalConfigService(configProperties)
         override val sessionContext: SessionContext = NoOpSessionContext
         override val sessionContextManager: SessionContextManager get() = error("not used in bridge tests")
         override val log: SessionLogService = NoOpSessionLogService(sessionContext)
         override val conf: ContextConfig = FakeContextConfig(principalConfig)
-    }
-
-    private class FakeOAuth2ServersConfigProvider(
-        override val serverConfig: OAuth2ServerInstanceConfig,
-    ) : OAuth2ServersConfigProvider {
-        private val config = OAuth2ServersConfig(servers = mapOf("default" to serverConfig))
-
-        override fun getConfig(): OAuth2ServersConfig = config
-
-        override fun getServer(id: String): OAuth2ServerInstanceConfig? = config.getServer(id)
-
-        override fun getDefaultServer(): OAuth2ServerInstanceConfig = config.getDefaultServer()
-
-        override fun resolveIssuer(
-            serverId: String,
-            tenantId: String,
-        ): String = getServer(serverId)?.issuer ?: "https://issuer.example.com"
     }
 
     // ========================================================================
@@ -351,17 +391,124 @@ class AsDeploymentModeContractTest {
                 Ok(TokenIntrospectionResponse(active = false)),
             ),
         configProperties: Map<String, String> = emptyMap(),
-        oauth2ConfigProvider: OAuth2ServersConfigProvider? = null,
+        internalClientRoleResolver: InternalClientRoleResolver = InternalClientRoleResolver { null },
+        tenantId: String = "test-tenant",
+        verifyJwtCommand: VerifyJwtCommand? = null,
     ): Pair<SphereonAsBridge, FakeAuthorizationServerService> {
         val bridge =
             SphereonAsBridge(
                 preAuthorizedCodeStorage = storage,
                 authorizationServerService = asService,
                 verifyDpopProofCommand = NoopVerifyDpopProofCommand,
-                oauth2ConfigProvider = oauth2ConfigProvider,
-                execution = FakeSessionExecution(configProperties),
+                internalClientRoleResolver = internalClientRoleResolver,
+                execution = FakeSessionExecution(configProperties, tenantId),
+                verifyJwtCommand = verifyJwtCommand,
             )
         return bridge to asService
+    }
+
+    private fun hostedTarget() = Oid4vciAuthorizationServerTarget(
+        id = "00000000-0000-4000-8000-000000000002",
+        issuer = "https://as.example",
+        deployment = Oid4vciAuthorizationServerDeployment.HOSTED,
+        runtimeServerKey = "default",
+        tokenEndpoint = "https://as.example/token",
+        jwksUri = "https://as.example/jwks",
+    )
+
+    private fun externalTarget() = hostedTarget().copy(
+        issuer = "https://external-as.example",
+        deployment = Oid4vciAuthorizationServerDeployment.EXTERNAL,
+        runtimeServerKey = null,
+        tokenEndpoint = "https://external-as.example/oauth/token",
+        jwksUri = "https://external-as.example/.well-known/jwks.json",
+    )
+
+    private fun tokenArgs(accessToken: String) = ValidateAccessTokenArgs(
+        authorizationServer = hostedTarget(),
+        expectedAudience = "https://issuer.example",
+        accessToken = accessToken,
+    )
+
+    private class FixedUserAuthenticationProvider(
+        private val userInfo: UserInfo,
+    ) : UserAuthenticationProvider {
+        override suspend fun getAuthenticatedUser(sessionId: String): IdkResult<AuthenticatedUser?, AuthenticationError> = error("not used")
+
+        override suspend fun initiateAuthentication(
+            sessionId: String,
+            returnUrl: String,
+            hint: AuthenticationHint?,
+            context: AuthenticationContext?,
+        ): IdkResult<String, AuthenticationError> = error("not used")
+
+        override suspend fun authenticateWithCredentials(
+            credentials: UserCredentials,
+            context: AuthenticationContext?,
+        ): IdkResult<String?, AuthenticationError> = error("not used")
+
+        override suspend fun logout(userId: String): IdkResult<Unit, AuthenticationError> = error("not used")
+
+        override suspend fun getUserInfo(userId: String): IdkResult<UserInfo, AuthenticationError> = Ok(userInfo)
+
+        override suspend fun isAuthenticationMethodAvailable(method: com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod): IdkResult<Boolean, AuthenticationError> = error("not used")
+    }
+
+    private suspend fun realUserInfoService(
+        scope: String = "openid profile email",
+        explicitClaims: List<String> = listOf("employee_id", "job_title"),
+    ): FakeAuthorizationServerService {
+        val token = "identity-free-userinfo-token"
+        val storage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
+        val now = Clock.System.now()
+        val stored =
+            AccessTokenData(
+                accessToken = token,
+                tokenType = "Bearer",
+                clientId = "issuer-client",
+                subject = "keycloak-user-42",
+                scope = scope,
+                issuer = "https://hosted-as.example",
+                issuedAt = now,
+                expiresAt = now + 1.hours,
+                additionalData = mapOf(SESSION_KEY_OIDC_CLAIMS_USERINFO to explicitClaims),
+            )
+        storage.storeAccessToken(token, stored)
+        val command =
+            GetUserInfoCommandImpl(
+                execution = FakeSessionExecution(),
+                tokenStorage = storage,
+                userAuthenticationProvider =
+                    FixedUserAuthenticationProvider(
+                        UserInfo(
+                            userId = "keycloak-user-42",
+                            email = "user@example.com",
+                            attributes =
+                                mapOf(
+                                    "given_name" to "Ada",
+                                    "family_name" to "Lovelace",
+                                    "job_title" to "Engineer",
+                                    "employee_id" to "EMP-42",
+                                    "iss" to "https://attacker.example",
+                                    "aud" to "attacker-audience",
+                                    "exp" to 1L,
+                                ),
+                        ),
+                    ),
+                scopeClaimsMapper = OidcScopeClaimsMapperImpl(),
+            )
+        return FakeAuthorizationServerService(
+            introspectionResult =
+                Ok(
+                    TokenIntrospectionResponse(
+                        active = true,
+                        sub = "keycloak-user-42",
+                        clientId = "issuer-client",
+                        scope = scope,
+                    ),
+                ),
+            userInfoHandler = { args -> command.execute(args) },
+        )
     }
 
     /**
@@ -383,23 +530,93 @@ class AsDeploymentModeContractTest {
             throw UnsupportedOperationException("DPoP verification not exercised in these contract tests")
     }
 
+    private class CapturingVerifyJwtCommand : VerifyJwtCommand {
+        override val isEnabled: Boolean = true
+        override val inputTypeToken = typeToken<VerifyJwtArgs>()
+        override val outputTypeToken = typeToken<TokenPayload.Jwt>()
+        var received: VerifyJwtArgs? = null
+
+        override suspend fun execute(args: VerifyJwtArgs): IdkResult<TokenPayload.Jwt, IdkError> {
+            received = args
+            return Ok(
+                TokenPayload.Jwt(
+                    sub = "subject-123",
+                    iss = args.authorizationServer,
+                    aud = listOf(requireNotNull(args.expectedAudience)),
+                    exp = Instant.fromEpochSeconds(1_900_000_000),
+                    iat = Instant.fromEpochSeconds(1_800_000_000),
+                    scope = "credential",
+                    clientId = "wallet-client",
+                    dpopJkt = null,
+                    jti = "token-jti",
+                ),
+            )
+        }
+    }
+
     @Test
     fun embeddedModeRegistersPreAuthorizedCode() =
         runTest {
-            val (bridge, _) = createEmbeddedBridge()
+            val storage = FakePreAuthorizedCodeStorage()
+            val (bridge, _) = createEmbeddedBridge(storage = storage)
 
             val result =
                 bridge.registerPreAuthorizedCode(
                     RegisterPreAuthCodeArgs(
+                        authorizationServer = hostedTarget(),
                         sessionId = "session-001",
                         credentialConfigurationIds = listOf("IdentityCredential"),
                         txCodeRequired = false,
+                        expiresAtEpochSeconds = 1_900_000_042L,
                     ),
                 )
 
             assertTrue(result.isOk, "registerPreAuthorizedCode should succeed")
             val registered = result.value
             assertTrue(registered.code.isNotBlank(), "Code should be a non-empty string")
+            assertEquals(1_900_000_042L, storage.lastStoredData?.expiresAt?.epochSeconds)
+        }
+
+    @Test
+    fun embeddedModeRejectsPastExpiryBeforeStorage() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val (bridge, _) = createEmbeddedBridge(storage = storage)
+
+            val result = bridge.registerPreAuthorizedCode(
+                RegisterPreAuthCodeArgs(
+                    authorizationServer = hostedTarget(),
+                    sessionId = "expired",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    expiresAtEpochSeconds = 1L,
+                    txCodeRequired = false,
+                ),
+            )
+
+            assertTrue(result.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
+            assertNull(storage.lastStoredData)
+        }
+
+    @Test
+    fun embeddedModeRejectsExpiryOverflowBeforeStorage() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val (bridge, _) = createEmbeddedBridge(storage = storage)
+
+            val result = bridge.registerPreAuthorizedCode(
+                RegisterPreAuthCodeArgs(
+                    authorizationServer = hostedTarget(),
+                    sessionId = "overflow",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    expiresAtEpochSeconds = Long.MAX_VALUE,
+                    txCodeRequired = false,
+                ),
+            )
+
+            assertTrue(result.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", result.error.code)
+            assertNull(storage.lastStoredData)
         }
 
     @Test
@@ -410,9 +627,11 @@ class AsDeploymentModeContractTest {
             val result =
                 bridge.registerPreAuthorizedCode(
                     RegisterPreAuthCodeArgs(
+                        authorizationServer = hostedTarget(),
                         sessionId = "session-002",
                         credentialConfigurationIds = listOf("IdentityCredential"),
                         txCodeRequired = true,
+                        expiresAtEpochSeconds = 1_900_000_042L,
                     ),
                 )
 
@@ -427,15 +646,26 @@ class AsDeploymentModeContractTest {
     fun embeddedModeConsumesPreAuthorizedCode() =
         runTest {
             val storage = FakePreAuthorizedCodeStorage()
-            val (bridge, _) = createEmbeddedBridge(storage = storage)
+            val (bridge, asService) = createEmbeddedBridge(storage = storage)
+            asService.setPreAuthorizedCodeVerifier {
+                Ok(
+                    VerifiedPreAuthCodeGrant(
+                        sessionId = "session-003",
+                        subject = null,
+                        credentialConfigurationIds = listOf("IdentityCredential", "DriverLicense"),
+                    ),
+                )
+            }
 
             // Register
             val regResult =
                 bridge.registerPreAuthorizedCode(
                     RegisterPreAuthCodeArgs(
+                        authorizationServer = hostedTarget(),
                         sessionId = "session-003",
                         credentialConfigurationIds = listOf("IdentityCredential", "DriverLicense"),
                         txCodeRequired = false,
+                        expiresAtEpochSeconds = 1_900_000_042L,
                     ),
                 )
             assertTrue(regResult.isOk)
@@ -461,15 +691,32 @@ class AsDeploymentModeContractTest {
     fun embeddedModeRejectsDoubleConsumption() =
         runTest {
             val storage = FakePreAuthorizedCodeStorage()
-            val (bridge, _) = createEmbeddedBridge(storage = storage)
+            val (bridge, asService) = createEmbeddedBridge(storage = storage)
+            var verificationCalls = 0
+            asService.setPreAuthorizedCodeVerifier {
+                verificationCalls++
+                if (verificationCalls == 1) {
+                    Ok(
+                        VerifiedPreAuthCodeGrant(
+                            sessionId = "session-004",
+                            subject = null,
+                            credentialConfigurationIds = listOf("IdentityCredential"),
+                        ),
+                    )
+                } else {
+                    Err(IdkError.fromString(code = "invalid_grant", message = "Invalid or already used pre-authorized code"))
+                }
+            }
 
             // Register
             val regResult =
                 bridge.registerPreAuthorizedCode(
                     RegisterPreAuthCodeArgs(
+                        authorizationServer = hostedTarget(),
                         sessionId = "session-004",
                         credentialConfigurationIds = listOf("IdentityCredential"),
                         txCodeRequired = false,
+                        expiresAtEpochSeconds = 1_900_000_042L,
                     ),
                 )
             assertTrue(regResult.isOk)
@@ -488,6 +735,115 @@ class AsDeploymentModeContractTest {
                     ConsumePreAuthCodeArgs(code = code, txCode = null, clientId = "client-2"),
                 )
             assertTrue(second.isErr, "Second consumption of the same code must fail")
+        }
+
+    @Test
+    fun embeddedModeRejectsWrongTxCodeThroughVerifier() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val (bridge, asService) = createEmbeddedBridge(storage = storage)
+            asService.setPreAuthorizedCodeVerifier { args ->
+                assertEquals("wrong-tx-code", args.txCode)
+                assertEquals("bound-client", args.clientId)
+                Err(IdkError.fromString(code = "invalid_grant", message = "Invalid tx_code"))
+            }
+
+            val result =
+                bridge.consumePreAuthorizedCode(
+                    ConsumePreAuthCodeArgs(
+                        code = "pre-authorized-code",
+                        txCode = "wrong-tx-code",
+                        clientId = "bound-client",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_grant", result.error.code)
+            assertEquals(0, storage.rawConsumeCount, "Bridge must not bypass verifier with raw storage consumption")
+            assertEquals("pre-authorized-code", asService.lastVerifyPreAuthorizedCodeArgs?.preAuthorizedCode)
+        }
+
+    @Test
+    fun embeddedModeRejectsMissingTxCodeThroughVerifier() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val (bridge, asService) = createEmbeddedBridge(storage = storage)
+            asService.setPreAuthorizedCodeVerifier { args ->
+                assertNull(args.txCode)
+                Err(IdkError.fromString(code = "invalid_request", message = "Missing required parameter: tx_code"))
+            }
+
+            val result =
+                bridge.consumePreAuthorizedCode(
+                    ConsumePreAuthCodeArgs(
+                        code = "pre-authorized-code",
+                        txCode = null,
+                        clientId = "bound-client",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_request", result.error.code)
+            assertEquals(0, storage.rawConsumeCount, "Bridge must not bypass verifier with raw storage consumption")
+            assertEquals("pre-authorized-code", asService.lastVerifyPreAuthorizedCodeArgs?.preAuthorizedCode)
+        }
+
+    @Test
+    fun embeddedModeRejectsExpiredCodeThroughVerifier() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val (bridge, asService) = createEmbeddedBridge(storage = storage)
+            asService.setPreAuthorizedCodeVerifier {
+                Err(IdkError.fromString(code = "invalid_grant", message = "Pre-authorized code has expired"))
+            }
+
+            val result =
+                bridge.consumePreAuthorizedCode(
+                    ConsumePreAuthCodeArgs(
+                        code = "expired-code",
+                        txCode = null,
+                        clientId = "bound-client",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_grant", result.error.code)
+            assertEquals(0, storage.rawConsumeCount, "Bridge must not bypass verifier with raw storage consumption")
+            assertEquals("expired-code", asService.lastVerifyPreAuthorizedCodeArgs?.preAuthorizedCode)
+        }
+
+    @Test
+    fun embeddedModeDelegatesSuccessfulConsumptionToVerifier() =
+        runTest {
+            val storage = FakePreAuthorizedCodeStorage()
+            val (bridge, asService) = createEmbeddedBridge(storage = storage)
+            asService.setPreAuthorizedCodeVerifier { args ->
+                assertEquals("correct-tx-code", args.txCode)
+                assertEquals("bound-client", args.clientId)
+                Ok(
+                    VerifiedPreAuthCodeGrant(
+                        sessionId = "session-delegated",
+                        subject = "did:example:delegated",
+                        credentialConfigurationIds = listOf("IdentityCredential"),
+                    ),
+                )
+            }
+
+            val result =
+                bridge.consumePreAuthorizedCode(
+                    ConsumePreAuthCodeArgs(
+                        code = "pre-authorized-code",
+                        txCode = "correct-tx-code",
+                        clientId = "bound-client",
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("session-delegated", result.value.sessionId)
+            assertEquals("did:example:delegated", result.value.subject)
+            assertEquals(listOf("IdentityCredential"), result.value.credentialConfigurationIds)
+            assertEquals(0, storage.rawConsumeCount, "Bridge must route successful consumption through verifier")
+            assertEquals("pre-authorized-code", asService.lastVerifyPreAuthorizedCodeArgs?.preAuthorizedCode)
         }
 
     @Test
@@ -522,7 +878,7 @@ class AsDeploymentModeContractTest {
 
             val result =
                 bridge.validateAccessToken(
-                    ValidateAccessTokenArgs(accessToken = "valid-token"),
+                    tokenArgs("valid-token"),
                 )
 
             assertTrue(result.isOk, "validateAccessToken should succeed for active token")
@@ -537,7 +893,7 @@ class AsDeploymentModeContractTest {
         }
 
     @Test
-    fun embeddedModeUsesConfiguredIssuerInternalClientForIntrospection() =
+    fun embeddedModeUsesResolvedIssuerInternalClientForIntrospection() =
         runTest {
             val introspectionResponse =
                 TokenIntrospectionResponse(
@@ -546,28 +902,13 @@ class AsDeploymentModeContractTest {
                     clientId = "wallet-client",
                 )
             val asService = FakeAuthorizationServerService(Ok(introspectionResponse))
-            val configProvider =
-                FakeOAuth2ServersConfigProvider(
-                    OAuth2ServerInstanceConfig(
-                        issuer = "https://issuer.example.com",
-                        internalClients =
-                            mapOf(
-                                "issuer" to
-                                    InternalClientConfig(
-                                        clientId = "issuer-service",
-                                        clientSecret = "issuer-secret",
-                                    ),
-                            ),
-                    ),
-                )
-
             val (bridge, _) =
                 createEmbeddedBridge(
                     asService = asService,
-                    oauth2ConfigProvider = configProvider,
+                    internalClientRoleResolver = InternalClientRoleResolver { role -> if (role == "issuer") "issuer-service" else null },
                 )
 
-            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "valid-token"))
+            val result = bridge.validateAccessToken(tokenArgs("valid-token"))
 
             assertTrue(result.isOk, "validateAccessToken should succeed for active token")
             assertEquals("issuer-service", asService.lastIntrospectTokenArgs?.clientId)
@@ -586,7 +927,7 @@ class AsDeploymentModeContractTest {
 
             val result =
                 bridge.validateAccessToken(
-                    ValidateAccessTokenArgs(accessToken = "expired-token"),
+                    tokenArgs("expired-token"),
                 )
 
             assertTrue(result.isErr, "Inactive token should be rejected")
@@ -605,7 +946,7 @@ class AsDeploymentModeContractTest {
 
             val result =
                 bridge.validateAccessToken(
-                    ValidateAccessTokenArgs(accessToken = "no-sub-token"),
+                    tokenArgs("no-sub-token"),
                 )
 
             assertTrue(result.isErr, "Token without sub claim should be rejected")
@@ -630,7 +971,7 @@ class AsDeploymentModeContractTest {
 
             val (bridge, _) = createEmbeddedBridge(asService = FakeAuthorizationServerService(Ok(introspectionResponse)))
 
-            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "token-with-acr"))
+            val result = bridge.validateAccessToken(tokenArgs("token-with-acr"))
 
             assertTrue(result.isOk, "validateAccessToken should succeed")
             val ctx = result.value
@@ -658,13 +999,45 @@ class AsDeploymentModeContractTest {
 
             val (bridge, _) = createEmbeddedBridge(asService = FakeAuthorizationServerService(Ok(introspectionResponse)))
 
-            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "federated-token"))
+            val result = bridge.validateAccessToken(tokenArgs("federated-token"))
 
             assertTrue(result.isOk)
             val ctx = result.value
             assertEquals("ext-user-42", ctx.upstreamSubject)
             assertEquals("https://enterprise-idp.example.com", ctx.upstreamIssuer)
         }
+
+    @Test
+    fun nestedFederationMetadataWinsAndProviderOptOutNeverUsesLocalUserinfo() = runTest {
+        val issuer = "https://idp.example.test"
+        val nested = JsonObject(mapOf(
+            "upstream_iss" to JsonPrimitive(issuer),
+            "upstream_sub" to JsonPrimitive("idp-user-42"),
+            "userinfo" to JsonObject(mapOf("given_name" to JsonPrimitive("Ada"), "exp" to JsonPrimitive(1))),
+        ))
+        for (optIn in listOf(true, false)) {
+            val (bridge, service) = createEmbeddedBridge(
+                asService = FakeAuthorizationServerService(Ok(TokenIntrospectionResponse(
+                    active = true, sub = "local-user", clientId = "wallet",
+                    additionalClaims = mapOf(
+                        "oidc.internal.federation_claims" to nested,
+                        "upstream_iss" to JsonPrimitive("https://conflicting.example.test"),
+                    ),
+                ))),
+                configProperties = mapOf(
+                    "tenant.idp.[$issuer].surface-userinfo-to-issuance" to optIn.toString(),
+                    "oid4vci.issuer.surface-local-userinfo-to-issuance" to "true",
+                ),
+            )
+            val result = bridge.validateAccessToken(tokenArgs("nested-federated-token"))
+            assertTrue(result.isOk)
+            assertEquals(issuer, result.value.upstreamIssuer)
+            assertEquals("idp-user-42", result.value.upstreamSubject)
+            if (optIn) assertEquals(mapOf("given_name" to JsonPrimitive("Ada")), result.value.userinfoClaims)
+            else assertNull(result.value.userinfoClaims)
+            assertEquals(0, service.userInfoCalls)
+        }
+    }
 
     @Test
     fun validateAccessTokenOmitsOptionalClaimsWhenAbsent() =
@@ -678,7 +1051,7 @@ class AsDeploymentModeContractTest {
 
             val (bridge, _) = createEmbeddedBridge(asService = FakeAuthorizationServerService(Ok(introspectionResponse)))
 
-            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "plain-token"))
+            val result = bridge.validateAccessToken(tokenArgs("plain-token"))
 
             assertTrue(result.isOk)
             val ctx = result.value
@@ -713,7 +1086,7 @@ class AsDeploymentModeContractTest {
                     configProperties = mapOf("tenant.idp.[$idpIssuer].surface-userinfo-to-issuance" to "true"),
                 )
 
-            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "federated-token-with-ui"))
+            val result = bridge.validateAccessToken(tokenArgs("federated-token-with-ui"))
 
             assertTrue(result.isOk)
             val ctx = result.value
@@ -747,10 +1120,86 @@ class AsDeploymentModeContractTest {
                     // No config property set — opt-in is absent
                 )
 
-            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(accessToken = "token-no-ui-opt-in"))
+            val result = bridge.validateAccessToken(tokenArgs("token-no-ui-opt-in"))
 
             assertTrue(result.isOk)
             assertNull(result.value.userinfoClaims, "userinfoClaims should be null when tenant has not opted in")
+        }
+
+    @Test
+    fun hostedAsOptInUsesRealUserInfoCommandWithIdentityFreeIntrospection() =
+        runTest {
+            val asService = realUserInfoService(
+            )
+            val (bridge, service) = createEmbeddedBridge(
+                asService = asService,
+                configProperties = mapOf("oid4vci.issuer.surface-local-userinfo-to-issuance" to "true"),
+            )
+
+            val result = bridge.validateAccessToken(tokenArgs("identity-free-userinfo-token"))
+
+            assertTrue(result.isOk)
+            assertEquals(1, service.userInfoCalls)
+            assertEquals("keycloak-user-42", result.value.subject)
+            assertEquals(JsonPrimitive("Ada"), result.value.userinfoClaims!!["given_name"])
+            assertEquals(JsonPrimitive("Lovelace"), result.value.userinfoClaims!!["family_name"])
+            assertEquals(JsonPrimitive("Engineer"), result.value.userinfoClaims!!["job_title"])
+            assertEquals(JsonPrimitive("user@example.com"), result.value.userinfoClaims!!["email"])
+            assertEquals(JsonPrimitive("EMP-42"), result.value.userinfoClaims!!["employee_id"])
+            assertNull(result.value.userinfoClaims!!["iss"])
+            assertNull(result.value.userinfoClaims!!["aud"])
+            assertNull(result.value.userinfoClaims!!["exp"])
+            assertNull(result.value.userinfoClaims!!["sub"])
+        }
+
+    @Test
+    fun hostedAsOptOutDoesNotCallRealUserInfoCommand() =
+        runTest {
+            val asService = realUserInfoService()
+            val (bridge, service) = createEmbeddedBridge(asService = asService)
+
+            val result = bridge.validateAccessToken(tokenArgs("identity-free-userinfo-token"))
+
+            assertTrue(result.isOk)
+            assertNull(result.value.userinfoClaims)
+            assertEquals(0, service.userInfoCalls)
+        }
+
+    @Test
+    fun hostedAsMissingOpenidScopeStillValidatesTokenAndOmitsUserInfo() =
+        runTest {
+            val asService = realUserInfoService(
+                scope = "profile email",
+            )
+            val (bridge, service) = createEmbeddedBridge(
+                asService = asService,
+                configProperties = mapOf("oid4vci.issuer.surface-local-userinfo-to-issuance" to "true"),
+            )
+
+            val result = bridge.validateAccessToken(tokenArgs("identity-free-userinfo-token"))
+
+            assertTrue(result.isOk)
+            assertNull(result.value.userinfoClaims)
+            assertEquals(1, service.userInfoCalls)
+        }
+
+    @Test
+    fun hostedAsScopeFilteredUserInfoOmitsUnallowedClaimsWithoutInvalidatingToken() =
+        runTest {
+            val asService = realUserInfoService(
+                scope = "openid",
+                explicitClaims = emptyList(),
+            )
+            val (bridge, service) = createEmbeddedBridge(
+                asService = asService,
+                configProperties = mapOf("oid4vci.issuer.surface-local-userinfo-to-issuance" to "true"),
+            )
+
+            val result = bridge.validateAccessToken(tokenArgs("identity-free-userinfo-token"))
+
+            assertTrue(result.isOk)
+            assertNull(result.value.userinfoClaims)
+            assertEquals(1, service.userInfoCalls)
         }
 
     // ========================================================================
@@ -781,6 +1230,48 @@ class AsDeploymentModeContractTest {
         //
         // TODO: Implement ExternalAsBridge and add concrete tests here.
         assertTrue(true, "External mode bridge contract documented — implementation pending")
+    }
+
+    @Test
+    fun externalModeRejectsIssuerSidePreAuthorizedCodeRegistration() = runTest {
+        val (bridge) = createEmbeddedBridge()
+        val result = bridge.registerPreAuthorizedCode(
+            RegisterPreAuthCodeArgs(
+                authorizationServer = externalTarget(),
+                sessionId = "session-1",
+                expiresAtEpochSeconds = 1_900_000_042L,
+                credentialConfigurationIds = listOf("EmployeeCredential"),
+                txCodeRequired = false,
+            ),
+        )
+        assertTrue(result.isErr)
+        assertTrue(result.error.message.defaultMessage.contains("External authorization servers"))
+    }
+
+    @Test
+    fun externalAuthorizationCodeTokenIsVerifiedAgainstPinnedIssuerJwksAndAudience() = runTest {
+        val verifier = CapturingVerifyJwtCommand()
+        val (bridge) = createEmbeddedBridge(verifyJwtCommand = verifier)
+        val target = externalTarget()
+        val result = bridge.validateAccessToken(
+            ValidateAccessTokenArgs(
+                authorizationServer = target,
+                expectedAudience = "https://issuer.example",
+                accessToken = "signed-access-token",
+            ),
+        )
+        assertTrue(result.isOk)
+        assertEquals(target.id, result.value.authorizationServerId)
+        assertEquals(target.issuer, result.value.authorizationServerIssuer)
+        assertEquals(
+            VerifyJwtArgs(
+                jwt = "signed-access-token",
+                authorizationServer = target.issuer,
+                expectedAudience = "https://issuer.example",
+                jwksUri = target.jwksUri,
+            ),
+            verifier.received,
+        )
     }
 
     @Test

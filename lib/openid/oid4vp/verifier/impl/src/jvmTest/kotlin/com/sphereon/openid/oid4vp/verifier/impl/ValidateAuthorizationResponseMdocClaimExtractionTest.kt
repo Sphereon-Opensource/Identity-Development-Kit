@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.verifier.impl
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.TypeToken
@@ -39,6 +40,8 @@ import com.sphereon.crypto.core.cose.CoseKeyType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.X509DistinguishedNameElements
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
+import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.kms.CertificateServiceImpl
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
@@ -63,6 +66,9 @@ import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
+import com.sphereon.openid.oid4vp.verifier.VcdmDataIntegrityVerificationArgs
+import com.sphereon.openid.oid4vp.verifier.VcdmDataIntegrityVerificationResult
+import com.sphereon.openid.oid4vp.verifier.VcdmDataIntegrityVerifier
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
@@ -255,6 +261,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                     execution = setup.execution,
                     authorizationSessionStore = TestAuthorizationSessionStore(),
                     verifyHolderBindingCommand = AlwaysValidHolderBindingCommandForMdoc,
+                    verifyJwsCommand = RejectingVerifyJwsCommand,
                     jsonLdContextValidator =
                         com.sphereon.jsonld.command.JsonLdContextValidator(
                             com.sphereon.jsonld.loader.BuiltInContextLinkedDataDocumentLoader(
@@ -266,8 +273,10 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                         com.sphereon.jsonld.command.JsonLdSchemaValidator(
                             com.sphereon.jsonld.command
                                 .MapBackedJsonLdSchemaRegistry(emptyMap()),
-                        ),
-                    deviceResponseCborCodec = DeviceResponseCborCodecImpl(),
+                     ),
+                     deviceResponseCborCodec = DeviceResponseCborCodecImpl(),
+                     mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
+                     vcdmDataIntegrityVerifier = RejectingVcdmDataIntegrityVerifierForMdoc,
                     credentialStatusVerifiers = emptySet(),
                     credentialTrustValidators = emptySet(),
                 )
@@ -294,6 +303,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                     execution = setup.execution,
                     authorizationSessionStore = TestAuthorizationSessionStore(),
                     verifyHolderBindingCommand = AlwaysValidHolderBindingCommandForMdoc,
+                    verifyJwsCommand = RejectingVerifyJwsCommand,
                     jsonLdContextValidator =
                         com.sphereon.jsonld.command.JsonLdContextValidator(
                             com.sphereon.jsonld.loader.BuiltInContextLinkedDataDocumentLoader(
@@ -305,8 +315,10 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                         com.sphereon.jsonld.command.JsonLdSchemaValidator(
                             com.sphereon.jsonld.command
                                 .MapBackedJsonLdSchemaRegistry(emptyMap()),
-                        ),
-                    deviceResponseCborCodec = DeviceResponseCborCodecImpl(),
+                     ),
+                     deviceResponseCborCodec = DeviceResponseCborCodecImpl(),
+                     mobileSecurityObjectCborCodec = MobileSecurityObjectCborCodecImpl(),
+                     vcdmDataIntegrityVerifier = RejectingVcdmDataIntegrityVerifierForMdoc,
                     credentialStatusVerifiers = emptySet(),
                     credentialTrustValidators = emptySet(),
                 )
@@ -315,6 +327,11 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
             val claims = command.extractDisclosedClaims("bm90Y2Jvcg", CredentialFormat.MSO_MDOC)
             assertTrue(claims.isEmpty())
         }
+}
+
+private object RejectingVcdmDataIntegrityVerifierForMdoc : VcdmDataIntegrityVerifier {
+    override suspend fun verify(args: VcdmDataIntegrityVerificationArgs): IdkResult<VcdmDataIntegrityVerificationResult, IdkError> =
+        Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Data Integrity test stub was not configured"))
 }
 
 /**
@@ -339,4 +356,17 @@ private object AlwaysValidHolderBindingCommandForMdoc : VerifyHolderBindingComma
                 audienceValid = true,
             ),
         )
+}
+
+private object RejectingVerifyJwsCommand : VerifyJwsCommand {
+    override val commandId: String = VerifyJwsCommand.COMMAND_ID
+    override val inputTypeToken: TypeToken<VerifyJwsArgs> = typeToken<VerifyJwsArgs>()
+    override val outputTypeToken: TypeToken<com.sphereon.crypto.jose.jws.JwsValidationResult> =
+        typeToken<com.sphereon.crypto.jose.jws.JwsValidationResult>()
+    override val isEnabled: Boolean = true
+
+    override suspend fun supports(args: Any): Boolean = args is VerifyJwsArgs
+
+    override suspend fun execute(args: VerifyJwsArgs): IdkResult<com.sphereon.crypto.jose.jws.JwsValidationResult, IdkError> =
+        com.sphereon.core.api.Err(IdkError.fromString("not used by claim extraction tests"))
 }

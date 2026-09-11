@@ -8,6 +8,7 @@ package com.sphereon.conf.theme.ui.compose.segmented
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -56,7 +57,9 @@ fun <T> SegmentedControl(
                 modifier = Modifier.heightIn(min = 48.dp),
                 colors =
                     SegmentedButtonDefaults.colors(
-                        activeContainerColor = parseColor(tokens.primaryBackground),
+                        // A segment fill is a solid brand colour. The primary button background
+                        // token is the brand gradient and cannot be used here.
+                        activeContainerColor = MaterialTheme.colorScheme.primary,
                         activeContentColor = parseColor(tokens.primaryForeground),
                         inactiveContainerColor = parseColor(tokens.secondaryBackground),
                         inactiveContentColor = parseColor(tokens.secondaryForeground),

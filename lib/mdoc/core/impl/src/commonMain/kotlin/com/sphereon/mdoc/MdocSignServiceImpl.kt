@@ -31,7 +31,9 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.crypto.core.CoseCryptoServiceImpl
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.CoseSign1Result
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ResolvedKeyInfo
@@ -44,9 +46,12 @@ import com.sphereon.crypto.core.cose.CoseKeyTypeEnum
 import com.sphereon.crypto.core.cose.CoseSign1Input
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.defaultCreateMac0
+import com.sphereon.crypto.core.defaultCreateMac0UsingKeys
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.data.device.DeviceAuth
 import com.sphereon.mdoc.data.device.DeviceAuthentication
+import com.sphereon.mdoc.data.device.DeviceMac
 import com.sphereon.mdoc.data.device.DeviceNameSpaces
 import com.sphereon.mdoc.data.device.DeviceSigned
 import com.sphereon.mdoc.data.device.DeviceSignedItems
@@ -54,7 +59,9 @@ import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
 import com.sphereon.mdoc.data.device.IssuerSigned
 import com.sphereon.mdoc.data.device.IssuerSignedNameSpaces
+import com.sphereon.mdoc.data.device.MacKeys
 import com.sphereon.mdoc.data.mso.MobileSecurityObject
+import dev.whyoleg.cryptography.CryptographyProvider
 import com.sphereon.mdoc.data.mso.MobileSecurityObjectCborCodec
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -63,6 +70,7 @@ import dev.zacsweers.metro.binding
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsStatic
 import kotlin.native.ObjCName
+import kotlinx.coroutines.CancellationException
 
 @Inject
 @SingleIn(SessionScope::class)
@@ -97,7 +105,7 @@ class MdocSignServiceImpl(
 
         val alg = (
             signatureAlgorithm ?: issuerKeyInfo.signatureAlgorithm ?: cborIssuerSignKeyInfo.key.alg?.let {
-                SignatureAlgorithm.Companion.fromCose(CoseAlgorithm.Companion.fromValue(it.value.toInt()))
+                SignatureAlgorithm.Companion.fromCose(CoseAlgorithm.Companion.fromValue(toIntExact(it.value, "COSE alg")))
             }
         )
 
@@ -185,6 +193,7 @@ class MdocSignServiceImpl(
         unprotectedHeader: CoseHeaderCbor?,
         protectedHeader: CoseHeaderCbor?,
         requireDeviceX5Chain: Boolean,
+        macKeys: MacKeys?,
     ): Document {
         log.info("Device signing document: ${document.docType}")
         if (request.itemsRequest.docType != document.docType) {
@@ -192,11 +201,30 @@ class MdocSignServiceImpl(
             throw IllegalArgumentException("Document request docType ${request.itemsRequest.docType} does not match document docType ${document.docType}")
         }
         val mso = decodeMso(document)
-        val keyInfo = getSuppliedOrMSODerivedCborKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
+        val keyInfo = getDeviceSigningKeyInfo(keyInfo = deviceKeyInfo, mso = mso)
         log.info("Using keyInfo: $keyInfo")
+
+        // DeviceRequest.macKeys is propagated by the request/response processor as an explicit
+        // parameter.  Its presence selects ISO mdoc MAC authentication; an empty list is treated
+        // as no capability advertisement and retains the legacy signature path.
+        macKeys?.takeIf { it.isNotEmpty() }?.let { advertisedMacKeys ->
+            val resolvedDeviceKeyInfo =
+                keyInfo as? ResolvedKeyInfoType<CoseKeyType>
+                    ?: throw IllegalArgumentException(
+                        "Cannot create mdoc deviceMac: managed device keys cannot be used without private key material.",
+                    )
+            return createMacAuthenticatedDocument(
+                request = request,
+                document = document,
+                deviceAuthentication = deviceAuthentication,
+                deviceKeyInfo = resolvedDeviceKeyInfo,
+                advertisedMacKeys = advertisedMacKeys,
+            )
+        }
+
         var signatureAlgorithm =
-            keyInfo.signatureAlgorithm ?: keyInfo.key.alg?.let {
-                SignatureAlgorithm.Companion.fromCose(CoseAlgorithm.Companion.fromValue(it.value.toInt()))
+            keyInfo.signatureAlgorithm ?: keyInfo.key?.alg?.let {
+                SignatureAlgorithm.Companion.fromCose(CoseAlgorithm.Companion.fromValue(toIntExact(it.value, "COSE alg")))
             }
         val alg = protectedHeader?.alg
         if (alg !== null) {
@@ -253,6 +281,117 @@ class MdocSignServiceImpl(
             original = null,
         ).also { log.info("Device signed document done: ${it.docType}") }
     }
+
+    /**
+     * Creates the ISO detached COSE_Mac0 form using the reader-advertised MAC keys.
+     *
+     * The device private key remains in the resolved key information and is never exported or
+     * logged.  The generic crypto-core helper performs ECDH and HKDF with the ISO EMacKey info
+     * value; this class only supplies the mdoc DeviceAuthentication payload and envelope.
+     */
+    private suspend fun createMacAuthenticatedDocument(
+        request: DocRequest,
+        document: Document,
+        deviceAuthentication: DeviceAuthentication,
+        deviceKeyInfo: ResolvedKeyInfoType<CoseKeyType>,
+        advertisedMacKeys: MacKeys,
+    ): Document {
+        require(deviceKeyInfo.key.d != null) {
+            "Cannot create mdoc deviceMac: the selected device key does not contain private key material."
+        }
+
+        val detachedPayload =
+            CborEncodedItem<Any>(encodeDeviceAuthentication(deviceAuthentication)).value.toBstr().value
+        var lastFailure: IllegalArgumentException? = null
+
+        for ((index, readerKey) in advertisedMacKeys.withIndex()) {
+            if (readerKey.d != null) {
+                lastFailure = IllegalArgumentException("advertised macKeys[$index] must be a public key")
+                continue
+            }
+            val attempt =
+                tryCreateMacAuthenticatedDocumentForReader(
+                    request = request,
+                    document = document,
+                    deviceAuthentication = deviceAuthentication,
+                    deviceKeyInfo = deviceKeyInfo,
+                    readerKey = readerKey,
+                    detachedPayload = detachedPayload,
+                    index = index,
+                )
+            val signedDocument = attempt.getOrNull()
+            if (signedDocument != null) {
+                return signedDocument
+            }
+            lastFailure = attempt.exceptionOrNull() as? IllegalArgumentException
+        }
+
+        throw IllegalArgumentException(
+            "Cannot create mdoc deviceMac: no compatible reader MAC key was advertised.",
+            lastFailure,
+        )
+    }
+
+    /**
+     * Performs one reader-key MAC attempt in its own suspend frame.
+     *
+     * Keeping cancellation rethrow and retryable argument handling out of the reader loop avoids
+     * a GraalVM Native Image exception-frame merge failure in this suspend function.
+     */
+    private suspend fun tryCreateMacAuthenticatedDocumentForReader(
+        request: DocRequest,
+        document: Document,
+        deviceAuthentication: DeviceAuthentication,
+        deviceKeyInfo: ResolvedKeyInfoType<CoseKeyType>,
+        readerKey: CoseKeyType,
+        detachedPayload: ByteArray,
+        index: Int,
+    ): Result<Document> =
+        try {
+            val macResult =
+                defaultCreateMac0UsingKeys(
+                    provider = CryptographyProvider.Default,
+                    input =
+                        com.sphereon.crypto.core.cose.CoseMac0InputCbor(
+                            protectedHeader = CoseHeaderCbor(alg = CoseAlgorithm.HMAC256_256),
+                            detachedPayload = detachedPayload,
+                        ),
+                    selfPrivateKey = deviceKeyInfo,
+                    otherPublicKey = ResolvedKeyInfo(key = readerKey),
+                    alg = SignatureAlgorithm.HMAC_SHA256,
+                    info = "EMacKey",
+                    salt = byteArrayOf(),
+                ) { provider, input, sharedSecret, alg ->
+                    defaultCreateMac0(
+                        input = input,
+                        sharedSecret = sharedSecret,
+                        alg = alg,
+                        provider = provider,
+                    )
+                }
+
+            Result.success(
+                Document(
+                    docType = request.itemsRequest.docType,
+                    deviceSigned =
+                        com.sphereon.mdoc.data.device.DeviceSigned(
+                            nameSpaces = deviceAuthentication.deviceNamespaces,
+                            deviceAuth =
+                                DeviceAuth(
+                                    deviceMac = DeviceMac.fromCoseMac0(macResult.coseMac0.detachedPayloadCopy()),
+                                    original = null,
+                                ),
+                            original = null,
+                        ),
+                    issuerSigned = document.limitDisclosures(request),
+                    original = null,
+                ).also { log.info("Device signed document with COSE_Mac0 using reader MAC key index $index") },
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            Result.failure(e)
+        }
 
     private fun decodeMso(document: Document): MobileSecurityObject {
         val payload =
@@ -313,9 +452,9 @@ class MdocSignServiceImpl(
                 mso?.deviceKeyInfo?.deviceKey?.let {
                     ResolvedKeyInfo(
                         key = it,
-                        kid = it.kid?.encodeValueTo(Encoding.BASE64URL) ?: keyInfo?.kid,
+                        kid = it.kid?.encodeValueTo(Encoding.UTF8) ?: keyInfo?.kid,
                         signatureAlgorithm =
-                            it.alg?.let { alg -> SignatureAlgorithm.Companion.fromCose(CoseAlgorithm.Companion.fromValue(alg.value.toInt())) }
+                            it.alg?.let { alg -> SignatureAlgorithm.Companion.fromCose(CoseAlgorithm.Companion.fromValue(toIntExact(alg.value, "COSE alg"))) }
                                 ?: keyInfo?.signatureAlgorithm,
                     )
                 }
@@ -343,7 +482,93 @@ class MdocSignServiceImpl(
             }
             if (lookupManaged && msoInfo.alias === null) { // No-op
             }
-            return msoInfo
+            return requireNotNull(msoInfo) { "No key information provided and it could not be derived from the Mobile Security Object" }
+        }
+
+        /**
+         * Resolves the key used for ISO DeviceAuth while preserving the MSO holder binding.
+         *
+         * A COSE `kid` is an opaque byte string on the wire. The IDK's established COSE/JWK
+         * mapping represents that byte string as raw UTF-8 text in [KeyInfoType.kid]. Managed
+         * signing therefore carries the KMS alias and that exact text selector, but never the
+         * public-only MSO key as inline signing material.
+         */
+        @JsStatic
+        fun getDeviceSigningKeyInfo(
+            keyInfo: KeyInfoType<*>? = null,
+            mso: MobileSecurityObject,
+        ): KeyInfoType<CoseKeyType> {
+            val msoKey = mso.deviceKeyInfo.deviceKey
+            val msoKid = msoKey.kid?.encodeValueTo(Encoding.UTF8)
+            val resolved = getSuppliedOrMSODerivedCborKeyInfo(keyInfo = keyInfo, mso = mso)
+
+            require(publicKeyMaterialMatches(resolved.key, msoKey)) {
+                "Supplied mdoc device key does not match Mobile Security Object device key"
+            }
+
+            val suppliedKid = keyInfo?.kid ?: keyInfo?.key?.getKeyId(false)
+            if (suppliedKid != null && msoKid != null) {
+                require(suppliedKid == msoKid) {
+                    "Device signing key kid '$suppliedKid' does not match Mobile Security Object device key kid '$msoKid'"
+                }
+            }
+
+            val managedSigning =
+                keyInfo != null &&
+                    keyInfo.key?.d == null &&
+                    (keyInfo.alias != null || keyInfo.key == null)
+            if (!managedSigning) {
+                return resolved
+            }
+
+            require(!resolved.alias.isNullOrBlank()) {
+                "Managed mdoc device signing requires a non-blank key alias"
+            }
+            require(msoKid != null) {
+                "Managed mdoc device signing requires a kid in the Mobile Security Object device key"
+            }
+
+            return KeyInfo(
+                kid = msoKid,
+                key = null,
+                opts = resolved.opts,
+                keyVisibility = KeyVisibility.PRIVATE,
+                signatureAlgorithm = resolved.signatureAlgorithm ?: msoKey.getSignatureAlgorithm(),
+                x5c = resolved.x5c,
+                alias = resolved.alias,
+                providerId = resolved.providerId,
+                keyType = resolved.keyType ?: msoKey.getKeyType(),
+                keyEncoding = resolved.keyEncoding,
+                noCache = resolved.noCache,
+            )
+        }
+
+        private fun publicKeyMaterialMatches(
+            supplied: CoseKeyType,
+            authenticated: CoseKeyType,
+        ): Boolean {
+            if (supplied.kty != authenticated.kty) {
+                return false
+            }
+            return when (CoseKeyTypeEnum.fromValue(authenticated.kty.value)) {
+                CoseKeyTypeEnum.EC2 ->
+                    supplied.crv == authenticated.crv &&
+                        supplied.x == authenticated.x &&
+                        supplied.y == authenticated.y
+                CoseKeyTypeEnum.OKP -> supplied.crv == authenticated.crv && supplied.x == authenticated.x
+                CoseKeyTypeEnum.RSA -> supplied.n == authenticated.n && supplied.rsaE == authenticated.rsaE
+                CoseKeyTypeEnum.Symmetric,
+                CoseKeyTypeEnum.Reserved,
+                -> false
+            }
         }
     }
+}
+
+private fun toIntExact(
+    value: Long,
+    field: String,
+): Int {
+    require(value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) { "$field is outside the Int range" }
+    return value.toInt()
 }

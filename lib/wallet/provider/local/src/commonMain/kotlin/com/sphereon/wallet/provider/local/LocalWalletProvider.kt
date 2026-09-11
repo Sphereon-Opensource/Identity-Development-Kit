@@ -33,6 +33,9 @@ import com.sphereon.wallet.unit.WalletProviderAttestationSignerRef
 import com.sphereon.wallet.unit.attestation.KeyAttestationIssueRequest
 import com.sphereon.wallet.unit.attestation.KeyAttestationIssueResult
 import com.sphereon.wallet.unit.attestation.Ts03StatusClaim
+import com.sphereon.wallet.unit.attestation.Ts03KeyAttestationClaims
+import com.sphereon.wallet.unit.attestation.Ts03KeyStorageClaim
+import com.sphereon.wallet.unit.attestation.Ts03UserAuthenticationClaim
 import com.sphereon.wallet.unit.attestation.Ts03WalletAttestationEncoder
 import com.sphereon.wallet.unit.attestation.Ts03WalletInstanceAttestationClaims
 import com.sphereon.wallet.unit.attestation.WalletAttestationArtifact
@@ -50,6 +53,9 @@ import com.sphereon.wallet.unit.attestation.WalletUnitAttestationKind
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationMaterial
 import com.sphereon.wallet.unit.attestation.WalletUnitAttestationProfile
 import com.sphereon.wallet.wsca.Wsca
+import com.sphereon.wallet.wsca.WscaSigningRequest
+import com.sphereon.wallet.wscd.Wscd
+import com.sphereon.wallet.wscd.WscdKeyHandle
 import com.sphereon.wallet.wscd.WscdProfile
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -70,19 +76,19 @@ import kotlin.time.Duration.Companion.hours
  * claims. This is a deliberate anti-spoofing choice: nothing routed through this port can make the
  * provider sign as a different issuer than itself.
  *
- * [issueKeyAttestation] delegates claim assembly entirely to [Wsca.attestKeys] (it derives honest
- * key_storage/user_authentication claims from the injected Wscd's [WscdProfile]); this class only
- * resolves the provider's own signer ref before delegating. [issueInstanceAttestation] has no
- * Wsca-level equivalent, so it assembles the WIA itself using the SAME encoder EDK's
+ * [issueKeyAttestation] delegates claim assembly to a private provider-local collaborator (it
+ * derives key_storage/user_authentication claims from the injected Wscd's [WscdProfile]); this
+ * class resolves and validates the provider's own signer ref before delegating. [issueInstanceAttestation] has no Wsca-level equivalent, so it assembles the WIA itself using the SAME encoder EDK's
  * `StoredWalletUnitAttestationService` uses ([Ts03WalletAttestationEncoder], IDK-local in
  * `lib-wallet-unit-public`) via a small [WalletAttestationSigner] adapter
- * ([WscaBackedWalletAttestationSigner]) that signs through [Wsca.sign].
+ * ([WscaBackedWalletAttestationSigner]) that signs through the prepared [Wsca] contract.
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<WalletProvider>())
 class LocalWalletProvider(
     private val wsca: Wsca,
+    private val wscd: Wscd,
     private val config: LocalWalletProviderConfig,
     private val unitStore: WalletUnitRecordStore,
     private val partyDirectory: WalletPartyDirectory,
@@ -204,7 +210,7 @@ class LocalWalletProvider(
         val encoded =
             Ts03WalletAttestationEncoder().encodeWalletInstanceAttestation(
                 claims = claims,
-                signer = WscaBackedWalletAttestationSigner(wsca, config.providerId, signerKey, request.operationBinding),
+                signer = WscaBackedWalletAttestationSigner(wsca, config.providerId, signerKey, request.operationBinding, request.audience),
                 signingRequest =
                     WalletAttestationSigningRequest(
                         algorithm = signingAlgorithm,
@@ -271,15 +277,20 @@ class LocalWalletProvider(
         val algorithm = config.providerKeyAlgorithm
         val signingAlgorithm = toWalletAttestationSigningAlgorithm(algorithm)
         val keyAlias = providerKeyAlias(config.providerId, signingAlgorithm)
+        // Resolve the provider-owned key before delegating. The LOCAL_WSCD branch in LocalWsca
+        // resolves explicit aliases by their first owner, so this establishes config.providerId
+        // as the key's authoritative wallet-unit scope even when KA is requested before WIA.
+        val signerKey = providerSignerKey(algorithm, keyAlias).getOrElse { return Err(it) }
         // Always signs as itself (see the class KDoc): any caller-supplied request.signer is
         // replaced, never merely defaulted, so KA and WIA share the exact same anti-spoofing
-        // policy. Wsca.attestKeys internally does
-        // ensureKey(walletUnitId = request.walletUnitId, keyAlias = signer.signerId); passing the
-        // SAME keyAlias used by issueInstanceAttestation's providerSignerKey means both artifact
-        // kinds resolve to the identical Wsca-held key (ensureKey is alias-keyed, not
-        // walletUnitId-keyed, when a non-blank alias is supplied - see Wsca.ensureKey KDoc) and are
-        // therefore both verifiable against the same trustAnchor().
-        return wsca.attestKeys(request.copy(signer = defaultSignerRef(keyAlias, signingAlgorithm)))
+        // Keep provider signing inside this owning implementation. The public holder-facing
+        // Wsca.attestKeys surface is intentionally strict same-unit and has no provider escape
+        // hatch for this cross-unit operation.
+        return LocalProviderKeyAttestationIssuer(wsca, wscd, config.providerId).issue(
+            request = request.copy(signer = defaultSignerRef(keyAlias, signingAlgorithm)),
+            signerKey = signerKey,
+            signingAlgorithm = signingAlgorithm,
+        )
     }
 
     override suspend fun unitStatus(walletUnitId: String): IdkResult<WalletUnitStatus, IdkError> {
@@ -307,7 +318,7 @@ class LocalWalletProvider(
     /**
      * The provider's own public key, so verifiers/tests can pin it (spec requirement 6). Resolves
      * through the exact same [Wsca.ensureKey] call [issueInstanceAttestation] and (indirectly, via
-     * [Wsca.attestKeys]) [issueKeyAttestation] use, so this is always the key that actually signed
+     * the provider-only attestation boundary) [issueKeyAttestation] use, so this is always the key that actually signed
      * both artifact kinds for THIS provider identity.
      */
     suspend fun trustAnchor(): IdkResult<Jwk, IdkError> {
@@ -346,13 +357,27 @@ class LocalWalletProvider(
     private suspend fun providerSignerKey(
         algorithm: SignatureAlgorithm,
         keyAlias: String,
-    ): IdkResult<WalletAttestedKeyRef, IdkError> =
-        wsca.ensureKey(
-            walletUnitId = config.providerId,
-            usage = SecureComponentUsage.WALLET_ATTESTATION,
-            algorithm = algorithm,
-            keyAlias = keyAlias,
-        )
+    ): IdkResult<WalletAttestedKeyRef, IdkError> {
+        val signerKey =
+            wsca.ensureKey(
+                walletUnitId = config.providerId,
+                usage = SecureComponentUsage.WALLET_ATTESTATION,
+                algorithm = algorithm,
+                keyAlias = keyAlias,
+            ).getOrElse { return Err(it) }
+        if (signerKey.walletUnitId != config.providerId) {
+            return Err(
+                IdkError.fromString(
+                    code = "WALLET_PROVIDER_SIGNING_KEY_OWNER_MISMATCH",
+                    category = ErrorCategory.INTERNAL,
+                    message =
+                        "Provider signing key '$keyAlias' is owned by '${signerKey.walletUnitId}', " +
+                            "not configured provider '${config.providerId}'",
+                ),
+            )
+        }
+        return Ok(signerKey)
+    }
 
     private suspend fun requireActiveUnit(walletUnitId: String): IdkResult<WalletUnitRecord, IdkError> {
         val unit =
@@ -446,7 +471,131 @@ class LocalWalletProvider(
 }
 
 /**
- * Adapts [Wsca.sign] (the ONLY signing surface this module is allowed to touch - Global
+ * Provider-owned KA assembly. This collaborator is intentionally private to the local provider:
+ * unlike holder [Wsca.attestKeys], it signs the holder claims with the provider-owned key while
+ * routing the actual signature through the WSCA prepared-sign contract.
+ */
+private class LocalProviderKeyAttestationIssuer(
+    private val wsca: Wsca,
+    private val wscd: Wscd,
+    private val providerId: String,
+) {
+    suspend fun issue(
+        request: KeyAttestationIssueRequest,
+        signerKey: WalletAttestedKeyRef,
+        signingAlgorithm: WalletAttestationSigningAlgorithm,
+    ): IdkResult<KeyAttestationIssueResult, IdkError> {
+        if (request.attestedKeys.isEmpty()) return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Key attestation requires at least one attested key"))
+        if (request.audience.isBlank()) return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Key attestation audience must not be blank"))
+        if (request.nonce.isBlank()) return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Key attestation nonce must not be blank"))
+        val now = Clock.System.now()
+        val expiresAt = request.expiresAt ?: kotlin.time.Instant.fromEpochSeconds(now.epochSeconds + 300)
+        val firstKey = request.attestedKeys.first()
+        val keyEvidence =
+            wscd.keyEvidence(
+                WscdKeyHandle(
+                    keyRef = firstKey.keyRef ?: firstKey.keyId,
+                    profile = wscd.profile,
+                    walletUnitId = firstKey.walletUnitId ?: request.walletUnitId,
+                    publicKeyJwk = firstKey.publicKeyJwk,
+                    keyId = firstKey.keyId,
+                    providerId = firstKey.keystore?.providerId,
+                ),
+            ).getOrElse { return Err(it) }
+        val signerRef = request.signer ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Provider signer is required"))
+        val keyStorage =
+            Ts03KeyStorageClaim(
+                securityLevel = (request.keystore?.securityLevel ?: wscd.profile.keyStorageSecurityLevel).name.lowercase(),
+                secureComponent = (request.keystore?.componentType ?: wscd.profile.secureComponent).name.lowercase(),
+                nonExportable = request.privateKeyProtection?.nonExportable ?: wscd.profile.nonExportable,
+            )
+        val userAuthentication =
+            Ts03UserAuthenticationClaim(
+                assuranceLevel = request.userAuthentication?.assuranceLevel ?: wscd.profile.userAuthAssuranceLevel.serializedValue,
+                methods = request.userAuthentication?.methods.orEmpty(),
+            )
+        val claims =
+            Ts03KeyAttestationClaims(
+                iss = providerId,
+                sub = request.walletUnitId,
+                aud = request.audience,
+                iat = now.epochSeconds,
+                exp = expiresAt.epochSeconds,
+                jti = Uuid.v4String(),
+                attestedKeys = request.attestedKeys,
+                certification = request.evidence.ifEmpty { mapOf("profile" to request.profile.name) },
+                keyStorage = keyStorage,
+                userAuthentication = userAuthentication,
+                keyStorageStatus =
+                    Ts03StatusClaim(
+                        status = request.statusSubject?.let { "${it.statusListUri}#${it.index}" }
+                            ?: "urn:wallet-unit:key-storage-status:${request.walletUnitId}#0",
+                        exp = expiresAt.epochSeconds,
+                    ),
+                cNonce = request.nonce,
+                singleUse = request.singleUse,
+                evidence = keyEvidence.evidence + request.evidence,
+            )
+        val encoded =
+            Ts03WalletAttestationEncoder().encodeKeyAttestation(
+                claims = claims,
+                signer = WscaBackedWalletAttestationSigner(wsca, providerId, signerKey, request.operationBinding, request.audience),
+                signingRequest =
+                    WalletAttestationSigningRequest(
+                        algorithm = signingAlgorithm,
+                        signerProfile = WalletAttestationSignerProfile.LOCAL_WSCD,
+                        signerId = signerRef.signerId,
+                        signingInput = ByteArray(0),
+                        x5c = emptyList(),
+                        keyId = signerKey.keyId,
+                    ),
+            ).getOrElse { return Err(it) }
+        val artifact =
+            WalletAttestationArtifact(
+                kind = WalletUnitAttestationKind.KA,
+                profile = request.profile,
+                material = WalletUnitAttestationMaterial(WalletUnitAttestationFormat.KEY_ATTESTATION_JWT, encoded.compact),
+                issuedAt = now,
+                expiresAt = expiresAt,
+                statusSubject = request.statusSubject,
+                evidence =
+                    WalletUnitAttestationEvidence(
+                        profile = request.profile,
+                        ts03Conformant = request.profile == WalletUnitAttestationProfile.TS03_JWT,
+                        signer = request.signer,
+                        keystore = request.keystore ?: firstKey.keystore,
+                        userAuthentication = request.userAuthentication,
+                        privateKeyProtection = request.privateKeyProtection,
+                    ),
+                metadata =
+                    WalletAttestationArtifactMetadata(
+                        artifactHash = encoded.artifactHash,
+                        statusSubject = request.statusSubject,
+                        singleUse = request.singleUse,
+                        signingEvidence = encoded.signingEvidence,
+                        claimSummary =
+                            mapOf(
+                                "aud" to request.audience,
+                                "nonce" to request.nonce,
+                                "attestedKeyCount" to request.attestedKeys.size.toString(),
+                            ),
+                    ),
+            )
+        return Ok(
+            KeyAttestationIssueResult(
+                walletUnitId = request.walletUnitId,
+                walletAccountId = request.walletAccountId,
+                attestationRef = encoded.artifactHash,
+                artifact = artifact,
+                nonce = request.nonce,
+                audience = request.audience,
+            ),
+        )
+    }
+}
+
+/**
+ * Adapts the prepared [Wsca] contract (the ONLY signing surface this module is allowed to touch - Global
  * Constraints, KMS boundary) to the [WalletAttestationSigner] seam
  * [Ts03WalletAttestationEncoder] was built against, so [LocalWalletProvider] can reuse that
  * encoder's header/payload/compact-JWT assembly rather than re-implementing it.
@@ -456,9 +605,12 @@ private class WscaBackedWalletAttestationSigner(
     private val walletUnitId: String,
     private val signerKey: WalletAttestedKeyRef,
     private val operationBinding: String,
+    private val audience: String,
 ) : WalletAttestationSigner {
     override suspend fun sign(request: WalletAttestationSigningRequest): IdkResult<WalletAttestationSigningResult, IdkError> {
-        val signature = wsca.sign(walletUnitId, signerKey, request.signingInput, operationBinding).getOrElse { return Err(it) }
+        val signingRequest = WscaSigningRequest(walletUnitId, signerKey, request.signingInput, operationBinding, audience = audience)
+        val prepared = wsca.prepareSign(signingRequest).getOrElse { return Err(it) }
+        val signature = wsca.sign(prepared, signingRequest).getOrElse { return Err(it) }
         return Ok(
             WalletAttestationSigningResult(
                 signature = signature,

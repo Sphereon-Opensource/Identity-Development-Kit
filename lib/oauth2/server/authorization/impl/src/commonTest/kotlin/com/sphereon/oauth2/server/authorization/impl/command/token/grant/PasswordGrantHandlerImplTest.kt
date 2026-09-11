@@ -18,6 +18,8 @@ import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
@@ -87,6 +89,7 @@ class PasswordGrantHandlerImplTest {
                     allowedScopes = listOf("read"),
                 )
 
+            val commands = CapturingPasswordGrantCommands()
             val handler =
                 PasswordGrantHandlerImpl(
                     clientRegistry = clientRegistry,
@@ -104,9 +107,12 @@ class PasswordGrantHandlerImplTest {
                                 }
                             }
                         },
+                    createAccessToken = commands.createAccessToken,
+                    createRefreshToken = lazy { commands.createRefreshToken },
+                    createIdToken = lazy { commands.createIdToken },
+                    createTokenResponse = commands.createTokenResponse,
                 )
-            val commands = CapturingPasswordGrantCommands()
-            val context = passwordGrantContext(clientId = client.clientId, commands = commands)
+            val context = passwordGrantContext(clientId = client.clientId)
 
             val result =
                 handler.handleTrusted(
@@ -137,10 +143,7 @@ class PasswordGrantHandlerImplTest {
             assertEquals("read", refreshTokenArgs.scope)
         }
 
-    private fun passwordGrantContext(
-        clientId: String,
-        commands: AuthorizationServerService.Commands,
-    ): GrantContext {
+    private fun passwordGrantContext(clientId: String): GrantContext {
         val grantParameters = GrantParameters.Password(username = "alice", password = "alice-secret", scope = "read")
         val tokenRequest =
             TokenRequestData(
@@ -152,6 +155,7 @@ class PasswordGrantHandlerImplTest {
             )
         return GrantContext(
             tokenRequest = tokenRequest,
+            tenantId = "tenant-test",
             resolvedClientId = clientId,
             proofJkt = null,
             certThumbprintS256 = null,
@@ -161,7 +165,6 @@ class PasswordGrantHandlerImplTest {
                     requestHeaders = emptyMap(),
                     httpUrl = "https://as.example.com/token",
                 ),
-            commands = commands,
             serverConfig = OAuth2ServerInstanceConfig(issuer = "https://as.example.com"),
         )
     }
@@ -212,6 +215,16 @@ class PasswordGrantHandlerImplTest {
                     )
             }
 
+        override val createIdToken: CreateIdTokenCommand =
+            object : CreateIdTokenCommand {
+                override val inputTypeToken = typeToken<CreateIdTokenArgs>()
+                override val outputTypeToken = typeToken<StringResult>()
+                override val isEnabled = true
+
+                override suspend fun execute(args: CreateIdTokenArgs): IdkResult<StringResult, IdkError> =
+                    Ok(StringResult(value = "IDT-PASSWORD"))
+            }
+
         override val parseTokenRequest get(): com.sphereon.oauth2.server.authorization.command.ParseTokenRequestCommand = throw NotImplementedError()
         override val verifyAuthorizationCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand = throw NotImplementedError()
         override val verifyRefreshTokenGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand = throw NotImplementedError()
@@ -236,7 +249,6 @@ class PasswordGrantHandlerImplTest {
         override val buildServerMetadata get(): com.sphereon.oauth2.server.authorization.command.BuildServerMetadataCommand = throw NotImplementedError()
         override val verifyClientAuthentication get(): com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand = throw NotImplementedError()
         override val createAttestationChallenge get(): com.sphereon.oauth2.server.authorization.command.CreateAttestationChallengeCommand = throw NotImplementedError()
-        override val createIdToken get(): com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand = throw NotImplementedError()
         override val getUserInfo get(): com.sphereon.oauth2.server.authorization.command.GetUserInfoCommand = throw NotImplementedError()
         override val getJwks get(): com.sphereon.oauth2.server.authorization.command.GetJwksCommand = throw NotImplementedError()
     }

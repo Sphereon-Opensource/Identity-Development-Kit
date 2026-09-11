@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.server.authorization.model
 
 import com.sphereon.oauth2.common.model.OAuth2ResponseMode
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteDecision
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
@@ -135,6 +136,8 @@ data class AuthorizationSession(
      * The application / login-surface id resolved from [clientId]; opaque to IDK.
      */
     val applicationId: String? = null,
+    /** Authentication route selected from durable hosted-resource and binding state. */
+    val authenticationRoute: AuthenticationRouteDecision? = null,
 )
 
 /**

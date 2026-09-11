@@ -33,13 +33,19 @@ import com.sphereon.crypto.jose.jws.JwsIdentifierMode
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
-import com.sphereon.oauth2.server.authorization.impl.config.OAuth2SigningKeyUnavailableException
+import com.sphereon.oauth2.server.authorization.impl.command.TokenPathStage
+import com.sphereon.oauth2.server.authorization.impl.command.TokenPathStageTimings
+import com.sphereon.oauth2.server.authorization.impl.command.asSigningProtectedHeader
 import com.sphereon.oauth2.server.authorization.impl.command.putClaims
+import com.sphereon.oauth2.server.authorization.impl.config.OAuth2SigningKeyUnavailableException
 import com.sphereon.oauth2.server.authorization.model.AccessTokenData
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
@@ -77,7 +83,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * Security considerations:
  * - Tokens MUST be short-lived (typically 1 hour or less)
- * - Tokens SHOULD include audience restriction
+ * - JWT access tokens MUST include audience restriction
  * - DPoP binding SHOULD be used when available
  * - Token ID (jti) for revocation tracking
  */
@@ -132,7 +138,7 @@ class CreateAccessTokenCommandImpl(
         // the OidcTenantResolver pipeline. Skip when the AS request is anonymous (no real
         // tenant context bound) — the resource server's tenant resolver will fall through.
         val sessionTenantId =
-            runCatching { execution.sessionContext.context.tenant.tenantId }
+            runCatching { execution.tenantId }
                 .getOrNull()
                 ?.takeIf { it.isNotBlank() && it != "anonymous" }
         val mergedClaims: Map<String, Any> =
@@ -142,8 +148,10 @@ class CreateAccessTokenCommandImpl(
                 applied.additionalClaims
             }
 
+        val timings = TokenPathStageTimings(operation = "access-token-mint")
         val result =
             executeInternal(
+                timings,
                 applied.subject,
                 applied.clientId,
                 applied.scope,
@@ -157,6 +165,7 @@ class CreateAccessTokenCommandImpl(
                 mergedClaims,
                 issuerUrl,
             ).map { StringResult(it) }.mapError { IdkError.fromDTO(it) }
+        timings.report(log, if (result.isOk) "success" else "failed")
         emitOutcome(applied, result)
         return result
     }
@@ -188,6 +197,7 @@ class CreateAccessTokenCommandImpl(
     }
 
     private suspend fun executeInternal(
+        timings: TokenPathStageTimings,
         subject: String,
         clientId: String,
         scope: String?,
@@ -202,7 +212,10 @@ class CreateAccessTokenCommandImpl(
         issuerUrl: String,
     ): IdkResult<String, AuthorizationServerError> {
         return try {
-            val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
+            val serverIdentifier =
+                timings.record(TokenPathStage.SIGNING_IDENTIFIER_RESOLUTION) {
+                    signingIdentifierResolver.resolveSigningIdentifier()
+                }
             val now = Clock.System.now()
             val expiresAt = now + expiresInSeconds.seconds
             val tokenMetadataClaims =
@@ -226,6 +239,15 @@ class CreateAccessTokenCommandImpl(
                     now,
                     expiresAt,
                     issuerUrl,
+                )
+            }
+
+            if (audience.isEmpty()) {
+                return Err(
+                    AuthorizationServerError.InvalidTarget(
+                        resource = "",
+                        reason = "RFC 9068 JWT access tokens require an audience; register a default access-token audience or request a resource indicator",
+                    ),
                 )
             }
 
@@ -263,17 +285,15 @@ class CreateAccessTokenCommandImpl(
                     }
 
                     // Audience (RFC 9068 Section 2.2.3)
-                    if (audience.isNotEmpty()) {
-                        if (audience.size == 1) {
-                            put("aud", audience.first())
-                        } else {
-                            put(
-                                "aud",
-                                buildJsonArray {
-                                    audience.forEach { aud -> add(JsonPrimitive(aud)) }
-                                },
-                            )
-                        }
+                    if (audience.size == 1) {
+                        put("aud", audience.first())
+                    } else {
+                        put(
+                            "aud",
+                            buildJsonArray {
+                                audience.forEach { aud -> add(JsonPrimitive(aud)) }
+                            },
+                        )
                     }
 
                     // Scope (RFC 9068 Section 2.2.2)
@@ -310,15 +330,31 @@ class CreateAccessTokenCommandImpl(
                 }
 
             // Create JWT header with typ="at+jwt" per RFC 9068 Section 2.1
-            val header =
-                buildJsonObject {
-                    put("typ", "at+jwt")
-                }
+            val header = asSigningProtectedHeader("at+jwt", serverIdentifier)
 
             // Sign JWT using JwtService
             val jwsArgs =
                 CreateJwsArgs(
-                    issuer = serverIdentifier,
+                    // The protected header carries the SigningKeyStore kid. Do not feed that
+                    // wire coordinate back into KMS lookup when the issuer is alias-backed:
+                    // KMS must resolve by alias, while the published JWT kid remains the store kid.
+                    issuer =
+                        (serverIdentifier as? ManagedOptsKeyInfo)?.let { managed ->
+                            if (managed.identifier.alias != null) {
+                                val aliasOnly =
+                                    KeyInfo<KeyType>(
+                                        alias = managed.identifier.alias,
+                                        providerId = managed.identifier.providerId,
+                                        signatureAlgorithm = managed.identifier.signatureAlgorithm,
+                                        keyType = managed.identifier.keyType,
+                                        keyEncoding = managed.identifier.keyEncoding,
+                                        keyVisibility = managed.identifier.keyVisibility,
+                                    )
+                                managed.copy(identifier = aliasOnly, lookup = aliasOnly)
+                            } else {
+                                managed
+                            }
+                        } ?: serverIdentifier,
                     payload = payload.toString(),
                     mode = JwsIdentifierMode.KID,
                     opts =
@@ -329,8 +365,8 @@ class CreateAccessTokenCommandImpl(
                 )
 
             val jwtResult =
-                jwtService
-                    .createJwsCompact(jwsArgs)
+                timings
+                    .record(TokenPathStage.JWS_SIGNING) { jwtService.createJwsCompact(jwsArgs) }
                     .mapError { error ->
                         AuthorizationServerError.ServerError(
                             details = "Failed to sign access token: ${error.message.defaultMessage}",
@@ -365,8 +401,8 @@ class CreateAccessTokenCommandImpl(
                 )
 
             // Store token for introspection and revocation
-            tokenStorage
-                .storeAccessToken(accessToken, tokenData)
+            timings
+                .record(TokenPathStage.TOKEN_STORAGE) { tokenStorage.storeAccessToken(accessToken, tokenData) }
                 .mapError { error ->
                     AuthorizationServerError.ServerError(
                         details = "Failed to store access token: $error",

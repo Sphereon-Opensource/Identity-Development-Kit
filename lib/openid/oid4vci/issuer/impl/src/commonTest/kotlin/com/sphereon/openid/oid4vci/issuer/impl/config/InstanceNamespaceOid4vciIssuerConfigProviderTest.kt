@@ -51,15 +51,15 @@ import kotlin.test.assertTrue
 
 /**
  * Verifies that the OID4VCI issuer config provider reads from a per-INSTANCE config namespace
- * selected at request time, falling back to the singular namespace when no instance is resolved.
+ * selected at request time. The enterprise registry provider rejects a request without a resolved
+ * issuer selector; it never falls back to the singular namespace.
  *
  * Contract under test (the runtime half of the per-issuer story — VDX writes the plural prefix,
  * this provider reads it):
  *  1. With the instance-id holder set to `acme`, [RegistryBackedOid4vciIssuerConfigProvider] reads
- *     issuer-level keys under `oid4vci.issuers.acme.*` and per-credential keys under
- *     `oid4vci.issuers.acme.credentials.[<id>].*`.
- *  2. With the holder empty (no resolver populated it), the SAME provider reads the singular
- *     `oid4vci.issuer.*` namespace — back-compat with the pure-IDK config-only deploy.
+ *     issuer-level keys under `oid4vci.issuers.00000000-0000-4000-8000-000000000031.*` and per-credential keys under
+ *     `oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[<id>].*`.
+ *  2. With the holder empty (no resolver populated it), the registry provider fails closed.
  *  3. The singular [ConfigDrivenOid4vciIssuerConfigProvider] is unconditionally pinned to
  *     `oid4vci.issuer.*` regardless of any holder.
  *
@@ -68,21 +68,43 @@ import kotlin.test.assertTrue
  */
 class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     @Test
-    fun registryProviderReadsInstanceNamespaceWhenHolderSet() {
+    fun registryProviderResolvesCanonicalPartyIdThroughDurableConfigBindingProjection() = runTest {
+        val partyId = "00000000-0000-4000-8000-000000000031"
+        val logicalInstanceId = "acme-issuer"
+        val properties =
+            mapOf<String, Any>(
+                "_derived.software.config-bindings.by-party.$partyId.config-key-prefix" to
+                    "oid4vci.issuers.$logicalInstanceId",
+                "oid4vci.issuers.$logicalInstanceId.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.$logicalInstanceId.credentialConfigurationIds" to "AcmeDegree",
+                "oid4vci.issuers.$logicalInstanceId.credentials.[AcmeDegree].format" to "dc+sd-jwt",
+                "oid4vci.issuers.$logicalInstanceId.credentials.[AcmeDegree].scope" to "acme-degree",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId(partyId)
+        provider.prepare()
+
+        assertEquals("https://acme.example.com", provider.issuerIdentifier)
+        assertEquals(setOf("AcmeDegree"), provider.credentialConfigurations.keys)
+        assertEquals("acme-degree", provider.credentialConfigurations["AcmeDegree"]?.scope)
+    }
+
+    @Test
+    fun registryProviderReadsInstanceNamespaceWhenHolderSet() = runTest {
         val properties =
             mapOf<String, Any>(
                 // Singular namespace (must NOT be read when an instance is selected)
                 "oid4vci.issuer.identifier" to "https://singular.example.com",
                 "oid4vci.issuer.credentialConfigurationIds" to "Singular",
                 // Per-instance namespace for "acme"
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.authorizationServers" to "https://as.acme.example.com",
-                "oid4vci.issuers.acme.credentialConfigurationIds" to "AcmeDegree",
-                "oid4vci.issuers.acme.credentials.[AcmeDegree].format" to "jwt_vc_json",
-                "oid4vci.issuers.acme.credentials.[AcmeDegree].scope" to "acme-degree",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentialConfigurationIds" to "AcmeDegree",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[AcmeDegree].format" to "jwt_vc_json",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[AcmeDegree].scope" to "acme-degree",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
+        provider.prepare()
 
         assertEquals("https://acme.example.com", provider.issuerIdentifier)
         assertEquals(listOf("https://as.acme.example.com"), provider.authorizationServers)
@@ -98,13 +120,13 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
             mapOf<String, Any>(
                 "oid4vci.issuer.signed-metadata.enabled" to "false",
                 "oid4vci.issuer.signingKeyAlias" to "singular-signing",
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.signed-metadata.enabled" to "true",
-                "oid4vci.issuers.acme.signingKeyAlias" to "acme-metadata-signing",
-                "oid4vci.issuers.acme.signingKmsProviderId" to "software",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.signed-metadata.enabled" to "true",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.signingKeyAlias" to "acme-metadata-signing",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.signingKmsProviderId" to "software",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         assertNotNull(provider.signingKey(), "signed metadata should be enabled from the active issuer instance")
     }
@@ -113,15 +135,15 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     fun responseEncryptionDisabledModeSuppressesMetadataEvenWithAlgorithms() {
         val properties =
             mapOf<String, Any>(
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.encryption.response.mode" to "disabled",
-                "oid4vci.issuers.acme.encryption.response.encryptionRequired" to "true",
-                "oid4vci.issuers.acme.encryption.response.algValuesSupported" to "ECDH-ES",
-                "oid4vci.issuers.acme.encryption.response.encValuesSupported" to "A256GCM",
-                "oid4vci.issuers.acme.encryption.response.zipValuesSupported" to "DEF",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.mode" to "disabled",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.encryptionRequired" to "true",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.algValuesSupported" to "ECDH-ES",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.encValuesSupported" to "A256GCM",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.zipValuesSupported" to "DEF",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         assertNull(provider.credentialResponseEncryption)
     }
@@ -130,14 +152,14 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     fun responseEncryptionSupportedModePublishesMetadataAsNotRequired() {
         val properties =
             mapOf<String, Any>(
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.encryption.response.mode" to "supported",
-                "oid4vci.issuers.acme.encryption.response.encryptionRequired" to "true",
-                "oid4vci.issuers.acme.encryption.response.algValuesSupported" to "ECDH-ES",
-                "oid4vci.issuers.acme.encryption.response.encValuesSupported" to "A256GCM",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.mode" to "supported",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.encryptionRequired" to "true",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.algValuesSupported" to "ECDH-ES",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.encValuesSupported" to "A256GCM",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         val encryption = assertNotNull(provider.credentialResponseEncryption)
         assertEquals(false, encryption.encryptionRequired)
@@ -149,13 +171,13 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     fun responseEncryptionLegacyRequiredBooleanStillPublishesRequiredMetadata() {
         val properties =
             mapOf<String, Any>(
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.encryption.response.encryptionRequired" to "true",
-                "oid4vci.issuers.acme.encryption.response.algValuesSupported" to "ECDH-ES",
-                "oid4vci.issuers.acme.encryption.response.encValuesSupported" to "A256GCM",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.encryptionRequired" to "true",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.algValuesSupported" to "ECDH-ES",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.encValuesSupported" to "A256GCM",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         val encryption = assertNotNull(provider.credentialResponseEncryption)
         assertEquals(true, encryption.encryptionRequired)
@@ -165,15 +187,15 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     fun requestEncryptionDisabledModeSuppressesMetadataEvenWithKeyAndAlgorithms() {
         val properties =
             mapOf<String, Any>(
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.encryption.request.mode" to "disabled",
-                "oid4vci.issuers.acme.encryption.request.encryptionRequired" to "true",
-                "oid4vci.issuers.acme.encryption.request.decryptionKeyAlias" to "acme-request-decryption",
-                "oid4vci.issuers.acme.encryption.request.encValuesSupported" to "A256GCM",
-                "oid4vci.issuers.acme.encryption.request.zipValuesSupported" to "DEF",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.mode" to "disabled",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.encryptionRequired" to "true",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.decryptionKeyAlias" to "acme-request-decryption",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.encValuesSupported" to "A256GCM",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.zipValuesSupported" to "DEF",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         assertNull(provider.credentialRequestEncryption)
     }
@@ -182,14 +204,14 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     fun requestEncryptionSupportedModePublishesMetadataAsNotRequired() {
         val properties =
             mapOf<String, Any>(
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.encryption.request.mode" to "supported",
-                "oid4vci.issuers.acme.encryption.request.encryptionRequired" to "true",
-                "oid4vci.issuers.acme.encryption.request.decryptionKeyAlias" to "acme-request-decryption",
-                "oid4vci.issuers.acme.encryption.request.encValuesSupported" to "A256GCM",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.mode" to "supported",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.encryptionRequired" to "true",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.decryptionKeyAlias" to "acme-request-decryption",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.encValuesSupported" to "A256GCM",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         val encryption = assertNotNull(provider.credentialRequestEncryption)
         assertEquals(false, encryption.encryptionRequired)
@@ -212,20 +234,21 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
                 "oid4vci.issuer.credentials.[Mdl].format" to "mso_mdoc",
                 "oid4vci.issuer.credentials.[Mdl].doctype" to "org.iso.18013.5.1.mDL",
                 "oid4vci.issuer.credentials.[Mdl].signingKeyMode" to "did:jwk",
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.signingKeyAlias" to "issuer-signing-acme",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.signingKeyAlias" to "issuer-signing-acme",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
+        provider.prepare()
 
         assertEquals("https://acme.example.com", provider.issuerIdentifier)
-        assertNull(provider.authorizationServers)
+        assertEquals(listOf("https://as.acme.example.com"), provider.authorizationServers)
         assertEquals(emptySet(), provider.credentialConfigurations.keys)
         assertEquals(emptySet(), provider.credentialSigningConfigs().keys)
     }
 
     @Test
-    fun registryProviderFallsBackToSingularNamespaceWhenHolderEmpty() = runTest {
+    fun registryProviderRejectsMissingUuidInstanceSelector() = runTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuer.identifier" to "https://singular.example.com",
@@ -234,35 +257,33 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
                 "oid4vci.issuer.credentials.[Singular].format" to "jwt_vc_json",
                 "oid4vci.issuer.credentials.[Singular].scope" to "singular-scope",
                 // Instance config that must be ignored when the holder is empty.
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
             )
         val (provider, holder) = newRegistryProvider(properties)
         // Holder intentionally left empty (mirrors a request with no instance resolver).
         assertNull(holder.currentInstanceId())
 
-        assertEquals("https://singular.example.com", provider.issuerIdentifier)
-        assertEquals(listOf("https://as.singular.example.com"), provider.authorizationServers)
-        val configs = provider.credentialConfigurations
-        assertEquals(setOf("Singular"), configs.keys)
-        assertEquals("singular-scope", configs["Singular"]?.scope)
+        kotlin.test.assertFailsWith<IllegalArgumentException> { provider.prepare() }
     }
 
     @Test
-    fun registryProviderSwitchesNamespaceWhenHolderChangesMidSession() {
-        // The namespace supplier is evaluated per read (not cached at construction), so a holder
-        // set after construction is honoured — the session-scoped lifecycle requires this.
+    fun registryProviderRequiresSelectorAndSwitchesBetweenResolvedInstanceNamespaces() {
+        // The namespace supplier is evaluated per read so each routed request reads only its
+        // selected instance. An unresolved request must not regain the retired singular fallback.
         val properties =
             mapOf<String, Any>(
-                "oid4vci.issuer.identifier" to "https://singular.example.com",
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000032.identifier" to "https://globex.example.com",
             )
         val (provider, holder) = newRegistryProvider(properties)
 
-        assertEquals("https://singular.example.com", provider.issuerIdentifier)
-        holder.setCurrentInstanceId("acme")
+        kotlin.test.assertFailsWith<IllegalArgumentException> { provider.issuerIdentifier }
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
         assertEquals("https://acme.example.com", provider.issuerIdentifier)
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000032")
+        assertEquals("https://globex.example.com", provider.issuerIdentifier)
         holder.clearCurrentInstanceId()
-        assertEquals("https://singular.example.com", provider.issuerIdentifier)
+        kotlin.test.assertFailsWith<IllegalArgumentException> { provider.issuerIdentifier }
     }
 
     @Test
@@ -270,7 +291,7 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuer.identifier" to "https://singular.example.com",
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
             )
         val configService = TestPrincipalConfigService(properties)
         val provider = ConfigDrivenOid4vciIssuerConfigProvider(TestSessionExecution(configService))
@@ -296,19 +317,35 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     }
 
     @Test
+    fun credentialSigningConfigReadsExplicitDataIntegrityCryptosuite() = runTest {
+        val properties =
+            mapOf<String, Any>(
+                "oid4vci.issuer.credentialConfigurationIds" to "DegreeLdpVc",
+                "oid4vci.issuer.credentials.[DegreeLdpVc].format" to "ldp_vc",
+                "oid4vci.issuer.credentials.[DegreeLdpVc].dataIntegrityCryptosuite" to "eddsa-jcs-2022",
+            )
+        val provider = ConfigDrivenOid4vciIssuerConfigProvider(TestSessionExecution(TestPrincipalConfigService(properties)))
+
+        assertEquals(
+            "eddsa-jcs-2022",
+            provider.credentialSigningConfigs()["DegreeLdpVc"]?.dataIntegrityCryptosuite,
+        )
+    }
+
+    @Test
     fun credentialSigningConfigReadsDesignBoundExpirationAndFlatStatusListAlias() = runTest {
         val properties =
             mapOf<String, Any>(
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.signingKeyAlias" to "issuer-signing-acme",
-                "oid4vci.issuers.acme.credentialConfigurationIds" to "EuPid",
-                "oid4vci.issuers.acme.credentials.[EuPid].format" to "dc+sd-jwt",
-                "oid4vci.issuers.acme.credentials.[EuPid].vct" to "https://acme.example.com/public/schema/vct/EuPid",
-                "oid4vci.issuers.acme.credentials.[EuPid].expirationInDays" to "365",
-                "oid4vci.issuers.acme.credentials.[EuPid].statusListId" to "eupid-revocation",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.signingKeyAlias" to "issuer-signing-acme",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentialConfigurationIds" to "EuPid",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[EuPid].format" to "dc+sd-jwt",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[EuPid].vct" to "https://acme.example.com/public/schema/vct/EuPid",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[EuPid].expirationInDays" to "365",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[EuPid].statusListId" to "eupid-revocation",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         assertEquals(365, provider.credentialSigningConfigs()["EuPid"]?.expirationInDays)
         val binding = provider.statusListBindingFor("EuPid")
@@ -324,17 +361,17 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     fun registryProviderPublishesEncryptionMetadataFromInstanceDefaults() = runTest {
         val properties =
             mapOf<String, Any>(
-                "oid4vci.issuers.acme.encryption.response.mode" to "supported",
-                "oid4vci.issuers.acme.encryption.response.algValuesSupported" to "ECDH-ES,ECDH-ES+A128KW,ECDH-ES+A256KW",
-                "oid4vci.issuers.acme.encryption.response.encValuesSupported" to "A256GCM,A128GCM",
-                "oid4vci.issuers.acme.encryption.response.zipValuesSupported" to "DEF",
-                "oid4vci.issuers.acme.encryption.request.mode" to "supported",
-                "oid4vci.issuers.acme.encryption.request.decryptionKeyAlias" to "issuer-request-decryption-acme",
-                "oid4vci.issuers.acme.encryption.request.decryptionKmsProviderId" to "software",
-                "oid4vci.issuers.acme.encryption.request.encValuesSupported" to "A256GCM,A128GCM",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.mode" to "supported",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.algValuesSupported" to "ECDH-ES,ECDH-ES+A128KW,ECDH-ES+A256KW",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.encValuesSupported" to "A256GCM,A128GCM",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.response.zipValuesSupported" to "DEF",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.mode" to "supported",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.decryptionKeyAlias" to "issuer-request-decryption-acme",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.decryptionKmsProviderId" to "software",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.encValuesSupported" to "A256GCM,A128GCM",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         val response = assertNotNull(provider.credentialResponseEncryption)
         assertEquals(listOf("ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW"), response.algValuesSupported)
@@ -355,10 +392,10 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val properties =
             mapOf<String, Any>(
                 "oid4vci.issuer.preferredKeyStorageStatusPeriodSeconds" to "120",
-                "oid4vci.issuers.acme.preferredKeyStorageStatusPeriodSeconds" to "900",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.preferredKeyStorageStatusPeriodSeconds" to "900",
             )
         val (provider, holder) = newRegistryProvider(properties)
-        holder.setCurrentInstanceId("acme")
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
         assertEquals(900, provider.preferredKeyStorageStatusPeriodSeconds)
     }
@@ -378,13 +415,13 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         runTest {
             val properties =
                 mapOf<String, Any>(
-                    "oid4vci.issuers.acme.credentialConfigurationIds" to "AcmePid",
-                    "oid4vci.issuers.acme.credentials.[AcmePid].format" to "dc+sd-jwt",
-                    "oid4vci.issuers.acme.credentials.[AcmePid].vct" to "https://acme.example.com/vct/Pid",
-                    "oid4vci.issuers.acme.credentials.[AcmePid].display.[en-US].name" to "Acme PID",
+                    "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentialConfigurationIds" to "AcmePid",
+                    "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[AcmePid].format" to "dc+sd-jwt",
+                    "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[AcmePid].vct" to "https://acme.example.com/vct/Pid",
+                    "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[AcmePid].display.[en-US].name" to "Acme PID",
                 )
             val (provider, holder) = newRegistryProvider(properties)
-            holder.setCurrentInstanceId("acme")
+            holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
 
             val vcts = provider.listVcts()
             assertTrue("Pid" in vcts, "expected the instance-scoped VCT to be discovered, got $vcts")
@@ -396,7 +433,11 @@ class InstanceNamespaceOid4vciIssuerConfigProviderTest {
         val configService = TestPrincipalConfigService(properties)
         val execution = TestSessionExecution(configService)
         val holder = DefaultOid4vciIssuerInstanceIdProvider()
-        val provider = RegistryBackedOid4vciIssuerConfigProvider(execution = execution, instanceIdProvider = holder)
+        val provider = RegistryBackedOid4vciIssuerConfigProvider(
+            execution = execution,
+            instanceIdProvider = holder,
+            authorizationPolicyProvider = TestOid4vciAuthorizationPolicyProvider("https://as.acme.example.com"),
+        )
         return provider to holder
     }
 }

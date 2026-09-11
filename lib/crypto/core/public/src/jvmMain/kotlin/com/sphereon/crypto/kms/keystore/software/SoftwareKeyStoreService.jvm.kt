@@ -43,6 +43,7 @@ import com.sphereon.crypto.core.interop.derPrivateKeyToJwk
 import com.sphereon.crypto.core.interop.derPublicKeyToJwk
 import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
 import com.sphereon.crypto.core.interop.toEcdsaPrivateKey
+import com.sphereon.crypto.core.interop.toEdDsaPrivateKey
 import com.sphereon.crypto.core.interop.toRsaPkcs1PrivateKey
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaKeyType
@@ -104,6 +105,7 @@ actual class SoftwareKeyStoreService actual constructor(
         arrayOf(
             KeyTypeMapping.RSA,
             KeyTypeMapping.EC,
+            KeyTypeMapping.OKP,
             KeyTypeMapping.Symmetric,
         )
     actual override val signatureAlgorithmsSupported: Array<SignatureAlgorithm> =
@@ -117,6 +119,8 @@ actual class SoftwareKeyStoreService actual constructor(
             SignatureAlgorithm.RSA_SHA256,
             SignatureAlgorithm.RSA_SHA384,
             SignatureAlgorithm.RSA_SHA512,
+            SignatureAlgorithm.ED25519,
+            SignatureAlgorithm.ED448,
         )
 
     // KIWA-43: Legacy property from KeyStoreService interface - return null until interface is refactored
@@ -672,10 +676,12 @@ actual class SoftwareKeyStoreService actual constructor(
      *
      * @param alias The alias under which the certificate chain will be stored.
      * @param certificates The array of [Certificate]s representing the certificate chain.
-     * @param keyInfo The resolved key info associated with the private key; must not be null.
+     * @param keyInfo Optional key information. Existing private-key entries are resolved by alias,
+     * so callers do not need to submit private key material when attaching a certificate chain.
      *
      * @throws IllegalStateException If the keystore is in `KeyProviderAccessMode.READ` mode.
-     * @throws IllegalArgumentException If the key info is null, the certificate array is empty, or the alias does not match the key alias.
+     * @throws IllegalArgumentException If the certificate array is empty, the alias does not match
+     * the supplied key alias, or a new alias is requested without private key information.
      * @throws PKIException If storing the key or certificate chain fails.
      */
     actual override suspend fun storeCertificateChain(
@@ -684,9 +690,26 @@ actual class SoftwareKeyStoreService actual constructor(
         keyInfo: ResolvedKeyInfoType<*>?,
     ) {
         require(config.accessMode != KeyStoreAccessMode.READ.accessMode) { "Cannot store certificate chains in READ mode" }
-        require(keyInfo != null) { "Storing a certificate chain requires keyInfo" }
         require(certificates.isNotEmpty()) { "Storing a certificate chain requires certificates to be present" }
-        require(alias == keyInfo.alias) { "Alias '$alias' need to match key alias '$keyInfo.alias'" }
+        keyInfo?.let { require(alias == it.alias) { "Alias '$alias' need to match key alias '${it.alias}'" } }
+
+        maybeReloadFromDisk()
+        val ks = currentKeyStore()
+        val existingEntry = ks.getEntry(alias, passwordProtection) as? KeyStore.PrivateKeyEntry
+        if (existingEntry != null) {
+            val javaCertificates =
+                withContext(Dispatchers.Default) {
+                    certificates.map { javaX509CertificateFromDer(it.der) }.toTypedArray()
+                }
+            ks.setKeyEntry(alias, existingEntry.privateKey, password, javaCertificates)
+            invalidateCache()
+            persistDurably()
+            return
+        }
+
+        require(keyInfo != null) {
+            "Storing a certificate chain for a new alias requires keyInfo containing private key material"
+        }
 
         val (certChain, resolvedKeyInfo) =
             withContext(Dispatchers.Default) {
@@ -933,6 +956,13 @@ actual class SoftwareKeyStoreService actual constructor(
             if (ks.containsAlias(keyInfo.alias) && ks.isKeyEntry(keyInfo.alias)) {
                 return keyInfo
             }
+
+            // An explicitly supplied alias is authoritative. Do not let a caller-controlled kid
+            // redirect the lookup to a different key when that alias is stale or missing.
+            throw NotFoundException(
+                resource = "key:${keyInfo.alias}",
+                message = "Could not find key entry for alias ${keyInfo.alias}",
+            )
         }
 
         // Step 1: metadata matching via listKeys() (no key material needed)
@@ -1289,6 +1319,21 @@ actual class SoftwareKeyStoreService actual constructor(
                     // material, so the original `jwk.x5c` is always null here.
                     .withX5c(certChainOrNull)
                     .build()
+        } else if (jwk.kty == JwaKeyType.OKP && jwk.x == null && entry.certificate != null) {
+            // RFC 8410 PKCS#8 commonly carries only the EdDSA seed. Recover the
+            // public component from the storage wrapper so a cold reload returns
+            // the same complete JWK that was originally stored.
+            val pubJwk = derPublicKeyToJwk(entry.certificate.publicKey.encoded)
+            jwk =
+                Jwk
+                    .Builder()
+                    .withKty(jwk.kty)
+                    .withCrv(jwk.crv ?: pubJwk.crv)
+                    .withD(jwk.d)
+                    .withX(pubJwk.x)
+                    .withAlg(jwk.alg ?: pubJwk.alg)
+                    .withX5c(certChainOrNull)
+                    .build()
         } else if (jwk.x5c.isNullOrEmpty() && certChainOrNull != null) {
             // Same issue for non-EC and EC-with-x-already-present paths: the JWK derived
             // from the private-key DER carries no certificate chain. Consumers reading
@@ -1358,18 +1403,20 @@ actual class SoftwareKeyStoreService actual constructor(
      * keystore accepts the entry. The certificate plays no role in trust — it exists solely to satisfy
      * the keystore-storage constraint, and the original key material is preserved byte-for-byte.
      *
-     * EC and RSA private keys can be wrapped. Other key types retain the explicit storage error.
+     * EC, RSA, and EdDSA private keys can be wrapped. Other key types retain the explicit storage error.
      */
     private suspend fun selfSignedWrapperCertificate(
         keyInfo: ResolvedKeyInfoType<*>,
         alias: String,
     ): Certificate {
         val jwk =
-            (keyInfo.key as? Jwk)?.takeIf { it.kty == JwaKeyType.EC || it.kty == JwaKeyType.RSA }
+            (keyInfo.key as? Jwk)?.takeIf { it.kty == JwaKeyType.EC || it.kty == JwaKeyType.RSA || it.kty == JwaKeyType.OKP }
                 ?: throw IllegalArgumentException(
                     "Either certChain or keyInfo.x5c must be present and contain at least one certificate (no self-signed wrapper available for key type ${keyInfo.keyType})",
                 )
         if (jwk.kty == JwaKeyType.RSA) return selfSignedRsaWrapperCertificate(keyInfo, jwk, alias)
+
+        if (jwk.kty == JwaKeyType.OKP) return selfSignedOkpWrapperCertificate(keyInfo, jwk, alias)
 
         val curve =
             jwk.crv?.let { Curve.fromJose(it) }
@@ -1436,6 +1483,53 @@ actual class SoftwareKeyStoreService actual constructor(
                 signatureAlgorithm = SignatureAlgorithm.RSA_SHA256,
             )
         val signer = jwk.toRsaPkcs1PrivateKey(provider = CryptographyProvider.Default, digest = SHA256).signatureGenerator()
+        val subject = X509DistinguishedNameElements(commonName = alias)
+        val notBefore = LocalDateTimeKMP.now()
+        val notAfter =
+            LocalDateTimeKMP(
+                year = notBefore.year + 10,
+                month = notBefore.month,
+                day = notBefore.day,
+                hour = notBefore.hour,
+                minute = notBefore.minute,
+                second = notBefore.second,
+            )
+        return CertificateCreationUtils.createCertificate(
+            issuerKeyInfo = signingKeyInfo,
+            issuer = subject,
+            subjectKeyInfo = signingKeyInfo,
+            subject = subject,
+            serialNumber = 1,
+            extensions = listOf(X509CertificateExtensionSpec(STORAGE_WRAPPER_EXTENSION_OID, valueDer = STORAGE_WRAPPER_EXTENSION_VALUE)),
+            notBefore = notBefore,
+            notAfter = notAfter,
+            signatureFunction = { tbs -> signer.generateSignature(tbs) },
+        ).certificate
+    }
+
+    private suspend fun selfSignedOkpWrapperCertificate(
+        keyInfo: ResolvedKeyInfoType<*>,
+        jwk: Jwk,
+        alias: String,
+    ): Certificate {
+        val curve =
+            jwk.crv?.let { Curve.fromJose(it) }
+                ?: throw IllegalArgumentException("OKP key for alias $alias is missing 'crv'; cannot mint a self-signed wrapper certificate")
+        require(curve is Curve.Ed25519 || curve is Curve.Ed448) {
+            "OKP key for alias $alias must use Ed25519 or Ed448; got $curve"
+        }
+        val signatureAlgorithm = if (curve is Curve.Ed25519) SignatureAlgorithm.ED25519 else SignatureAlgorithm.ED448
+        val signingKeyInfo =
+            ResolvedKeyInfo(
+                key = jwk,
+                keyVisibility = KeyVisibility.PRIVATE,
+                keyType = KeyTypeMapping.OKP,
+                alias = alias,
+                providerId = config.id,
+                kid = keyInfo.kid ?: alias,
+                signatureAlgorithm = signatureAlgorithm,
+            )
+        val signer = jwk.toEdDsaPrivateKey(provider = CryptographyProvider.Default, curve = curve).signatureGenerator()
         val subject = X509DistinguishedNameElements(commonName = alias)
         val notBefore = LocalDateTimeKMP.now()
         val notAfter =

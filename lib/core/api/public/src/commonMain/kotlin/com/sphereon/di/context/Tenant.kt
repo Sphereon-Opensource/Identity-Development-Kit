@@ -87,6 +87,29 @@ interface PrincipalInputString : PrincipalInput {
     override val principal: String
 }
 
+/**
+ * A principal input that carries its own authoritative classification.
+ *
+ * [UserContextManager.createOrGetFromInputs] cannot infer a classification from
+ * an identity string, so it treats every plain [PrincipalInput] as
+ * [PrincipalType.USER]. That default is wrong for the synthetic system
+ * principals that internal dispatchers (Temporal worker, scheduler) execute
+ * commands under: the very same identity arrives back over the transport as a
+ * workload token and is classified [PrincipalType.WORKLOAD]. Both paths key the
+ * same user context by `tenant:principal`, so the second one to arrive is
+ * rejected with "Principal classification mismatch for existing context".
+ *
+ * A dispatcher that knows what it is implements this interface on its input so
+ * the internal path declares the same classification the transport will derive
+ * from the token it mints. Plain [PrincipalInput] implementations are unchanged
+ * and keep defaulting to [PrincipalType.USER].
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ClassifiedPrincipalInput", exact = true)
+interface ClassifiedPrincipalInput : PrincipalInput {
+    val principalType: PrincipalType
+}
+
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("TenantResolver", exact = true)
 interface TenantResolver : Comparable<TenantResolver> {

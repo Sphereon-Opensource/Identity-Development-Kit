@@ -33,10 +33,6 @@ replay_pid*.log
 
 # Backup files
 *.bak
-/lib/conf/theme/react/node_modules/
-/lib/ui/react/node_modules/
-/lib/conf/theme/react/dist/
-/lib/ui/react/dist/
 /examples/oid4vc/services/.env
 /examples/oid4vc/webapp/frontend/dist/
 /examples/oid4vc/webapp/frontend/node_modules/

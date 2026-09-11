@@ -306,6 +306,8 @@ data class CreateRefreshTokenArgs(
      * id_token reissue keeps the same `sid` claim and Back-Channel Logout recipient set.
      */
     val loginSessionId: String? = null,
+    /** Serialized private federation metadata; never a public token-response claim. */
+    val federationClaims: String? = null,
 )
 
 /**
@@ -570,6 +572,8 @@ data class VerifiedRefreshTokenGrant(
      * id_token's `sid` claim.
      */
     val loginSessionId: String? = null,
+    /** Private federation metadata retained from the original refresh-token row. */
+    val federationClaims: String? = null,
 )
 
 /**

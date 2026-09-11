@@ -67,7 +67,8 @@ class StaticWalletSecurityGate(
                     arguments =
                         buildMap {
                             put("operation", request.operation.name)
-                            put("operation_binding", request.operationHash ?: "operation:${request.operationId}")
+                            request.operationBinding?.takeIf { it.isNotBlank() }?.let { put("operation_binding", it) }
+                            request.operationHash?.takeIf { it.isNotBlank() }?.let { put("operationHash", it) }
                             request.walletUnitId?.let { put("wallet_unit_id", it) }
                             request.audience?.let { put("audience", it) }
                         },

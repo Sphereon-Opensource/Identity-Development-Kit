@@ -29,6 +29,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.core.api.session.asCoreApiServiceGraph
 import com.sphereon.di.session.SessionContext
@@ -168,12 +169,7 @@ class HttpCommandDiIntegrationTest {
             assertEquals("test.items.adapter", description.id)
             assertEquals("/api", description.mount.serverPrefix)
             assertEquals("/items", description.mount.adapterBasePath)
-            assertEquals(3, description.endpoints.size)
-
-            // Verify endpoints have full paths (adapter base path prepended)
-            val paths = description.endpoints.map { it.pathPattern }.toSet()
-            assertTrue(paths.contains("/items/{id}"))
-            assertTrue(paths.contains("/items/"))
+            assertTrue(description.endpoints.isEmpty())
 
             app.destroy()
         }
@@ -193,23 +189,35 @@ class HttpCommandDiIntegrationTest {
             val adapter = TestItemsHttpAdapter(execution)
 
             // Test GET /items/42
-            val getResponse = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
+            val getResponse =
+                adapter.dispatchSelected(
+                    GenericHttpRequest(method = "GET", path = "/items/42"),
+                    handlerCommandId = "test.items.get",
+                    matchedPathPattern = "/items/{id}",
+                )
             assertEquals(200, getResponse.statusCode)
             assertTrue(getResponse.body?.contains("42") == true)
 
             // Test POST /items/
             val postResponse =
-                adapter.handleRequest(
+                adapter.dispatchSelected(
                     GenericHttpRequest(
                         method = "POST",
                         path = "/items/",
                         bodyContent = GenericHttpBody.Text("""{"name":"test"}"""),
                     ),
+                    handlerCommandId = "test.items.create",
+                    matchedPathPattern = "/items",
                 )
             assertEquals(201, postResponse.statusCode)
 
             // Test DELETE /items/42
-            val deleteResponse = adapter.handleRequest(GenericHttpRequest(method = "DELETE", path = "/items/42"))
+            val deleteResponse =
+                adapter.dispatchSelected(
+                    GenericHttpRequest(method = "DELETE", path = "/items/42"),
+                    handlerCommandId = "test.items.delete",
+                    matchedPathPattern = "/items/{id}",
+                )
             assertEquals(204, deleteResponse.statusCode)
 
             app.destroy()
@@ -232,8 +240,7 @@ class HttpCommandDiIntegrationTest {
             // When the request doesn't match any endpoint, the adapter's supports() returns false
             // and execute() returns COMMAND_ARG_NOT_SUPPORTED_ERROR, which gets mapped to 500.
             // This is different from the mock adapter behavior which returned 404 from doExecute.
-            val response = adapter.handleRequest(GenericHttpRequest(method = "PATCH", path = "/items/42"))
-            assertTrue(response.statusCode >= 400, "Unmatched requests should return an error status code")
+            assertFalse(adapter.supports(GenericHttpRequest(method = "PATCH", path = "/items/42")))
 
             app.destroy()
         }
@@ -254,35 +261,23 @@ class HttpCommandDiIntegrationTest {
             val adapter = TestItemsHttpAdapter(execution)
 
             // Should support matching requests
-            assertTrue(adapter.supports(GenericHttpRequest(method = "GET", path = "/items/1")))
-            assertTrue(adapter.supports(GenericHttpRequest(method = "POST", path = "/items/")))
+            assertTrue(
+                adapter.supportsSelected(
+                    GenericHttpRequest(method = "GET", path = "/items/1"),
+                    "test.items.get",
+                    "/items/{id}",
+                ),
+            )
+            assertTrue(
+                adapter.supportsSelected(
+                    GenericHttpRequest(method = "POST", path = "/items/"),
+                    "test.items.create",
+                    "/items/",
+                ),
+            )
 
             // Should not support non-request args
             assertFalse(adapter.supports("not a request"))
-
-            app.destroy()
-        }
-
-    @Test
-    fun commandBackedHttpAdapterCanHandleMethod() =
-        runTest {
-            val testScope = TestScope()
-            val app = createCoreApiTestAppGraph(testScope)
-
-            val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
-
-            val coreApiGraph = session.asCoreApiServiceGraph()
-            val execution = coreApiGraph.serviceExecution
-
-            val adapter = TestItemsHttpAdapter(execution)
-
-            // canHandle checks if the adapter's base path matches
-            assertTrue(adapter.canHandle(GenericHttpRequest(method = "GET", path = "/items/1")))
-            assertTrue(adapter.canHandle(GenericHttpRequest(method = "POST", path = "/items/")))
-
-            // Should not handle paths outside base path
-            assertFalse(adapter.canHandle(GenericHttpRequest(method = "GET", path = "/users/1")))
 
             app.destroy()
         }
@@ -302,7 +297,12 @@ class HttpCommandDiIntegrationTest {
             val adapter = TestErrorHttpAdapter(execution)
 
             // The error endpoint returns an IdkError
-            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/error/test"))
+            val response =
+                adapter.dispatchSelected(
+                    GenericHttpRequest(method = "GET", path = "/error/test"),
+                    "test.errors.raise",
+                    "/error/{id}",
+                )
             assertEquals(400, response.statusCode)
 
             app.destroy()
@@ -322,17 +322,32 @@ class HttpCommandDiIntegrationTest {
 
             // Test NOT_FOUND error
             val notFoundAdapter = TestErrorHttpAdapter(execution, "NOT_FOUND_ERROR")
-            val notFoundResponse = notFoundAdapter.handleRequest(GenericHttpRequest(method = "GET", path = "/error/test"))
+            val notFoundResponse =
+                notFoundAdapter.dispatchSelected(
+                    GenericHttpRequest(method = "GET", path = "/error/test"),
+                    "test.errors.raise",
+                    "/error/{id}",
+                )
             assertEquals(404, notFoundResponse.statusCode)
 
             // Test UNAUTHORIZED error
             val unauthorizedAdapter = TestErrorHttpAdapter(execution, "UNAUTHORIZED_ERROR")
-            val unauthorizedResponse = unauthorizedAdapter.handleRequest(GenericHttpRequest(method = "GET", path = "/error/test"))
+            val unauthorizedResponse =
+                unauthorizedAdapter.dispatchSelected(
+                    GenericHttpRequest(method = "GET", path = "/error/test"),
+                    "test.errors.raise",
+                    "/error/{id}",
+                )
             assertEquals(401, unauthorizedResponse.statusCode)
 
             // Test FORBIDDEN error
             val forbiddenAdapter = TestErrorHttpAdapter(execution, "FORBIDDEN_ERROR")
-            val forbiddenResponse = forbiddenAdapter.handleRequest(GenericHttpRequest(method = "GET", path = "/error/test"))
+            val forbiddenResponse =
+                forbiddenAdapter.dispatchSelected(
+                    GenericHttpRequest(method = "GET", path = "/error/test"),
+                    "test.errors.raise",
+                    "/error/{id}",
+                )
             assertEquals(403, forbiddenResponse.statusCode)
 
             app.destroy()
@@ -355,26 +370,6 @@ class HttpCommandDiIntegrationTest {
 
             // Disabled adapter should not support any requests
             assertFalse(adapter.supports(GenericHttpRequest(method = "GET", path = "/items/1")))
-
-            app.destroy()
-        }
-
-    @Test
-    fun adapterWithNoBasePathMatchesFirstSegment() =
-        runTest {
-            val testScope = TestScope()
-            val app = createCoreApiTestAppGraph(testScope)
-
-            val userContext = app.userContextManager.getAnonymous()
-            val session = userContext.sessionContextManager.createOrGetFromId("test-session", principalType = com.sphereon.di.context.PrincipalType.USER)
-
-            val coreApiGraph = session.asCoreApiServiceGraph()
-            val execution = coreApiGraph.serviceExecution
-
-            val adapter = TestNoBasePathHttpAdapter(execution)
-
-            // With no base path, canHandle uses first segment heuristic
-            assertTrue(adapter.canHandle(GenericHttpRequest(method = "GET", path = "/resource/1")))
 
             app.destroy()
         }
@@ -412,68 +407,13 @@ class HttpCommandDiIntegrationTest {
      */
     private class TestItemsHttpAdapter(
         execution: SessionExecution,
+        endpoints: List<HttpEndpointCommand> = createItemsEndpoints(execution),
     ) : CommandBackedHttpAdapter(
             id = "test.items.adapter",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
-        ) {
-        override val endpointCommands: List<HttpEndpointCommand> by lazy {
-            listOf(
-                object : HttpEndpointCommandAdapter(
-                    id = "test.items.get",
-                    execution = execution,
-                    endpoint =
-                        HttpEndpointDescriptor(
-                            method = HttpMethod.GET,
-                            pathPattern = "/{id}",
-                            produces = setOf(MediaType.ApplicationJson),
-                            operationId = "getItem",
-                        ),
-                ) {
-                    override suspend fun doExecute(
-                        args: GenericHttpRequest,
-                        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
-                    ): IdkResult<GenericHttpResponse, IdkError> {
-                        val request = applyDuring(args)
-                        val id = request.withExtractedParams("/{id}").pathParams["id"]
-                        return Ok(jsonResponse(200, """{"item":"$id"}"""))
-                    }
-                },
-                object : HttpEndpointCommandAdapter(
-                    id = "test.items.create",
-                    execution = execution,
-                    endpoint =
-                        HttpEndpointDescriptor(
-                            method = HttpMethod.POST,
-                            pathPattern = "/",
-                            consumes = setOf(MediaType.ApplicationJson),
-                            produces = setOf(MediaType.ApplicationJson),
-                            operationId = "createItem",
-                        ),
-                ) {
-                    override suspend fun doExecute(
-                        args: GenericHttpRequest,
-                        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
-                    ): IdkResult<GenericHttpResponse, IdkError> = Ok(GenericHttpResponse(statusCode = 201, body = """{"created":true}"""))
-                },
-                object : HttpEndpointCommandAdapter(
-                    id = "test.items.delete",
-                    execution = execution,
-                    endpoint =
-                        HttpEndpointDescriptor(
-                            method = HttpMethod.DELETE,
-                            pathPattern = "/{id}",
-                            operationId = "deleteItem",
-                        ),
-                ) {
-                    override suspend fun doExecute(
-                        args: GenericHttpRequest,
-                        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
-                    ): IdkResult<GenericHttpResponse, IdkError> = Ok(GenericHttpResponse(statusCode = 204))
-                },
-            )
-        }
-    }
+            endpointCommandRegistry = FixedEndpointRegistry(endpoints),
+        )
 
     /**
      * Test adapter that returns errors with specific error codes.
@@ -481,40 +421,13 @@ class HttpCommandDiIntegrationTest {
     private class TestErrorHttpAdapter(
         execution: SessionExecution,
         private val errorCode: String = "ILLEGAL_ARGUMENT_ERROR",
+        endpoint: HttpEndpointCommand = createErrorEndpoint(execution, errorCode),
     ) : CommandBackedHttpAdapter(
             id = "test.errors.adapter",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/error"),
-        ) {
-        override val endpointCommands: List<HttpEndpointCommand> by lazy {
-            listOf(
-                object : HttpEndpointCommandAdapter(
-                    id = "test.errors.raise",
-                    execution = execution,
-                    endpoint =
-                        HttpEndpointDescriptor(
-                            method = HttpMethod.GET,
-                            pathPattern = "/{id}",
-                            operationId = "getError",
-                        ),
-                ) {
-                    override suspend fun doExecute(
-                        args: GenericHttpRequest,
-                        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
-                    ): IdkResult<GenericHttpResponse, IdkError> {
-                        val error =
-                            when (errorCode) {
-                                "NOT_FOUND_ERROR" -> IdkError.NOT_FOUND_ERROR(message = "Test error")
-                                "UNAUTHORIZED_ERROR" -> IdkError.UNAUTHORIZED_ERROR(message = "Test error")
-                                "FORBIDDEN_ERROR" -> IdkError.FORBIDDEN_ERROR(message = "Test error")
-                                else -> IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Test error")
-                            }
-                        return Err(error)
-                    }
-                },
-            )
-        }
-    }
+            endpointCommandRegistry = FixedEndpointRegistry(listOf(endpoint)),
+        )
 
     /**
      * Test disabled adapter.
@@ -526,38 +439,142 @@ class HttpCommandDiIntegrationTest {
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
             isEnabled = false,
-        ) {
-        override val endpointCommands: List<HttpEndpointCommand> = emptyList()
-    }
+            endpointCommandRegistry = FixedEndpointRegistry(emptyList()),
+        )
 
     /**
      * Test adapter with no base path (empty string).
      */
     private class TestNoBasePathHttpAdapter(
         execution: SessionExecution,
+        endpoint: HttpEndpointCommand = createResourceEndpoint(execution),
     ) : CommandBackedHttpAdapter(
             id = "test.resources.adapter",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = ""),
+            endpointCommandRegistry = FixedEndpointRegistry(listOf(endpoint)),
+        )
+}
+
+private class FixedEndpointRegistry(
+    endpoints: List<HttpEndpointCommand>,
+) : HttpEndpointCommandRegistry {
+    private val endpointsById = endpoints.associateBy(HttpEndpointCommand::id)
+
+    override fun get(handlerCommandId: String): HttpEndpointCommand? = endpointsById[handlerCommandId]
+
+    override fun listHandlerCommandIds(): Set<String> = endpointsById.keys
+}
+
+private suspend fun CommandBackedHttpAdapter.dispatchSelected(
+    request: GenericHttpRequest,
+    handlerCommandId: String,
+    matchedPathPattern: String,
+): GenericHttpResponse = handleResolvedRequest(request, selectedRoute(request, handlerCommandId, matchedPathPattern))
+
+private suspend fun CommandBackedHttpAdapter.supportsSelected(
+    request: GenericHttpRequest,
+    handlerCommandId: String,
+    matchedPathPattern: String,
+): Boolean = supports(ResolvedHttpRequest(request, selectedRoute(request, handlerCommandId, matchedPathPattern)))
+
+private fun CommandBackedHttpAdapter.selectedRoute(
+    request: GenericHttpRequest,
+    handlerCommandId: String,
+    matchedPathPattern: String,
+): HttpAdapterRouteMatch =
+    HttpAdapterRouteMatch(
+        adapterId = id,
+        method = request.method,
+        originalPath = request.path,
+        normalizedPath = request.path,
+        matchedPathPattern = matchedPathPattern,
+        handlerCommandId = handlerCommandId,
+        tenantIdFromPath = null,
+    )
+
+private fun createItemsEndpoints(execution: SessionExecution): List<HttpEndpointCommand> =
+    listOf(
+        object : HttpEndpointCommandAdapter(
+            id = "test.items.get",
+            execution = execution,
+            endpoint =
+                HttpEndpointDescriptor(
+                    method = HttpMethod.GET,
+                    pathPattern = "/{id}",
+                    produces = setOf(MediaType.ApplicationJson),
+                    operationId = "getItem",
+                ),
         ) {
-        override val endpointCommands: List<HttpEndpointCommand> by lazy {
-            listOf(
-                object : HttpEndpointCommandAdapter(
-                    id = "test.resource.get",
-                    execution = execution,
-                    endpoint =
-                        HttpEndpointDescriptor(
-                            method = HttpMethod.GET,
-                            pathPattern = "/resource/{id}",
-                            operationId = "getResource",
-                        ),
-                ) {
-                    override suspend fun doExecute(
-                        args: GenericHttpRequest,
-                        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
-                    ): IdkResult<GenericHttpResponse, IdkError> = Ok(GenericHttpResponse(statusCode = 200, body = "OK"))
+            override suspend fun doExecute(
+                args: GenericHttpRequest,
+                applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+            ): IdkResult<GenericHttpResponse, IdkError> {
+                val request = applyDuring(args)
+                val id = request.withExtractedParams("/{id}").pathParams["id"]
+                return Ok(jsonResponse(200, """{"item":"$id"}"""))
+            }
+        },
+        object : HttpEndpointCommandAdapter(
+            id = "test.items.create",
+            execution = execution,
+            endpoint =
+                HttpEndpointDescriptor(
+                    method = HttpMethod.POST,
+                    pathPattern = "/",
+                    consumes = setOf(MediaType.ApplicationJson),
+                    produces = setOf(MediaType.ApplicationJson),
+                    operationId = "createItem",
+                ),
+        ) {
+            override suspend fun doExecute(
+                args: GenericHttpRequest,
+                applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+            ): IdkResult<GenericHttpResponse, IdkError> = Ok(GenericHttpResponse(statusCode = 201, body = """{"created":true}"""))
+        },
+        object : HttpEndpointCommandAdapter(
+            id = "test.items.delete",
+            execution = execution,
+            endpoint = HttpEndpointDescriptor(HttpMethod.DELETE, "/{id}", operationId = "deleteItem"),
+        ) {
+            override suspend fun doExecute(
+                args: GenericHttpRequest,
+                applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+            ): IdkResult<GenericHttpResponse, IdkError> = Ok(GenericHttpResponse(statusCode = 204))
+        },
+    )
+
+private fun createErrorEndpoint(
+    execution: SessionExecution,
+    errorCode: String,
+): HttpEndpointCommand =
+    object : HttpEndpointCommandAdapter(
+        id = "test.errors.raise",
+        execution = execution,
+        endpoint = HttpEndpointDescriptor(HttpMethod.GET, "/{id}", operationId = "getError"),
+    ) {
+        override suspend fun doExecute(
+            args: GenericHttpRequest,
+            applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+        ): IdkResult<GenericHttpResponse, IdkError> =
+            Err(
+                when (errorCode) {
+                    "NOT_FOUND_ERROR" -> IdkError.NOT_FOUND_ERROR(message = "Test error")
+                    "UNAUTHORIZED_ERROR" -> IdkError.UNAUTHORIZED_ERROR(message = "Test error")
+                    "FORBIDDEN_ERROR" -> IdkError.FORBIDDEN_ERROR(message = "Test error")
+                    else -> IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Test error")
                 },
             )
-        }
     }
-}
+
+private fun createResourceEndpoint(execution: SessionExecution): HttpEndpointCommand =
+    object : HttpEndpointCommandAdapter(
+        id = "test.resource.get",
+        execution = execution,
+        endpoint = HttpEndpointDescriptor(HttpMethod.GET, "/resource/{id}", operationId = "getResource"),
+    ) {
+        override suspend fun doExecute(
+            args: GenericHttpRequest,
+            applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+        ): IdkResult<GenericHttpResponse, IdkError> = Ok(GenericHttpResponse(statusCode = 200, body = "OK"))
+    }

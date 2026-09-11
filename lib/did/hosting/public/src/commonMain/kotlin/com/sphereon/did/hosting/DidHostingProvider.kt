@@ -53,6 +53,16 @@ interface DidHostingProvider {
     val method: String
 
     /**
+     * Authority precedence when multiple providers can host the same web location.
+     *
+     * Persisted tenant DID state must win over a service-local document synthesized from runtime
+     * configuration. The default keeps existing providers as fallbacks while an authoritative
+     * repository-backed provider can opt into a higher value.
+     */
+    val authorityPriority: Int
+        get() = 0
+
+    /**
      * Resolves the `did.json` for [webLocation] within [tenantId], or `Ok(null)` if this provider
      * does not manage that location. [webLocation] is the normalised did:web method-specific id
      * shared by web and webvh (see [com.sphereon.did.utils.WebLocation]). A storage/translation

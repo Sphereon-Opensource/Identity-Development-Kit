@@ -86,6 +86,21 @@ done
 APP_BASE_NAME=${0##*/}
 APP_HOME=$( cd "${APP_HOME:-./}" && pwd -P ) || exit
 
+# Local coordinator policy; clean CI/other checkouts need no Python.
+vdx_coordinator_root="$APP_HOME/../../.."
+if [ -f "$vdx_coordinator_root/.vdx-build-required.json" ] || [ -n "${VDX_BUILD_STATE:-}" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        vdx_coordinator_python=python3
+    elif command -v python >/dev/null 2>&1; then
+        vdx_coordinator_python=python
+    else
+        echo "This checkout requires vdx-build and Python 3.11 or newer." >&2
+        exit 1
+    fi
+    "$vdx_coordinator_python" "$vdx_coordinator_root/tooling/build-coordinator/cli.py" guard --root "$APP_HOME" || exit $?
+fi
+
+
 # Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
 

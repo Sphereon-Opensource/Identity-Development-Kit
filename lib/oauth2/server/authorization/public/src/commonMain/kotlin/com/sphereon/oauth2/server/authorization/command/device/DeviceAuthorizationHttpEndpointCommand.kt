@@ -42,6 +42,7 @@ interface DeviceAuthorizationHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "deviceAuthorization",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("device"),
                 summary = "RFC 8628 OAuth 2.0 Device Authorization Endpoint",
             )

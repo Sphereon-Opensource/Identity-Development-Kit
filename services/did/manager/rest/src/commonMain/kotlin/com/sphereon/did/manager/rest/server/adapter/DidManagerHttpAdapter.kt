@@ -13,6 +13,11 @@ package com.sphereon.did.manager.rest.server.adapter
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
+import com.sphereon.core.api.http.dispatch.HttpAdapterCatalog
+import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelector
+import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
@@ -23,16 +28,11 @@ import dev.zacsweers.metro.SingleIn
  * ([DidLifecycleHttpAdapter], [VerificationMethodHttpAdapter], …).
  *
  * Each sub-adapter is its own first-class `HttpAdapter` and is auto-discovered by the
- * HTTP host through the `SessionScope` `Set<HttpAdapter>` multibinding — this class is
- * **not** an `HttpAdapter` itself and does not contribute to that set. Its role is to
- * give tests (and any in-process caller that just wants to dispatch a single request
- * against the DID-manager surface) a single injectable entry point that fans out to the
- * matching sub-adapter via [GenericHttpRequest]-based routing.
+ * HTTP host through a keyed lazy SessionScope map. This class is not an `HttpAdapter`; it gives
+ * tests and in-process callers a facade over AppScope route selection plus resolved dispatch.
  *
- * [handleRequest] inspects the request against each sub-adapter's `supports(...)`
- * predicate (path + method match) and delegates to the first one that claims it; if
- * nothing matches, it falls back to invoking the lifecycle adapter so the standard
- * 404/405 error renderer produces a deterministic response.
+ * [handleRequest] resolves only the selected sub-adapter and returns 404 when the selected route
+ * does not belong to the DID-manager surface.
  *
  * ### Tenant and principal resolution
  *
@@ -43,31 +43,10 @@ import dev.zacsweers.metro.SingleIn
 @Inject
 @SingleIn(SessionScope::class)
 class DidManagerHttpAdapter(
-    private val didLifecycle: DidLifecycleHttpAdapter,
-    private val verificationMethod: VerificationMethodHttpAdapter,
-    private val verificationRelationship: VerificationRelationshipHttpAdapter,
-    private val didService: DidServiceHttpAdapter,
-    private val keyMapping: KeyMappingHttpAdapter,
-    private val controller: ControllerHttpAdapter,
-    private val alsoKnownAs: AlsoKnownAsHttpAdapter,
-    private val equivalentId: EquivalentIdHttpAdapter,
-    private val documentCache: DocumentCacheHttpAdapter,
-    private val capability: CapabilityHttpAdapter,
+    private val catalog: HttpAdapterCatalog,
+    private val routeSelector: HttpAdapterRouteSelector,
+    private val dispatcher: HttpAdapterDispatcher,
 ) {
-    private val subAdapters =
-        listOf(
-            didLifecycle,
-            verificationMethod,
-            verificationRelationship,
-            didService,
-            keyMapping,
-            controller,
-            alsoKnownAs,
-            equivalentId,
-            documentCache,
-            capability,
-        )
-
     /**
      * Aggregated descriptors from every sub-adapter. Each sub-adapter's [describe]
      * prepends the adapter's `adapterBasePath` to every endpoint's `pathPattern`
@@ -76,20 +55,43 @@ class DidManagerHttpAdapter(
      * catalog and dispatcher route against.
      */
     val endpointDescriptors: List<HttpEndpointDescriptor>
-        get() = subAdapters.flatMap { it.describe().endpoints }
+        get() = catalog.descriptions.filter { it.id in ADAPTER_IDS }.flatMap { it.endpoints }
 
     /**
-     * Dispatch a request to the sub-adapter that supports it. Falls back to the
-     * lifecycle adapter for unmatched requests so the standard error renderer
-     * produces a 404/405 response with the expected shape.
+     * Dispatch a request only when the selected adapter belongs to this DID-manager surface.
      */
-    suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
-        val target = subAdapters.firstOrNull { it.supports(request) } ?: didLifecycle
-        return target.handleRequest(request)
-    }
+    suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse =
+        when (val selection = routeSelector.select(request.method, request.path)) {
+            is HttpAdapterRouteSelection.Selected ->
+                if (selection.match.adapterId in ADAPTER_IDS) {
+                    dispatcher.dispatch(request, selection.match)
+                } else {
+                    errorResponse(404, "Not found")
+                }
+            is HttpAdapterRouteSelection.NotFound -> errorResponse(404, "Not found")
+            is HttpAdapterRouteSelection.Ambiguous,
+            is HttpAdapterRouteSelection.Misconfigured,
+            -> errorResponse(500, "Internal server error")
+        }
 
     @ContributesTo(SessionScope::class)
     interface Graph {
         val didManagerHttpAdapter: DidManagerHttpAdapter
+    }
+
+    private companion object {
+        val ADAPTER_IDS =
+            setOf(
+                DidLifecycleHttpAdapter.ID,
+                VerificationMethodHttpAdapter.ID,
+                VerificationRelationshipHttpAdapter.ID,
+                DidServiceHttpAdapter.ID,
+                KeyMappingHttpAdapter.ID,
+                ControllerHttpAdapter.ID,
+                AlsoKnownAsHttpAdapter.ID,
+                EquivalentIdHttpAdapter.ID,
+                DocumentCacheHttpAdapter.ID,
+                CapabilityHttpAdapter.ID,
+            )
     }
 }

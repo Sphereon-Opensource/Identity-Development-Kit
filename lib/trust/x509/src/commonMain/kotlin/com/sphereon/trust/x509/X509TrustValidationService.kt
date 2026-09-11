@@ -20,6 +20,8 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.trust.core.TrustValidationService
 import com.sphereon.trust.core.config.TrustConfigProvider
 import com.sphereon.trust.core.model.TrustAnchor
+import com.sphereon.trust.core.model.TrustChain
+import com.sphereon.trust.core.model.TrustChainLinks
 import com.sphereon.trust.core.model.TrustChainNodeRole
 import com.sphereon.trust.core.model.TrustContext
 import com.sphereon.trust.core.model.TrustStatus
@@ -61,7 +63,7 @@ class X509TrustValidationService(
 ) : AbstractTrustValidationService("x509", setOf(TrustContext.TYPE_X509, TrustContext.TYPE_CA_BUNDLE)) {
     private val logger = execution.log.logManager.withTag("X509TrustValidationService")
 
-    override suspend fun validate(request: TrustValidationRequest): TrustValidationResult {
+    override suspend fun doValidate(request: TrustValidationRequest): TrustValidationResult {
         logger.debug("Validating X.509 trust for context: ${request.context}")
 
         return try {
@@ -90,14 +92,10 @@ class X509TrustValidationService(
                     ?: trustAnchorLoader.loadTrustedCerts()
 
             val verificationRequest =
-                if (trustedCerts.isNotEmpty()) {
-                    X509VerificationRequest(
-                        chainPEM = x5c,
-                        trustedCerts = trustedCerts.toTypedArray(),
-                    )
-                } else {
-                    X509VerificationRequest(chainPEM = x5c)
-                }
+                verificationRequestFor(
+                    x5c = x5c,
+                    trustedCerts = trustedCerts,
+                )
 
             val chainResult = x509VerifyService.verifyCertificateChain(verificationRequest)
 
@@ -107,6 +105,7 @@ class X509TrustValidationService(
                     status = TrustStatus.UNTRUSTED,
                     details = chainResult.message ?: "Certificate chain is not valid",
                     validatedAt = Clock.System.now(),
+                    trustChain = x509TrustChain(x5c, TrustChainLinks.BROKEN),
                 )
             }
 
@@ -133,6 +132,7 @@ class X509TrustValidationService(
                     status = TrustStatus.TRUSTED,
                     details = "Certificate chain validated successfully",
                     validatedAt = Clock.System.now(),
+                    trustChain = x509TrustChain(x5c, TrustChainLinks.VERIFIED),
                 )
             enrichWithX509EntityInfo(result, request, x5c)
         } catch (expected: Exception) {
@@ -146,7 +146,39 @@ class X509TrustValidationService(
         }
     }
 
-    override suspend fun getTrustAnchors(): List<TrustAnchor> = emptyList()
+    override suspend fun doGetTrustAnchors(): List<TrustAnchor> = emptyList()
+
+    /**
+     * JOSE/COSE x5c values are base64-encoded DER certificates, while older callers of this
+     * generic trust service also supplied PEM. Passing DER x5c as `chainPEM` makes valid mdoc and
+     * JWT credentials fail before path validation. Preserve PEM compatibility, but use the typed
+     * DER request whenever the whole chain is an x5c-style base64 chain.
+     */
+    private fun verificationRequestFor(
+        x5c: Array<String>,
+        trustedCerts: List<String>,
+    ): X509VerificationRequest {
+        val trusted = trustedCerts.takeIf { it.isNotEmpty() }?.toTypedArray()
+        val derChain =
+            x5c.takeUnless { values -> values.any { it.contains("BEGIN CERTIFICATE") } }
+                ?.map { value ->
+                    runCatching { value.decodeFrom(Encoding.BASE64) }.getOrNull()
+                }
+                ?.takeIf { values -> values.all { it != null && it.isNotEmpty() } }
+                ?.mapNotNull { it }
+                ?.toTypedArray()
+        return if (derChain != null) {
+            X509VerificationRequest(
+                chainDER = derChain,
+                trustedCerts = trusted,
+            )
+        } else {
+            X509VerificationRequest(
+                chainPEM = x5c,
+                trustedCerts = trusted,
+            )
+        }
+    }
 
     /**
      * Checks if a certificate's fingerprint matches any of the trusted fingerprints.
@@ -259,6 +291,22 @@ class X509TrustValidationService(
                 }
             }
         return result.copy(discoveredEntities = entities)
+    }
+
+    private fun x509TrustChain(
+        x5c: Array<String>,
+        links: TrustChainLinks,
+    ): TrustChain? {
+        if (x5c.isEmpty()) return null
+        val subjects =
+            x5c.map { pem ->
+                runCatching {
+                    val der = pem.decodeFrom(Encoding.BASE64)
+                    certificateFromDer(der).subjectDN.takeIf { it.isNotBlank() }
+                }.getOrNull()
+            }
+        if (subjects.any { it == null }) return null
+        return TrustChain.fromOrderedIdentifiers(subjects.filterNotNull(), links)
     }
 
     private companion object {

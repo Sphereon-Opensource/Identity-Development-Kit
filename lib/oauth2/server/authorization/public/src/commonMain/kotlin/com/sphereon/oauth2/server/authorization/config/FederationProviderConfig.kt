@@ -39,7 +39,6 @@ data class FederationProviderConfig(
     val name: String,
     val issuerUrl: String,
     val clientId: String,
-    val clientSecret: String? = null,
     val scopes: List<String> = listOf("openid", "profile", "email"),
     val identifierClaimName: String = "sub",
     val enabled: Boolean = true,

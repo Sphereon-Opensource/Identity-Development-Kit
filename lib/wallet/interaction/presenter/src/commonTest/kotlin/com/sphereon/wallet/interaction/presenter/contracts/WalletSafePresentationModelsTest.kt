@@ -14,6 +14,10 @@ import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
+import com.sphereon.wallet.interaction.WalletTrustChain
+import com.sphereon.wallet.interaction.WalletTrustChainHop
+import com.sphereon.wallet.interaction.WalletTrustChainHopPosition
+import com.sphereon.wallet.interaction.WalletTrustChainLinks
 import com.sphereon.wallet.interaction.WalletTrustSource
 import com.sphereon.wallet.interaction.WalletTrustSourceType
 import com.sphereon.wallet.interaction.WalletTrustStatus
@@ -23,6 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 
 class WalletSafePresentationModelsTest {
     @Test
@@ -56,6 +61,43 @@ class WalletSafePresentationModelsTest {
             )
 
         assertFailsWith<IllegalArgumentException> { WalletScreenModelMapper.map(state) }
+    }
+
+    @Test
+    fun mapperPreservesTheResolvedTrustChainInLeafToAnchorOrder() {
+        val party = WalletCounterpartySummary(WalletCounterpartyRole.VERIFIER, "https://verifier.example")
+        val state =
+            WalletInteractionState(
+                sessionId = WalletInteractionSessionId("session-chain"),
+                walletUnitId = "wallet-unit-1",
+                status = WalletInteractionStatus.TrustReview,
+                counterparty = party,
+                trust =
+                    WalletCounterpartyTrustSummary(
+                        counterparty = party,
+                        status = WalletTrustStatus.TRUSTED,
+                        policyAction = WalletTrustPolicyAction.ALLOW,
+                        sources = listOf(WalletTrustSource(WalletTrustSourceType.OPENID_FEDERATION, "federation")),
+                        trustChain =
+                            WalletTrustChain(
+                                links = WalletTrustChainLinks.VERIFIED,
+                                hops =
+                                    listOf(
+                                        WalletTrustChainHop("https://verifier.example", WalletTrustChainHopPosition.LEAF),
+                                        WalletTrustChainHop("https://federation.example", WalletTrustChainHopPosition.INTERMEDIATE),
+                                        WalletTrustChainHop("https://anchor.example", WalletTrustChainHopPosition.ANCHOR),
+                                    ),
+                            ),
+                    ),
+            )
+
+        val projection = assertIs<WalletInteractionScreenProjection.PartyReview>(WalletScreenModelMapper.map(state).projection)
+
+        assertEquals(
+            listOf("https://verifier.example", "https://federation.example", "https://anchor.example"),
+            projection.trust.chain?.hops?.map { it.identifier },
+        )
+        assertEquals(WalletTrustChainLinksPresentation.VERIFIED, projection.trust.chain?.links)
     }
 
     @Test

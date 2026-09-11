@@ -27,6 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -97,6 +98,29 @@ class CommandLifecycleCoroutineContextTest {
             )
 
         assertEquals("ok", command.execute(Unit).value)
+    }
+
+    @Test
+    fun lifecycleDurationIsNonNegativeMonotonicMilliseconds() = runTest {
+        var observedDurationMs: Long? = null
+        val interceptor =
+            object : CommandLifecycleInterceptor {
+                override val name: String = "duration"
+
+                override suspend fun afterExecute(
+                    context: CommandExecutionContext,
+                    args: Any,
+                    result: IdkResult<Any, com.sphereon.core.api.error.IdkErrorType>?,
+                    denied: InterceptorVerdict.Deny?,
+                    durationMs: Long,
+                ) {
+                    observedDurationMs = durationMs
+                }
+            }
+        val command = ContextAwareCommand(interceptorChain = chainOf(interceptor))
+
+        assertEquals("ok", command.execute(Unit).value)
+        assertTrue(assertNotNull(observedDurationMs) >= 0L)
     }
 
     @Test

@@ -98,7 +98,7 @@ fun OAuth2ServerTestContext.newBuildServerMetadataCommand(configProvider: OAuth2
         configProvider = configProvider,
         signingIdentifierResolver = fixedSigningIdentifierResolver(),
         identifierService = this.identifierService,
-        grantHandlers = emptySet(),
+            grantHandlers = emptyMap(),
         kmsProviderRegistry = this.kmsProviderRegistry,
         // Discovery tests don't exercise signed_metadata; the stub returns Err so a
         // test that accidentally enables signed_metadata + serverIdentifier=null gets

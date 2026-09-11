@@ -33,6 +33,17 @@ set APP_HOME=%DIRNAME%
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
+@rem Local coordinator policy; clean CI/other checkouts need no Python.
+set "VDX_COORDINATOR_ROOT=%APP_HOME%\..\..\.."
+if defined VDX_BUILD_STATE goto vdxCoordinatorGuard
+if exist "%VDX_COORDINATOR_ROOT%\.vdx-build-required.json" goto vdxCoordinatorGuard
+goto vdxCoordinatorReady
+:vdxCoordinatorGuard
+python "%VDX_COORDINATOR_ROOT%\tooling\build-coordinator\cli.py" guard --root "%APP_HOME%\."
+if errorlevel 1 exit /b 1
+:vdxCoordinatorReady
+
+
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
 

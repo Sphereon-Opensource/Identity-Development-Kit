@@ -32,6 +32,8 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestUriHandler
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
@@ -62,6 +64,7 @@ interface PostRequestObjectEndpointCommand : HttpEndpointCommand {
                 consumes = setOf(MediaType.ApplicationFormUrlEncoded),
                 produces = setOf(MediaType.Custom("application/oauth-authz-req+jwt")),
                 operationId = "postRequestObjectByRequestUri",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp", "request-uri"),
                 summary = "Fetch OID4VP request object by request_uri with wallet metadata",
             )
@@ -78,7 +81,8 @@ interface PostRequestObjectEndpointCommand : HttpEndpointCommand {
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<PostRequestObjectEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(PostRequestObjectEndpointCommand.COMMAND_ID)
 class PostRequestObjectEndpointCommandImpl(
     execution: SessionExecution,
     private val requestUriHandler: RequestUriHandler,

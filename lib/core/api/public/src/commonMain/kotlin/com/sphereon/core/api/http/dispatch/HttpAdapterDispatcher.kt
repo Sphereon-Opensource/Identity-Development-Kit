@@ -18,25 +18,22 @@ package com.sphereon.core.api.http.dispatch
 
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.di.HasOrder
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 
 /**
- * Catalog-driven dispatcher that:
- * - selects the correct adapter by serverPrefix/basePath/endpoint match
- * - normalizes the request path for compatibility (strip tenant segment + strip serverPrefix)
- * - applies tenant resolution precedence when both existing and path-based tenant ids are available
- *
- * **Replacement via DI:**
- * This interface extends [HasOrder] so multiple implementations can be contributed,
- * and the highest-priority one (lowest [getOrder] value) wins. Use [com.sphereon.di.selectByOrder]
- * to select the winning implementation from a `Set<HttpAdapterDispatcher>`.
- *
- * The codebase standard is to depend on interfaces (not concrete implementations).
+ * Session-scoped execution boundary for a route selected from the application-scoped catalog.
+ * Route selection, normalization metadata, and ambiguity rejection happen before SessionScope.
  */
-interface HttpAdapterDispatcher : HasOrder {
-    suspend fun dispatch(request: GenericHttpRequest): GenericHttpResponse
+interface HttpAdapterDispatcher {
+    /**
+     * Executes a route selected from AppScope before the request SessionScope was constructed.
+     * Implementations must defensively verify that the runtime adapter still has this identity.
+     */
+    suspend fun dispatch(
+        request: GenericHttpRequest,
+        route: HttpAdapterRouteMatch,
+    ): GenericHttpResponse
 
     @ContributesTo(SessionScope::class)
     interface Graph {

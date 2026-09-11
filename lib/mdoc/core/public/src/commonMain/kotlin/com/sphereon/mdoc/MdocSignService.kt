@@ -28,6 +28,7 @@ import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
 import com.sphereon.mdoc.data.device.IssuerSigned
 import com.sphereon.mdoc.data.device.IssuerSignedNameSpaces
+import com.sphereon.mdoc.data.device.MacKeys
 import com.sphereon.mdoc.data.mso.MobileSecurityObject
 
 /**
@@ -74,5 +75,6 @@ interface MdocSignService {
         unprotectedHeader: CoseHeaderCbor? = null,
         protectedHeader: CoseHeaderCbor? = null,
         requireDeviceX5Chain: Boolean = false,
+        macKeys: MacKeys? = null,
     ): Document
 }

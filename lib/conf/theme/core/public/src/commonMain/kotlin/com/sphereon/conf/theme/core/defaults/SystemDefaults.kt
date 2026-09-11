@@ -30,7 +30,7 @@ import com.sphereon.conf.theme.core.token.buildTokens
  * - Tier 2 — semantic roles (`color.primary`, `shape.radius.md`, `shadow.raised`, ...)
  * - Tier 3 — component defaults (`comp.button.primary.*`, `comp.card.*`, ...)
  *
- * Values are aligned to the Sphereon Wallet design system: Poppins type face,
+ * Values are aligned to the Sphereon design system: Poppins type face,
  * #7C40E8 brand purple, #FBFBFB neutral surface, charcoal text. Component
  * tokens reference Tier 2 via `{token.ref}` strings so tenant overrides at
  * Tier 2 cascade through automatically.
@@ -67,11 +67,27 @@ object SystemDefaults {
         color(TokenKeyConstants.PALETTE_BRAND_200, "#C7ADF5")
         color(TokenKeyConstants.PALETTE_BRAND_300, "#AE89F1")
         color(TokenKeyConstants.PALETTE_BRAND_400, "#9564EC")
+        color(TokenKeyConstants.PALETTE_BRAND_450, "#854EE9")
         color(TokenKeyConstants.PALETTE_BRAND_500, "#7C40E8")
         color(TokenKeyConstants.PALETTE_BRAND_600, "#5D1AD6")
+        color(TokenKeyConstants.PALETTE_BRAND_650, "#4F16B7")
         color(TokenKeyConstants.PALETTE_BRAND_700, "#4714A4")
         color(TokenKeyConstants.PALETTE_BRAND_800, "#320E72")
         color(TokenKeyConstants.PALETTE_BRAND_900, "#1C0840")
+
+        // Secondary — amber counterweight to the brand violet, used for accents,
+        // highlights and tinted callouts. Generated as an OKLCH sibling of the brand
+        // ramp: same per-stop lightness and chroma, hue rotated to 75 degrees.
+        color(TokenKeyConstants.PALETTE_SECONDARY_50, "#F6E6D1")
+        color(TokenKeyConstants.PALETTE_SECONDARY_100, "#F0D5B1")
+        color(TokenKeyConstants.PALETTE_SECONDARY_200, "#E3B36E")
+        color(TokenKeyConstants.PALETTE_SECONDARY_300, "#D69100")
+        color(TokenKeyConstants.PALETTE_SECONDARY_400, "#B37900")
+        color(TokenKeyConstants.PALETTE_SECONDARY_500, "#966400")
+        color(TokenKeyConstants.PALETTE_SECONDARY_600, "#774F00")
+        color(TokenKeyConstants.PALETTE_SECONDARY_700, "#5B3B00")
+        color(TokenKeyConstants.PALETTE_SECONDARY_800, "#402800")
+        color(TokenKeyConstants.PALETTE_SECONDARY_900, "#241500")
 
         // Gray — neutral foundation
         color(TokenKeyConstants.PALETTE_GRAY_50, "#FBFBFB")
@@ -771,10 +787,13 @@ object SystemDefaults {
 
     @Suppress("LongMethod")
     private fun TokenBuilder.addComponentTokens() {
-        // Button — primary. Background uses {color.primary} so tenant overrides cascade.
-        // backgroundHover uses brand.600 (one step darker than brand.500 primary).
-        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND, "{color.primary}")
-        color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_HOVER, "{palette.brand.600}")
+        // Button, primary variant. Background is the brand gradient, which itself resolves
+        // through {palette.brand.*} so tenant overrides cascade. It is a gradient
+        // string rather than a flat color, hence string() not color().
+        // backgroundHover is the hover gradient, which is derived from {color.primary}:
+        // retuning primary retunes the hover with it.
+        string(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND, "{color.gradient.brand}")
+        string(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_HOVER, "{color.gradient.brandHover}")
         color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_ACTIVE, "{palette.brand.800}")
         color(TokenKeyConstants.COMP_BUTTON_PRIMARY_FOREGROUND, "{color.onPrimary}")
         color(TokenKeyConstants.COMP_BUTTON_PRIMARY_BORDER, "{palette.brand.700}")
@@ -1217,10 +1236,10 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_ON_PRIMARY_CONTAINER, "#320E72")
                     color(TokenKeyConstants.COLOR_NAVIGATION_ACTIVE_FOREGROUND, "{palette.brand.700}")
                     color(TokenKeyConstants.COLOR_ACCENT, "#7C40E8")
-                    color(TokenKeyConstants.COLOR_SECONDARY, "#4E5E95")
-                    color(TokenKeyConstants.COLOR_ON_SECONDARY, "#FFFFFF")
-                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "#D8DDEB")
-                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "#2C334B")
+                    color(TokenKeyConstants.COLOR_SECONDARY, "{palette.secondary.600}")
+                    color(TokenKeyConstants.COLOR_ON_SECONDARY, "{palette.secondary.50}")
+                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "{palette.secondary.100}")
+                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "{palette.secondary.900}")
                     color(TokenKeyConstants.COLOR_TERTIARY, "#A92CD5")
                     color(TokenKeyConstants.COLOR_ON_TERTIARY, "#FBFBFB")
                     color(TokenKeyConstants.COLOR_TERTIARY_CONTAINER, "#F4E3F9")
@@ -1277,7 +1296,7 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_BORDER_STRONG, "#4E4E4E")
                     color(TokenKeyConstants.COLOR_BORDER_SUBTLE, "#E3E3E3")
                     color(TokenKeyConstants.COLOR_BORDER_DISABLED, "#E3E3E3")
-                    string(TokenKeyConstants.COLOR_GRADIENT_BRAND, "linear-gradient(180deg, {palette.brand.400} 0%, {palette.brand.600} 100%)")
+                    string(TokenKeyConstants.COLOR_GRADIENT_BRAND, "linear-gradient(180deg, {palette.brand.450} 0%, {palette.brand.650} 100%)")
                     string(TokenKeyConstants.COLOR_GRADIENT_BRAND_SUBTLE, "linear-gradient(180deg, color-mix(in srgb, {color.primary} 12%, {color.surface}) 0%, {color.surface} 100%)")
                     string(
                         TokenKeyConstants.COLOR_GRADIENT_BRAND_HOVER,
@@ -1314,10 +1333,10 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_PRIMARY_CONTAINER, "color-mix(in srgb, {palette.brand.500} 18%, transparent)")
                     color(TokenKeyConstants.COLOR_ON_PRIMARY_CONTAINER, "#E0D2FA")
                     color(TokenKeyConstants.COLOR_NAVIGATION_ACTIVE_FOREGROUND, "{color.onPrimary}")
-                    color(TokenKeyConstants.COLOR_SECONDARY, "#C7ADF5")
-                    color(TokenKeyConstants.COLOR_ON_SECONDARY, "#202537")
-                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "#1D212C")
-                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "#E0D2FA")
+                    color(TokenKeyConstants.COLOR_SECONDARY, "{palette.secondary.300}")
+                    color(TokenKeyConstants.COLOR_ON_SECONDARY, "{palette.secondary.900}")
+                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "{palette.secondary.700}")
+                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "{palette.secondary.100}")
                     color(TokenKeyConstants.COLOR_TERTIARY, "#CA7DE5")
                     color(TokenKeyConstants.COLOR_ON_TERTIARY, "#280A32")
                     color(TokenKeyConstants.COLOR_TERTIARY_CONTAINER, "#3A0F4A")
@@ -1398,12 +1417,27 @@ object SystemDefaults {
                 },
         )
 
-    /** Wallet high-contrast theme — pushes contrast to AAA, retains brand. */
-    val baselineHighContrast: ThemeDefinition =
+    /**
+     * Wallet high-contrast theme, pushing contrast to AAA while retaining brand.
+     *
+     * This is a LIGHT high-contrast theme: it sets `color.surface` and `color.background` to
+     * `#FFFFFF` and `color.onSurface` to `#000000`. There is no dark high-contrast counterpart,
+     * and [ThemeVariant] has no member that could name one, so a consumer needing dark
+     * high-contrast has to supply its own map.
+     *
+     * That is stated rather than resolved. Whether dark high-contrast belongs in this design
+     * system is an open product question, and the answer changes what this file should contain.
+     * Until it is answered, read the absence as unaddressed rather than as a decision.
+     *
+     * Note the light ground inverts role shapes: here `color.secondary` is a deep stop carrying
+     * white text. On a dark ground it would need a light stop carrying dark text, so these values
+     * cannot be mirrored into a dark high-contrast theme unchanged.
+     */
+    val baselineHighContrastLight: ThemeDefinition =
         ThemeDefinition(
-            id = "system-default-high-contrast",
+            id = "system-default-high-contrast-light",
             name = "System Default (Wallet High Contrast)",
-            variant = ThemeVariant.HIGH_CONTRAST,
+            variant = ThemeVariant.HIGH_CONTRAST_LIGHT,
             scope = ThemeScope.SYSTEM,
             tokens =
                 buildTokens {
@@ -1421,10 +1455,14 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_ACCENT, "{palette.brand.700}")
 
                     // Secondary
-                    color(TokenKeyConstants.COLOR_SECONDARY, "{palette.blue.700}")
+                    // The on-colour is white rather than {palette.secondary.50} because this
+                    // variant is held to AAA 7:1, and the ramp's lightest stop only reaches
+                    // 5.91 against secondary.600. White on secondary.700 gives 10.14. The base
+                    // variant keeps the ramp reference, since AA 4.5 is its bar and 5.91 clears it.
+                    color(TokenKeyConstants.COLOR_SECONDARY, "{palette.secondary.700}")
                     color(TokenKeyConstants.COLOR_ON_SECONDARY, "#FFFFFF")
-                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "{palette.blue.50}")
-                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "{palette.blue.900}")
+                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "{palette.secondary.50}")
+                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "{palette.secondary.900}")
 
                     // Tertiary — selenas, darker stops for high-contrast AA
                     color(TokenKeyConstants.COLOR_TERTIARY, "{palette.selenas.700}")
@@ -1433,7 +1471,10 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_ON_TERTIARY_CONTAINER, "{palette.selenas.900}")
 
                     // Error
-                    color(TokenKeyConstants.COLOR_ERROR, "{palette.error.700}")
+                    // error.700 carries white text at 6.29, which clears AA but not the AAA 7:1 this
+                    // variant is held to. It shipped that way because nothing measured the
+                    // high-contrast themes. error.800 is the first stop that clears, at 8.02.
+                    color(TokenKeyConstants.COLOR_ERROR, "{palette.error.800}")
                     color(TokenKeyConstants.COLOR_ON_ERROR, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_ERROR_CONTAINER, "{palette.error.50}")
                     color(TokenKeyConstants.COLOR_ON_ERROR_CONTAINER, "{palette.error.900}")
@@ -1468,12 +1509,14 @@ object SystemDefaults {
                     color(TokenKeyConstants.COLOR_INTERACTIVE_FOCUS, "{color.primary}")
 
                     // Feedback — darker stops
-                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS, "{palette.success.700}")
+                    // success.700 carries white text at 6.66, under this variant's AAA 7:1 bar. 800 clears at 8.17.
+                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS, "{palette.success.800}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_CONTAINER, "{palette.success.50}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS_CONTAINER, "{palette.success.900}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_BORDER, "{palette.success.700}")
-                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING, "{palette.warning.700}")
+                    // warning.700 carries white text at 5.52, under this variant's AAA 7:1 bar. 800 clears at 8.20.
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING, "{palette.warning.800}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_CONTAINER, "{palette.warning.50}")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING, "#FFFFFF")
                     color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING_CONTAINER, "{palette.warning.700}")
@@ -1506,6 +1549,142 @@ object SystemDefaults {
                     )
                     string(TokenKeyConstants.COLOR_GRADIENT_SURFACE, "linear-gradient(180deg, {color.surface} 0%, color-mix(in srgb, {color.onSurface} 6%, {color.surface}) 100%)")
                     string(TokenKeyConstants.COLOR_GRADIENT_OVERLAY, "radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, {color.primary} 10%, transparent), transparent 60%)")
+
+                    addVariantIndependentExtensions()
+                },
+        )
+
+    /**
+     * Wallet high-contrast theme on a DARK ground, pushing contrast to AAA while retaining brand.
+     *
+     * This is the mirror of [baselineHighContrastLight], not a copy of it. The role shapes invert
+     * with the ground: there a deep brand stop carries white text, here a light stop carries black
+     * text. Every foreground and background pair in this definition was measured against the 7:1
+     * bar rather than assumed symmetric, and two rungs are deliberately NOT mirrored because the
+     * arithmetic does not survive the inversion. Those two carry their reasons inline.
+     */
+    val baselineHighContrastDark: ThemeDefinition =
+        ThemeDefinition(
+            id = "system-default-high-contrast-dark",
+            name = "System Default (Wallet High Contrast Dark)",
+            variant = ThemeVariant.HIGH_CONTRAST_DARK,
+            scope = ThemeScope.SYSTEM,
+            tokens =
+                buildTokens {
+                    // Rings thicken exactly as they do in the light high-contrast theme
+                    shadow(
+                        TokenKeyConstants.SHADOW_FOCUS_RING,
+                        "0 0 0 2px {color.primary}, 0 0 0 5px color-mix(in srgb, {color.primary} 45%, transparent)"
+                    )
+                    shadow(TokenKeyConstants.SHADOW_ERROR_RING, "0 0 0 3px color-mix(in srgb, {color.error} 75%, transparent)")
+                    shadow(TokenKeyConstants.COMP_FOCUS_RING, "{shadow.focusRing}")
+                    shadow(TokenKeyConstants.COMP_ERROR_RING, "{shadow.errorRing}")
+
+                    // Brand roles invert on this ground: light stops carrying black text
+                    color(TokenKeyConstants.COLOR_PRIMARY, "{palette.brand.200}")
+                    color(TokenKeyConstants.COLOR_ON_PRIMARY, "#000000")
+                    color(TokenKeyConstants.COLOR_PRIMARY_CONTAINER, "{palette.brand.900}")
+                    color(TokenKeyConstants.COLOR_ON_PRIMARY_CONTAINER, "{palette.brand.50}")
+                    color(TokenKeyConstants.COLOR_NAVIGATION_ACTIVE_FOREGROUND, "{palette.brand.100}")
+                    color(TokenKeyConstants.COLOR_ACCENT, "{palette.brand.200}")
+
+                    // Secondary: 200 is the first stop clearing 7:1 against secondary.900 text (300 gives 6.69)
+                    color(TokenKeyConstants.COLOR_SECONDARY, "{palette.secondary.200}")
+                    color(TokenKeyConstants.COLOR_ON_SECONDARY, "{palette.secondary.900}")
+                    color(TokenKeyConstants.COLOR_SECONDARY_CONTAINER, "{palette.secondary.900}")
+                    color(TokenKeyConstants.COLOR_ON_SECONDARY_CONTAINER, "{palette.secondary.100}")
+
+                    // Tertiary
+                    color(TokenKeyConstants.COLOR_TERTIARY, "{palette.selenas.200}")
+                    color(TokenKeyConstants.COLOR_ON_TERTIARY, "#000000")
+                    color(TokenKeyConstants.COLOR_TERTIARY_CONTAINER, "{palette.selenas.900}")
+                    color(TokenKeyConstants.COLOR_ON_TERTIARY_CONTAINER, "{palette.selenas.50}")
+
+                    // Error
+                    color(TokenKeyConstants.COLOR_ERROR, "{palette.error.200}")
+                    color(TokenKeyConstants.COLOR_ON_ERROR, "#000000")
+                    color(TokenKeyConstants.COLOR_ERROR_CONTAINER, "{palette.error.900}")
+                    color(TokenKeyConstants.COLOR_ON_ERROR_CONTAINER, "{palette.error.50}")
+
+                    // Ground: pure black, the mirror of high-contrast light's pure white
+                    color(TokenKeyConstants.COLOR_SURFACE, "#000000")
+                    color(TokenKeyConstants.COLOR_ON_SURFACE, "#FFFFFF")
+                    color(TokenKeyConstants.COLOR_SURFACE_VARIANT, "{palette.gray.900}")
+                    color(TokenKeyConstants.COLOR_ON_SURFACE_VARIANT, "#FFFFFF")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER, "{palette.gray.900}")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_HIGH, "{palette.gray.800}")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_HIGHEST, "{palette.gray.700}")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_LOW, "{palette.gray.900}")
+                    color(TokenKeyConstants.COLOR_SURFACE_CONTAINER_LOWEST, "#000000")
+                    color(TokenKeyConstants.COLOR_BACKGROUND, "#000000")
+                    color(TokenKeyConstants.COLOR_ON_BACKGROUND, "#FFFFFF")
+
+                    // Structure: pure white where the light high-contrast theme uses pure black
+                    color(TokenKeyConstants.COLOR_OUTLINE, "#FFFFFF")
+                    color(TokenKeyConstants.COLOR_OUTLINE_VARIANT, "{palette.gray.300}")
+                    color(TokenKeyConstants.COLOR_INVERSE_SURFACE, "#FFFFFF")
+                    color(TokenKeyConstants.COLOR_INVERSE_ON_SURFACE, "#000000")
+                    color(TokenKeyConstants.COLOR_INVERSE_PRIMARY, "{palette.brand.700}")
+                    color(TokenKeyConstants.COLOR_SCRIM, "rgba(0,0,0,0.8)")
+                    color(TokenKeyConstants.COLOR_SHADOW, "#000000")
+
+                    // Interactive states
+                    color(TokenKeyConstants.COLOR_INTERACTIVE_HOVER, "{palette.gray.800}")
+                    color(TokenKeyConstants.COLOR_INTERACTIVE_PRESSED, "{palette.gray.700}")
+                    color(TokenKeyConstants.COLOR_INTERACTIVE_DISABLED, "{palette.gray.800}")
+                    color(TokenKeyConstants.COLOR_INTERACTIVE_FOCUS, "{color.primary}")
+
+                    // Feedback: light fills with black text, deep containers with light on-colours
+                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS, "{palette.success.200}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_CONTAINER, "{palette.success.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS, "#000000")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_SUCCESS_CONTAINER, "{palette.success.50}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_SUCCESS_BORDER, "{palette.success.200}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING, "{palette.warning.200}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_CONTAINER, "{palette.warning.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING, "#000000")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_WARNING_CONTAINER, "{palette.warning.50}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_WARNING_BORDER, "{palette.warning.200}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO, "{palette.blue.200}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO_CONTAINER, "{palette.blue.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO, "#000000")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_INFO_CONTAINER, "{palette.blue.50}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_INFO_BORDER, "{palette.blue.200}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ERROR_CONTAINER, "{palette.error.900}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ON_ERROR_CONTAINER, "{palette.error.50}")
+                    color(TokenKeyConstants.COLOR_FEEDBACK_ERROR_BORDER, "{palette.error.200}")
+
+                    // Text
+                    color(TokenKeyConstants.COLOR_TEXT_PRIMARY, "#FFFFFF")
+                    color(TokenKeyConstants.COLOR_TEXT_SECONDARY, "{palette.gray.200}")
+                    color(TokenKeyConstants.COLOR_TEXT_DISABLED, "{palette.gray.500}")
+                    color(TokenKeyConstants.COLOR_TEXT_INVERSE, "{color.inverseOnSurface}")
+
+                    // Borders
+                    color(TokenKeyConstants.COLOR_BORDER_DEFAULT, "#FFFFFF")
+                    color(TokenKeyConstants.COLOR_BORDER_STRONG, "#FFFFFF")
+                    color(TokenKeyConstants.COLOR_BORDER_SUBTLE, "{palette.gray.400}")
+                    color(TokenKeyConstants.COLOR_BORDER_DISABLED, "{palette.gray.500}")
+
+                    // Gradients push past the dark theme. Hover mixes toward #FFF rather than #000: the fill is a light stop
+                    // carrying black text, so darkening would close the gap with its own label
+                    string(TokenKeyConstants.COLOR_GRADIENT_BRAND, "linear-gradient(180deg, {palette.brand.100} 0%, {palette.brand.300} 100%)")
+                    string(
+                        TokenKeyConstants.COLOR_GRADIENT_BRAND_SUBTLE,
+                        "linear-gradient(180deg, color-mix(in srgb, {color.primary} 24%, {color.surface}) 0%, {color.surface} 100%)"
+                    )
+                    string(
+                        TokenKeyConstants.COLOR_GRADIENT_BRAND_HOVER,
+                        "linear-gradient(180deg, color-mix(in srgb, {color.primary} 92%, #FFF) 0%, color-mix(in srgb, {color.primary} 78%, #FFF) 100%)"
+                    )
+                    string(
+                        TokenKeyConstants.COLOR_GRADIENT_SURFACE,
+                        "linear-gradient(180deg, {color.surface} 0%, color-mix(in srgb, {color.onSurface} 8%, {color.surface}) 100%)"
+                    )
+                    string(
+                        TokenKeyConstants.COLOR_GRADIENT_OVERLAY,
+                        "radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, {color.primary} 14%, transparent), transparent 60%)"
+                    )
 
                     addVariantIndependentExtensions()
                 },

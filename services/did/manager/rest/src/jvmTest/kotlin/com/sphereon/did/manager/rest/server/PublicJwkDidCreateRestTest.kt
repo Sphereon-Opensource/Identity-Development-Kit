@@ -9,7 +9,6 @@ import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
-import com.sphereon.did.manager.rest.server.adapter.DidManagerHttpAdapter
 import com.sphereon.did.manager.rest.server.ktor.createDidManagerAppGraph
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -23,7 +22,7 @@ import kotlin.test.assertEquals
 
 class PublicJwkDidCreateRestTest {
     private lateinit var app: com.sphereon.di.app.AppGraph
-    private lateinit var adapter: DidManagerHttpAdapter
+    private lateinit var httpClient: DidManagerTestHttpClient
     private lateinit var keyManager: KeyManagerService
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -45,10 +44,8 @@ class PublicJwkDidCreateRestTest {
                 .getAnonymous()
                 .sessionContextManager
                 .createOrGetFromId("public-jwk-did-create-rest", principalType = com.sphereon.di.context.PrincipalType.USER)
-        TestSessionGraph.fromSession(session).also {
-            adapter = it.adapter
-            keyManager = it.keyManager
-        }
+        TestSessionGraph.fromSession(session).also { keyManager = it.keyManager }
+        httpClient = DidManagerTestHttpClient(app, session)
     }
 
     @AfterTest
@@ -92,7 +89,7 @@ class PublicJwkDidCreateRestTest {
             val did = json.parseToJsonElement(created.body!!).jsonObject["did"]!!.jsonPrimitive.content
 
             val methods =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(
                         method = "GET",
                         path = "/api/did/v1/identifiers/$did/verification-methods",
@@ -116,7 +113,7 @@ class PublicJwkDidCreateRestTest {
             val did = json.parseToJsonElement(created.body!!).jsonObject["did"]!!.jsonPrimitive.content
 
             val methods =
-                adapter.handleRequest(
+                httpClient.dispatch(
                     GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/$did/verification-methods"),
                 )
             assertEquals(200, methods.statusCode, methods.body)
@@ -128,7 +125,7 @@ class PublicJwkDidCreateRestTest {
             assertEquals("ECDSA_SHA256", keyInfo["signatureAlgorithm"]!!.jsonPrimitive.content)
 
             val mappings =
-                adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/$did/key-mappings"))
+                httpClient.dispatch(GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers/$did/key-mappings"))
             assertEquals(200, mappings.statusCode, mappings.body)
             val mapping = json.parseToJsonElement(mappings.body!!).jsonObject["items"]!!.jsonArray.single().jsonObject
             val mappedKey = mapping["keyInfo"]!!.jsonObject
@@ -139,7 +136,7 @@ class PublicJwkDidCreateRestTest {
         }
 
     private suspend fun post(body: String) =
-        adapter.handleRequest(
+        httpClient.dispatch(
             GenericHttpRequest(
                 method = "POST",
                 path = "/api/did/v1/identifiers",

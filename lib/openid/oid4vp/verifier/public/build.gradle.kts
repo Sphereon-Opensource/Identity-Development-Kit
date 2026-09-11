@@ -49,6 +49,9 @@ kotlin {
                 api(projects.libCoreApiPublic)
                 api(projects.libCryptoCore)
 
+                // VCDM Data Integrity verification contract (proof model + purpose).
+                api(projects.libCryptoDataIntegrityProofPublic)
+
                 // OAuth2 common and client (for base AuthorizationRequest/Response models and JAR support)
                 api(projects.libOauth2CommonPublic)
                 api(projects.libOauth2ClientPublic)
@@ -61,6 +64,10 @@ kotlin {
 
                 // Credential status policy (CredentialStatusPolicy on the create-request args + session)
                 api(projects.libStatuslistPublic)
+
+                // ISO/IEC 18013-5 second-edition ZKP request/provider contracts used by the
+                // additive verifier-binding arguments. Concrete verification remains in impl.
+                api(projects.libMdocCorePublic)
 
                 // DCQL query configuration store (DcqlQueryConfigurationStore is exposed on Oid4vpVerifierService)
                 api(projects.libOpenidOid4vpDcqlStorePublic)

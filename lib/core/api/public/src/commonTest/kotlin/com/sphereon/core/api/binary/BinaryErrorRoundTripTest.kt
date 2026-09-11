@@ -137,4 +137,46 @@ class BinaryErrorRoundTripTest {
         assertEquals("FOO_BAR", roundTripped.code)
         assertEquals(ErrorCategory.INTERNAL, roundTripped.category)
     }
+
+    @Test
+    fun invalidStateKeepsAnExplicitUnprocessableEntityCategory() {
+        // VDX-142: the workflow-definition store raises INVALID_STATE as 422. The canonical
+        // `INVALID_STATE` branch used to force CONFLICT, so the far side of the binary
+        // transport rendered 409 and dropped the meta the client needs.
+        val original =
+            IdkError(
+                code = "INVALID_STATE",
+                message =
+                    IdkError.Message(
+                        i18nKey = "workflow.definition.error.invalid_state",
+                        defaultMessage = "Invalid state for workflow definition 'onboarding' v2",
+                    ),
+                category = ErrorCategory.UNPROCESSABLE_ENTITY,
+                meta = mapOf("definitionKey" to "onboarding", "version" to 2),
+            )
+
+        val roundTripped = BinaryError.fromIdkError(original).toIdkError()
+
+        assertEquals("INVALID_STATE", roundTripped.code)
+        assertEquals(ErrorCategory.UNPROCESSABLE_ENTITY, roundTripped.category)
+        assertEquals("onboarding", roundTripped.meta["definitionKey"])
+        assertEquals("2", roundTripped.meta["version"], "meta crosses the wire as strings")
+    }
+
+    @Test
+    fun invalidStateWithoutAnExplicitCategoryStaysConflict() {
+        // Legacy senders emit no category; the historical 409 must not move.
+        val wire = BinaryError(code = "INVALID_STATE", message = "stale", category = null)
+        val roundTripped = wire.toIdkError()
+
+        assertEquals("INVALID_STATE", roundTripped.code)
+        assertEquals(ErrorCategory.CONFLICT, roundTripped.category)
+    }
+
+    @Test
+    fun unprocessableEntityCategoryMapsTo422() {
+        // Was absent from the table, so every 422 crossing the transport lost its status.
+        assertEquals(422, BinaryError.categoryToHttpStatus("UNPROCESSABLE_ENTITY"))
+        assertEquals(409, BinaryError.categoryToHttpStatus("CONFLICT"))
+    }
 }

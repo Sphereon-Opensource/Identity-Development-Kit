@@ -48,7 +48,8 @@ class CommandErrorMapperTest {
 
         assertEquals("COMMAND_ARG_NOT_SUPPORTED_ERROR", error.code)
         assertTrue(error.message.defaultMessage.contains("does not support"))
-        assertTrue(error.message.defaultMessage.contains("testArg"))
+        assertTrue(error.message.defaultMessage.contains("String"))
+        assertTrue(!error.message.defaultMessage.contains("testArg"))
     }
 
     @Test

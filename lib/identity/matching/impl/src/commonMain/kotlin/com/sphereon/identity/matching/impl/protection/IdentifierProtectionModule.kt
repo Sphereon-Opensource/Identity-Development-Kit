@@ -24,6 +24,7 @@ import com.sphereon.crypto.core.kms.command.ListKeysCommand
 import com.sphereon.core.api.conf.DEFAULT_APPLICATION_TENANT_ID
 import com.sphereon.core.api.conf.KEY_APPLICATION_TENANT_ID
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.di.session.SessionScope
 import com.sphereon.identity.matching.protection.DefaultIdentifierProtectionPolicyService
 import com.sphereon.identity.matching.protection.IdentifierProtectionPolicyService
@@ -62,31 +63,37 @@ interface IdentifierProtectionModule {
     @Provides
     @SingleIn(SessionScope::class)
     fun provideIdentifierProtector(
-        generateKeyCommand: GenerateKeyCommand,
-        listKeysCommand: ListKeysCommand,
-        generateMacCommand: GenerateMacCommand,
-        encryptCommand: EncryptCommand,
-        decryptCommand: DecryptCommand,
+        commandRegistry: SessionScopedCommandRegistry,
         execution: SessionExecution,
-    ): IdentifierProtector =
-        KmsBackedIdentifierProtector(
-            generateKeyCommand = generateKeyCommand,
-            listKeysCommand = listKeysCommand,
-            generateMacCommand = generateMacCommand,
-            encryptCommand = encryptCommand,
-            decryptCommand = decryptCommand,
-            providerId =
-                identifierProtectionProviderId(
-                    sessionTenantId = execution.tenantId,
-                    applicationTenantId =
-                        execution.conf.app
-                            .getPropertyAsString(KEY_APPLICATION_TENANT_ID, DEFAULT_APPLICATION_TENANT_ID)
-                            ?.trim()
-                            ?.takeIf(String::isNotEmpty)
-                            ?: DEFAULT_APPLICATION_TENANT_ID,
-                ),
+    ): IdentifierProtector {
+        // Resolve each command from the session registry at construction time so config-based
+        // LOCAL/SERVER selection is honored. This matters in wallet-unit: its WSCD still needs
+        // private local KMS bindings, while identifier material for customer tenants must use the
+        // routed tenant-KMS command adapters.
+        val applicationTenantId =
+            execution.conf.app
+                .getPropertyAsString(KEY_APPLICATION_TENANT_ID, DEFAULT_APPLICATION_TENANT_ID)
+                ?.trim()
+                ?.takeIf(String::isNotEmpty)
+                ?: DEFAULT_APPLICATION_TENANT_ID
+
+        return KmsBackedIdentifierProtector(
+            generateKeyCommand = requireIdentifierProtectionCommand(commandRegistry, GenerateKeyCommand.COMMAND_ID),
+            listKeysCommand = requireIdentifierProtectionCommand(commandRegistry, ListKeysCommand.COMMAND_ID),
+            generateMacCommand = requireIdentifierProtectionCommand(commandRegistry, GenerateMacCommand.COMMAND_ID),
+            encryptCommand = requireIdentifierProtectionCommand(commandRegistry, EncryptCommand.COMMAND_ID),
+            decryptCommand = requireIdentifierProtectionCommand(commandRegistry, DecryptCommand.COMMAND_ID),
+            providerId = identifierProtectionProviderId(execution.tenantId, applicationTenantId),
         )
+    }
 }
+
+private inline fun <reified T : Any> requireIdentifierProtectionCommand(
+    commandRegistry: SessionScopedCommandRegistry,
+    commandId: String,
+): T =
+    commandRegistry.get(commandId) as? T
+        ?: error("No routed identifier-protection command binding for $commandId")
 
 /**
  * The application tenant owns a local persisted software provider. Customer tenants are routed to

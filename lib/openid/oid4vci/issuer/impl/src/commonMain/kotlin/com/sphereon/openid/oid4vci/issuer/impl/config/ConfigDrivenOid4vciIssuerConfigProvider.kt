@@ -17,16 +17,11 @@
 package com.sphereon.openid.oid4vci.issuer.impl.config
 
 import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.VctTypeMetadataProvider
 import com.sphereon.openid.oid4vci.issuer.spi.IssuerKeyNameResolver
 import com.sphereon.statuslist.StatusListDefinitionsProvider
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Provider
-import dev.zacsweers.metro.SingleIn
-import dev.zacsweers.metro.binding
 
 /**
  * Singular, single-issuer [Oid4vciIssuerConfigProvider] backed by IDK's ConfigService.
@@ -89,10 +84,6 @@ import dev.zacsweers.metro.binding
  * ```
  *
  */
-@Inject
-@SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<Oid4vciIssuerConfigProvider>())
-@ContributesBinding(SessionScope::class, binding = binding<VctTypeMetadataProvider>())
 class ConfigDrivenOid4vciIssuerConfigProvider(
     execution: SessionExecution,
     statusListDefinitionsProvider: Provider<StatusListDefinitionsProvider>? = null,

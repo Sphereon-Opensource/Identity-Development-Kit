@@ -21,8 +21,7 @@ typealias CredentialFormat = com.sphereon.openid.oid4vc.common.CredentialFormat
 
 // Protocol-local convenience functions delegate to that single shared model.
 fun String.detectCredentialFormat(): CredentialFormat? =
-    com.sphereon.openid.oid4vc.common.CredentialFormat
-        .detectFormat(this)
+    com.sphereon.openid.oid4vc.common.CredentialFormatDetector.detect(this)
 
 fun String.matchesCredentialFormat(format: CredentialFormat): Boolean {
     val detected =

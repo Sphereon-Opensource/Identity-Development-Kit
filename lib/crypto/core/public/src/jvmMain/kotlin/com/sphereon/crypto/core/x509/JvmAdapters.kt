@@ -31,6 +31,7 @@ import java.security.PrivateKey
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.ECParameterSpec
 import java.security.spec.ECPrivateKeySpec
+import java.security.spec.EdECPrivateKeySpec
 import java.security.spec.NamedParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.RSAPrivateCrtKeySpec
@@ -64,9 +65,9 @@ fun convertToJavaPrivateKey(keyInfo: Any): PrivateKey {
             }
 
             KeyTypeMapping.OKP -> {
-                when (key.crv) {
-                    "Ed25519" -> "EdDSA"
-                    "X25519" -> "XDH"
+                when (key.crv?.toString()) {
+                    "Ed25519", "Ed448" -> "EdDSA"
+                    "X25519", "X448" -> "XDH"
                     else -> throw IllegalArgumentException("Unsupported curve: ${key.crv}")
                 }
             }
@@ -177,11 +178,20 @@ private fun constructOKPPrivateKeyPKCS8(
     privateBytes: ByteArray,
     curve: String,
 ): ByteArray {
-    // Uses NamedParameterSpec + XECPrivateKeySpec (requires Java 11+)
+    if (curve == "Ed25519" || curve == "Ed448") {
+        // EdDSA uses EdECPrivateKeySpec. XECPrivateKeySpec is only valid for
+        // X25519/X448 and rejects Ed25519 with "Unsupported curve".
+        val privateKey =
+            KeyFactory
+                .getInstance(curve)
+                .generatePrivate(EdECPrivateKeySpec(NamedParameterSpec(curve), privateBytes))
+        return privateKey.encoded
+    }
+
+    // X25519/X448 use NamedParameterSpec + XECPrivateKeySpec (Java 11+).
     val keyFactory =
         when (curve) {
-            "Ed25519" -> KeyFactory.getInstance("Ed25519")
-            "X25519" -> KeyFactory.getInstance("XDH")
+            "X25519", "X448" -> KeyFactory.getInstance("XDH")
             else -> throw IllegalArgumentException("Unsupported OKP curve: $curve")
         }
     val namedSpec = NamedParameterSpec(curve)

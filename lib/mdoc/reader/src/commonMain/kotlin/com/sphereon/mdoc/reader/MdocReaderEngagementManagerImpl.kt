@@ -37,6 +37,8 @@ import com.sphereon.mdoc.MdocRole
 import com.sphereon.mdoc.SessionDataCborCodec
 import com.sphereon.mdoc.SessionEstablishmentCborCodec
 import com.sphereon.mdoc.SessionTranscriptCborCodec
+import com.sphereon.mdoc.data.DeviceAuthValidation
+import com.sphereon.mdoc.data.MdocValidations
 import com.sphereon.mdoc.data.device.DeviceRequest
 import com.sphereon.mdoc.data.device.DeviceRequestCborCodec
 import com.sphereon.mdoc.data.device.DeviceResponse
@@ -126,6 +128,8 @@ class MdocReaderEngagementManagerImpl(
     private val sessionEstablishmentCborCodec: SessionEstablishmentCborCodec,
     private val sessionTranscriptCborCodec: SessionTranscriptCborCodec,
     private val coseKeyCborCodec: CoseKeyCborCodec,
+    private val mdocValidations: MdocValidations,
+    private val deviceAuthValidation: DeviceAuthValidation,
     private val execution: com.sphereon.core.api.context.SessionExecution, // Session execution context
     private val cryptoProvider: CryptographyProvider = CryptographyProvider.Default,
     scopeScoped: CoroutineScopeScoped? = null,
@@ -163,6 +167,7 @@ class MdocReaderEngagementManagerImpl(
     private val readerId = Uuid.random()
     private var sessionEncryption: com.sphereon.mdoc.SessionEncryption? = null
     private var readerEphemeralKey: ResolvedKeyInfoType<CoseKeyType>? = null
+    private var activeSessionTranscript: com.sphereon.mdoc.transfer.reader.SessionTranscript? = null
     private var incomingDataChannel: IncomingDataChannel? = null
     private var outgoingDataChannel: OutgoingDataChannel? = null
 
@@ -285,7 +290,7 @@ class MdocReaderEngagementManagerImpl(
             val deviceCurve =
                 com.sphereon.crypto.core.generic.Curve.fromCose(
                     com.sphereon.crypto.core.cose.CoseCurve
-                        .fromValue(engagement.security.cipherSuite.toInt()),
+                        .fromValue(engagement.security.cipherSuite.toIntExact("DeviceEngagement.security.cipherSuite")),
                 )
 
             // Get appropriate signature algorithm for the curve
@@ -354,6 +359,7 @@ class MdocReaderEngagementManagerImpl(
                     .encode(sessionTranscriptTemp)
                     .getOrElse { throw it.toException() }
             val sessionTranscript = sessionTranscriptTemp.copy(original = sessionTranscriptBytes)
+            activeSessionTranscript = sessionTranscript
 
             // Store as CborEncodedItem for later use (e.g., in ReaderAuthentication)
             val sessionTranscriptEncoded =
@@ -600,6 +606,7 @@ class MdocReaderEngagementManagerImpl(
         // Get session transcript from transfer manager - this contains holder's ephemeral key
         val sessionTranscriptEncoded = transferManager.getSessionTranscript()
         val sessionTranscript = sessionTranscriptEncoded.data()
+        activeSessionTranscript = sessionTranscript
         // Per ISO 18013-5: SessionTranscriptBytes = #6.24(bstr .cbor SessionTranscript)
         val sessionTranscriptBytes =
             sessionTranscriptCborCodec
@@ -767,41 +774,107 @@ class MdocReaderEngagementManagerImpl(
     /**
      * Validate issuer authentication (MSO).
      *
-     * **Still a placeholder for the BLE/NFC reader-engagement path.**
+     * The synchronous legacy API cannot run the suspend validator required for this path
+     * and therefore continues to fail closed. New integrations must use
+     * [validateIssuerAuthenticationAsync], which invokes the real validation pipeline.
      *
      * The OID4VP verifier path (`VerifyHolderBindingCommandImpl`) does NOT call this method;
      * it goes through `MdocValidations.fromDocument(...)` in `lib/mdoc/core/impl`, which runs
      * the real ISO 18013-5 §9.3.1 cert-chain + COSE_Sign1 + validity + docType + digests
      * pipeline via `IssuerAuthValidationImpl`. To wire the reader-engagement path, change
      * this method to `suspend`, inject `MdocValidations`, and call `fromDocument(document, …)`.
-     * Out of scope for the OID4VP conformance work; this stays as a footgun reminder for the
-     * next maintainer of the BLE/NFC reader path.
+     * The OID4VP path is separate and must not be used as an implicit validation result here.
      */
     override fun validateIssuerAuthentication(document: Document): Boolean {
         log.warn(
-            "Reader-engagement IssuerAuth validation is still a placeholder. The OID4VP path " +
-                "uses MdocValidations.fromDocument(...) directly and IS fully verified.",
+            "Reader-engagement IssuerAuth validation is unavailable in the synchronous legacy API; refusing to accept the document.",
         )
-        return true
+        return false
+    }
+
+    override suspend fun validateIssuerAuthenticationAsync(
+        document: Document,
+        trustedCerts: Array<String>?,
+    ): IdkResult<com.sphereon.crypto.core.generic.VerifyResultsType<CoseKeyType>, IdkError> {
+        return try {
+            val result =
+                mdocValidations.fromDocument(
+                    document = document,
+                    trustedCerts = trustedCerts,
+                    allowNotYetValidDocuments = false,
+                    allowExpiredDocuments = false,
+                )
+            if (result.error) {
+                val failedStep = result.verifications.firstOrNull { it.error }
+                IdkError
+                    .UNKNOWN_ERROR(
+                        message =
+                            "Reader-engagement issuer authentication failed" +
+                                (failedStep?.message?.let { ": $it" } ?: ""),
+                    ).asErrorResult()
+            } else {
+                result.asOkResult()
+            }
+        } catch (expected: Exception) {
+            IdkError
+                .UNKNOWN_ERROR(
+                    message = "Reader-engagement issuer authentication could not be validated: ${expected.message}",
+                    exception = expected,
+                ).asErrorResult()
+        }
     }
 
     /**
      * Validate device authentication (MAC or signature).
      *
-     * **Still a placeholder for the BLE/NFC reader-engagement path.**
+     * The synchronous legacy API cannot run the suspend validator required for this path
+     * and therefore continues to fail closed. New integrations must use
+     * [validateDeviceAuthenticationAsync], which verifies against the active or supplied
+     * session transcript.
      *
      * The OID4VP verifier path uses `DeviceAuthValidationImpl.verifyDeviceAuth(...)` directly
      * (`lib/mdoc/core/impl`). Wiring this BLE/NFC method to the same validator requires
      * making the method `suspend`, injecting `DeviceAuthValidation`, and supplying a
      * SessionTranscript appropriate for the BLE/NFC handover. Out of scope for the OID4VP
-     * conformance work.
+     * conformance work; the OID4VP path is separate and must not be used as an implicit
+     * validation result here.
      */
     override fun validateDeviceAuthentication(document: Document): Boolean {
         log.warn(
-            "Reader-engagement DeviceAuth validation is still a placeholder. The OID4VP path " +
-                "uses DeviceAuthValidationImpl.verifyDeviceAuth(...) directly and IS fully verified.",
+            "Reader-engagement DeviceAuth validation is unavailable in the synchronous legacy API; refusing to accept the document.",
         )
-        return true
+        return false
+    }
+
+    override suspend fun validateDeviceAuthenticationAsync(
+        document: Document,
+        expectedSessionTranscript: com.sphereon.mdoc.transfer.reader.SessionTranscript?,
+    ): IdkResult<com.sphereon.crypto.core.generic.VerifySignatureResultType<CoseKeyType>, IdkError> {
+        val transcript =
+            expectedSessionTranscript ?: activeSessionTranscript
+                ?: return IdkError
+                    .ILLEGAL_ARGUMENT_ERROR(
+                        message = "No active session transcript is available for device authentication validation",
+                    ).asErrorResult()
+        return try {
+            val result = deviceAuthValidation.verifyDeviceAuth(document, transcript)
+            if (result.error) {
+                IdkError
+                    .UNKNOWN_ERROR(
+                        message =
+                            "Reader-engagement device authentication failed" +
+                                (result.message?.let { ": $it" } ?: ""),
+                    ).asErrorResult()
+            } else {
+                result.asOkResult()
+            }
+        } catch (expected: Exception) {
+            IdkError
+                .UNKNOWN_ERROR(
+                    message = "Reader-engagement device authentication could not be validated: ${expected.message}",
+                    exception = expected,
+                ).asErrorResult()
+        }
     }
 
     // ====================================================================
@@ -869,6 +942,7 @@ class MdocReaderEngagementManagerImpl(
             // Clear session state
             sessionEncryption = null
             readerEphemeralKey = null
+            activeSessionTranscript = null
 
             // Reset connection state
             _deviceEngagement.value = null
@@ -936,4 +1010,9 @@ class MdocReaderEngagementManagerImpl(
     interface Graph {
         val mdocReaderEngagementManager: MdocReaderEngagementManager
     }
+}
+
+private fun UInt.toIntExact(field: String): Int {
+    require(this <= Int.MAX_VALUE.toUInt()) { "$field is outside the signed 32-bit range" }
+    return toInt()
 }

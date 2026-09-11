@@ -25,6 +25,7 @@ import com.sphereon.core.defaults.context.JwtClaimsInput
 import com.sphereon.core.defaults.context.markValidated
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.context.BasicSecuredDetails
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.IdentityMetadata
 import com.sphereon.di.context.IdentityResolutionInput
 import com.sphereon.di.context.IdentityResolutionPipeline
@@ -50,6 +51,7 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
 
 /**
  * The identity pipeline is the single authority for principal classification.
@@ -59,6 +61,36 @@ import kotlin.test.assertEquals
  * defaulting overloads that would silently downgrade to USER.
  */
 class UserContextInterceptorPrincipalTypeTest {
+    @Test
+    fun anonymousTokenIdentityUsesFrameworkPrincipalSentinel() {
+        val resolution =
+            IdentityResolutionResult(
+                tenantId = "tenant-1",
+                principalId = null,
+                principalType = PrincipalType.ANONYMOUS,
+                metadata = IdentityMetadata(resolvedFrom = ResolutionSource.TOKEN),
+            )
+
+        val normalized = resolution.withAnonymousPrincipalSentinel()
+
+        assertEquals(IdentityConstants.ANONYMOUS_PRINCIPAL_ID, normalized.principalId)
+        assertEquals("tenant-1", normalized.tenantId)
+        assertEquals(PrincipalType.ANONYMOUS, normalized.principalType)
+    }
+
+    @Test
+    fun namedIdentityIsNotRewritten() {
+        val resolution =
+            IdentityResolutionResult(
+                tenantId = "tenant-1",
+                principalId = "service-1",
+                principalType = PrincipalType.WORKLOAD,
+                metadata = IdentityMetadata(resolvedFrom = ResolutionSource.TOKEN),
+            )
+
+        assertSame(resolution, resolution.withAnonymousPrincipalSentinel())
+    }
+
     @Test
     fun workloadClassificationFromPipelineReachesSessionCreation() =
         runTest {

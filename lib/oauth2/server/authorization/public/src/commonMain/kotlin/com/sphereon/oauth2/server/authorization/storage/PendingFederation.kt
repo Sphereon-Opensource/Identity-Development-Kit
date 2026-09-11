@@ -17,8 +17,11 @@
 package com.sphereon.oauth2.server.authorization.storage
 
 import com.sphereon.oauth2.client.model.PkceData
+import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.server.authorization.provider.FlowContext
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteDecision
+import com.sphereon.oauth2.server.authorization.model.NormalizedAuthenticationEvidence
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
@@ -34,9 +37,9 @@ import kotlin.time.Instant
  * between the completion flag and any associated [CachedUserInfo] write via
  * [FederationSessionStore.completePendingFederation].
  *
- * Tenant context is intentionally NOT carried on this record. The federation provider is
- * `SessionScope` and reads tenant from `SessionExecution` at the point of use, so a stale
- * tenant captured at initiate time can never override the live session at callback time.
+ * Tenant, hosted-AS, binding and upstream revisions are pinned at initiation and compared with
+ * the live callback context. They are evidence to reject substitution, never an override for the
+ * callback's resolved tenant.
  *
  * [applicationId] is the opaque application / login-surface id the originating authorization
  * request resolved (see `AuthenticationContext.applicationId`). Captured at initiate time so
@@ -46,19 +49,64 @@ import kotlin.time.Instant
  */
 @Serializable
 data class PendingFederation(
+    val tenantId: String,
+    val hostedAuthorizationServerId: String,
+    val hostedAuthorizationServerRevision: Long,
+    val federationBindingId: String,
+    val federationBindingRevision: Long,
+    val upstreamAuthorizationServerId: String,
+    val upstreamAuthorizationServerRevision: Long,
+    val upstreamIssuer: String,
+    val downstreamClientId: String,
+    val authenticationRoute: AuthenticationRouteDecision,
     val sessionId: String,
     val state: String,
     val nonce: String,
-    val pkceData: PkceData?,
+    val pkceData: PkceData,
     val metadata: AuthorizationServerMetadata,
     val returnUrl: String,
     val callbackRedirectUri: String,
     val completed: Boolean = false,
     val userId: String? = null,
     val authenticatedAt: Instant? = null,
-    val providerId: String = "default",
+    val providerId: String,
     val flowContext: FlowContext? = null,
     val upstreamAcr: String? = null,
     val upstreamAmr: List<String>? = null,
     val applicationId: String? = null,
-)
+    val createdAt: Instant,
+    val expiresAt: Instant,
+    val callbackConsumedAt: Instant? = null,
+    val evidence: NormalizedAuthenticationEvidence? = null,
+) {
+    init {
+        require(state.isNotBlank() && nonce.isNotBlank() && state != nonce) { "Upstream state and nonce must be independent values" }
+        require(pkceData.codeChallengeMethod == PkceMethod.S256) { "Upstream PKCE must use S256" }
+        require(pkceData.codeVerifier.length in 43..128 && pkceData.codeChallenge.isNotBlank()) { "Upstream PKCE verifier/challenge is invalid" }
+        require(createdAt < expiresAt) { "Pending federation expiry must follow creation" }
+        require(authenticationRoute.selectedBindingId == federationBindingId) { "Pending federation binding must match the pinned route" }
+        require(authenticationRoute.hostedAuthorizationServerId == hostedAuthorizationServerId) { "Pending federation hosted AS must match the pinned route" }
+        require(authenticationRoute.hostedAuthorizationServerRevision == hostedAuthorizationServerRevision) {
+            "Pending federation hosted AS revision must match the pinned route"
+        }
+        val selectedBinding =
+            requireNotNull(authenticationRoute.eligibleBindings.singleOrNull { it.bindingId == federationBindingId }) {
+                "Pending federation route must contain exactly one selected binding"
+            }
+        require(selectedBinding.upstreamResourceId == upstreamAuthorizationServerId) {
+            "Pending federation upstream resource must match the pinned route"
+        }
+        require(selectedBinding.upstreamResourceRevision == upstreamAuthorizationServerRevision) {
+            "Pending federation upstream resource revision must match the pinned route"
+        }
+        require(selectedBinding.bindingRevision == federationBindingRevision) {
+            "Pending federation binding revision must match the pinned route"
+        }
+        require(selectedBinding.upstreamIssuer == upstreamIssuer && metadata.issuer == upstreamIssuer) {
+            "Pending federation issuer must match the pinned route and discovery metadata"
+        }
+        require(providerId == federationBindingId) {
+            "Pending federation provider selector must be the exact binding id"
+        }
+    }
+}

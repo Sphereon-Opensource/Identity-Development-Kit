@@ -1,0 +1,55 @@
+{
+  "source": "https://www.w3.org/TR/2025/REC-vc-di-ecdsa-20250515/#test-vectors",
+  "p256": {
+    "publicKeyMultibase": "zDnaepBuvsQ8cpsWrVKw8fbpGpvPeNSjVPTWoq6cRqaYzBKVP",
+    "secretKeyMultibase": "z42twTcNeSYcnqg1FLuSFs2bsGH3ZqbRHFmvS9XMsYhjxvHN",
+    "unsecuredDocument": {
+      "@context": ["https://www.w3.org/ns/credentials/v2", "https://www.w3.org/ns/credentials/examples/v2"],
+      "id": "urn:uuid:58172aac-d8ba-11ed-83dd-0b3aef56cc33",
+      "type": ["VerifiableCredential", "AlumniCredential"],
+      "name": "Alumni Credential",
+      "description": "A minimum viable example of an Alumni Credential.",
+      "issuer": "https://vc.example/issuers/5678",
+      "validFrom": "2023-01-01T00:00:00Z",
+      "credentialSubject": {"id": "did:example:abcdefgh", "alumniOf": "The School of Examples"}
+    },
+    "proof": {
+      "type": "DataIntegrityProof",
+      "cryptosuite": "ecdsa-rdfc-2019",
+      "created": "2023-02-24T23:36:38Z",
+      "verificationMethod": "did:key:zDnaepBuvsQ8cpsWrVKw8fbpGpvPeNSjVPTWoq6cRqaYzBKVP#zDnaepBuvsQ8cpsWrVKw8fbpGpvPeNSjVPTWoq6cRqaYzBKVP",
+      "proofPurpose": "assertionMethod",
+      "proofValue": "zaHXrr7AQdydBk3ahpCDpWbxfLokDqmCToYm2dyWvpcFVyWooC2he63w1f7UNQoAMKdhaRtcnaE2KTo5o5vTCcfw"
+    },
+    "documentHashHex": "517744132ae165a5349155bef0bb0cf2258fff99dfe1dbd914b938d775a36017",
+    "proofConfigHashHex": "3a8a522f689025727fb9d1f0fa99a618da023e8494ac74f51015d009d35abc2e",
+    "hashDataHex": "3a8a522f689025727fb9d1f0fa99a618da023e8494ac74f51015d009d35abc2e517744132ae165a5349155bef0bb0cf2258fff99dfe1dbd914b938d775a36017",
+    "signatureHex": "1cb4290918ffb04a55ff7ae1e55e316a9990fda8eec67325eac7fcbf2ddf9dd2b06716a657e72b284c9604df3a172ecbf06a1a475b49ac807b1d9162df855636"
+  },
+  "p384": {
+    "publicKeyMultibase": "z82LkuBieyGShVBhvtE2zoiD6Kma4tJGFtkAhxR5pfkp5QPw4LutoYWhvQCnGjdVn14kujQ",
+    "secretKeyMultibase": "z2fanyY7zgwNpZGxX5fXXibvScNaUWNprHU9dKx7qpVj7mws9J8LLt4mDB5TyH2GLHWkUc",
+    "unsecuredDocument": {
+      "@context": ["https://www.w3.org/ns/credentials/v2", "https://www.w3.org/ns/credentials/examples/v2"],
+      "id": "urn:uuid:58172aac-d8ba-11ed-83dd-0b3aef56cc33",
+      "type": ["VerifiableCredential", "AlumniCredential"],
+      "name": "Alumni Credential",
+      "description": "A minimum viable example of an Alumni Credential.",
+      "issuer": "https://vc.example/issuers/5678",
+      "validFrom": "2023-01-01T00:00:00Z",
+      "credentialSubject": {"id": "did:example:abcdefgh", "alumniOf": "The School of Examples"}
+    },
+    "proof": {
+      "type": "DataIntegrityProof",
+      "cryptosuite": "ecdsa-rdfc-2019",
+      "created": "2023-02-24T23:36:38Z",
+      "verificationMethod": "did:key:z82LkuBieyGShVBhvtE2zoiD6Kma4tJGFtkAhxR5pfkp5QPw4LutoYWhvQCnGjdVn14kujQ#z82LkuBieyGShVBhvtE2zoiD6Kma4tJGFtkAhxR5pfkp5QPw4LutoYWhvQCnGjdVn14kujQ",
+      "proofPurpose": "assertionMethod",
+      "proofValue": "z967Mvv5bxtmLNqTzPZ8KmJjFmFXaAKeQNzq7GWnQkMcLtaGSSmuozE5WtJ8PipMe178B1tE28K1vsJur9bGVJhz6jgSJsRHFSQeqgH8hhjcg8gZDFJC1b9FsR5ggNmDBqHv"
+    },
+    "documentHashHex": "8bf6e01df72c5b62f91b685231915ac4b8c58ea95f002c6b8f6bfafa1b251df476b56b8e01518e317dab099d3ecbff96",
+    "proofConfigHashHex": "e32805a26492eac777aa7a138f6d8da3c74e0c7be7b296dcaccf97420c3b92eaad7be6449ca565e165031567f5c7cbc1",
+    "hashDataHex": "e32805a26492eac777aa7a138f6d8da3c74e0c7be7b296dcaccf97420c3b92eaad7be6449ca565e165031567f5c7cbc18bf6e01df72c5b62f91b685231915ac4b8c58ea95f002c6b8f6bfafa1b251df476b56b8e01518e317dab099d3ecbff96",
+    "signatureHex": "177ac088806c2506d49f0bfec16056a6a80ace62cd029888ad561aba22a59d192d77d9b1fc28df80dea5ee6c8bceb16f1b8bff6bd6ff2d8f8778bdde48bafa7b6cc1f914c0168b5c04499882f632deea9cb7d977e888bb0e1ee9fb20ff03b025"
+  }
+}

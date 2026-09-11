@@ -32,7 +32,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.wallet.wscd.mobile"
         compileSdk = 35
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }

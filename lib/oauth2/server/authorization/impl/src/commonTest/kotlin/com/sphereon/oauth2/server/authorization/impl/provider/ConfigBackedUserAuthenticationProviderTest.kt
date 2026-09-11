@@ -156,7 +156,7 @@ class ConfigBackedUserAuthenticationProviderTest {
                         ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
                         ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
                         "oauth2.users.accounts.alice.sub" to "alice-sub",
-                        "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to
+                        "oauth2.users.accounts.alice.webauthn.credential-ids" to
                             "credential-a, credential-b",
                     ) + webAuthnPolicyConfig(),
                 )
@@ -193,7 +193,7 @@ class ConfigBackedUserAuthenticationProviderTest {
                         ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
                         ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
                         "oauth2.users.accounts.alice.sub" to "alice-sub",
-                        "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to
+                        "oauth2.users.accounts.alice.webauthn.credential-ids" to
                             "credential-a",
                     ) + webAuthnPolicyConfig(),
                 )
@@ -238,7 +238,7 @@ class ConfigBackedUserAuthenticationProviderTest {
                         ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
                         ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
                         "oauth2.users.accounts.alice.sub" to "alice-sub",
-                        "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to
+                        "oauth2.users.accounts.alice.webauthn.credential-ids" to
                             "credential-a",
                     ) + webAuthnPolicyConfig(),
                 )
@@ -253,7 +253,7 @@ class ConfigBackedUserAuthenticationProviderTest {
                     ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
                     ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
                     "oauth2.users.accounts.alice.sub" to "alice-sub",
-                    "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to "credential-a",
+                    "oauth2.users.accounts.alice.webauthn.credential-ids" to "credential-a",
                 )
             val missing = newProvider(accountConfig)
             assertFalse(missing.isAuthenticationMethodAvailable(AuthenticationMethod.WEBAUTHN).value)
@@ -272,7 +272,7 @@ class ConfigBackedUserAuthenticationProviderTest {
                     ConfigBackedUserAuthenticationProvider.SALT_KEY to deploymentSaltB64,
                     ConfigBackedUserAuthenticationProvider.ITERATIONS_KEY to iterations.toString(),
                     "oauth2.users.accounts.alice.sub" to "alice-sub",
-                    "oauth2.users.accounts.alice.${ConfigBackedUserAuthenticationProvider.ACCOUNT_WEBAUTHN_CREDENTIAL_IDS_LEAF}" to "credential-a",
+                    "oauth2.users.accounts.alice.webauthn.credential-ids" to "credential-a",
                 )
             val provider = newProvider(base + webAuthnPolicyConfig(prfEnabled = false))
 
@@ -445,14 +445,14 @@ class ConfigBackedUserAuthenticationProviderTest {
         prfEnabled: Boolean = true,
     ): Map<String, String> =
         mapOf(
-            ConfigBackedUserAuthenticationProvider.WEBAUTHN_RP_ID_KEY to rpId,
-            ConfigBackedUserAuthenticationProvider.WEBAUTHN_ALLOWED_ORIGINS_KEY to allowedOrigins,
-            ConfigBackedUserAuthenticationProvider.WEBAUTHN_ATTESTATION_POLICY_KEY to "none",
-            ConfigBackedUserAuthenticationProvider.WEBAUTHN_USER_VERIFICATION_KEY to "required",
-            ConfigBackedUserAuthenticationProvider.WEBAUTHN_ALLOWED_TRANSPORTS_KEY to "internal,usb",
-            ConfigBackedUserAuthenticationProvider.WEBAUTHN_BACKUP_STATE_POLICY_KEY to "require-backup-eligible",
-            ConfigBackedUserAuthenticationProvider.WEBAUTHN_CHALLENGE_TTL_SECONDS_KEY to "300",
-            ConfigBackedUserAuthenticationProvider.WEBAUTHN_LEVEL3_PRF_ENABLED_KEY to prfEnabled.toString(),
+            "oauth2.users.webauthn.rp-id" to rpId,
+            "oauth2.users.webauthn.allowed-origins" to allowedOrigins,
+            "oauth2.users.webauthn.attestation-policy" to "none",
+            "oauth2.users.webauthn.user-verification" to "required",
+            "oauth2.users.webauthn.allowed-transports" to "internal,usb",
+            "oauth2.users.webauthn.backup-state-policy" to "require-backup-eligible",
+            "oauth2.users.webauthn.challenge-ttl-seconds" to "300",
+            "oauth2.users.webauthn.level3.prf-enabled" to prfEnabled.toString(),
         )
 
     private fun validWebAuthnAssertion(

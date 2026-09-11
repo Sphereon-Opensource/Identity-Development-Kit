@@ -6,8 +6,10 @@
 
 package com.sphereon.trust.core.resolver
 
+import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
+import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -36,8 +38,27 @@ data class ResolutionOptions(
     val useCache: Boolean = true,
     val maxCacheAgeMs: Long = 3600000,
     val verifySignature: Boolean = true,
+    /** Explicit signer roots required for trust-list XML/XAdES verification. */
+    val trustedSignerRoots: List<ByteArray>? = null,
+    val maxBodyBytes: Long = 10 * 1024 * 1024,
+    val maxRedirects: Int = 0,
+    val requireHttps: Boolean = true,
     @JsExportIgnoreCompat
     val customOptions: Map<String, String> = emptyMap(),
+    /** Signed NextUpdate bound supplied by the caller after ETSI verification. */
+    val signedNextUpdateEpochMillis: Long? = null,
+)
+
+@Serializable
+@JsExportCompat
+data class TrustListCacheMetadata(
+    val cacheControl: String? = null,
+    val expiresAtEpochMillis: Long? = null,
+    val signedNextUpdateEpochMillis: Long? = null,
+    val effectiveTtlMs: Long? = null,
+    val noStore: Boolean = false,
+    val revalidationRequired: Boolean = false,
+    val diagnosticReasonCode: String? = null,
 )
 
 @OptIn(ExperimentalObjCName::class)
@@ -50,6 +71,7 @@ data class TrustListData(
     val fromCache: Boolean = false,
     val retrievedAt: Long,
     val cacheToken: String? = null,
+    val cacheMetadata: TrustListCacheMetadata? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) {
@@ -77,6 +99,9 @@ data class TrustListData(
         if (cacheToken != other.cacheToken) {
             return false
         }
+        if (cacheMetadata != other.cacheMetadata) {
+            return false
+        }
         return true
     }
 
@@ -87,6 +112,7 @@ data class TrustListData(
         result = 31 * result + fromCache.hashCode()
         result = 31 * result + retrievedAt.hashCode()
         result = 31 * result + (cacheToken?.hashCode() ?: 0)
+        result = 31 * result + (cacheMetadata?.hashCode() ?: 0)
         return result
     }
 }
@@ -94,4 +120,5 @@ data class TrustListData(
 class TrustListResolutionException(
     message: String,
     cause: Throwable? = null,
+    val reasonCode: String = TrustDiagnosticReasonCodes.TRUST_LIST_RESOLUTION_FAILED,
 ) : Exception(message, cause)

@@ -48,6 +48,7 @@ import kotlin.native.ObjCName
  * @property keyOperations The allowed operations for this key
  * @property alg The signature algorithm to use
  * @property keyVisibility The visibility of the key (PUBLIC or PRIVATE)
+ * @property walletUnitId Optional authoritative wallet secure-component owner binding
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GenerateKeyArgs", exact = true)
@@ -63,6 +64,7 @@ GenerateKeyArgs
         val keyOperations: Array<out KeyOperations>? = null,
         val alg: SignatureAlgorithm? = null,
         val keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
+        val walletUnitId: String? = null,
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) {
@@ -99,6 +101,9 @@ GenerateKeyArgs
             if (keyVisibility != other.keyVisibility) {
                 return false
             }
+            if (walletUnitId != other.walletUnitId) {
+                return false
+            }
 
             return true
         }
@@ -110,6 +115,7 @@ GenerateKeyArgs
             result = 31 * result + (keyOperations?.contentHashCode() ?: 0)
             result = 31 * result + (alg?.hashCode() ?: 0)
             result = 31 * result + (keyVisibility?.hashCode() ?: 0)
+            result = 31 * result + (walletUnitId?.hashCode() ?: 0)
             return result
         }
     }
@@ -117,14 +123,13 @@ GenerateKeyArgs
 /**
  * Result of a key generation operation.
  *
- * `@Serializable` so the result round-trips over the binary/gRPC transport (east-west KMS generate):
- * without it the codec and the kotlinx JSON fallback both fail and the adapter falls back to a
- * non-decodable `toString()`, so a remote caller sees the generate as failed even though the key was
- * created. [keyPair] stays `@Transient` — the freshly generated PRIVATE key material is deliberately
- * never serialized over the wire; it lives in the (remote) KMS and the caller only needs the success
- * outcome. The result therefore serializes as an empty object.
+ * `@Serializable` lets the result round-trip over the east-west KMS transport. [keyPair] stays
+ * `@Transient`: freshly generated private key material never leaves the owning KMS. [keyReference]
+ * is the metadata-only authoritative receipt used to address the key without immediately listing
+ * the whole key store.
  *
  * @property keyPair The generated managed key pair (in-process only; never serialized).
+ * @property keyReference Metadata-only reference to the generated key and its owning provider.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("GenerateKeyResult", exact = true)
@@ -136,6 +141,8 @@ GenerateKeyResult
     constructor(
         @kotlinx.serialization.Transient
         val keyPair: ManagedKeyPair? = null,
+        /** Metadata-only authoritative receipt; private key material remains KMS-local. */
+        val keyReference: ManagedKeyReference? = null,
     )
 
 /**
@@ -158,9 +165,10 @@ interface GenerateKeyCommand : ServiceCommand<GenerateKeyArgs, GenerateKeyResult
 // ============================================================================
 
 /**
- * Arguments for listing all keys in the key store.
+ * Arguments for listing metadata-only key references in the key store.
  *
- * @property providerId Optional provider ID filter
+ * @property providerId Optional provider ID filter.
+ * @property alias Optional exact key-alias filter.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ListKeysArgs", exact = true)
@@ -171,6 +179,8 @@ ListKeysArgs
     @JvmOverloads
     constructor(
         val providerId: String? = null,
+        /** Optional exact alias filter, applied by the owning key store before return. */
+        val alias: String? = null,
     )
 
 /**

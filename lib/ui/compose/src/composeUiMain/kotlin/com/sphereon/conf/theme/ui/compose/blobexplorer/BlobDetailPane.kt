@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.parseDp
+import com.sphereon.conf.theme.ui.compose.tokenFill
+import com.sphereon.conf.theme.ui.compose.tokenGradient
 import com.sphereon.conf.theme.ui.compose.tokens.LocalBlobExplorerTokens
 import com.sphereon.conf.theme.ui.compose.tokens.LocalButtonTokens
 
@@ -60,7 +63,9 @@ fun BlobDetailPane(
     val fg = parseColor(tokens.itemForeground)
     val fgSecondary = parseColor(tokens.itemForegroundSecondary)
     val detailWidth = parseDp(tokens.detailWidth, 300.dp)
-    val primaryBg = parseColor(buttonTokens.primaryBackground)
+    // The primary background token may hold the brand gradient, so resolve it as a fill rather
+    // than a colour: parseColor alone would render nothing.
+    val primaryFill = tokenFill(buttonTokens.primaryBackground, MaterialTheme.colorScheme.primary)
     val primaryFg = parseColor(buttonTokens.primaryForeground)
     val secondaryBg = parseColor(buttonTokens.secondaryBackground)
     val secondaryFg = parseColor(buttonTokens.secondaryForeground)
@@ -112,7 +117,12 @@ fun BlobDetailPane(
             config.onViewBlob?.let { onView ->
                 Button(
                     onClick = { onView(blob) },
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryBg, contentColor = primaryFg),
+                    modifier = Modifier.tokenGradient(primaryFill, RoundedCornerShape(buttonRadius)),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = primaryFill.containerColor,
+                            contentColor = primaryFg,
+                        ),
                     shape = RoundedCornerShape(buttonRadius),
                 ) { Text("View", fontSize = 13.sp) }
             }

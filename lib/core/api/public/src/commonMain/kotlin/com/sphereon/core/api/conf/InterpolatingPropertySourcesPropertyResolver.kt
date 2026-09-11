@@ -18,6 +18,7 @@
 package com.sphereon.core.api.conf
 
 import com.sphereon.core.api.coroutines.runBlockingCompat
+import com.sphereon.core.api.log.Log
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -50,6 +51,7 @@ class InterpolatingPropertySourcesPropertyResolver(
     private val protectedDelegate = ProtectedPropertySourcesResolver(propertySources, this.resolverLevel, redactionPolicy)
     private val delegate = protectedDelegate
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
+    private val logger = Log.app().withTag("ConfigurationInterpolation")
 
     override fun canSetProperty(key: String) = protectedDelegate.canSetProperty(key)
 
@@ -177,6 +179,16 @@ class InterpolatingPropertySourcesPropertyResolver(
                 interpolateCanonicalValue(key, raw)
             }
         if (result.isErr) {
+            val causeType = result.error::class.simpleName ?: "IdkError"
+            val detail =
+                result.error.message.defaultMessage
+                    .replace('\r', ' ')
+                    .replace('\n', ' ')
+                    .take(240)
+            logger.warn(
+                "VDX_CONFIGURATION_INTERPOLATION_DENIED " +
+                    "property=${key.configurationLogToken()} cause=$causeType detail=$detail",
+            )
             throw IllegalStateException("Configuration interpolation was denied")
         }
         val provenance = result.value.provenance
@@ -191,6 +203,9 @@ class InterpolatingPropertySourcesPropertyResolver(
                 ),
         )
     }
+
+    private fun String.configurationLogToken(): String =
+        replace(Regex("[^A-Za-z0-9._\\-\\[\\]]"), "_").take(200).ifBlank { "unknown" }
 
     private suspend fun interpolateCanonicalValue(
         key: String,

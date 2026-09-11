@@ -17,6 +17,10 @@
 package com.sphereon.openid.oid4vp.holder.impl
 
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.binary.TypeToken
+import com.sphereon.core.api.binary.typeToken
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeToBase64Url
@@ -42,10 +46,14 @@ import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.jose.jws.JwtServiceImpl
 import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
 import com.sphereon.crypto.kms.CertificateServiceImpl
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
+import com.sphereon.crypto.dataintegrity.command.AddProofInput
+import com.sphereon.crypto.dataintegrity.command.AddProofOutput
+import com.sphereon.crypto.dataintegrity.command.AddProofServiceCommand
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.mdoc.MdocSignService
@@ -70,6 +78,7 @@ import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.responseUri
 import com.sphereon.openid.oid4vp.common.vpToken
+import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
@@ -195,6 +204,9 @@ class CreateAuthorizationResponseCommandImplMdocTest {
             val command =
                 CreateAuthorizationResponseCommandImpl(
                     execution = setup.execution,
+                    holderJwtVpSigningProvider =
+                        JwtServiceHolderJwtVpSigningProvider((setup.sessionContext.graph as JwtServiceImpl.Graph).jwtService),
+                    addProofServiceCommand = UnusedAddProofCommand,
                     mdocOid4vpService =
                         MdocOid4vpServiceImpl(
                             signService = setup.mdocSignService,
@@ -257,8 +269,8 @@ class CreateAuthorizationResponseCommandImplMdocTest {
                     SelectedCredential(
                         credentialQueryId = "businesscard_mdoc",
                         credentialId = "mdoc-1",
-                        presentation = storedCredential,
-                        format = "mso_mdoc",
+                        presentation = JsonPrimitive(storedCredential),
+                        credentialFormat = CredentialFormat.MSO_MDOC,
                         holderKeyRef = deviceKeyPair.kid ?: deviceKeyPair.alias,
                     ),
                 )
@@ -400,4 +412,12 @@ class CreateAuthorizationResponseCommandImplMdocTest {
         )
     }
 
+}
+
+private object UnusedAddProofCommand : AddProofServiceCommand {
+    override val inputTypeToken: TypeToken<AddProofInput> = typeToken<AddProofInput>()
+    override val outputTypeToken: TypeToken<AddProofOutput> = typeToken<AddProofOutput>()
+    override val isEnabled: Boolean = true
+    override suspend fun execute(args: AddProofInput): IdkResult<AddProofOutput, IdkError> =
+        error("Data Integrity proof creation is not used by the mdoc test")
 }

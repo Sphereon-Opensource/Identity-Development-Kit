@@ -23,6 +23,7 @@ import com.sphereon.crypto.core.cose.CoseHeaderCbor
 import com.sphereon.mdoc.data.device.DeviceNameSpaces
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
+import com.sphereon.mdoc.data.device.MacKeys
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -63,6 +64,7 @@ import kotlin.native.ObjCName
  * @param unprotectedHeader Optional COSE unprotected header for device signature
  * @param protectedHeader Optional COSE protected header for device signature
  * @param requireDeviceX5Chain Whether to require x5chain in device signature
+ * @param macKeys Reader-advertised keys used for second-edition COSE_Mac0 device authentication
  */
 @JsExportCompat
 @OptIn(ExperimentalObjCName::class)
@@ -75,6 +77,7 @@ data class DocumentSigningRequest(
     val unprotectedHeader: CoseHeaderCbor? = null,
     val protectedHeader: CoseHeaderCbor? = null,
     val requireDeviceX5Chain: Boolean = false,
+    val macKeys: MacKeys? = null,
 ) {
     init {
         // Validate at construction time to fail fast

@@ -178,11 +178,15 @@ class MdocValidationsImpl(
                         issuerAuthValidation.verifyValidityInfo(
                             auth,
                             verifiedAt,
-                            allowNotYetValidDocuments,
-                            allowExpiredDocuments,
-                            dateTimeUtils,
-                            timeZoneId,
-                            clockSkewAllowedInSec,
+                            // Keep the public API order (not-yet-valid, expired) separate from
+                            // IssuerAuthValidation's historical parameter order (expired,
+                            // not-yet-valid). Named arguments prevent the two policies from
+                            // silently changing meaning here.
+                            allowExpiredDocuments = allowExpiredDocuments,
+                            allowNotYetValidDocuments = allowNotYetValidDocuments,
+                            dateTimeUtils = dateTimeUtils,
+                            timeZoneId = timeZoneId,
+                            clockSkewAllowedInSec = clockSkewAllowedInSec,
                         )
                     }
 

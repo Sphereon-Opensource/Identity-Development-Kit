@@ -21,11 +21,21 @@ import kotlinx.serialization.Serializable
 
 /**
  * Visual variant of a theme, controlling light/dark/high-contrast appearance.
+ *
+ * High contrast is named per ground rather than as a single member, because the role shapes invert
+ * between them: on a light ground the secondary is a deep stop carrying white text, on a dark ground
+ * it is a light stop carrying dark text. One member could not describe both, and a bare
+ * `HIGH_CONTRAST` beside a `HIGH_CONTRAST_DARK` would harden that asymmetry into the name.
  */
 @JsExportCompat
 @Serializable
 enum class ThemeVariant {
     LIGHT,
     DARK,
-    HIGH_CONTRAST,
+
+    /** High contrast on a light ground. See `SystemDefaults.baselineHighContrastLight`. */
+    HIGH_CONTRAST_LIGHT,
+
+    /** High contrast on a dark ground. See `SystemDefaults.baselineHighContrastDark`. */
+    HIGH_CONTRAST_DARK,
 }

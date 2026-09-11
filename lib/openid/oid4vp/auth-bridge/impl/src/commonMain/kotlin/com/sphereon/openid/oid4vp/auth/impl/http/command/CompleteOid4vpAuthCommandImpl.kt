@@ -24,6 +24,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpJson
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.di.session.SessionScope
@@ -32,7 +33,8 @@ import com.sphereon.openid.oid4vp.auth.http.CompleteOid4vpAuthCommand
 import com.sphereon.openid.oid4vp.auth.http.model.CompleteOid4vpAuthResponse
 import com.sphereon.openid.oid4vp.auth.model.Oid4vpAuthErrorCode
 import com.sphereon.openid.oid4vp.auth.store.Oid4vpAuthSessionStore
-import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -55,7 +57,8 @@ import kotlinx.serialization.json.buildJsonObject
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<CompleteOid4vpAuthCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(CompleteOid4vpAuthCommand.COMMAND_ID)
 class CompleteOid4vpAuthCommandImpl(
     execution: SessionExecution,
     private val authBridge: Oid4vpAuthBridge,

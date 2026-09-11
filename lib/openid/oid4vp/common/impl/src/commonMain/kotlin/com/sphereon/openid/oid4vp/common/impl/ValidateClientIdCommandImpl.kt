@@ -34,6 +34,7 @@ import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.did.resolver.DidResolutionOptions
 import com.sphereon.did.resolver.DidResolverRegistry
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.Oid4vpRequestTrustMaterialProvider
 import com.sphereon.openid.oid4vp.common.ClientIdValidationError
 import com.sphereon.openid.oid4vp.common.ClientIdValidationErrorType
 import com.sphereon.openid.oid4vp.common.JarConstants
@@ -67,6 +68,7 @@ import dev.zacsweers.metro.SingleIn
 class ValidateClientIdCommandImpl(
     execution: SessionExecution,
     private val identifierService: IdentifierService,
+    private val requestTrustMaterialProvider: Oid4vpRequestTrustMaterialProvider,
     private val didResolverRegistry: DidResolverRegistry? = null,
     private val verifyVerifierAttestationCommand: VerifyVerifierAttestationCommand? = null,
 ) : TypedServiceCommandAdapter<ValidateClientIdArgs, ValidateClientIdResult, IdkError>(
@@ -928,10 +930,23 @@ class ValidateClientIdCommandImpl(
     ): Certificate? {
         val x5cStrings = certificates.map { it.derToBase64() }
 
+        // x5c is presented identity evidence. Roots must come from the same fresh,
+        // authenticated Trust Domain decision used by request-object validation.
+        val trustMaterial = requestTrustMaterialProvider.resolve().getOrElse { error ->
+            errors.add(
+                ClientIdValidationError(
+                    type = ClientIdValidationErrorType.CERTIFICATE_VALIDATION_FAILED,
+                    message = "Governed X.509 request trust material is unavailable",
+                    details = error.message.defaultMessage,
+                ),
+            )
+            return null
+        }
         val opts =
             ExternalIdentifierX5cOpts(
                 identifier = x5cStrings,
                 verify = true,
+                trustAnchors = trustMaterial.x509.map { it.certificatePem },
             )
 
         val result = identifierService.resolve(opts)
@@ -940,7 +955,11 @@ class ValidateClientIdCommandImpl(
                 val x5cResult = resolved as? ExternalIdentifierResult.X5c
                 if (x5cResult != null) {
                     val verificationResult = x5cResult.verificationResult
-                    if (verificationResult.error) {
+                    if (verificationResult.error ||
+                        verificationResult.critical ||
+                        verificationResult.message == "X509 verification has been disabled" ||
+                        verificationResult.publicKey == null
+                    ) {
                         errors.add(
                             ClientIdValidationError(
                                 type = ClientIdValidationErrorType.CERTIFICATE_VALIDATION_FAILED,

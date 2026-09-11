@@ -2,7 +2,6 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>ClassOrdering:Oid4vciIssuerConfig.kt$Oid4vciIssuerConfigProvider$fun keyAttesterTrustFor( credentialConfigId: String, proofType: String, ): KeyAttesterTrustConfig?</ID>
     <ID>ClassOrdering:Oid4vciIssuerService.kt$Oid4vciIssuerService$val commands: Commands</ID>
     <ID>ComplexInterface:Oid4vciIssuerConfig.kt$Oid4vciIssuerConfigProvider</ID>
     <ID>MagicNumber:Oid4vciIssuerConfig.kt$Oid4vciIssuerConfigProvider$60L</ID>

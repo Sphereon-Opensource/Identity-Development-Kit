@@ -92,6 +92,8 @@ class SoftwareKmsProviderRegistrar(
     private fun keyStore(providerId: String): KeyStoreConfig =
         when (val configured = keyStoreConfiguration) {
             SoftwareWscdKeyStoreConfiguration.InMemoryForTestingOnly -> SoftwareKmsProviderConfig(id = providerId).keyStore
+            SoftwareWscdKeyStoreConfiguration.PersistentStorageRequired ->
+                error("software_wscd_persistent_storage_required")
             SoftwareWscdKeyStoreConfiguration.AppleKeychain -> {
                 check(app.platformInfo.osFamily == PlatformInfo.OsFamily.IOS) {
                     "software_wscd_apple_keychain_requires_ios"

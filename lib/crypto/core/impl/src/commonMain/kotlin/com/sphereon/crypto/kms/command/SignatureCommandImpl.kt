@@ -28,6 +28,11 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureResult
@@ -40,6 +45,7 @@ import com.sphereon.crypto.core.kms.command.VerifyDigestResult
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureArgs
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureCommand
 import com.sphereon.crypto.core.kms.command.VerifyRawSignatureResult
+import com.sphereon.crypto.core.sign.requireSigningKeyCompatible
 import com.sphereon.crypto.jose.jws.command.hasResolvedPublicJwkVerificationMaterial
 import com.sphereon.crypto.jose.jws.command.verifyResolvedPublicJwkSignature
 import com.sphereon.di.session.SessionContext
@@ -77,7 +83,22 @@ class CreateRawSignatureCommandImpl(
         log.debug("Creating raw signature with key: ${keyInfo.kid ?: keyInfo.alias ?: "unknown"}")
 
         return try {
-            val provider = providerRegistry.getProvider(keyInfo.providerId, keyInfo.signatureAlgorithm)
+            val requestedAlgorithm = keyInfo.signatureAlgorithm ?: keyInfo.key?.getSignatureAlgorithm()
+            // Metadata-only selectors are resolved and policy-checked by the provider after the
+            // managed key has been selected. Applying the inline-material guard here would reject
+            // valid alias-only/kid-only selectors that intentionally carry no keyType metadata.
+            if (keyInfo.key != null) {
+                requestedAlgorithm?.let { keyInfo.requireSigningKeyCompatible(it) }
+            }
+            val provider =
+                if (keyInfo.providerId != null || keyInfo.key != null || (keyInfo.alias == null && keyInfo.kid == null)) {
+                    // An explicit provider remains authoritative. In particular, do not hide a
+                    // bad provider id by searching another tenant provider.
+                    providerRegistry.getProvider(keyInfo.providerId, requestedAlgorithm)
+                } else {
+                    resolveManagedSigningProvider(keyInfo)
+                }
+            provider.requireManagedSigningKeySelection(keyInfo)
             val signature = provider.createRawSignature(keyInfo, appliedArgs.input, appliedArgs.requireX5Chain)
             log.debug("Signature created successfully, length: ${signature.size} bytes")
             CreateRawSignatureResult(signature).asOkResult()
@@ -88,6 +109,38 @@ class CreateRawSignatureCommandImpl(
     }
 
     override suspend fun supports(args: Any): Boolean = args is CreateRawSignatureArgs && args.keyInfo != null
+
+    /**
+     * Find the tenant provider that owns a keyless selector. The selector is probed with public
+     * visibility only and the returned key material is deliberately discarded; the original
+     * alias/kid-only selector is passed to the provider for the actual KMS signing operation.
+     */
+    private suspend fun resolveManagedSigningProvider(keyInfo: KeyInfoType<*>): com.sphereon.crypto.core.kms.KmsProvider {
+        val selector =
+            KeyInfo<KeyType>(
+                alias = keyInfo.alias,
+                kid = if (keyInfo.alias == null) keyInfo.kid else null,
+                keyVisibility = KeyVisibility.PUBLIC,
+                signatureAlgorithm = keyInfo.signatureAlgorithm,
+                keyType = keyInfo.keyType,
+            )
+        val tried = mutableListOf<String>()
+        var lastError: Exception? = null
+        for (providerId in providerRegistry.getProviderIds()) {
+            tried += providerId
+            try {
+                val provider = providerRegistry.getProviderById(providerId)
+                provider.getKey(selector.copy(providerId = providerId))
+                return provider
+            } catch (expected: Exception) {
+                lastError = expected
+            }
+        }
+        throw IllegalArgumentException(
+            "Could not find signing key for alias '${keyInfo.alias}' or kid '${keyInfo.kid}' in registered providers ${tried.joinToString()}",
+            lastError,
+        )
+    }
 }
 
 /**
@@ -178,7 +231,13 @@ class SignDigestCommandImpl(
         }
 
         return try {
-            val provider = providerRegistry.getProvider(keyInfo.providerId, signatureAlgorithm)
+            // Resolve an explicitly selected provider without filtering by algorithm first. The
+            // command owns capability validation and must return UNSUPPORTED_OPERATION when that
+            // provider is known but does not advertise the requested algorithm; asking the
+            // registry for both values turns the same condition into a generic PKI/CRYPTO_ERROR.
+            val provider =
+                keyInfo.providerId?.let { providerRegistry.getProviderById(it) }
+                    ?: providerRegistry.getProvider(alg = signatureAlgorithm)
             if (!provider.getCapabilities().supportsOperation(KmsProviderOperation.SIGN_DIGEST)) {
                 return IdkError
                     .UNSUPPORTED_OPERATION_ERROR(
@@ -193,6 +252,7 @@ class SignDigestCommandImpl(
                         reason = "Provider ${provider.id} does not advertise digest signing for $signatureAlgorithm",
                     ).asErrorResult()
             }
+            provider.requireManagedSigningKeySelection(keyInfo)
             val signature =
                 provider.signDigest(
                     keyInfo = keyInfo,
@@ -253,7 +313,11 @@ class VerifyDigestCommandImpl(
         }
 
         return try {
-            val provider = providerRegistry.getProvider(keyInfo.providerId, signatureAlgorithm)
+            // See SignDigestCommandImpl: keep provider lookup separate from operation/algorithm
+            // capability reporting so callers receive a stable unsupported-operation error.
+            val provider =
+                keyInfo.providerId?.let { providerRegistry.getProviderById(it) }
+                    ?: providerRegistry.getProvider(alg = signatureAlgorithm)
             if (!provider.getCapabilities().supportsOperation(KmsProviderOperation.VERIFY_DIGEST)) {
                 return IdkError
                     .UNSUPPORTED_OPERATION_ERROR(

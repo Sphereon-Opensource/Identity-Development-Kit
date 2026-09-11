@@ -81,7 +81,10 @@ class JsonStreamingCodec(
      * without any reflection (required for GraalVM native-image command dispatch).
      */
     private val serializerByClass: Map<KClass<*>, KSerializer<*>> =
-        serializerEntries.associate { it.kClass to it.serializer }
+        serializerEntries.filter { it.kType == null }.associate { it.kClass to it.serializer }
+
+    private val serializerByType =
+        serializerEntries.mapNotNull { entry -> entry.kType?.let { it to entry.serializer } }.toMap()
 
     override val contentType: String = ContentTypes.JSON
 
@@ -138,6 +141,21 @@ class JsonStreamingCodec(
             Err(CodecErrors.encodingError("Failed to encode to JSON: ${expected.message}", expected))
         }
 
+    override fun <T : Any> encode(value: T, typeToken: TypeToken<T>): IdkResult<StreamingBody, IdkError> =
+        try {
+            val serializer = serializerByType[typeToken.kType]
+                ?: serializerByClass[value::class]
+                ?: return Err(
+                    CodecErrors.encodingError(
+                        "No registered serializer for ${typeToken.simpleName} - register it in the command serializer registry (CommandSerializerEntry).",
+                    ),
+                )
+            @Suppress("UNCHECKED_CAST")
+            Ok(StreamingBody.Text(effectiveJson.encodeToString(serializer as KSerializer<T>, value)))
+        } catch (expected: Exception) {
+            Err(CodecErrors.encodingError("Failed to encode to JSON: ${expected.message}", expected))
+        }
+
     /**
      * Decodes a [StreamingBody] to a typed value.
      *
@@ -181,7 +199,8 @@ class JsonStreamingCodec(
             // runtime classpath for GraalVM native-image support.
             val kClass = typeToken.kType.classifier as? KClass<*>
             val serializer =
-                kClass?.let { serializerByClass[it] }
+                serializerByType[typeToken.kType]
+                    ?: kClass?.let { serializerByClass[it] }
                     ?: return Err(
                         CodecErrors.decodingError(
                             "No registered serializer for ${typeToken.simpleName} — " +

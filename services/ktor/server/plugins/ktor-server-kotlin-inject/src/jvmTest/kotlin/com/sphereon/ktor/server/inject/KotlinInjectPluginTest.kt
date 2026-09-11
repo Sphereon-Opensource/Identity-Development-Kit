@@ -21,10 +21,16 @@ import com.sphereon.core.api.conf.AppConfigEnvironment
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.RoutedHttpAdapter
+import com.sphereon.core.api.http.config.UniversalHttpConfig
+import com.sphereon.core.api.http.describe.HttpAdapterDescription
+import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpRoute
 import com.sphereon.core.api.http.describe.MediaType
 import com.sphereon.core.api.http.describe.httpRoutes
+import com.sphereon.core.api.http.dispatch.DefaultHttpAdapterCatalog
+import com.sphereon.core.api.http.dispatch.DefaultHttpAdapterRouteSelector
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
 import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.UserContextLogManager
@@ -34,8 +40,9 @@ import com.sphereon.core.defaults.context.JwtClaimsInput
 import com.sphereon.core.defaults.context.markValidated
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.PrincipalType
-import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
+import com.sphereon.ktor.server.inject.http.respondWithGeneric
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
+import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -61,6 +68,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -126,7 +134,9 @@ class KotlinInjectPluginTest {
             routing {
                 get("/authorize") {
                     val context = call.userInstance.context
-                    call.respondText("${context.principal}|${context.principalType}")
+                    call.respondText(
+                        "${context.tenant.tenantId}|${context.principal}|${context.principalType}",
+                    )
                 }
             }
 
@@ -138,7 +148,7 @@ class KotlinInjectPluginTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals(
-                "${IdentityConstants.ANONYMOUS_PRINCIPAL_ID}|${PrincipalType.ANONYMOUS}",
+                "public-route-tenant|${IdentityConstants.ANONYMOUS_PRINCIPAL_ID}|${PrincipalType.ANONYMOUS}",
                 response.bodyAsText(),
             )
         }
@@ -628,6 +638,77 @@ class KotlinInjectPluginTest {
         }
 
     @Test
+    fun `unserved universal route returns before tenant and session construction`() =
+        testApplication {
+            val appGraph =
+                createTestAppGraph(
+                    application = Unit,
+                    appId = "test-app",
+                    profile = "test",
+                    version = "1.0.0",
+                )
+            var tenantResolutionCount = 0
+
+            install(KotlinInjectPlugin) {
+                this.appGraph = appGraph
+                tenantResolver =
+                    object : TenantResolver {
+                        override fun resolve(call: ApplicationCall): com.sphereon.di.context.TenantInput {
+                            tenantResolutionCount++
+                            return com.sphereon.core.defaults.context
+                                .DefaultTenantInputString("must-not-resolve")
+                        }
+                    }
+                principalResolver = FixedPrincipalResolver("must-not-resolve")
+            }
+            application {
+                installUniversalHttpAdapters()
+            }
+
+            val response = client.get("/definitely-not-in-the-app-catalog")
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals(0, tenantResolutionCount)
+            appGraph.destroy()
+        }
+
+    @Test
+    fun `unserved explicitly marked kms route returns before tenant and session construction`() =
+        testApplication {
+            val appGraph =
+                createTestAppGraph(
+                    application = Unit,
+                    appId = "test-app",
+                    profile = "test",
+                    version = "1.0.0",
+                )
+            var tenantResolutionCount = 0
+
+            install(KotlinInjectPlugin) {
+                this.appGraph = appGraph
+                tenantResolver =
+                    object : TenantResolver {
+                        override fun resolve(call: ApplicationCall): com.sphereon.di.context.TenantInput {
+                            tenantResolutionCount += 1
+                            error("An unserved KMS route must not construct request scope")
+                        }
+                    }
+            }
+            routing {
+                route("/keys/{...}") {
+                    markUniversalHttpAdapterRoute()
+                    handle { error("An unserved KMS route must not reach its session dispatcher") }
+                }
+            }
+
+            val response = client.get("/keys/definitely-not-in-the-app-catalog")
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals(0, tenantResolutionCount)
+            appGraph.destroy()
+        }
+
+    @Test
     fun `test routed http adapter directly`() =
         testApplication {
             // Create an instance of the test HTTP adapter
@@ -635,7 +716,7 @@ class KotlinInjectPluginTest {
 
             // The dispatcher normally strips serverPrefix before calling the adapter.
             // Since we're testing without the dispatcher, we simulate this by
-            // stripping the serverPrefix from the request path before calling handleRequest.
+            // stripping the serverPrefix from the request path before selected-route execution.
             fun normalizeRequest(
                 request: GenericHttpRequest,
                 serverPrefix: String,
@@ -653,21 +734,21 @@ class KotlinInjectPluginTest {
                         val genericRequest = call.toGenericHttpRequest()
                         // Simulate dispatcher stripping serverPrefix ("/api")
                         val normalizedRequest = normalizeRequest(genericRequest, "/api")
-                        val response = testAdapter.handleRequest(normalizedRequest)
+                        val response = testAdapter.handleSelected(normalizedRequest)
                         call.respondWithGenericResponse(response)
                     }
 
                     get("/items/{itemId}") {
                         val genericRequest = call.toGenericHttpRequest()
                         val normalizedRequest = normalizeRequest(genericRequest, "/api")
-                        val response = testAdapter.handleRequest(normalizedRequest)
+                        val response = testAdapter.handleSelected(normalizedRequest)
                         call.respondWithGenericResponse(response)
                     }
 
                     post("/items") {
                         val genericRequest = call.toGenericHttpRequest()
                         val normalizedRequest = normalizeRequest(genericRequest, "/api")
-                        val response = testAdapter.handleRequest(normalizedRequest)
+                        val response = testAdapter.handleSelected(normalizedRequest)
                         call.respondWithGenericResponse(response)
                     }
                 }
@@ -699,38 +780,40 @@ class KotlinInjectPluginTest {
         }
 
     @Test
-    fun `test routed http adapter with canHandle routing`() =
+    fun `test routed http adapter with app scoped route selection`() =
         testApplication {
-            // Create an instance of the test HTTP adapter
             val testAdapter = TestHttpAdapter()
+            val provider =
+                object : HttpAdapterDescriptorProvider {
+                    override val id: String = testAdapter.id
 
-            // The dispatcher normally strips serverPrefix before calling the adapter.
-            fun normalizeRequest(
-                request: GenericHttpRequest,
-                serverPrefix: String,
-            ): GenericHttpRequest {
-                val normalizedPath = request.path.removePrefix(serverPrefix)
-                return request.copy(path = normalizedPath)
-            }
+                    override fun describe(): HttpAdapterDescription = testAdapter.describe()
+                }
+            val selector =
+                DefaultHttpAdapterRouteSelector(
+                    DefaultHttpAdapterCatalog(setOf(provider), UniversalHttpConfig.DEFAULT),
+                )
 
-            // Wire the adapter using its canHandle method for dynamic routing
-            // This is closer to how the Universal HTTP Adapter dispatcher works
             routing {
                 route("/api/test/{...}") {
                     handle {
                         val genericRequest = call.toGenericHttpRequest()
-                        // Simulate dispatcher stripping serverPrefix
-                        val normalizedRequest = normalizeRequest(genericRequest, "/api")
+                        when (val selection = selector.select(genericRequest.method, genericRequest.path)) {
+                            is HttpAdapterRouteSelection.Selected -> {
+                                val response =
+                                    testAdapter.handleResolvedRequest(
+                                        selection.match.applyTo(genericRequest),
+                                        selection.match,
+                                    )
+                                call.respondWithGenericResponse(response)
+                            }
 
-                        // Check if the adapter can handle this request
-                        if (testAdapter.canHandle(normalizedRequest)) {
-                            val response = testAdapter.handleRequest(normalizedRequest)
-                            call.respondWithGenericResponse(response)
-                        } else {
-                            call.respondText(
-                                "Not found: ${normalizedRequest.method} ${normalizedRequest.path}",
-                                status = HttpStatusCode.NotFound,
-                            )
+                            else -> {
+                                call.respondText(
+                                    "Not found: ${genericRequest.method} ${genericRequest.path}",
+                                    status = HttpStatusCode.NotFound,
+                                )
+                            }
                         }
                     }
                 }
@@ -820,6 +903,40 @@ class KotlinInjectPluginTest {
                     "corruption indicates a `decodeToString()` round-trip on the response path",
             )
         }
+
+    @Test
+    fun genericRespondersPreserveRepeatedSetCookieFieldLines() =
+        testApplication {
+            val cookies =
+                listOf(
+                    "owner=opaque; Path=/; HttpOnly; Secure",
+                    "csrf=token; Path=/; Secure",
+                )
+            routing {
+                get("/universal-repeated-headers") {
+                    call.respondWithGenericResponse(
+                        GenericHttpResponse(
+                            statusCode = 200,
+                            multiValueHeaders = mapOf("Set-Cookie" to cookies),
+                        ),
+                    )
+                }
+                get("/jvm-repeated-headers") {
+                    call.respondWithGeneric(
+                        GenericHttpResponse(
+                            statusCode = 200,
+                            multiValueHeaders = mapOf("Set-Cookie" to cookies),
+                        ),
+                    )
+                }
+            }
+
+            listOf("/universal-repeated-headers", "/jvm-repeated-headers").forEach { path ->
+                val response = client.get(path)
+                assertEquals(cookies, response.headers.getAll(HttpHeaders.SetCookie), path)
+                assertFalse(response.headers.getAll(HttpHeaders.SetCookie).orEmpty().any { it.contains(", csrf=") }, path)
+            }
+        }
 }
 
 private val ValidatedJwtTestPlugin =
@@ -866,7 +983,8 @@ private val ValidatedWorkloadJwtTestPlugin =
  * - @Inject
  * - @Named(MyAdapter.ID)
  * - @SingleIn(SessionScope::class)
- * - @ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+ * - @ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+ * - @StringKey(MyAdapter.ID)
  */
 private class TestHttpAdapter : RoutedHttpAdapter() {
     companion object {
@@ -886,24 +1004,50 @@ private class TestHttpAdapter : RoutedHttpAdapter() {
     override val routes: List<HttpRoute> =
         httpRoutes {
             get("/items") {
+                handlerCommandId("test.http.list")
                 operationId("listTestItems")
                 produces(MediaType.ApplicationJson)
                 handle { request -> handleListItems(request) }
             }
 
             get("/items/{itemId}") {
+                handlerCommandId("test.http.get")
                 operationId("getTestItem")
                 produces(MediaType.ApplicationJson)
                 handle { request -> handleGetItem(request) }
             }
 
             post("/items") {
+                handlerCommandId("test.http.create")
                 operationId("createTestItem")
                 consumes(MediaType.ApplicationJson)
                 produces(MediaType.ApplicationJson)
                 handle { request -> handleCreateItem(request) }
             }
         }
+
+    suspend fun handleSelected(request: GenericHttpRequest): GenericHttpResponse {
+        val matches =
+            describe().endpoints.flatMap { endpoint ->
+                endpoint.pathPatterns
+                    .filter { pattern -> request.matches(endpoint.method.name, pattern) }
+                    .map { pattern -> endpoint to pattern }
+            }
+        require(matches.size == 1) { "Expected one test route for ${request.method} ${request.path}" }
+        val (endpoint, pattern) = matches.single()
+        return handleResolvedRequest(
+            request,
+            com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch(
+                adapterId = id,
+                method = request.method,
+                originalPath = request.path,
+                normalizedPath = request.path,
+                matchedPathPattern = pattern,
+                handlerCommandId = requireNotNull(endpoint.handlerCommandId),
+                tenantIdFromPath = null,
+            ),
+        )
+    }
 
     private suspend fun handleListItems(request: GenericHttpRequest): GenericHttpResponse = jsonResponse(200, """{"items": ["item1", "item2", "item3"]}""")
 

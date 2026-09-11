@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
+import com.sphereon.openid.oid4vci.issuer.config.ResolveWalletProviderTrustArgs
 import com.sphereon.openid.oid4vci.issuer.impl.nonce.NonceManager
 import com.sphereon.openid.oid4vci.issuer.impl.proof.ProofVerifier
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
@@ -49,6 +50,7 @@ class CredentialRequestProofBatchVerifierTest {
                     audience = "https://issuer.example.com",
                     expectedClientId = "wallet-client",
                     credentialConfigId = "UniversityDegree",
+                    walletProviderTrustArgs = null,
                 )
 
             assertTrue(result.isOk, "batch proof verification should succeed: ${result.errorOrNull()?.message?.defaultMessage}")
@@ -77,6 +79,7 @@ class CredentialRequestProofBatchVerifierTest {
                     audience = "https://issuer.example.com",
                     expectedClientId = "wallet-client",
                     credentialConfigId = "UniversityDegree",
+                    walletProviderTrustArgs = null,
                 )
 
             assertTrue(result.isErr, "mixed batch nonces must fail")
@@ -99,6 +102,7 @@ class CredentialRequestProofBatchVerifierTest {
                     audience = "https://issuer.example.com",
                     expectedClientId = "wallet-client",
                     credentialConfigId = "UniversityDegree",
+                    walletProviderTrustArgs = null,
                 )
 
             assertTrue(result.isOk, "single proof verification should succeed")
@@ -121,6 +125,7 @@ class CredentialRequestProofBatchVerifierTest {
             expectedAudience: String,
             expectedClientId: String?,
             credentialConfigId: String,
+            walletProviderTrustArgs: ResolveWalletProviderTrustArgs?,
             proofTypeSupported: ProofTypeSupported?,
             expectedNonce: String?,
             consumeNonce: Boolean,

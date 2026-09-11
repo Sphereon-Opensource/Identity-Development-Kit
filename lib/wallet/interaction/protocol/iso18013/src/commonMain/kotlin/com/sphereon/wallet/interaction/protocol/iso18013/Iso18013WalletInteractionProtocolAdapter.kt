@@ -17,7 +17,7 @@ import com.sphereon.wallet.interaction.WalletEntryPointKind
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActionType
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionError
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionProtocolAdapter
@@ -35,6 +35,7 @@ import com.sphereon.wallet.interaction.WalletSecurityOperation
 import com.sphereon.wallet.interaction.WalletSecurityGrantValidation
 import com.sphereon.wallet.interaction.validateFor
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
+import com.sphereon.wallet.interaction.classifiedWalletInteractionError
 import kotlin.time.Clock
 
 class Iso18013WalletInteractionProtocolAdapter(
@@ -56,6 +57,7 @@ class Iso18013WalletInteractionProtocolAdapter(
         return when {
             raw.startsWith("mdoc://") -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.website_retrieval")
             raw.startsWith("mdoc:") -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.reverse_engagement")
+            raw.startsWith("mdoc-openid4vp://") -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.openid4vp_presentation_exchange")
             entryPoint.kind == WalletEntryPointKind.NFC_HANDOVER -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.nfc_handover")
             entryPoint.kind == WalletEntryPointKind.BLE_HANDOVER -> WalletProtocolMatch.strong(capability.priority, "iso18013.match.ble_handover")
             entryPoint.kind == WalletEntryPointKind.WIFI_AWARE_HANDOVER -> WalletProtocolMatch.weak(capability.priority, "iso18013.match.wifi_aware_handover_model_only")
@@ -80,8 +82,8 @@ class Iso18013WalletInteractionProtocolAdapter(
                     status = WalletInteractionStatus.UnsupportedEntryPoint,
                     terminal = true,
                     error =
-                        WalletInteractionError(
-                            code = "iso18013.transport_unavailable",
+                        classifiedWalletInteractionError(
+                            code = WalletInteractionFailureCodes.ISO18013_TRANSPORT_UNAVAILABLE,
                             messageKey = "wallet.interaction.error.iso18013_transport_unavailable",
                         ),
                 )
@@ -95,8 +97,8 @@ class Iso18013WalletInteractionProtocolAdapter(
                     status = WalletInteractionStatus.Failed,
                     terminal = true,
                     error =
-                        WalletInteractionError(
-                            code = "iso18013.engagement_failed",
+                        classifiedWalletInteractionError(
+                            code = WalletInteractionFailureCodes.ISO18013_ENGAGEMENT_FAILED,
                             messageKey = "wallet.interaction.error.iso18013_engagement_failed",
                         ),
                 )
@@ -125,8 +127,8 @@ class Iso18013WalletInteractionProtocolAdapter(
                     trust = trust,
                     terminal = true,
                     error =
-                        WalletInteractionError(
-                            code = "iso18013.reader_blocked",
+                        classifiedWalletInteractionError(
+                            code = WalletInteractionFailureCodes.ISO18013_READER_BLOCKED,
                             messageKey = "wallet.interaction.error.mdoc_reader_blocked",
                         ),
                 )
@@ -187,7 +189,11 @@ class Iso18013WalletInteractionProtocolAdapter(
                 if (grant == null || validation is WalletSecurityGrantValidation.Invalid) {
                     sessionState.next(
                         status = WalletInteractionStatus.Failed,
-                        error = WalletInteractionError("iso18013.security_grant_ref_invalid", "wallet.interaction.error.security_grant_ref_invalid", retryable = true),
+                        error =
+                            classifiedWalletInteractionError(
+                                WalletInteractionFailureCodes.ISO18013_SECURITY_GRANT_REF_INVALID,
+                                "wallet.interaction.error.security_grant_ref_invalid",
+                            ),
                     )
                 } else {
                     context.storePrivate(mapOf("security_grant_id" to grant.grantId))
@@ -201,10 +207,9 @@ class Iso18013WalletInteractionProtocolAdapter(
                 sessionState.copy(
                     revision = sessionState.revision + 1,
                     error =
-                        WalletInteractionError(
-                            code = "iso18013.action_counterparty_resolution_not_allowed",
+                        classifiedWalletInteractionError(
+                            code = WalletInteractionFailureCodes.ISO18013_ACTION_COUNTERPARTY_RESOLUTION_NOT_ALLOWED,
                             messageKey = "wallet.interaction.error.action_not_allowed",
-                            retryable = true,
                         ),
                 )
             }
@@ -215,20 +220,25 @@ class Iso18013WalletInteractionProtocolAdapter(
         }
 
     private suspend fun WalletInteractionContext.authorizeMdocDisclosure(sessionState: WalletInteractionState): WalletInteractionState {
+        val operationId = "${sessionState.sessionId.value}-mdoc-share"
+        val operationBinding =
+            securityAttribute(WalletSecurityContextAttributes.OPERATION_BINDING)
+                ?: "operation:$operationId"
         val result =
             authorizeProtocolOperation(
                 WalletProtocolExecutionRequest(
-                    operationId = "${sessionState.sessionId.value}-mdoc-share",
+                    operationId = operationId,
                     sessionId = sessionState.sessionId,
                     sessionWalletUnitId = sessionState.walletUnitId,
                     protocol = WalletProtocol.ISO18013,
-                    operation = WalletSecurityOperation.PRESENTATION_SHARING,
+                    operation = WalletSecurityOperation.PRESENT_CREDENTIALS,
                     audience = sessionState.counterparty?.identifier,
                     keyRef = securityAttribute(WalletSecurityContextAttributes.KEY_REF),
                     walletUnitId = securityAttribute(WalletSecurityContextAttributes.WALLET_UNIT_ID),
                     walletAccountId = securityAttribute(WalletSecurityContextAttributes.WALLET_ACCOUNT_ID),
                     activationDecisionId = securityAttribute(WalletSecurityContextAttributes.ACTIVATION_DECISION_ID),
                     operationType = securityAttribute(WalletSecurityContextAttributes.OPERATION_TYPE),
+                    operationBinding = operationBinding,
                     operationHash = securityAttribute(WalletSecurityContextAttributes.OPERATION_HASH),
                     nonce = securityAttribute(WalletSecurityContextAttributes.NONCE),
                 ),
@@ -252,8 +262,8 @@ class Iso18013WalletInteractionProtocolAdapter(
                     status = WalletInteractionStatus.Failed,
                     terminal = true,
                     error =
-                        WalletInteractionError(
-                            code = "iso18013.security_denied",
+                        classifiedWalletInteractionError(
+                            code = WalletInteractionFailureCodes.ISO18013_SECURITY_DENIED,
                             messageKey = result.reasonKey,
                             arguments = result.arguments,
                         ),
@@ -299,10 +309,9 @@ class Iso18013WalletInteractionProtocolAdapter(
                     status = WalletInteractionStatus.Failed,
                     terminal = !result.retryable,
                     error =
-                        WalletInteractionError(
+                        classifiedWalletInteractionError(
                             code = result.code,
                             messageKey = result.messageKey,
-                            retryable = result.retryable,
                             arguments = result.arguments,
                         ),
                 )

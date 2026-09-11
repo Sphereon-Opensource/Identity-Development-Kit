@@ -222,7 +222,10 @@ class RestClientKmsProviderImpl(
                 applyAuthHeaders()
                 setBody(
                     CreateRawSignature(
-                        keyInfo = keyInfo.toRest(),
+                        // This client is only a transport. Preserve the requested algorithm in
+                        // the wire contract; the remote KMS/provider remains responsible for
+                        // resolving actual key metadata and enforcing alg/kty/curve/use/key_ops.
+                        keyInfo = keyInfo.toRestPreservingSigningAlgorithm(),
                         input = Base64ByteArray(input),
                     ),
                 )
@@ -251,7 +254,7 @@ class RestClientKmsProviderImpl(
                 url("${config.restKmsUrl}/signatures/raw/verify")
                 contentType(ContentType.Application.Json)
                 applyAuthHeaders()
-                setBody(VerifyRawSignature(keyInfo = keyInfo.toRest(), input = Base64ByteArray(input), signature = Base64ByteArray(signature)))
+                setBody(VerifyRawSignature(keyInfo = keyInfo.toRestPreservingSigningAlgorithm(), input = Base64ByteArray(input), signature = Base64ByteArray(signature)))
             }
         handleErrors(response)
         val verifyRawSignatureResponse = response.body<VerifyRawSignatureResponse>()
@@ -568,4 +571,11 @@ class RestClientKmsProviderImpl(
             throw IllegalArgumentException(errorResponse.message)
         }
     }
+
+    private fun KeyInfoType<*>.toRestPreservingSigningAlgorithm() =
+        toRest().also { projected ->
+            require(signatureAlgorithm == null || projected.signatureAlgorithm != null) {
+                "REST KMS request cannot represent requested signature algorithm '$signatureAlgorithm'"
+            }
+        }
 }

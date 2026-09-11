@@ -104,7 +104,7 @@ class HandleAuthorizeCallbackCommandImpl(
         // [OidcLoginSessionStore]; the federation provider has nothing to return for that
         // session id, so we fall back to the cookie-keyed login session.
         val resolvedAuthenticatedUser =
-            resolveAuthenticatedUser(sessionId)
+            resolveAuthenticatedUser(applied.authenticationSessionId ?: sessionId)
                 ?: return Err(
                     IdkError.fromString(
                         code = "server_error",
@@ -200,8 +200,8 @@ class HandleAuthorizeCallbackCommandImpl(
      * [OidcLoginSessionStore] (AS first-party `/login` flow). Returns null when neither source
      * carries a usable identity, leaving the caller to surface a `server_error`.
      */
-    private suspend fun resolveAuthenticatedUser(pendingSessionId: String): ResolvedAuthenticatedUser? {
-        val providerResult = userAuthProvider.getAuthenticatedUser(pendingSessionId)
+    private suspend fun resolveAuthenticatedUser(authenticationSessionId: String): ResolvedAuthenticatedUser? {
+        val providerResult = userAuthProvider.getAuthenticatedUser(authenticationSessionId)
         if (providerResult.isOk) {
             providerResult.value?.let { return ResolvedAuthenticatedUser(user = it) }
         }

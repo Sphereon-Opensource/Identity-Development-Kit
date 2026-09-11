@@ -24,6 +24,7 @@ import com.sphereon.cbor.CborEncodedItem
 import com.sphereon.cbor.CborItem
 import com.sphereon.cbor.CborMap
 import com.sphereon.cbor.CborString
+import com.sphereon.cbor.CborUInt
 import com.sphereon.cbor.StringLabel
 import com.sphereon.cbor.TDate
 import com.sphereon.cbor.toCborItem
@@ -69,6 +70,25 @@ class IssuerSignedCborCodecImplTest {
     fun issuerSigned_codec_rejects_invalid_cbor_item() {
         assertFailsWith<IllegalArgumentException> {
             codec.decode(Cbor.encode(CborString("invalid"))).getOrThrow()
+        }
+    }
+
+    @Test
+    fun issuerSignedItem_codec_rejects_digest_ids_outside_the_uint_range() {
+        val item =
+            Cbor.encode(
+                CborMap(
+                    mutableMapOf(
+                        IssuerSignedItem.DIGEST_ID to CborUInt(UInt.MAX_VALUE.toLong() + 1),
+                        IssuerSignedItem.RANDOM to RandomValue(ByteArray(24) { 0x42.toByte() }).toCborItem(),
+                        IssuerSignedItem.ELEMENT_IDENTIFIER to CborString("given_name"),
+                        IssuerSignedItem.ELEMENT_VALUE to CborString("John"),
+                    ),
+                ),
+            )
+
+        assertFailsWith<IllegalArgumentException> {
+            IssuerSignedItemCborCodecImpl().decode(item).getOrThrow()
         }
     }
 

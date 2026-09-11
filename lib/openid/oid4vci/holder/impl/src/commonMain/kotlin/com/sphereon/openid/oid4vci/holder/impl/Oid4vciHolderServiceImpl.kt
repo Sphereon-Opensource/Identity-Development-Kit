@@ -80,6 +80,7 @@ import com.sphereon.oauth2.client.command.ParsedAuthorizationResponse
 import com.sphereon.oauth2.common.error.Oauth2Error
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.JsonObject
@@ -98,7 +99,7 @@ class Oid4vciHolderServiceImpl(
     private val requestAttestationChallengeCommand: RequestAttestationChallengeCommand,
     private val exchangePreAuthorizedCodeCommand: ExchangePreAuthorizedCodeCommand,
     private val exchangeRefreshTokenCommand: ExchangeRefreshTokenCommand,
-    private val createCredentialRequestProofCommand: CreateCredentialRequestProofCommand,
+    private val createCredentialRequestProofCommandProvider: Provider<CreateCredentialRequestProofCommand>,
     private val requestCredentialCommand: RequestCredentialCommand,
     private val requestDeferredCredentialCommand: RequestDeferredCredentialCommand,
     private val sendNotificationCommand: SendNotificationCommand,
@@ -117,7 +118,8 @@ class Oid4vciHolderServiceImpl(
         override val requestAttestationChallenge = this@Oid4vciHolderServiceImpl.requestAttestationChallengeCommand
         override val exchangePreAuthorizedCode = this@Oid4vciHolderServiceImpl.exchangePreAuthorizedCodeCommand
         override val exchangeRefreshToken = this@Oid4vciHolderServiceImpl.exchangeRefreshTokenCommand
-        override val createCredentialRequestProof = this@Oid4vciHolderServiceImpl.createCredentialRequestProofCommand
+        override val createCredentialRequestProof: CreateCredentialRequestProofCommand
+            get() = this@Oid4vciHolderServiceImpl.createCredentialRequestProofCommandProvider()
         override val requestCredential = this@Oid4vciHolderServiceImpl.requestCredentialCommand
         override val requestDeferredCredential = this@Oid4vciHolderServiceImpl.requestDeferredCredentialCommand
         override val sendNotification = this@Oid4vciHolderServiceImpl.sendNotificationCommand
@@ -210,7 +212,7 @@ class Oid4vciHolderServiceImpl(
         keyAttestationJwt: String?,
         proofType: String,
     ): IdkResult<CreatedProof, IdkError> =
-        createCredentialRequestProofCommand.execute(
+        createCredentialRequestProofCommandProvider().execute(
             CreateCredentialRequestProofArgs(
                 walletUnitId = walletUnitId,
                 operationBinding = operationBinding,

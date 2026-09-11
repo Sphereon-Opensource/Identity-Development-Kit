@@ -19,6 +19,7 @@ package com.sphereon.ktor.server.inject.interceptor
 
 import com.sphereon.core.api.app.CoreApiAppExtensionGraph
 import com.sphereon.core.api.log.LogService
+import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.core.defaults.context.toSecuredDetails
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.context.IdentityConstants
@@ -92,9 +93,12 @@ class UserContextInterceptor(
 
     suspend fun intercept(call: ApplicationCall): RequestScopedContext {
         try {
-            // Resolve tenant and principal
+            // Resolve tenant and authoritative token identity first. A validated protocol token
+            // may intentionally establish tenant authority without naming a user principal (for
+            // example an OID4VCI access token carrying only authorization_details). In that case
+            // the authoritative ANONYMOUS result maps to the framework's anonymous sentinel; it
+            // must not be forced through a user-claim resolver that requires `sub` or `email`.
             val tenantInput = tenantResolver.resolve(call)
-            val principalInput = principalResolver.resolve(call)
             val validatedJwt = call.attributes.getOrNull(ValidatedJwtClaimsAttribute)
             val identityResolution =
                 validatedJwt?.let {
@@ -102,22 +106,33 @@ class UserContextInterceptor(
                         IdentityResolutionInput(tokenClaims = it.claimsInput.claims),
                     )
                 }
+            val transportPrincipalInput = if (identityResolution == null) principalResolver.resolve(call) else null
+            val effectiveIdentityResolution =
+                identityResolution?.withAnonymousPrincipalSentinel()
+                    ?: run {
+                        val anonymousInput = requireNotNull(transportPrincipalInput)
+                        IdentityResolutionResult(
+                            tenantId = tenantInput.tenant.toString(),
+                            principalId = anonymousInput.principal.toString(),
+                            principalType =
+                                if (anonymousInput.principal == IdentityConstants.ANONYMOUS_PRINCIPAL_ID) {
+                                    PrincipalType.ANONYMOUS
+                                } else {
+                                    PrincipalType.USER
+                                },
+                            metadata = IdentityMetadata(resolvedFrom = ResolutionSource.DEFAULT),
+                        )
+                    }
+            val principalInput =
+                identityResolution?.let {
+                    DefaultPrincipalInputString(
+                        requireNotNull(effectiveIdentityResolution.principalId) {
+                            "Authoritative ${effectiveIdentityResolution.principalType} identity has no principal"
+                        },
+                    )
+                } ?: requireNotNull(transportPrincipalInput)
 
             appLogger.debug("Processing request [tenant=${tenantInput.tenant}, principal=${principalInput.principal}]")
-
-            val effectiveIdentityResolution =
-                identityResolution
-                    ?: IdentityResolutionResult(
-                        tenantId = tenantInput.tenant.toString(),
-                        principalId = principalInput.principal.toString(),
-                        principalType =
-                            if (principalInput.principal == IdentityConstants.ANONYMOUS_PRINCIPAL_ID) {
-                                PrincipalType.ANONYMOUS
-                            } else {
-                                PrincipalType.USER
-                            },
-                        metadata = IdentityMetadata(resolvedFrom = ResolutionSource.DEFAULT),
-                    )
 
             // Create or get user context (ID-based, no active state)
             val contextInstance =
@@ -181,3 +196,10 @@ class UserContextInterceptor(
         }
     }
 }
+
+internal fun IdentityResolutionResult.withAnonymousPrincipalSentinel(): IdentityResolutionResult =
+    if (principalId == null && principalType == PrincipalType.ANONYMOUS) {
+        copy(principalId = IdentityConstants.ANONYMOUS_PRINCIPAL_ID)
+    } else {
+        this
+    }

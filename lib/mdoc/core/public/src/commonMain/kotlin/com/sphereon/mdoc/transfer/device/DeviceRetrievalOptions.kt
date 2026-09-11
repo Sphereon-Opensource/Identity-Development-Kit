@@ -136,6 +136,14 @@ data class Oid4vpOptions(
     val requestUri: String? = null,
     val responseUri: String? = null,
     val nonce: String? = null,
+    /**
+     * Legacy compatibility field for a Presentation Definition URL.
+     *
+     * The ISO 18013-7 Annex B transport deliberately rejects this field and
+     * requires its restricted Presentation Exchange definition inline in the
+     * signed Authorization Request. It remains part of this model so existing
+     * callers and encoded engagement values remain backward compatible.
+     */
     val presentationDefinitionUri: String? = null,
 ) : DeviceRetrievalOptions() {
     init {

@@ -19,6 +19,8 @@ package com.sphereon.trust.etsi.lote
 
 import com.sphereon.trust.etsi.lote.model.EidasRole
 import com.sphereon.trust.etsi.lote.model.EidasRole.Companion.allServiceTypes
+import com.sphereon.trust.etsi.lote.model.EtsiTrustListProfile
+import com.sphereon.trust.etsi.lote.model.LoTLServiceType
 import com.sphereon.trust.etsi.lote.model.LoTEServiceType
 import com.sphereon.trust.etsi.lote.model.LoTEType
 import kotlin.test.Test
@@ -29,45 +31,62 @@ import kotlin.test.assertTrue
 
 class EidasRoleTest {
     @Test
+    fun registrarsAndRegistersIsNotRegistrationCertificateProvider() {
+        assertNull(EidasRole.fromLoTEType(LoTEType.EU_REGISTRARS))
+        assertEquals("Access Certificate Authority", EidasRole.ACCESS_CA.description)
+    }
+
+    @Test
+    fun task1SeparatesQeaaFromLoTEProfiles() {
+        assertNull(EidasRole.QEAA_PROVIDER.loTEType)
+        assertEquals("http://uri.etsi.org/TrstSvc/Svctype/EAA/Q", EidasRole.QEAA_PROVIDER.issuanceServiceType)
+        assertEquals(6, EidasRole.entries.size)
+    }
+
+    @Test
     fun allRolesMapToValidLoTETypeConstants() {
-        assertEquals(LoTEType.EU_PID_PROVIDERS, EidasRole.PID_ISSUER.loTEType)
+        assertEquals(LoTEType.EU_PID_PROVIDERS, EidasRole.PID_PROVIDER.loTEType)
         assertEquals(LoTEType.EU_WALLET_PROVIDERS, EidasRole.WALLET_PROVIDER.loTEType)
-        assertEquals(LoTEType.EU_PUB_EAA_PROVIDERS, EidasRole.QEAA_ISSUER.loTEType)
-        assertEquals(LoTEType.EU_WRPAC_PROVIDERS, EidasRole.RELYING_PARTY.loTEType)
-        assertEquals(LoTEType.EU_REGISTRARS, EidasRole.REGISTRAR.loTEType)
+        assertNull(EidasRole.QEAA_PROVIDER.loTEType)
+        assertEquals(LoTEType.EU_PUB_EAA_PROVIDERS, EidasRole.PUB_EAA_PROVIDER.loTEType)
+        assertEquals(LoTEType.EU_WRPAC_PROVIDERS, EidasRole.ACCESS_CA.loTEType)
+        assertEquals(LoTEType.EU_WRPRC_PROVIDERS, EidasRole.REGISTRATION_CERTIFICATE_PROVIDER.loTEType)
     }
 
     @Test
     fun allRolesMapToValidIssuanceServiceTypes() {
-        assertEquals(LoTEServiceType.PID_ISSUANCE, EidasRole.PID_ISSUER.issuanceServiceType)
+        assertEquals(LoTEServiceType.PID_ISSUANCE, EidasRole.PID_PROVIDER.issuanceServiceType)
         assertEquals(LoTEServiceType.WALLET_ISSUANCE, EidasRole.WALLET_PROVIDER.issuanceServiceType)
-        assertEquals(LoTEServiceType.PUB_EAA_ISSUANCE, EidasRole.QEAA_ISSUER.issuanceServiceType)
-        assertEquals(LoTEServiceType.WRPAC_ISSUANCE, EidasRole.RELYING_PARTY.issuanceServiceType)
-        assertEquals(LoTEServiceType.REGISTER, EidasRole.REGISTRAR.issuanceServiceType)
+        assertEquals(LoTLServiceType.QEAA_ISSUANCE, EidasRole.QEAA_PROVIDER.issuanceServiceType)
+        assertEquals(LoTEServiceType.PUB_EAA_ISSUANCE, EidasRole.PUB_EAA_PROVIDER.issuanceServiceType)
+        assertEquals(LoTEServiceType.WRPAC_ISSUANCE, EidasRole.ACCESS_CA.issuanceServiceType)
+        assertEquals(LoTEServiceType.WRPRC_ISSUANCE, EidasRole.REGISTRATION_CERTIFICATE_PROVIDER.issuanceServiceType)
     }
 
     @Test
     fun revocationServiceTypesAreCorrect() {
-        assertEquals(LoTEServiceType.PID_REVOCATION, EidasRole.PID_ISSUER.revocationServiceType)
+        assertEquals(LoTEServiceType.PID_REVOCATION, EidasRole.PID_PROVIDER.revocationServiceType)
         assertEquals(LoTEServiceType.WALLET_REVOCATION, EidasRole.WALLET_PROVIDER.revocationServiceType)
-        assertEquals(LoTEServiceType.PUB_EAA_REVOCATION, EidasRole.QEAA_ISSUER.revocationServiceType)
-        assertEquals(LoTEServiceType.WRPAC_REVOCATION, EidasRole.RELYING_PARTY.revocationServiceType)
-        assertNull(EidasRole.REGISTRAR.revocationServiceType)
+        assertNull(EidasRole.QEAA_PROVIDER.revocationServiceType)
+        assertEquals(LoTEServiceType.PUB_EAA_REVOCATION, EidasRole.PUB_EAA_PROVIDER.revocationServiceType)
+        assertEquals(LoTEServiceType.WRPAC_REVOCATION, EidasRole.ACCESS_CA.revocationServiceType)
+        assertEquals(LoTEServiceType.WRPRC_REVOCATION, EidasRole.REGISTRATION_CERTIFICATE_PROVIDER.revocationServiceType)
     }
 
     @Test
     fun allLoTETypesAreDistinct() {
-        val loTETypes = EidasRole.entries.map { it.loTEType }.toSet()
-        assertEquals(EidasRole.entries.size, loTETypes.size, "All LoTEType URIs should be distinct")
+        val loTETypes = EidasRole.entries.mapNotNull { it.loTEType }.toSet()
+        assertEquals(EidasRole.entries.size - 1, loTETypes.size, "LoTEType URIs should be distinct for TS 119 602 roles")
     }
 
     @Test
     fun fromLoTETypeReturnsCorrectRole() {
-        assertEquals(EidasRole.PID_ISSUER, EidasRole.fromLoTEType(LoTEType.EU_PID_PROVIDERS))
+        assertEquals(EidasRole.PID_PROVIDER, EidasRole.fromLoTEType(LoTEType.EU_PID_PROVIDERS))
         assertEquals(EidasRole.WALLET_PROVIDER, EidasRole.fromLoTEType(LoTEType.EU_WALLET_PROVIDERS))
-        assertEquals(EidasRole.QEAA_ISSUER, EidasRole.fromLoTEType(LoTEType.EU_PUB_EAA_PROVIDERS))
-        assertEquals(EidasRole.RELYING_PARTY, EidasRole.fromLoTEType(LoTEType.EU_WRPAC_PROVIDERS))
-        assertEquals(EidasRole.REGISTRAR, EidasRole.fromLoTEType(LoTEType.EU_REGISTRARS))
+        assertEquals(EidasRole.PUB_EAA_PROVIDER, EidasRole.fromLoTEType(LoTEType.EU_PUB_EAA_PROVIDERS))
+        assertEquals(EidasRole.ACCESS_CA, EidasRole.fromLoTEType(LoTEType.EU_WRPAC_PROVIDERS))
+        assertEquals(EidasRole.REGISTRATION_CERTIFICATE_PROVIDER, EidasRole.fromLoTEType(LoTEType.EU_WRPRC_PROVIDERS))
+        assertNull(EidasRole.fromLoTEType(LoTEType.EU_REGISTRARS))
     }
 
     @Test
@@ -77,26 +96,26 @@ class EidasRoleTest {
 
     @Test
     fun fromServiceTypeFindsIssuanceTypes() {
-        assertEquals(EidasRole.PID_ISSUER, EidasRole.fromServiceType(LoTEServiceType.PID_ISSUANCE))
+        assertEquals(EidasRole.PID_PROVIDER, EidasRole.fromServiceType(LoTEServiceType.PID_ISSUANCE))
         assertEquals(EidasRole.WALLET_PROVIDER, EidasRole.fromServiceType(LoTEServiceType.WALLET_ISSUANCE))
-        assertEquals(EidasRole.QEAA_ISSUER, EidasRole.fromServiceType(LoTEServiceType.PUB_EAA_ISSUANCE))
-        assertEquals(EidasRole.RELYING_PARTY, EidasRole.fromServiceType(LoTEServiceType.WRPAC_ISSUANCE))
-        assertEquals(EidasRole.REGISTRAR, EidasRole.fromServiceType(LoTEServiceType.REGISTER))
+        assertEquals(EidasRole.PUB_EAA_PROVIDER, EidasRole.fromServiceType(LoTEServiceType.PUB_EAA_ISSUANCE))
+        assertEquals(EidasRole.ACCESS_CA, EidasRole.fromServiceType(LoTEServiceType.WRPAC_ISSUANCE))
+        assertEquals(EidasRole.REGISTRATION_CERTIFICATE_PROVIDER, EidasRole.fromServiceType(LoTEServiceType.WRPRC_ISSUANCE))
+        assertEquals(EidasRole.QEAA_PROVIDER, EidasRole.fromServiceType(LoTLServiceType.QEAA_ISSUANCE))
     }
 
     @Test
     fun fromServiceTypeFindsRevocationTypes() {
-        assertEquals(EidasRole.PID_ISSUER, EidasRole.fromServiceType(LoTEServiceType.PID_REVOCATION))
+        assertEquals(EidasRole.PID_PROVIDER, EidasRole.fromServiceType(LoTEServiceType.PID_REVOCATION))
         assertEquals(EidasRole.WALLET_PROVIDER, EidasRole.fromServiceType(LoTEServiceType.WALLET_REVOCATION))
-        assertEquals(EidasRole.QEAA_ISSUER, EidasRole.fromServiceType(LoTEServiceType.PUB_EAA_REVOCATION))
-        assertEquals(EidasRole.RELYING_PARTY, EidasRole.fromServiceType(LoTEServiceType.WRPAC_REVOCATION))
+        assertEquals(EidasRole.PUB_EAA_PROVIDER, EidasRole.fromServiceType(LoTEServiceType.PUB_EAA_REVOCATION))
+        assertEquals(EidasRole.ACCESS_CA, EidasRole.fromServiceType(LoTEServiceType.WRPAC_REVOCATION))
+        assertEquals(EidasRole.REGISTRATION_CERTIFICATE_PROVIDER, EidasRole.fromServiceType(LoTEServiceType.WRPRC_REVOCATION))
     }
 
     @Test
     fun fromServiceTypeFindsLegacyTypes() {
-        // QEAA_ISSUER has legacy CA_QC mapping
-        val result = EidasRole.fromServiceType("http://uri.etsi.org/TrstSvc/Svctype/CA/QC")
-        assertEquals(EidasRole.QEAA_ISSUER, result)
+        assertNull(EidasRole.fromServiceType("http://uri.etsi.org/TrstSvc/Svctype/CA/QC"))
     }
 
     @Test
@@ -114,15 +133,16 @@ class EidasRoleTest {
 
     @Test
     fun allServiceTypesExcludesNullRevocation() {
-        val registrarTypes = EidasRole.REGISTRAR.allServiceTypes()
-        assertEquals(1, registrarTypes.size)
-        assertTrue(registrarTypes.contains(LoTEServiceType.REGISTER))
+        val registrarTypes = EidasRole.REGISTRATION_CERTIFICATE_PROVIDER.allServiceTypes()
+        assertEquals(2, registrarTypes.size)
+        assertTrue(registrarTypes.contains(LoTEServiceType.WRPRC_ISSUANCE))
+        assertTrue(registrarTypes.contains(LoTEServiceType.WRPRC_REVOCATION))
     }
 
     @Test
-    fun qeaaIssuerHasLegacyServiceTypes() {
-        assertTrue(EidasRole.QEAA_ISSUER.legacyServiceTypes.isNotEmpty())
-        assertTrue(EidasRole.QEAA_ISSUER.legacyServiceTypes.contains("http://uri.etsi.org/TrstSvc/Svctype/CA/QC"))
+    fun qeaaUsesMemberStateProfileOnly() {
+        assertEquals(EtsiTrustListProfile.TS_119_612_MEMBER_STATE, EidasRole.QEAA_PROVIDER.trustListProfile)
+        assertTrue(EidasRole.QEAA_PROVIDER.legacyServiceTypes.isEmpty())
     }
 
     @Test
@@ -144,6 +164,6 @@ class EidasRoleTest {
 
     @Test
     fun allEntriesAreEnumerable() {
-        assertEquals(5, EidasRole.entries.size)
+        assertEquals(6, EidasRole.entries.size)
     }
 }

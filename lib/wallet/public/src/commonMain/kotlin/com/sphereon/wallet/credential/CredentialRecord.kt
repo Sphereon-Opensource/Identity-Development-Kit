@@ -16,6 +16,7 @@
 
 package com.sphereon.wallet.credential
 
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.wallet.unit.WalletSecureComponentWalletBinding
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
@@ -41,11 +42,49 @@ data class WalletUnitProfile(
     val profileType: WalletProfilePersona = WalletProfilePersona.PRIVATE_PERSON,
     val holderPartyRoleRef: IdentifierRef? = null,
     val activationPolicyId: String? = null,
+    /** Server-controlled, typed signing identifiers keyed by the exact opaque holder-key alias. */
+    val holderVerificationMethods: Map<String, WalletHolderVerificationMethod> = emptyMap(),
 ) {
     init {
         require(id.isNotBlank()) { "WalletUnitProfile.id must not be blank" }
         require(storageProfileId.isNotBlank()) { "WalletUnitProfile.storageProfileId must not be blank" }
         require(defaultHolderKeyPolicyId.isNotBlank()) { "WalletUnitProfile.defaultHolderKeyPolicyId must not be blank" }
+        require(holderVerificationMethods.keys.all(String::isNotBlank)) { "WalletUnitProfile holder verification-method keys must not be blank" }
+    }
+}
+
+/** Identifier-resolution source explicitly associated with a wallet holder key. */
+@Serializable
+enum class WalletHolderIdentifierKind {
+    DID_VERIFICATION_METHOD,
+    JWKS_KID,
+    MANAGED_KID,
+    X509,
+}
+
+/**
+ * Public signing identifier admitted by wallet policy for one opaque holder-key alias.
+ *
+ * The alias is deliberately not represented here: it locates private material inside WSCA, while
+ * this value selects the public identifier-resolution module used by a verifier.
+ */
+@Serializable
+data class WalletHolderVerificationMethod(
+    val value: String,
+    /** Explicit holder/controller identity; independent from verification-method URI spelling. */
+    val controller: String,
+    val kind: WalletHolderIdentifierKind,
+    /** Exact signature algorithm of the associated WSCA key; never inferred from [value]. */
+    val signingAlgorithm: SignatureAlgorithm,
+    val certificateChain: List<String> = emptyList(),
+) {
+    init {
+        require(value.isNotBlank()) { "Wallet holder verification method must not be blank" }
+        require(controller.isNotBlank()) { "Wallet holder verification-method controller must not be blank" }
+        require(
+            (kind == WalletHolderIdentifierKind.X509 && certificateChain.isNotEmpty() && certificateChain.all(String::isNotBlank)) ||
+                (kind != WalletHolderIdentifierKind.X509 && certificateChain.isEmpty()),
+        ) { "Only X509 holder identifiers carry a non-empty certificate chain" }
     }
 }
 

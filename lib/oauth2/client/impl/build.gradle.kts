@@ -59,6 +59,7 @@ kotlin {
 
                 // HTTP client dependencies for metadata fetching
                 api(projects.libDataLinkHttpClientPublic)
+                implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
                 implementation(sphereonlib.io.ktor.client.core)
                 implementation(sphereonlib.io.ktor.client.content.negotiation)
                 implementation(sphereonlib.io.ktor.serialization.kotlinx.json)
@@ -80,6 +81,7 @@ kotlin {
         }
         val jvmTest by getting {
             dependencies {
+                implementation(sphereonlib.io.mockk.mockk)
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)
                 implementation(projects.libCoreApiDefault)
@@ -89,3 +91,5 @@ kotlin {
         }
     }
 }
+
+

@@ -18,6 +18,7 @@
 package com.sphereon.core.api.json
 
 import com.sphereon.core.compat.JsExportCompat
+import kotlinx.atomicfu.atomic
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.SerializersModuleBuilder
@@ -57,23 +58,27 @@ object JsonSupport {
      * Called by each library to add its own registrations.
      * Libraries should call this method from their SerializerRegistration.onEnterScope() implementation.
      */
-    private val registrars = mutableListOf<SerializersModuleBuilder.() -> Unit>()
+    private data class Registrations(
+        val registrars: List<SerializersModuleBuilder.() -> Unit> = emptyList(),
+        val loadedIds: Set<String> = emptySet(),
+    )
 
-    /**
-     * Track which registration IDs have been loaded to prevent duplicate registrations.
-     */
-    private val loadedRegistrationIds = mutableSetOf<String>()
+    // Publish IDs and builders together. App graphs may start concurrently, and a builder may
+    // register another module while a snapshot is being evaluated.
+    private val registrations = atomic(Registrations())
 
     /**
      * The combined serializers module containing all registered serializers.
      * This is built lazily each time it's accessed to include any new registrations.
      */
     val module: SerializersModule
-        get() =
-            SerializersModule {
-                // Apply all registered serializer modules
-                registrars.forEach { it(this) }
+        get() {
+            val snapshot = registrations.value
+            return SerializersModule {
+                // Invoke extension code outside the atomic update against one immutable snapshot.
+                snapshot.registrars.forEach { it(this) }
             }
+        }
 
     /**
      * A Json instance configured with the combined [module].
@@ -94,12 +99,14 @@ object JsonSupport {
         registrationId: String? = null,
         block: SerializersModuleBuilder.() -> Unit,
     ) {
-        if (registrationId != null) {
-            if (!loadedRegistrationIds.add(registrationId)) {
-                // Already registered, skip
-                return
-            }
+        while (true) {
+            val current = registrations.value
+            if (registrationId != null && registrationId in current.loadedIds) return
+            val updated = Registrations(
+                registrars = current.registrars + block,
+                loadedIds = if (registrationId == null) current.loadedIds else current.loadedIds + registrationId,
+            )
+            if (registrations.compareAndSet(current, updated)) return
         }
-        registrars += block
     }
 }

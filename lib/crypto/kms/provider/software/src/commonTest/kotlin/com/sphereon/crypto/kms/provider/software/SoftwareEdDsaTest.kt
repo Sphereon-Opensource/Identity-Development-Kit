@@ -13,6 +13,7 @@ package com.sphereon.crypto.kms.provider.software
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.generic.Curve
+import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.interop.okpRawToJwk
@@ -139,7 +140,12 @@ class SoftwareEdDsaTest {
             val pub = ED25519_RFC8032_TEST1_PUBKEY.hexToByteArray()
             val expectedSig = ED25519_RFC8032_TEST1_SIGNATURE.hexToByteArray()
 
-            val jwk = okpRawToJwk(rawPublic = pub, rawPrivate = seed, curve = Curve.Ed25519)
+            val jwk = okpRawToJwk(
+                rawPublic = pub,
+                rawPrivate = seed,
+                curve = Curve.Ed25519,
+                keyOps = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
+            )
             val keyInfo =
                 ResolvedKeyInfo(
                     key = jwk,
@@ -170,7 +176,12 @@ class SoftwareEdDsaTest {
             val pub = ED448_RFC8032_BLANK_PUBKEY.hexToByteArray()
             val expectedSig = ED448_RFC8032_BLANK_SIGNATURE.hexToByteArray()
 
-            val jwk = okpRawToJwk(rawPublic = pub, rawPrivate = seed, curve = Curve.Ed448)
+            val jwk = okpRawToJwk(
+                rawPublic = pub,
+                rawPrivate = seed,
+                curve = Curve.Ed448,
+                keyOps = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
+            )
             val keyInfo =
                 ResolvedKeyInfo(
                     key = jwk,

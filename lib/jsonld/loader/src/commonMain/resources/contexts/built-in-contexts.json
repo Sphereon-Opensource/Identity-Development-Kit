@@ -1,7 +1,16 @@
 {
   "_comment": "Pinned bundle of canonical JSON-LD @context documents shipped with IDK. Generator (DefaultBuiltInContextRegistry) reads this manifest at build time and emits a Kotlin Map<iri, jsonContent>. Hashes are SHA-256 over the exact file bytes in this directory; regenerate after any update via 'sha256sum *.jsonld' in this directory.",
-  "_generatedAt": "2026-05-08",
+  "_generatedAt": "2026-08-25",
   "entries": [
+    {
+      "iri": "https://www.w3.org/2018/credentials/v1",
+      "file": "vc-1.1.jsonld",
+      "sha256": "ab4ddd9a531758807a79a5b450510d61ae8d147eab966cc9a200c07095b0cdcc",
+      "source": "https://www.w3.org/2018/credentials/v1",
+      "license": "W3C Document License (https://www.w3.org/Consortium/Legal/2015/doc-license)",
+      "fetchedAt": "2026-08-25",
+      "description": "W3C Verifiable Credentials Data Model v1.1 context"
+    },
     {
       "iri": "https://www.w3.org/ns/credentials/v2",
       "file": "vc-2.0.jsonld",

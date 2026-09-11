@@ -17,8 +17,12 @@
 package com.sphereon.core.defaults.service
 
 import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
+import com.sphereon.core.api.http.HttpAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.config.UniversalHttpConfigContribution
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.api.service.ServiceCommandGroupDescriptorProvider
+import com.sphereon.core.api.service.PublicApiRouteDescriptor
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
@@ -33,6 +37,12 @@ import dev.zacsweers.metro.Named
  */
 @ContributesTo(SessionScope::class)
 interface SessionScopeMultibindDeclarations {
+    @Multibinds(allowEmpty = true)
+    fun httpAdaptersById(): Map<String, HttpAdapter>
+
+    @Multibinds(allowEmpty = true)
+    fun httpEndpointCommandsById(): Map<String, HttpEndpointCommand>
+
     @Multibinds(allowEmpty = true)
     fun localCommands(): Map<String, ServiceCommand<*, *, *>>
 
@@ -50,5 +60,11 @@ interface AppScopeMultibindDeclarations {
     fun httpAdapterDescriptorProviders(): Set<HttpAdapterDescriptorProvider>
 
     @Multibinds(allowEmpty = true)
+    fun universalHttpConfigContributions(): Set<UniversalHttpConfigContribution>
+
+    @Multibinds(allowEmpty = true)
     fun serviceCommandGroupDescriptorProviders(): Set<ServiceCommandGroupDescriptorProvider>
+
+    @Multibinds(allowEmpty = true)
+    fun publicApiRouteDescriptors(): Set<PublicApiRouteDescriptor>
 }

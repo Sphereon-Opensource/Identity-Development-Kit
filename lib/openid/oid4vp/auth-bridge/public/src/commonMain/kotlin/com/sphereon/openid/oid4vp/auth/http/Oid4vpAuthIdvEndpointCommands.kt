@@ -43,6 +43,7 @@ interface InitiateOid4vpIdvCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "initiateOid4vpIdv",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp-auth-idv"),
                 summary = "Initiate identity verification for an OID4VP authentication session",
             )
@@ -68,6 +69,7 @@ interface GetOid4vpIdvStatusCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getOid4vpIdvStatus",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp-auth-idv"),
                 summary = "Get identity verification status for an OID4VP session",
             )

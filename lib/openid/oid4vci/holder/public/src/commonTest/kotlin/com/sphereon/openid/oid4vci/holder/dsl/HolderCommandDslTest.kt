@@ -133,6 +133,7 @@ class HolderCommandDslTest {
         val args =
             createProofArgs {
                 issuerUrl("https://issuer.example.com")
+                secureComponent("wu-test", "op-test")
                 signingKey("key-id-1", JwaAlgorithm.ES384)
                 nonce("c_nonce_abc")
                 clientId("wallet-client")
@@ -156,6 +157,7 @@ class HolderCommandDslTest {
         val args =
             createProofArgs {
                 issuerUrl("https://issuer.example.com")
+                secureComponent("wu-test", "op-test")
                 signingKey("key-id-1")
             }
 
@@ -231,6 +233,7 @@ class HolderCommandDslTest {
         val args =
             credentialFlowArgs {
                 sessionId("sess-abc")
+                secureComponent("wu-test", "op-test")
                 endpoint("https://issuer.example.com/credential", accessToken = "Bearer flow-token")
                 issuerUrl("https://issuer.example.com")
                 signingKey("key-2", JwaAlgorithm.ES256)
@@ -263,6 +266,7 @@ class HolderCommandDslTest {
         val args =
             credentialFlowArgs {
                 sessionId("sess-1")
+                secureComponent("wu-test", "op-test")
                 endpoint("https://issuer.example.com/credential", accessToken = "tok")
                 issuerUrl("https://issuer.example.com")
                 signingKey("key-1")

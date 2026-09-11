@@ -39,7 +39,7 @@ sealed class SigningKeyMode {
     /**
      * X.509 certificate chain: includes the certificate chain in the `x5c` JWT header.
      * No `kid` is set. The chain is sourced from the KMS key's `x5c` field,
-     * falling back to a PEM file path from configuration.
+     * falling back to resolved configured x5c material.
      */
     data object X5c : SigningKeyMode()
 

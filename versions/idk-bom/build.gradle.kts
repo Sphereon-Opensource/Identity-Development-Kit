@@ -64,6 +64,7 @@ dependencies {
         api("com.sphereon.idk:lib-openid-oid4vci-common-impl:$version")
         api("com.sphereon.idk:lib-openid-oid4vci-issuer-public:$version")
         api("com.sphereon.idk:lib-openid-oid4vci-issuer-impl:$version")
+        api("com.sphereon.idk:lib-openid-oid4vci-issuer-rest:$version")
 
         // OpenID OID4VP
         api("com.sphereon.idk:lib-openid-oid4vp-dcql:$version")
@@ -126,6 +127,13 @@ dependencies {
         api("com.sphereon.idk:lib-mdoc-datatransfer-impl:$version")
         api("com.sphereon.idk:lib-mdoc-datatransfer:$version")
         api("com.sphereon.idk:lib-mdoc-reader:$version")
+
+        // Attestation catalogs
+        api("com.sphereon.idk:lib-catalog-public:$version")
+        api("com.sphereon.idk:lib-catalog-impl:$version")
+        api("com.sphereon.idk:lib-catalog-persistence-api:$version")
+        api("com.sphereon.idk:lib-catalog-persistence-memory:$version")
+        api("com.sphereon.idk:lib-catalog-persistence-sqlite:$version")
 
         // Trust libraries
         api("com.sphereon.idk:lib-trust-core-public:$version")

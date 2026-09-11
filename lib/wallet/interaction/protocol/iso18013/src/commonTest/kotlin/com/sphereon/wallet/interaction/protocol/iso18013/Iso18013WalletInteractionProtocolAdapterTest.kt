@@ -6,7 +6,9 @@
 
 package com.sphereon.wallet.interaction.protocol.iso18013
 
+import com.sphereon.wallet.interaction.WalletCounterpartyRole
 import com.sphereon.wallet.interaction.WalletEntryPoint
+import com.sphereon.wallet.interaction.WalletFailureDisposition
 import com.sphereon.wallet.interaction.WalletCounterpartyAssociationDecision
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionContext
@@ -38,17 +40,36 @@ import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class Iso18013WalletInteractionProtocolAdapterTest {
     @Test
-    fun proximityMdocUriFormsMapToStrongMatchesWithoutClaimingOpenid4vp() =
+    fun proximityMdocUriFormsAndIso18013Openid4vpMapToStrongMatches() =
         runTest {
             val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
 
             assertEquals(WalletProtocolMatchStrength.STRONG, adapter.canHandle(WalletEntryPoint.rawQr("mdoc:abc")).strength)
             assertEquals(WalletProtocolMatchStrength.STRONG, adapter.canHandle(WalletEntryPoint.rawQr("mdoc://abc")).strength)
-            assertEquals(WalletProtocolMatchStrength.NONE, adapter.canHandle(WalletEntryPoint.rawQr("mdoc-openid4vp://?client_id=x")).strength)
+            assertEquals(
+                WalletProtocolMatchStrength.STRONG,
+                adapter.canHandle(WalletEntryPoint.rawQr("mdoc-openid4vp://?client_id=x&request_uri=https://verifier.example/request")).strength,
+            )
+        }
+
+    @Test
+    fun regularOid4vpDeepLinksAreNotClaimedByTheIsoAdapter() =
+        runTest {
+            val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
+
+            assertEquals(
+                WalletProtocolMatchStrength.NONE,
+                adapter.canHandle(WalletEntryPoint.rawQr("openid4vp://?client_id=verifier&dcql_query=%7B%7D")).strength,
+            )
+            assertEquals(
+                WalletProtocolMatchStrength.NONE,
+                adapter.canHandle(WalletEntryPoint.rawQr("haip-vp://?client_id=verifier&dcql_query=%7B%7D")).strength,
+            )
         }
 
     @Test
@@ -82,6 +103,24 @@ class Iso18013WalletInteractionProtocolAdapterTest {
             assertEquals(WalletProtocol.ISO18013, ble.state.protocol)
             assertFalse(encodedNfc.contains("nfc-private-payload"))
             assertFalse(encodedBle.contains("ble-private-payload"))
+        }
+
+    @Test
+    fun `mdoc reader has identifier only and no source attribution`() =
+        runTest {
+            val adapter = Iso18013WalletInteractionProtocolAdapter(Iso18013DisclosureExecutor.notConfigured)
+            val context =
+                WalletInteractionContext(
+                    sessionId = WalletInteractionSessionId("mdoc-reader-empty-detail"),
+                    walletUnitId = "wallet",
+                    executionOwner = ProtocolExecutionOwner.WALLET_APP,
+                )
+            val started = adapter.start(context, WalletEntryPoint.rawQr("mdoc:reader-engagement")).state
+            val reader = requireNotNull(started.counterparty)
+            assertEquals(WalletCounterpartyRole.MDOC_READER, reader.role)
+            assertNull(reader.displayName)
+            assertNull(reader.displayNameSource)
+            assertNull(reader.detail)
         }
 
     @Test
@@ -144,7 +183,7 @@ class Iso18013WalletInteractionProtocolAdapterTest {
 
             assertEquals(WalletInteractionStatus.Failed, next.status)
             assertEquals("iso18013.execution_not_configured", next.error?.code)
-            assertEquals(true, next.error?.retryable)
+            assertEquals(WalletFailureDisposition.TERMINAL, next.error?.disposition)
             assertFalse(next.terminal)
         }
 
@@ -197,7 +236,7 @@ class Iso18013WalletInteractionProtocolAdapterTest {
             val next = adapter.handle(context, session.state, WalletInteractionAction.continueFlow())
 
             assertEquals(WalletInteractionStatus.Completed, next.status)
-            assertEquals(WalletSecurityOperation.PRESENTATION_SHARING, securityGate.lastRequest?.operation)
+            assertEquals(WalletSecurityOperation.PRESENT_CREDENTIALS, securityGate.lastRequest?.operation)
             assertEquals("mdoc-key", securityGate.lastRequest?.keyRef)
             assertEquals("wallet-unit-mdoc", securityGate.lastRequest?.walletUnitId)
             assertEquals("wallet-account-mdoc", securityGate.lastRequest?.walletAccountId)

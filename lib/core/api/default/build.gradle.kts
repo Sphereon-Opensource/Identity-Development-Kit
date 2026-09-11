@@ -49,9 +49,6 @@ kotlin {
                 api(projects.libCoreApiPublic)
                 // CSPRNG backing for DefaultSecureRandom (OAuth2/OIDC token entropy source)
                 implementation(sphereonlib.dev.whyoleg.cryptography.random)
-                // AES-GCM for AesGcmEncryptionService (the default EncryptionService impl).
-                implementation(sphereonlib.dev.whyoleg.cryptography.core)
-                implementation(sphereonlib.dev.whyoleg.cryptography.provider.optimal)
             }
         }
         val commonTest by getting {
@@ -62,13 +59,10 @@ kotlin {
             }
         }
         // Kache doesn't support wasmJs, so KacheCacheBackend lives in nonWasmMain.
-        // libsodium-bindings (ChaCha20-Poly1305 AEAD for ChaCha20Poly1305EncryptionService)
-        // also has no wasmJs artifact, so its actual lives here too; the wasmJs actual throws.
         val nonWasmMain by creating {
             dependsOn(commonMain)
             dependencies {
                 implementation(sphereonlib.com.mayakapps.kache.kache)
-                implementation(sphereonlib.com.ionspin.kotlin.multiplatform.crypto.libsodium.bindings)
             }
         }
         val jvmMain by getting { dependsOn(nonWasmMain) }

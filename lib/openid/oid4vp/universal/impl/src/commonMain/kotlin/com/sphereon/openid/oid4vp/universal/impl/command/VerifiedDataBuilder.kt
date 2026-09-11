@@ -83,9 +83,12 @@ internal fun buildVerifiedData(session: AuthorizationSession): VerifiedData? {
 
             VerifiedClaimsValue(
                 id = matched.credentialQueryId,
-                type = matched.format,
+                type = matched.credentialFormat.value,
                 claims = claimsMap,
                 presentation = matched.presentation,
+                verificationEvidence = matched.verificationEvidence?.let { evidence ->
+                    evidence.copy(trust = evidence.trust?.copy(details = null, diagnostics = emptyList()))
+                },
             )
         }
 

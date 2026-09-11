@@ -31,9 +31,19 @@ import com.sphereon.mdoc.data.device.DeviceAuthentication
 import com.sphereon.mdoc.data.device.DeviceNameSpaces
 import com.sphereon.mdoc.data.device.DeviceRequest
 import com.sphereon.mdoc.data.device.DeviceResponse
+import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
 import com.sphereon.mdoc.data.device.DocumentWithKeyAlias
+import com.sphereon.mdoc.data.device.DocumentResponseEncryptionProvider
+import com.sphereon.mdoc.data.device.DocumentResponseEncryptionProviderResolver
+import com.sphereon.mdoc.data.device.EncryptedDocuments
+import com.sphereon.mdoc.data.device.EncryptedDocumentsPlaintext
+import com.sphereon.mdoc.data.device.ZkDocument
+import com.sphereon.mdoc.data.device.ZkProofProviderResolver
+import com.sphereon.mdoc.data.device.ZkProofProvider
+import com.sphereon.mdoc.data.device.createZkDocument
+import com.sphereon.mdoc.data.device.matchesIssuerIdentifiers
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
@@ -133,7 +143,14 @@ class SimpleDocumentRequestSingleDocumentSelector(
     ): IdkResult<Pair<DocRequest, DocumentWithKeyAlias>, IdkErrorType> {
         val documentsProvider = documentProvider ?: globalDocumentsSupplier ?: return IdkError.ILLEGAL_ARGUMENT_ERROR(arg = "No document supplier provided").asErrorResult()
         val docType = docRequest.itemsRequest.docType
-        val matches = documentsProvider.getDocuments(selectorData ?: globalCustomSelectorData).filter { it.document.docType == docType }
+        val issuerIdentifiers = docRequest.itemsRequest.docRequestInfo?.issuerIdentifiers.orEmpty()
+        val matches =
+            documentsProvider
+                .getDocuments(selectorData ?: globalCustomSelectorData)
+                .filter { candidate ->
+                    candidate.document.docType == docType &&
+                        candidate.document.issuerSigned.issuerAuth.matchesIssuerIdentifiers(issuerIdentifiers)
+                }
 
         if (matches.isEmpty()) {
             return IdkError
@@ -163,6 +180,8 @@ data class MapDrivenDocRequestSelector(
     @Assisted val sessionTranscript: SessionTranscript? = null, // If not provided the assumption is that the documents are already signed.
     @Assisted val mdocDeviceSignService: MdocSignService? = null, // If not provided the assumption is that the documents are already device signed.
     @Assisted val minDocRequests: Int? = null,
+    @Assisted val zkProofProviders: List<ZkProofProvider> = emptyList(),
+    @Assisted val documentResponseEncryptionProviders: List<DocumentResponseEncryptionProvider> = emptyList(),
 ) : DocumentRequestSingleDocumentSelector,
     RequestDocumentsSelector,
     DocumentProvider,
@@ -176,6 +195,8 @@ data class MapDrivenDocRequestSelector(
             sessionTranscript: SessionTranscript? = null,
             mdocDeviceSignService: MdocSignService? = null,
             minDocRequests: Int? = null,
+            zkProofProviders: List<ZkProofProvider> = emptyList(),
+            documentResponseEncryptionProviders: List<DocumentResponseEncryptionProvider> = emptyList(),
         ): MapDrivenDocRequestSelector
     }
 
@@ -222,6 +243,8 @@ data class MapDrivenDocRequestSelector(
             globalSelectorData = null,
             sessionTranscript = sessionTranscript,
             mdocDeviceSignService = mdocDeviceSignService,
+            zkProofProviders = zkProofProviders,
+            documentResponseEncryptionProviders = documentResponseEncryptionProviders,
         ).createDeviceResponse(
             deviceRequest = deviceRequest,
             documentProvider = this,
@@ -254,18 +277,56 @@ class SimpleRequestDocumentsSelector(
                 .asErrorResult()
                 .also { log.error(it.error.message.defaultMessage) }
         }
-        val selected =
-            docRequests
-                .map { req ->
-                    docRequestSingleDocSelect
-                        .select(req, finalDocumentsSupplier, globalDocumentsProvider)
-                        .onFailure { return it.asErrorResult() }
-                        .value
-                }.filterNotNull()
-                .toMap()
+        val useCases = deviceRequest.deviceRequestInfo?.useCases.orEmpty()
+        val selected = mutableMapOf<DocRequest, DocumentWithKeyAlias>()
+        for (request in docRequests) {
+            val selection = docRequestSingleDocSelect.select(request, finalDocumentsSupplier, globalDocumentsProvider)
+            if (selection.isErr) {
+                // An optional use case is allowed to be unavailable. Keep every other
+                // selector/provider failure fatal, including failures in legacy requests.
+                if (useCases.isEmpty() || selection.error.code != "NOT_FOUND_ERROR") {
+                    return selection.error.asErrorResult()
+                }
+                continue
+            }
+            selection.value?.let { selected[it.first] = it.second }
+        }
 
-        val result = selected ?: emptyMap()
-        if (result.isEmpty() && minDocRequests > 0) {
+        if (useCases.isNotEmpty()) {
+            val selectedIndexesByRequest = docRequests.mapIndexedNotNull { index, request ->
+                if (selected.containsKey(request)) index else null
+            }.toSet()
+            val chosenDocumentSets = mutableListOf<Set<UInt>>()
+            useCases.forEachIndexed { useCaseIndex, useCase ->
+                useCase.documentSets.forEach { documentSet ->
+                    if (documentSet.any { it.toInt() < 0 || it.toInt() >= docRequests.size }) {
+                        return IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            arg = "DeviceRequestInfo use case $useCaseIndex contains a DocRequestID outside docRequests",
+                        ).asErrorResult()
+                    }
+                }
+                val satisfied = useCase.documentSets.firstOrNull { documentSet ->
+                    documentSet.all { it.toInt() in selectedIndexesByRequest }
+                }
+                if (satisfied != null) chosenDocumentSets += satisfied.toSet()
+                if (useCase.mandatory && satisfied == null) {
+                    return IdkError.NOT_FOUND_ERROR(
+                        resource = "mandatory use case $useCaseIndex",
+                    ).asErrorResult()
+                }
+            }
+            if (chosenDocumentSets.isEmpty()) return emptyMap<DocRequest, DocumentWithKeyAlias>().asOkResult()
+            val chosenIndexes = chosenDocumentSets.flatten().map(UInt::toInt).toSet()
+            val chosenRequests = docRequests.filterIndexed { index, _ -> index in chosenIndexes }.toSet()
+            val useCaseSelected = selected.filterKeys { it in chosenRequests }
+            if (useCaseSelected.size < minDocRequests && minDocRequests <= selected.size) {
+                log.debug("DeviceRequestInfo use cases selected ${useCaseSelected.size} of ${selected.size} documents; use-case rules take precedence over the default minimum")
+            }
+            return useCaseSelected.asOkResult()
+        }
+
+        val result = selected
+        if (result.size < minDocRequests) {
             return IdkError.NOT_FOUND_ERROR(resource = "Not enough documents ${result.size}  (min: $minDocRequests) selected").asErrorResult()
         }
         return result.asOkResult()
@@ -282,6 +343,9 @@ open class SimpleRequestResponseProcessor(
     val mdocDeviceSignService: MdocSignService? = null, // If not provided the assumption is that the documents are already device signed.
     val globalSelectorData: Any? = null,
     val minDocRequests: Int? = null,
+    val deviceResponseCborCodec: DeviceResponseCborCodec? = null,
+    val zkProofProviders: List<ZkProofProvider> = emptyList(),
+    val documentResponseEncryptionProviders: List<DocumentResponseEncryptionProvider> = emptyList(),
 ) : RequestResponseProcessor {
     override suspend fun createDeviceResponse(
         deviceRequest: DeviceRequest,
@@ -289,6 +353,14 @@ open class SimpleRequestResponseProcessor(
     ): IdkResult<DeviceResponse, IdkErrorType> {
         val finalDocumentsSupplier = documentProvider ?: globalDocumentsProvider
         val effectiveDocRequests = deviceRequest.effectiveDocRequests()
+        effectiveDocRequests
+            .mapNotNull { it.itemsRequest.docRequestInfo?.zkRequest }
+            .forEach { request ->
+                val provider = ZkProofProviderResolver.resolve(request, zkProofProviders)
+                if (provider.isErr) {
+                    return IdkError.ILLEGAL_ARGUMENT_ERROR(arg = provider.error.code).asErrorResult()
+                }
+            }
         val requestsToDocuments =
             documentsSelector
                 .selectDocuments(
@@ -298,14 +370,23 @@ open class SimpleRequestResponseProcessor(
                 ).onFailure { return it.asErrorResult() }
                 .value
 
-        val documents: Array<Document> =
+        val requestsToSignedDocuments: List<Pair<DocRequest, Document>> =
             if (mdocDeviceSignService == null) {
-                require(sessionTranscript == null) { "`sessionTranscript` is not allowed if `mdocDeviceSignService` is not provided." }
-                requestsToDocuments.values.map { it.document }.toTypedArray()
+                // A pre-signed document normally needs no transcript, but second-edition
+                // encrypted responses and proof providers do. Keep accepting pre-signed
+                // documents while allowing the caller to supply the transcript required by
+                // those response forms.
+                requestsToDocuments.map { (request, documentWithKeyAlias) ->
+                    val document = documentWithKeyAlias.document
+                    request to document.copy(
+                        issuerSigned = document.limitDisclosures(request),
+                        original = null,
+                    )
+                }
             } else {
                 requireNotNull(sessionTranscript) { "`sessionTranscript` is required if `mdocDeviceSignService` is provided." }
                 // Sign each document sequentially
-                val signed = mutableListOf<Document>()
+                val signed = mutableListOf<Pair<DocRequest, Document>>()
                 for ((req: DocRequest, docWithKeyAlias: DocumentWithKeyAlias) in requestsToDocuments) {
                     val doc = docWithKeyAlias.document
                     val deviceAuthentication =
@@ -323,16 +404,113 @@ open class SimpleRequestResponseProcessor(
                             deviceAuthentication = deviceAuthentication,
                             deviceKeyInfo = deviceKeyInfo,
                             requireDeviceX5Chain = false,
+                            macKeys = deviceRequest.macKeys,
                         )
-                    signed.add(signedDoc)
+                    signed.add(req to signedDoc)
                 }
-                signed.toTypedArray()
+                signed
             }
 
-        return DeviceResponse
+        val documents = mutableListOf<Document>()
+        val zkDocuments = mutableListOf<ZkDocument>()
+        val encryptedDocuments = mutableListOf<EncryptedDocuments>()
+        for ((request, document) in requestsToSignedDocuments) {
+            val zkRequest = request.itemsRequest.docRequestInfo?.zkRequest
+            val zkProvider =
+                zkRequest?.let {
+                    val resolved = ZkProofProviderResolver.resolve(it, zkProofProviders)
+                    if (resolved.isErr) {
+                        if (it.zkRequired) {
+                            return resolved.error.asErrorResult()
+                        }
+                        // ZKP is an optional response form unless explicitly required. Continue
+                        // with the ordinary document (or encrypted ordinary document) when no
+                        // compatible proof backend is available.
+                        null
+                    } else {
+                        resolved.value
+                    }
+                }
+            val zkDocument =
+                if (zkRequest != null && zkProvider != null) {
+                    zkProvider
+                        .createZkDocument(
+                            request = zkRequest,
+                            document = document,
+                            sessionTranscript = sessionTranscript,
+                        ).onFailure { return it.asErrorResult() }
+                        .value
+                } else {
+                    null
+                }
+            val encryptionParameters = request.itemsRequest.docRequestInfo?.docResponseEncryption
+            if (encryptionParameters == null && zkDocument == null) {
+                documents += document
+                continue
+            }
+            if (encryptionParameters == null) {
+                zkDocuments += requireNotNull(zkDocument)
+                continue
+            }
+            val transcript = sessionTranscript
+                ?: return IdkError
+                    .ILLEGAL_ARGUMENT_ERROR(arg = "Document response encryption requires a session transcript")
+                    .asErrorResult()
+            val provider = DocumentResponseEncryptionProviderResolver
+                .resolve(encryptionParameters, documentResponseEncryptionProviders)
+                .onFailure { return it.asErrorResult() }
+                .value
+            val requestIndex = effectiveDocRequests.indexOfFirst { it === request }
+                .takeIf { it >= 0 }
+                ?: effectiveDocRequests.indexOf(request)
+            if (requestIndex < 0) {
+                return IdkError
+                    .ILLEGAL_ARGUMENT_ERROR(arg = "Encrypted document does not map to a DeviceRequest docRequests entry")
+                    .asErrorResult()
+            }
+            val encrypted = provider
+                .encrypt(
+                    plaintext =
+                        if (zkDocument == null) {
+                            EncryptedDocumentsPlaintext(documents = listOf(document))
+                        } else {
+                            EncryptedDocumentsPlaintext(zkDocuments = listOf(zkDocument))
+                        },
+                    parameters = encryptionParameters,
+                    sessionTranscript = transcript,
+                    docRequestID = requestIndex.toUInt(),
+                ).onFailure { return it.asErrorResult() }
+                .value
+            encryptedDocuments += encrypted
+        }
+
+        val response = DeviceResponse
             .Builder()
-            .withDocuments(documents)
+            .withDocuments(documents.toTypedArray())
+            .withZkDocuments(zkDocuments.takeIf { it.isNotEmpty() }?.toTypedArray())
+            .withEncryptedDocuments(encryptedDocuments.takeIf { it.isNotEmpty() }?.toTypedArray())
             .build()
-            .asOkResult()
+        val maximumResponseSize =
+            effectiveDocRequests
+                .mapNotNull { it.itemsRequest.docRequestInfo?.maximumResponseSize }
+                .minOrNull()
+        if (maximumResponseSize == null) {
+            return response.asOkResult()
+        }
+        val codec = deviceResponseCborCodec
+            ?: return IdkError
+                .ILLEGAL_ARGUMENT_ERROR(
+                    arg = "maximumResponseSize was requested but no DeviceResponseCborCodec is configured",
+                ).asErrorResult()
+        val encoded = codec.encode(response)
+        if (encoded.isErr) {
+            return encoded.error.asErrorResult()
+        }
+        if (encoded.value.size.toUInt() > maximumResponseSize) {
+            return IdkError
+                .ILLEGAL_ARGUMENT_ERROR(arg = "DeviceResponse exceeds maximumResponseSize ($maximumResponseSize bytes)")
+                .asErrorResult()
+        }
+        return response.asOkResult()
     }
 }

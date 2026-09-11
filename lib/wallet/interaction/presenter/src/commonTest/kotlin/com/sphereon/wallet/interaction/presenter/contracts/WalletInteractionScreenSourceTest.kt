@@ -73,7 +73,7 @@ class WalletInteractionScreenSourceTest {
 
         override suspend fun start(input: WalletInteractionInput): WalletInteractionSession = WalletInteractionSession(state.value.sessionId, state.value)
 
-        override suspend fun resume(sessionId: WalletInteractionSessionId): WalletInteractionSession = WalletInteractionSession(sessionId, state.value)
+        override suspend fun load(sessionId: WalletInteractionSessionId): WalletInteractionSession = WalletInteractionSession(sessionId, state.value)
 
         override suspend fun dispatch(
             sessionId: WalletInteractionSessionId,

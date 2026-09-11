@@ -1,5 +1,5 @@
 /*
- * © 2026 Sphereon International B.V.
+ * Â© 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,6 +55,9 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("HttpClientProvider", exact = true)
 interface HttpClientProvider {
+    /** Create a client from already resolved, execution-scoped governed security inputs. */
+    fun createClient(context: HttpClientRequestContext): HttpClient
+
     /**
      * Create an [HttpClient] with config resolved for the given command ID.
      * Config is resolved from the `cmd.*` scoped property hierarchy.
@@ -105,6 +108,12 @@ interface HttpClientProvider {
         overrides: (HttpClientOptions) -> HttpClientOptions = { it },
         block: suspend (HttpClient) -> T,
     ): T
+
+    /** Use a governed execution-scoped client and close it after [block]. */
+    suspend fun <T> withClient(
+        context: HttpClientRequestContext,
+        block: suspend (HttpClient) -> T,
+    ): T
 }
 
 @Inject
@@ -114,6 +123,9 @@ class HttpClientProviderImpl(
     private val factory: HttpClientFactory,
     private val configResolver: HttpClientConfigResolver,
 ) : HttpClientProvider {
+    override fun createClient(context: HttpClientRequestContext): HttpClient =
+        factory.createClient(context.toHttpClientOptions())
+
     override fun createClient(
         commandId: String,
         overrides: (HttpClientOptions) -> HttpClientOptions,
@@ -151,4 +163,18 @@ class HttpClientProviderImpl(
             client.close()
         }
     }
+
+    override suspend fun <T> withClient(
+        context: HttpClientRequestContext,
+        block: suspend (HttpClient) -> T,
+    ): T {
+        val client = createClient(context)
+        return try {
+            block(client)
+        } finally {
+            client.close()
+        }
+    }
 }
+
+

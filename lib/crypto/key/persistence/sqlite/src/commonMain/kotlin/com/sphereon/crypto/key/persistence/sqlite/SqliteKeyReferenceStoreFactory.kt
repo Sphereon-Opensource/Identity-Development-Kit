@@ -10,6 +10,8 @@
 
 package com.sphereon.crypto.key.persistence.sqlite
 
+import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
 import com.sphereon.crypto.key.persistence.KeyReferenceStoreFactory
 import dev.zacsweers.metro.AppScope
@@ -31,10 +33,23 @@ import dev.zacsweers.metro.StringKey
 @SingleIn(AppScope::class)
 class SqliteKeyReferenceStoreFactory(
     private val databaseProvider: Provider<KeyReferenceDatabaseSqlite>,
+    private val appConfig: AppConfigService,
 ) : KeyReferenceStoreFactory {
     override val type: String = KeyReferenceStoreFactory.TYPE_SQLITE
 
-    override fun createStore(): KeyReferenceStore = SqliteKeyReferenceStoreImpl(databaseProvider())
+    override fun createStore(): KeyReferenceStore =
+        SqliteKeyReferenceStoreImpl(
+            database = databaseProvider(),
+            ownershipHistoryCapability =
+                if (SqliteKeyReferenceDatabaseSettings.hasDurableOwnershipHistory(
+                        appConfig.getPropertyAsString(SqliteKeyReferenceDatabaseSettings.JDBC_URL_PROPERTY),
+                    )
+                ) {
+                    KeyReferenceHistoryCapability.DURABLE
+                } else {
+                    KeyReferenceHistoryCapability.UNSUPPORTED
+                },
+        )
 }
 
 @ContributesTo(AppScope::class)

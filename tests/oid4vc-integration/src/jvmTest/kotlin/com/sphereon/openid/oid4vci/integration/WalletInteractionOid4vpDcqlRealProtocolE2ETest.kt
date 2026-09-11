@@ -18,15 +18,19 @@ package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.command.DpopProofAssembly
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
@@ -36,6 +40,7 @@ import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.sdjwt.vc.command.VerifySdJwtVcCommand
 import com.sphereon.wallet.WalletIdentityResolver
 import com.sphereon.wallet.credential.CredentialLifecycleState
@@ -85,10 +90,15 @@ import com.sphereon.wallet.wscd.Wscd
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import com.sphereon.openid.oid4vp.holder.WalletConfig as Oid4vpWalletConfig
@@ -107,6 +117,11 @@ interface WalletInteractionOid4vpWscdTestGraph {
     val wscd: Wscd
 }
 
+@ContributesTo(SessionScope::class)
+interface WalletInteractionOid4vpIssuerConfigTestGraph {
+    val oid4vciIssuerConfigProvider: Oid4vciIssuerConfigProvider
+}
+
 class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
     companion object {
         private const val CREDENTIAL_CONFIG_ID = "UniversityDegree"
@@ -123,6 +138,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         private const val HSM_OPERATION_TYPE = "wallet.sign"
         private const val HSM_OPERATION_HASH = "sha256:oid4vp-real-protocol-e2e"
         private const val HSM_NONCE = "nonce-oid4vp-e2e"
+        private const val HSM_OPERATION_BINDING = "test:oid4vp-dcql-presentation"
 
         init {
             DefaultPrincipalMapPropertySource.addProperty(
@@ -157,14 +173,6 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 "oid4vci.issuer.credentials.[$CREDENTIAL_CONFIG_ID].credentialDefinition.types",
                 "VerifiableCredential,UniversityDegreeCredential",
             )
-            DefaultPrincipalMapPropertySource.addProperty(
-                "oid4vci.issuer.credentials.[$CREDENTIAL_CONFIG_ID].signingKeyAlias",
-                ISSUER_SIGNING_KEY_ALIAS,
-            )
-            DefaultPrincipalMapPropertySource.addProperty(
-                "oid4vci.issuer.credentials.[$CREDENTIAL_CONFIG_ID].signingKeyMode",
-                "did:jwk",
-            )
 
             DefaultPrincipalMapPropertySource.addProperty(
                 "oid4vci.issuer.credentials.[$SD_JWT_CONFIG_ID].format",
@@ -194,18 +202,76 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 "oid4vci.issuer.credentials.[$SD_JWT_CONFIG_ID].validityPeriod",
                 "P365D",
             )
+
+            // The registry-backed provider selects the issuer resource by the mutable canonical
+            // UUID selector. Mirror the full fixture under that resource namespace; the legacy
+            // singular namespace above is not authoritative for this test.
             DefaultPrincipalMapPropertySource.addProperty(
-                "oid4vci.issuer.credentials.[$SD_JWT_CONFIG_ID].signingKeyAlias",
-                ISSUER_SIGNING_KEY_ALIAS,
+                "oid4vci.routing.issuerResourceId",
+                OID4VCI_TEST_ISSUER_INSTANCE_ID,
+            )
+            val issuerRoot = "oid4vci.issuers.$OID4VCI_TEST_ISSUER_INSTANCE_ID"
+            val authorizationServerId = "00000000-0000-4000-8000-000000000002"
+            DefaultPrincipalMapPropertySource.addProperty("$issuerRoot.identifier", OID4VCI_TEST_ISSUER_URL)
+            DefaultPrincipalMapPropertySource.addProperty(
+                "$issuerRoot.credentialConfigurationIds",
+                "$CREDENTIAL_CONFIG_ID,$SD_JWT_CONFIG_ID",
             )
             DefaultPrincipalMapPropertySource.addProperty(
-                "oid4vci.issuer.credentials.[$SD_JWT_CONFIG_ID].signingKeyMode",
-                "did:jwk",
+                "$issuerRoot.issuerCapabilityId",
+                "00000000-0000-4000-8000-000000000003",
             )
+            DefaultPrincipalMapPropertySource.addProperty("$issuerRoot.authorizationServerIds", authorizationServerId)
+            DefaultPrincipalMapPropertySource.addProperty("$issuerRoot.profile", "OID4VCI_1_0_FINAL")
+            DefaultPrincipalMapPropertySource.addProperty("$issuerRoot.profileRevision", "7")
+            val authorizationServerRoot = "$issuerRoot.authorizationServers.$authorizationServerId"
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.tenantId", OID4VCI_TEST_TENANT_ID)
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.issuerIdentifier", OID4VCI_TEST_ISSUER_URL)
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.enabled", "true")
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.default", "true")
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.lifecycle", "ACTIVE")
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.deployment", "HOSTED")
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.credentialIssuancePurpose", "true")
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.allowedGrants", "PRE_AUTHORIZED_CODE")
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.revision", "11")
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.runtimeServerKey", "default")
+            DefaultPrincipalMapPropertySource.addProperty(
+                "$authorizationServerRoot.jwksUri",
+                "${OID4VCI_TEST_ISSUER_URL}/.well-known/jwks.json",
+            )
+            DefaultPrincipalMapPropertySource.addProperty(
+                "$authorizationServerRoot.tokenEndpoint",
+                "${OID4VCI_TEST_ISSUER_URL}/token",
+            )
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.discoveryCurrent", "true")
+            DefaultPrincipalMapPropertySource.addProperty("$authorizationServerRoot.bindingRevision", "13")
+            configureIssuerCredential(issuerRoot, CREDENTIAL_CONFIG_ID, "jwt_vc_json", "degree", "VerifiableCredential,UniversityDegreeCredential")
+            configureIssuerCredential(issuerRoot, SD_JWT_CONFIG_ID, "dc+sd-jwt", "degree_sdjwt", "VerifiableCredential,UniversityDegreeCredential", SD_JWT_VCT)
+
             DefaultPrincipalMapPropertySource.addProperty("kv.stores.blob.metadata.type", "memory")
             DefaultPrincipalMapPropertySource.addProperty("kv.stores.blob.metadata.scopeBinding", "TENANT")
             DefaultPrincipalMapPropertySource.addProperty("blob.stores.default.type", "memory")
             DefaultPrincipalMapPropertySource.addProperty("blob.stores.default.scopeBinding", "TENANT")
+        }
+
+        private fun configureIssuerCredential(
+            issuerRoot: String,
+            credentialConfigurationId: String,
+            format: String,
+            scope: String,
+            types: String,
+            vct: String? = null,
+        ) {
+            val prefix = "$issuerRoot.credentials.[$credentialConfigurationId]"
+            DefaultPrincipalMapPropertySource.addProperty("$prefix.format", format)
+            if (vct != null) DefaultPrincipalMapPropertySource.addProperty("$prefix.vct", vct)
+            DefaultPrincipalMapPropertySource.addProperty("$prefix.scope", scope)
+            DefaultPrincipalMapPropertySource.addProperty("$prefix.bindingMethods", "did:key,did:jwk,jwk")
+            DefaultPrincipalMapPropertySource.addProperty("$prefix.signingAlgorithms", "ES256")
+            DefaultPrincipalMapPropertySource.addProperty("$prefix.proofTypes.jwt.signingAlgorithms", "ES256")
+            DefaultPrincipalMapPropertySource.addProperty("$prefix.signingKeyMode", "jwk-thumbprint")
+            DefaultPrincipalMapPropertySource.addProperty("$prefix.validityPeriod", "P365D")
+            DefaultPrincipalMapPropertySource.addProperty("$prefix.credentialDefinition.types", types)
         }
     }
 
@@ -224,14 +290,36 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         runTest {
             WalletE2ETestRequestObjectSigningConfig.enableDidJwkSigning()
             try {
-                wireInProcessAdapters()
                 ctx.ensureAsSigningKey()
-                ensureIssuerSigningKey()
+                val issuerPublicJwk = ensureIssuerSigningKey()
                 ensureVerifierSigningKey()
 
                 val credentialStore = (ctx.session.graph as WalletInteractionOid4vpStoreTestGraph).walletCredentialStore
                 val wsca = createPromptlessWsca()
                 val sdJwtRecord = issueSdJwtCredential(credentialStore, wsca)
+                // The verifier must receive an explicit issuer trust root. The issuer JWT only
+                // carries its key identifier; accepting the token-supplied JWK would make this
+                // proof meaningless. Keep the trust decision outside the credential itself.
+                WalletE2ETestTrustedAuthenticationResolver.enable(
+                    listOf(
+                        TrustedAuthenticationResolution(
+                            controller = issuerUrl,
+                            trustedJwks =
+                                JsonObject(
+                                    mapOf(
+                                        "keys" to
+                                            JsonArray(
+                                                listOf(
+                                                    issuerPublicJwk
+                                                        .copy(kid = issuerJwtKid(sdJwtRecord.instances.single().requireRaw()))
+                                                        .toJsonObject(),
+                                                ),
+                                            ),
+                                    ),
+                                ),
+                        ),
+                    ),
+                )
                 val request = createVerifierAuthorizationRequest()
 
                 val holder = (ctx.session.graph as Oid4vpPresentationTestGraph).oid4vpHolder
@@ -258,7 +346,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                         protocolExecutor =
                             WscdAwareExecutionPlanner(
                                 // No WSCD profile is known for this holder key in-process; the
-                                // delegate's default SPLIT decision (PRESENTATION_SHARING /
+                                // delegate's default SPLIT decision (PRESENT_CREDENTIALS /
                                 // USER_PRESENT) stands, matching production when the profile
                                 // source has no capability-derived hint for the request.
                                 profileSource = WscdExecutionProfileSource { null },
@@ -277,6 +365,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                                 Oid4vpPresentationSecurityAttributes.WALLET_ACCOUNT_ID to WALLET_ACCOUNT_ID,
                                 Oid4vpPresentationSecurityAttributes.ACTIVATION_DECISION_ID to ACTIVATION_DECISION_ID,
                                 Oid4vpPresentationSecurityAttributes.OPERATION_TYPE to HSM_OPERATION_TYPE,
+                                Oid4vpPresentationSecurityAttributes.OPERATION_BINDING to HSM_OPERATION_BINDING,
                                 Oid4vpPresentationSecurityAttributes.OPERATION_HASH to HSM_OPERATION_HASH,
                                 Oid4vpPresentationSecurityAttributes.NONCE to HSM_NONCE,
                             ),
@@ -311,7 +400,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 val completedState = engine.observe(session.sessionId).value
                 assertEquals(WalletInteractionStatus.Completed, completedState.status, "Final interaction state: $completedState")
                 assertTrue(completedState.terminal, "Wallet interaction session should be terminal after successful direct_post submission")
-                assertEquals(WalletSecurityOperation.PRESENTATION_SHARING, securityGate.lastRequest?.operation)
+                assertEquals(WalletSecurityOperation.PRESENT_CREDENTIALS, securityGate.lastRequest?.operation)
                 assertEquals(WalletSecurityAssurance.USER_PRESENT, securityGate.lastRequest?.requiredAssurance)
                 assertEquals(HOLDER_SIGNING_KEY_ALIAS, securityGate.lastRequest?.keyRef)
                 assertEquals(WALLET_UNIT_ID, securityGate.lastRequest?.walletUnitId)
@@ -332,17 +421,10 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
 
                 assertVerifierVerified(request.correlationId)
             } finally {
+                WalletE2ETestTrustedAuthenticationResolver.disable()
                 WalletE2ETestRequestObjectSigningConfig.disable()
             }
         }
-
-    private fun dispatcher() = (ctx.session.graph as com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher.Graph).httpAdapterDispatcher
-
-    private fun wireInProcessAdapters() {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
-        val holder = (ctx.session.graph as WalletTestAdapterHolderGraph).walletTestAdapterHolder
-        holder.adapters = adapters
-    }
 
     private suspend fun issueSdJwtCredential(
         credentialStore: WalletCredentialStore,
@@ -361,10 +443,14 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         val offerResult =
             issuer.createCredentialOffer(
                 CreateCredentialOfferArgs(
-                    instanceId = "oid4vc-integration-issuer",
+                    instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                     issuerId = issuerUrl,
                     credentialConfigurationIds = listOf(SD_JWT_CONFIG_ID),
                     preAuthorizedCodeGrant = true,
+                    authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
+                    // Test data for the issued credential. The RP independently requests
+                    // this claim through DCQL; nothing here is derived from the RP query.
+                    preSeededAttributes = mapOf("degree" to JsonPrimitive("Bachelor of Science")),
                 ),
             )
         assertTrue(offerResult.isOk, "Offer creation should succeed")
@@ -381,9 +467,11 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                                     context: com.sphereon.wallet.interaction.WalletInteractionContext,
                                     state: com.sphereon.wallet.interaction.WalletInteractionState,
                                     resolvedOffer: com.sphereon.openid.oid4vci.holder.ResolvedCredentialOffer,
+                                    existingHolderKeyAliases: List<String>,
                                 ): Oid4vciHolderIssuanceOptions =
                                     Oid4vciHolderIssuanceOptions(
-                                        signingKeyId = HOLDER_SIGNING_KEY_ALIAS,
+                                        signingKeyIds = existingHolderKeyAliases.ifEmpty { listOf(HOLDER_SIGNING_KEY_ALIAS) },
+                                        operationBinding = "test:oid4vp-dcql-credential-request-proof",
                                         signingAlgorithm = "ES256",
                                         clientId = WALLET_CLIENT_ID,
                                         credentialConfigurationId = SD_JWT_CONFIG_ID,
@@ -448,7 +536,13 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
             recordResult.isOk,
             "Issued credential should be readable: ${if (recordResult.isErr) recordResult.error.message.defaultMessage else ""}",
         )
-        return assertNotNull(recordResult.value)
+        val record = assertNotNull(recordResult.value)
+        assertEquals(
+            setOf(SD_JWT_VCT),
+            record.credentialTypeRefs.map { it.value }.toSet(),
+            "The RP DCQL query must use the VCT indexed by the wallet credential store",
+        )
+        return record
     }
 
     private fun createPromptlessWsca(): Wsca =
@@ -468,6 +562,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                     )
                 },
             walletProviderAttestationSignerResolver = LocalWalletProviderAttestationSignerResolver(),
+            secureRandom = defaultSecureRandom(),
         )
 
     private suspend fun createVerifierAuthorizationRequest(): VerifierRequest {
@@ -478,7 +573,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                         DcqlCredentialQuery(
                             id = SD_JWT_CONFIG_ID,
                             format = "dc+sd-jwt",
-                            meta = sdJwtVcMeta(SD_JWT_CONFIG_ID),
+                            meta = sdJwtVcMeta(SD_JWT_VCT),
                             claims = listOf(DcqlClaimQuery(path = claimsPathPointer("degree"))),
                         ),
                     ),
@@ -492,7 +587,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 qrCodeOptions = QrCodeOptions(),
             )
         val response =
-            dispatcher().dispatch(
+            ctx.dispatchInProcessHttp(
                 GenericHttpRequest.withTextBody(
                     method = "POST",
                     path = "/oid4vp/backend/auth/requests",
@@ -510,7 +605,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
 
     private suspend fun assertVerifierVerified(correlationId: String) {
         val response =
-            dispatcher().dispatch(
+            ctx.dispatchInProcessHttp(
                 GenericHttpRequest(
                     method = "GET",
                     path = "/oid4vp/backend/auth/requests/$correlationId",
@@ -526,7 +621,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
         )
     }
 
-    private suspend fun ensureIssuerSigningKey() {
+    private suspend fun ensureIssuerSigningKey(): Jwk {
         val kms =
             ctx.session.graph
                 .asKeyManagerServiceGraph()
@@ -541,6 +636,23 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
             result.isOk,
             "Issuer signing key generation should succeed: ${if (result.isErr) result.error.message.defaultMessage else ""}",
         )
+        ctx.registerIssuerSigningKey(ISSUER_SIGNING_KEY_ALIAS)
+        val signingConfig =
+            (ctx.session.graph as WalletInteractionOid4vpIssuerConfigTestGraph)
+                .oid4vciIssuerConfigProvider
+                .credentialSigningConfigs()[SD_JWT_CONFIG_ID]
+        assertEquals(
+            ISSUER_SIGNING_KEY_ALIAS,
+            signingConfig?.signingKeyAlias,
+            "The SD-JWT fixture must resolve its issuer signing key through the test authority",
+        )
+        val publicKey = result.value.keyPair?.joseToManagedKeyInfo(KeyVisibility.PUBLIC)?.key
+        return assertIs<Jwk>(publicKey)
+    }
+
+    private fun issuerJwtKid(jwt: String): String {
+        val header = json.parseToJsonElement(jwt.substringBefore('.').decodeFromBase64Url().decodeToString()).jsonObject
+        return assertNotNull(header["kid"]?.jsonPrimitive?.content)
     }
 
     private suspend fun ensureVerifierSigningKey() {
@@ -575,6 +687,10 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                             "keyRef" to request.keyRef.orEmpty(),
                             "walletUnitId" to request.walletUnitId.orEmpty(),
                             "operationHash" to request.operationHash.orEmpty(),
+                            // The real protocol adapter keeps this one-use authorization
+                            // binding in private session state and passes it to the existing
+                            // IDK holder-binding signer.
+                            "operation_binding" to HSM_OPERATION_BINDING,
                         ),
                 ),
             )

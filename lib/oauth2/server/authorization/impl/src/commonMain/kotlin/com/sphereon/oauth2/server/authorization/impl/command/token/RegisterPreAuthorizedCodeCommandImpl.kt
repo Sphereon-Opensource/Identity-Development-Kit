@@ -27,6 +27,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeArgs
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeCommand
 import com.sphereon.oauth2.server.authorization.command.token.RegisterPreAuthorizedCodeResult
+import com.sphereon.oauth2.server.authorization.command.token.validatePreAuthorizedCodeExpiry
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
@@ -35,7 +36,6 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlin.time.Clock
-import kotlin.time.Duration.Companion.minutes
 
 /**
  * Implementation of [RegisterPreAuthorizedCodeCommand]. The basic-auth parsing happens at the
@@ -49,6 +49,7 @@ class RegisterPreAuthorizedCodeCommandImpl(
     execution: SessionExecution,
     private val clientRegistry: ClientRegistry,
     private val preAuthorizedCodeStorage: PreAuthorizedCodeStorage,
+    private val clock: Clock = Clock.System,
 ) : TypedServiceCommandAdapter<RegisterPreAuthorizedCodeArgs, RegisterPreAuthorizedCodeResult, IdkError>(
         commandId = RegisterPreAuthorizedCodeCommand.COMMAND_ID,
         execution = execution,
@@ -65,6 +66,12 @@ class RegisterPreAuthorizedCodeCommandImpl(
         applyDuring: (RegisterPreAuthorizedCodeArgs) -> RegisterPreAuthorizedCodeArgs,
     ): IdkResult<RegisterPreAuthorizedCodeResult, IdkError> {
         val applied = applyDuring(args)
+
+        // Reject an invalid absolute expiry before any client-registry or storage
+        // side effect. This keeps malformed registration requests fail-closed and
+        // deterministic, even when credentials are invalid as well.
+        val now = clock.now()
+        val expiry = validatePreAuthorizedCodeExpiry(applied.expiresAtEpochSeconds, now).getOrElse { return Err(it) }
 
         val credentialsValid =
             clientRegistry.verifyClientCredentials(
@@ -88,7 +95,6 @@ class RegisterPreAuthorizedCodeCommandImpl(
             )
         }
 
-        val now = Clock.System.now()
         val data =
             PreAuthorizedCodeData(
                 sessionId = applied.sessionId,
@@ -98,7 +104,7 @@ class RegisterPreAuthorizedCodeCommandImpl(
                 issuerIdentifier = applied.issuerIdentifier,
                 useCredentialIdentifiers = applied.useCredentialIdentifiers,
                 createdAt = now,
-                expiresAt = now + PRE_AUTHORIZED_CODE_TTL_MINUTES.minutes,
+                expiresAt = expiry,
             )
 
         val stored = preAuthorizedCodeStorage.storePreAuthorizedCode(applied.code, data)
@@ -114,7 +120,4 @@ class RegisterPreAuthorizedCodeCommandImpl(
         return Ok(RegisterPreAuthorizedCodeResult())
     }
 
-    private companion object {
-        private const val PRE_AUTHORIZED_CODE_TTL_MINUTES = 10
-    }
 }

@@ -37,6 +37,7 @@ import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.DocType
 import com.sphereon.mdoc.data.device.IntentToRetain
 import com.sphereon.mdoc.data.device.NameSpace
+import com.sphereon.mdoc.transfer.reader.Iso18013Oid4vpHandover
 import com.sphereon.mdoc.transfer.reader.Handover
 import com.sphereon.mdoc.transfer.reader.NfcHandover
 import com.sphereon.mdoc.transfer.reader.OID4VPHandover
@@ -262,13 +263,67 @@ class SessionCborCodecsImplTest {
                 responseUri = "https://example.com/response",
             )
 
-        val encoded = handoverCodec.encode(handover).getOrThrow()
+        @Suppress("UNCHECKED_CAST")
+        val encoded = handoverCodec.encode(handover as Handover<*, CborItem<*>>).getOrThrow()
 
         assertContentEquals(
             "82714f70656e494434565048616e646f7665725820048bc053c00442af9b8eed494cefdd9d95240d254b046b11b68013722aad38ac"
                 .decodeFromHex(),
             encoded,
         )
+    }
+
+    @Test
+    fun iso18013Oid4vpHandover_usesAnnexBThreeElementShapeAndIndependentHashes() {
+        val handover =
+            Iso18013Oid4vpHandover.fromInputs(
+                clientId = "x509_san_dns:example.com",
+                responseUri = "https://example.com/response",
+                mdocGeneratedNonce = "mdoc-generated-nonce",
+                nonce = "authorization-nonce-16",
+            )
+
+        assertContentEquals(
+            "7f8117bc926d9779d5aa87271cc84dd096f23f63ced43e19e83f0027402fb91a".decodeFromHex(),
+            handover.clientIdHash,
+        )
+        assertContentEquals(
+            "117f682cd424ea2d7026b2d0a9d18edb7de597b01cfdafa7644bc716699bbb7b".decodeFromHex(),
+            handover.responseUriHash,
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val encoded = handoverCodec.encode(handover as Handover<*, CborItem<*>>).getOrThrow()
+        assertEquals(0x83.toByte(), encoded[0])
+        assertEquals(0x58.toByte(), encoded[1])
+        assertEquals(32, encoded[2].toInt())
+        val decoded = handoverCodec.decode(encoded).getOrThrow()
+        assertIs<Iso18013Oid4vpHandover>(decoded)
+        assertEquals(handover, decoded)
+    }
+
+    @Test
+    fun iso18013Oid4vpSessionTranscript_factoryUsesTheAnnexBHandoverAndRoundTrips() {
+        val transcript =
+            SessionTranscript.fromIso18013Oid4vp(
+                clientId = "x509_san_dns:example.com",
+                responseUri = "https://example.com/response",
+                mdocGeneratedNonce = "mdoc-generated-nonce",
+                nonce = "authorization-nonce-16",
+            )
+
+        assertEquals(null, transcript.deviceEngagement)
+        assertEquals(null, transcript.eReaderKey)
+        assertIs<Iso18013Oid4vpHandover>(transcript.handover)
+
+        @Suppress("UNCHECKED_CAST")
+        val encoded = sessionTranscriptCodec.encode(transcript).getOrThrow()
+        val decoded = sessionTranscriptCodec.decode(encoded).getOrThrow().value
+
+        assertEquals(transcript.deviceEngagement, decoded.deviceEngagement)
+        assertEquals(transcript.eReaderKey, decoded.eReaderKey)
+        assertEquals(transcript.handover, decoded.handover)
+        assertContentEquals(encoded, decoded.original)
     }
 
     @Test

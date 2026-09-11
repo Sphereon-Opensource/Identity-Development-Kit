@@ -19,9 +19,11 @@ package com.sphereon.oauth2.server.authorization.impl.config
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
+import com.sphereon.core.api.conf.configContentRevision
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
+import com.sphereon.oauth2.common.config.ClientRegistrySourcePrecedence
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.InternalClientConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
@@ -36,6 +38,8 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 
 /**
  * Binds OAuth2 server configuration from IDK's ConfigService.
@@ -58,6 +62,8 @@ class OAuth2ServersConfigBinder(
     private val execution: SessionExecution,
 ) : OAuth2ServersConfigProvider {
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
+    private val configCacheLock = SynchronizedObject()
+    private var cachedConfig: RevisionedServersConfig? = null
 
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
@@ -65,7 +71,41 @@ class OAuth2ServersConfigBinder(
     private val prefix: String
         get() = OAuth2ServerInstanceConfig.CONFIG_PREFIX
 
-    override fun getConfig(): OAuth2ServersConfig = loadConfig()
+    /**
+     * Resolves the principal view once per content revision for this request.
+     *
+     * Token handling consults the server configuration from DPoP, client-registry, grant, and
+     * signing stages. Re-scanning the same principal property view in every stage is both
+     * redundant and expensive for a large internal-client registry. The binder is SessionScope,
+     * so this cache cannot cross a principal boundary or extend secret lifetime beyond the
+     * request. A content-revision change within the request invalidates it immediately.
+     */
+    override fun getConfig(): OAuth2ServersConfig {
+        while (true) {
+            val principalConfig = configService
+            val refreshedRevision = principalConfig.configContentRevision()
+            val resolved =
+                synchronized(configCacheLock) {
+                    // Invalidation can race the refresh above. Never bind or publish a config for
+                    // a revision that is no longer current.
+                    if (principalConfig.configContentRevision(refresh = false) != refreshedRevision) {
+                        return@synchronized null
+                    }
+                    cachedConfig
+                        ?.takeIf { it.revision == refreshedRevision }
+                        ?.config
+                        ?: loadConfig().let { loaded ->
+                            if (principalConfig.configContentRevision(refresh = false) != refreshedRevision) {
+                                null
+                            } else {
+                                cachedConfig = RevisionedServersConfig(refreshedRevision, loaded)
+                                loaded
+                            }
+                        }
+                }
+            if (resolved != null) return resolved
+        }
+    }
 
     override fun getServer(id: String): OAuth2ServerInstanceConfig? = getConfig().getServer(id)
 
@@ -207,6 +247,11 @@ class OAuth2ServersConfigBinder(
             )
     }
 
+    private data class RevisionedServersConfig(
+        val revision: Long,
+        val config: OAuth2ServersConfig,
+    )
+
     private fun loadServerConfig(id: String): OAuth2ServerInstanceConfig {
         val serverPrefix = "$prefix.$id"
         val defaults = OAuth2ServerInstanceConfig()
@@ -218,6 +263,10 @@ class OAuth2ServersConfigBinder(
                     ?.let { runCatching { AuthorizationServerMode.valueOf(it.uppercase()) }.getOrNull() }
                     ?: defaults.mode,
             issuerTemplate = configService.getPropertyAsString("$serverPrefix.issuer-template", null),
+            clientRegistrySourcePrecedence =
+                ClientRegistrySourcePrecedence
+                    .fromConfigValue(configService.getPropertyAsString("$serverPrefix.client-registry-source-precedence", null))
+                    ?: defaults.clientRegistrySourcePrecedence,
             issuer = configService.getPropertyAsString("$serverPrefix.issuer", null),
             // When the AS has no configured issuer, outbound URLs fall back to the request's
             // `X-Forwarded-Proto`/`Host`. Honoring those headers is only safe behind a trusted
@@ -528,9 +577,72 @@ class OAuth2ServersConfigBinder(
                 ) ?: defaults.requireRequestUriRegistration,
             session = loadSessionConfig(serverPrefix),
             webAuthn = loadWebAuthnConfig(serverPrefix),
+            login = loadLoginConfig(serverPrefix),
             // Optional plain-text login-page notice (demo test-account hint, maintenance banner).
             // Unset in production → null → the renderer emits no notice markup.
             loginNotice = configService.getPropertyAsString("$serverPrefix.login-notice", null),
+        )
+    }
+
+    private fun loadLoginConfig(serverPrefix: String): com.sphereon.oauth2.common.config.LoginPageConfig {
+        val defaults = com.sphereon.oauth2.common.config.LoginPageConfig()
+        val interaction =
+            configService
+                .getPropertyAsString("$serverPrefix.login.interaction", defaults.interaction.name)
+                ?.trim()
+                ?.uppercase()
+                ?.let { value ->
+                    runCatching { com.sphereon.oauth2.common.config.LoginInteraction.valueOf(value) }.getOrNull()
+                } ?: defaults.interaction
+        val renderer =
+            configService
+                .getPropertyAsString("$serverPrefix.login.renderer", defaults.renderer.name)
+                ?.trim()
+                ?.uppercase()
+                ?.let { value ->
+                    runCatching { com.sphereon.oauth2.common.config.LoginRenderer.valueOf(value) }.getOrNull()
+                } ?: defaults.renderer
+        val defaultMethod =
+            configService
+                .getPropertyAsString("$serverPrefix.login.default-method", defaults.defaultMethod.name)
+                ?.trim()
+                ?.uppercase()
+                ?.let { value ->
+                    runCatching { com.sphereon.oauth2.common.config.LoginMethod.valueOf(value) }.getOrNull()
+                } ?: defaults.defaultMethod
+        return com.sphereon.oauth2.common.config.LoginPageConfig(
+            interaction = interaction,
+            renderer = renderer,
+            themeResolutionEnabled =
+                configService.getProperty(
+                    "$serverPrefix.login.theme-resolution-enabled",
+                    Boolean::class,
+                    defaults.themeResolutionEnabled,
+                ) ?: defaults.themeResolutionEnabled,
+            showPasswordForm =
+                configService.getProperty(
+                    "$serverPrefix.login.methods.password",
+                    Boolean::class,
+                    defaults.showPasswordForm,
+                ) ?: defaults.showPasswordForm,
+            showFederation =
+                configService.getProperty(
+                    "$serverPrefix.login.methods.federation",
+                    Boolean::class,
+                    defaults.showFederation,
+                ) ?: defaults.showFederation,
+            showWallet =
+                configService.getProperty(
+                    "$serverPrefix.login.methods.wallet",
+                    Boolean::class,
+                    defaults.showWallet,
+                ) ?: defaults.showWallet,
+            walletAuthorizationUrl =
+                configService
+                    .getPropertyAsString("$serverPrefix.login.wallet.authorization-url", defaults.walletAuthorizationUrl)
+                    ?.trim()
+                    ?.takeIf(String::isNotEmpty),
+            defaultMethod = defaultMethod,
         )
     }
 

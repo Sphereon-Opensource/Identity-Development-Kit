@@ -37,6 +37,8 @@ package com.sphereon.oauth2.server.authorization.audit
 interface OAuth2AuditEmitter {
     /**
      * Emit a single [OAuth2AuditEventType] occurrence. Caller responsibilities:
+     *  - Pass [tenantId] from the resolved session execution context. Audit implementations must
+     *    never derive ownership from OAuth client input, request metadata, or an anonymous caller.
      *  - Pass [clientId] when known. Without it, SIEM rules that pivot on client cannot fire.
      *  - Pass [subject] only when the event semantically attaches to a user (LOGIN_SUCCESS yes,
      *    pre-credential anonymous failure no).
@@ -52,6 +54,7 @@ interface OAuth2AuditEmitter {
      */
     suspend fun emit(
         type: OAuth2AuditEventType,
+        tenantId: String,
         clientId: String? = null,
         subject: String? = null,
         metadata: Map<String, String> = emptyMap(),
@@ -68,6 +71,7 @@ interface OAuth2AuditEmitter {
 object NoOpOAuth2AuditEmitter : OAuth2AuditEmitter {
     override suspend fun emit(
         type: OAuth2AuditEventType,
+        tenantId: String,
         clientId: String?,
         subject: String?,
         metadata: Map<String, String>,

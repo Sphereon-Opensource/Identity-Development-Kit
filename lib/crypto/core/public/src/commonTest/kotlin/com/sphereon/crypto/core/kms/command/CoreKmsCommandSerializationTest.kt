@@ -16,10 +16,42 @@ import kotlinx.serialization.encodeToString
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 class CoreKmsCommandSerializationTest {
     private val json = cryptoJsonSerializer
+
+    @Test
+    fun listKeysArgsPreservesExactAliasFilterForRemoteTransport() {
+        val encoded = json.encodeToString(ListKeysArgs(providerId = "default", alias = "idfr:bi:tenant-a"))
+
+        val decoded = json.decodeFromString<ListKeysArgs>(encoded)
+
+        assertEquals("default", decoded.providerId)
+        assertEquals("idfr:bi:tenant-a", decoded.alias)
+    }
+
+    @Test
+    fun generateKeyResultTransportsOnlyMetadataReceipt() {
+        val encoded =
+            json.encodeToString(
+                GenerateKeyResult(
+                    keyReference =
+                        ManagedKeyReference(
+                            providerId = "default",
+                            alias = "idfr:enc:tenant-a",
+                        ),
+                ),
+            )
+
+        val decoded = json.decodeFromString<GenerateKeyResult>(encoded)
+
+        assertEquals("default", assertNotNull(decoded.keyReference).providerId)
+        assertEquals("idfr:enc:tenant-a", decoded.keyReference?.alias)
+        assertEquals(null, decoded.keyPair)
+        assertFalse(encoded.contains("keyPair"))
+    }
 
     @Test
     fun getKeyArgsSerializesKeyInfoForRemoteTransport() {
@@ -140,6 +172,7 @@ class CoreKmsCommandSerializationTest {
         val keyInfo = assertNotNull(decoded.keyInfo)
         assertEquals("software", keyInfo.providerId)
         assertEquals("secdsa-signing", keyInfo.alias)
+        assertEquals("did:jwk:example#digest", keyInfo.kid)
         assertEquals(SignatureAlgorithm.ECDSA_SHA256, decoded.signatureAlgorithm)
         assertEquals(SignatureEncoding.DER, decoded.signatureEncoding)
         assertContentEquals(digest, decoded.digest)

@@ -16,6 +16,8 @@
 
 package com.sphereon.openid.oid4vp.common
 
+import com.sphereon.crypto.jose.jws.JwsUtils
+import com.sphereon.openid.oid4vc.common.CredentialFormatDetector
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -38,7 +40,9 @@ class CredentialFormatTest {
         assertEquals(CredentialFormat.W3C_VC_SD_JWT, CredentialFormat.fromValue("vc+sd-jwt"))
         assertEquals(CredentialFormat.MSO_MDOC, CredentialFormat.fromValue("mso_mdoc"))
         assertEquals(CredentialFormat.JWT_VC_JSON, CredentialFormat.fromValue("jwt_vc_json"))
-        assertEquals(CredentialFormat.JWT_VP_JSON, CredentialFormat.fromValue("jwt_vp_json"))
+        assertEquals(CredentialFormat.JWT_VC_JSON_LD, CredentialFormat.fromValue("jwt_vc_json-ld"))
+        assertEquals(CredentialFormat.LDP_VC, CredentialFormat.fromValue("ldp_vc"))
+        assertNull(CredentialFormat.fromValue("jwt_vp_json"))
     }
 
     @Test
@@ -77,7 +81,9 @@ class CredentialFormatTest {
     @Test
     fun `fromValueLenient handles JWT matches`() {
         assertEquals(CredentialFormat.JWT_VC_JSON, CredentialFormat.fromValueLenient("jwt_vc"))
-        assertEquals(CredentialFormat.JWT_VP_JSON, CredentialFormat.fromValueLenient("jwt_vp"))
+        assertEquals(CredentialFormat.JWT_VC_JSON_LD, CredentialFormat.fromValueLenient("jwt_vc_json-ld"))
+        assertNull(CredentialFormat.fromValueLenient("jwt_vp"))
+        assertNull(CredentialFormat.fromValueLenient("jwt_vp_json"))
     }
 
     @Test
@@ -93,26 +99,28 @@ class CredentialFormatTest {
     @Test
     fun `detectFormat identifies SD-JWT by tilde separator`() {
         val sdJwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature~disclosure1~disclosure2~kbjwt"
-        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormat.detectFormat(sdJwt))
+        assertEquals(CredentialFormat.SD_JWT_VC, CredentialFormatDetector.detect(sdJwt))
     }
 
     @Test
-    fun `detectFormat identifies JWT by three-part structure`() {
-        val jwt = "eyJhbGciOiJFUzI1NiJ9.payload.signature"
-        assertEquals(CredentialFormat.JWT_VC_JSON, CredentialFormat.detectFormat(jwt))
+    fun `detectFormat identifies a strictly classified VCDM 1 credential JWT`() {
+        val payload =
+            """{"iss":"did:example:issuer","nbf":1700000000,"sub":"did:example:subject","vc":{"@context":["https://www.w3.org/2018/credentials/v1"],"type":["VerifiableCredential"],"credentialSubject":{"id":"did:example:subject"}}}"""
+        val jwt = "$V1_HEADER.${JwsUtils.encodeBytesToBase64Url(payload.encodeToByteArray())}.$SIGNATURE"
+        assertEquals(CredentialFormat.JWT_VC_JSON, CredentialFormatDetector.detect(jwt))
     }
 
     @Test
     fun `detectFormat identifies mDoc by absence of dots and sufficient length`() {
         val mdoc = "o2d2ZXJzaW9uYzEuMGlkb2N1bWVudHOBo2dkb2NUeXBleBhvcmcuaXNvLjE4MDEzLjUuMS5tRExqaXNzdWVyU2lnbmVk"
-        assertEquals(CredentialFormat.MSO_MDOC, CredentialFormat.detectFormat(mdoc))
+        assertEquals(CredentialFormat.MSO_MDOC, CredentialFormatDetector.detect(mdoc))
     }
 
     @Test
     fun `detectFormat returns null for unrecognizable formats`() {
-        assertNull(CredentialFormat.detectFormat(""))
-        assertNull(CredentialFormat.detectFormat("short"))
-        assertNull(CredentialFormat.detectFormat("ab.cd")) // too short
+        assertNull(CredentialFormatDetector.detect(""))
+        assertNull(CredentialFormatDetector.detect("short"))
+        assertNull(CredentialFormatDetector.detect("ab.cd")) // too short
     }
 
     // ============================================================================
@@ -125,7 +133,8 @@ class CredentialFormatTest {
         assertTrue(CredentialFormat.W3C_VC_SD_JWT.isSdJwt)
         assertFalse(CredentialFormat.MSO_MDOC.isSdJwt)
         assertFalse(CredentialFormat.JWT_VC_JSON.isSdJwt)
-        assertFalse(CredentialFormat.JWT_VP_JSON.isSdJwt)
+        assertFalse(CredentialFormat.JWT_VC_JSON_LD.isSdJwt)
+        assertFalse(CredentialFormat.LDP_VC.isSdJwt)
     }
 
     @Test
@@ -134,7 +143,8 @@ class CredentialFormatTest {
         assertFalse(CredentialFormat.W3C_VC_SD_JWT.isJwt)
         assertFalse(CredentialFormat.MSO_MDOC.isJwt)
         assertTrue(CredentialFormat.JWT_VC_JSON.isJwt)
-        assertTrue(CredentialFormat.JWT_VP_JSON.isJwt)
+        assertTrue(CredentialFormat.JWT_VC_JSON_LD.isJwt)
+        assertFalse(CredentialFormat.LDP_VC.isJwt)
     }
 
     @Test
@@ -143,7 +153,8 @@ class CredentialFormatTest {
         assertFalse(CredentialFormat.W3C_VC_SD_JWT.isMdoc)
         assertTrue(CredentialFormat.MSO_MDOC.isMdoc)
         assertFalse(CredentialFormat.JWT_VC_JSON.isMdoc)
-        assertFalse(CredentialFormat.JWT_VP_JSON.isMdoc)
+        assertFalse(CredentialFormat.JWT_VC_JSON_LD.isMdoc)
+        assertFalse(CredentialFormat.LDP_VC.isMdoc)
     }
 
     @Test
@@ -152,7 +163,8 @@ class CredentialFormatTest {
         assertEquals("vc+sd-jwt", CredentialFormat.W3C_VC_SD_JWT.value)
         assertEquals("mso_mdoc", CredentialFormat.MSO_MDOC.value)
         assertEquals("jwt_vc_json", CredentialFormat.JWT_VC_JSON.value)
-        assertEquals("jwt_vp_json", CredentialFormat.JWT_VP_JSON.value)
+        assertEquals("jwt_vc_json-ld", CredentialFormat.JWT_VC_JSON_LD.value)
+        assertEquals("ldp_vc", CredentialFormat.LDP_VC.value)
     }
 
     // ============================================================================
@@ -196,7 +208,8 @@ class CredentialFormatTest {
         assertEquals("\"vc+sd-jwt\"", json.encodeToString(CredentialFormat.W3C_VC_SD_JWT))
         assertEquals("\"mso_mdoc\"", json.encodeToString(CredentialFormat.MSO_MDOC))
         assertEquals("\"jwt_vc_json\"", json.encodeToString(CredentialFormat.JWT_VC_JSON))
-        assertEquals("\"jwt_vp_json\"", json.encodeToString(CredentialFormat.JWT_VP_JSON))
+        assertEquals("\"jwt_vc_json-ld\"", json.encodeToString(CredentialFormat.JWT_VC_JSON_LD))
+        assertEquals("\"ldp_vc\"", json.encodeToString(CredentialFormat.LDP_VC))
     }
 
     @Test
@@ -204,5 +217,11 @@ class CredentialFormatTest {
         val json = Json { ignoreUnknownKeys = true }
         assertEquals(CredentialFormat.SD_JWT_VC, json.decodeFromString<CredentialFormat>("\"dc+sd-jwt\""))
         assertEquals(CredentialFormat.MSO_MDOC, json.decodeFromString<CredentialFormat>("\"mso_mdoc\""))
+    }
+
+    private companion object {
+        const val HEADER = "eyJhbGciOiJFZERTQSIsInR5cCI6InZjK2p3dCJ9"
+        const val V1_HEADER = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9"
+        const val SIGNATURE = "AQID"
     }
 }

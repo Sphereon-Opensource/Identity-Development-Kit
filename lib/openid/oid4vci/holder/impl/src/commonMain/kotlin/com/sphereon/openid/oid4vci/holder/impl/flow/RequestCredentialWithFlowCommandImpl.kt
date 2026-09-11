@@ -30,6 +30,8 @@ import com.sphereon.openid.oid4vci.holder.CreateCredentialRequestProofArgs
 import com.sphereon.openid.oid4vci.holder.CreateCredentialRequestProofCommand
 import com.sphereon.openid.oid4vci.holder.CreatedProof
 import com.sphereon.openid.oid4vci.holder.CredentialFlowResult
+import com.sphereon.openid.oid4vci.holder.CredentialRequestProofPreparation
+import com.sphereon.openid.oid4vci.holder.RequestCredentialWithFlowProofMode
 import com.sphereon.openid.oid4vci.holder.Oid4vciHolderConfig
 import com.sphereon.openid.oid4vci.holder.Oid4vciHolderSession
 import com.sphereon.openid.oid4vci.holder.Oid4vciHolderSessionStatus
@@ -80,6 +82,7 @@ class RequestCredentialWithFlowCommandImpl(
     private val requestCredentialCommand: RequestCredentialCommand,
     private val pollDeferredCredentialCommand: PollDeferredCredentialCommand,
     private val sendNotificationWithRetryCommand: SendNotificationWithRetryCommand,
+    private val proofPreparation: CredentialRequestProofPreparation,
     private val sessionStore: Oid4vciHolderSessionStore,
     private val config: Oid4vciHolderConfig,
 ) : TypedServiceCommandAdapter<RequestCredentialWithFlowArgs, CredentialFlowResult, IdkError>(
@@ -99,37 +102,71 @@ class RequestCredentialWithFlowCommandImpl(
     ): IdkResult<CredentialFlowResult, IdkError> {
         val applied = applyDuring(args)
 
-        // Step 1: Auto-nonce
-        var cNonce: String? = null
-        val nonceEndpoint = applied.nonceEndpoint
-        if (config.autoRequestNonce && nonceEndpoint != null) {
-            log.debug("Auto-requesting nonce from $nonceEndpoint")
-            val nonceResult = requestNonceCommand.execute(RequestNonceArgs(nonceEndpoint = nonceEndpoint))
-            if (nonceResult.isOk) {
-                cNonce = nonceResult.value?.cNonce
-                log.debug("Received c_nonce from nonce endpoint")
-            } else {
-                log.warn("Failed to fetch nonce from ${applied.nonceEndpoint}: ${nonceResult.error?.message?.defaultMessage}")
+        // Prepared proofs are server-owned and already contain the exact JOSE/WSCA context. They
+        // must be finalized and sent as-is: no nonce acquisition, proof rebuild, or retry is safe.
+        var credentialResult: IdkResult<CredentialResponse, IdkError>
+        when (val proofMode = applied.proofMode) {
+            RequestCredentialWithFlowProofMode.Unattended -> {
+                // Step 1: Auto-nonce
+                var cNonce: String? = null
+                val nonceEndpoint = applied.nonceEndpoint
+                if (config.autoRequestNonce && nonceEndpoint != null) {
+                    log.debug("Auto-requesting nonce from $nonceEndpoint")
+                    val nonceResult = requestNonceCommand.execute(RequestNonceArgs(nonceEndpoint = nonceEndpoint))
+                    if (nonceResult.isOk) {
+                        cNonce = nonceResult.value?.cNonce
+                        log.debug("Received c_nonce from nonce endpoint")
+                    } else {
+                        log.warn("Failed to fetch nonce from ${applied.nonceEndpoint}: ${nonceResult.error?.message?.defaultMessage}")
+                    }
+                }
+
+                // Step 2: Create proof
+                val proof = createProof(applied, cNonce).getOrElse { return Err(it) }
+
+                // Step 3: Update session to CREDENTIAL_REQUESTED
+                updateSessionStatus(applied.sessionId, Oid4vciHolderSessionStatus.CREDENTIAL_REQUESTED)
+
+                // Step 4: Request credential, retaining the existing unattended nonce retry path.
+                credentialResult = requestCredential(applied, proof)
+
+                // Step 5: Nonce retry on INVALID_NONCE_FRESH_NONCE_AVAILABLE
+                if (credentialResult.isErr) {
+                    val error = credentialResult.error!!
+                    val freshNonce = extractFreshNonceFromError(error)
+                    if (freshNonce != null) {
+                        log.debug("Retrying credential request with fresh nonce")
+                        val retryProof = createProof(applied, freshNonce).getOrElse { return Err(it) }
+                        credentialResult = requestCredential(applied, retryProof)
+                    }
+                }
             }
-        }
 
-        // Step 2: Create proof
-        val proof = createProof(applied, cNonce).getOrElse { return Err(it) }
-
-        // Step 3: Update session to CREDENTIAL_REQUESTED
-        updateSessionStatus(applied.sessionId, Oid4vciHolderSessionStatus.CREDENTIAL_REQUESTED)
-
-        // Step 4: Request credential
-        var credentialResult = requestCredential(applied, proof)
-
-        // Step 5: Nonce retry on INVALID_NONCE_FRESH_NONCE_AVAILABLE
-        if (credentialResult.isErr) {
-            val error = credentialResult.error!!
-            val freshNonce = extractFreshNonceFromError(error)
-            if (freshNonce != null) {
-                log.debug("Retrying credential request with fresh nonce")
-                val retryProof = createProof(applied, freshNonce).getOrElse { return Err(it) }
-                credentialResult = requestCredential(applied, retryProof)
+            is RequestCredentialWithFlowProofMode.Prepared -> {
+                // The snapshot must come from a durably claimed server operation. This command
+                // deliberately does not implement an in-memory lock or operation claim; the
+                // durable REST operation store owns exactly-once/CAS semantics.
+                validatePreparedProofContext(applied, proofMode.proofBatch).getOrElse { return Err(it) }
+                if (proofMode.proofBatch.proofs.size != 1) {
+                    return Err(
+                        IdkError.fromString(
+                            message = "Prepared credential flow requires exactly one proof",
+                            code = "PREPARED_PROOF_BATCH_SIZE_MISMATCH",
+                        ),
+                    )
+                }
+                val proof = proofPreparation.finalize(proofMode.proofBatch).getOrElse { return Err(it) }
+                updateSessionStatus(applied.sessionId, Oid4vciHolderSessionStatus.CREDENTIAL_REQUESTED)
+                // Suppress RequestCredentialCommand's own invalid_nonce nonce-fetch path too.
+                credentialResult = requestCredential(applied, proof, nonceEndpoint = null)
+                if (credentialResult.isErr) {
+                    val error = credentialResult.error!!
+                    reactivationRequired(error)?.let {
+                        updateSessionStatus(applied.sessionId, Oid4vciHolderSessionStatus.ACTIVATION_REQUIRED)
+                        return Ok(it)
+                    }
+                    return Err(error)
+                }
             }
         }
 
@@ -235,6 +272,7 @@ class RequestCredentialWithFlowCommandImpl(
     private suspend fun requestCredential(
         args: RequestCredentialWithFlowArgs,
         proof: CreatedProof,
+        nonceEndpoint: String? = args.nonceEndpoint,
     ): IdkResult<CredentialResponse, IdkError> =
         requestCredentialCommand.execute(
             RequestCredentialArgs(
@@ -244,10 +282,40 @@ class RequestCredentialWithFlowCommandImpl(
                 credentialIdentifier = args.credentialIdentifier,
                 proofs = proof.proofs,
                 credentialResponseEncryption = args.credentialResponseEncryption,
-                nonceEndpoint = args.nonceEndpoint,
+                nonceEndpoint = nonceEndpoint,
                 decryptionKey = args.decryptionKey,
             ),
         )
+
+    /**
+     * A prepared snapshot is an in-process, server-owned capability. Bind every entry to the
+     * flow request before invoking the preparation seam so an orchestration bug cannot finalize
+     * a proof prepared for another wallet operation, issuer, or signing key.
+     */
+    private fun validatePreparedProofContext(
+        args: RequestCredentialWithFlowArgs,
+        batch: com.sphereon.openid.oid4vci.holder.PreparedCredentialRequestProofBatch,
+    ): IdkResult<Unit, IdkError> {
+        val mismatch = batch.proofs.firstOrNull { proof ->
+            proof.walletUnitId != args.walletUnitId ||
+                proof.operationBinding != args.operationBinding ||
+                proof.keyRef.keyId != args.signingKeyId ||
+                proof.algorithm != args.signingAlgorithm ||
+                proof.keyRef.algorithm != args.signingAlgorithm ||
+                proof.issuerUrl != args.issuerUrl ||
+                proof.audience != args.issuerUrl
+        }
+        return if (mismatch == null) {
+            Ok(Unit)
+        } else {
+            Err(
+                IdkError.fromString(
+                    message = "Prepared credential proof does not match the requested wallet operation",
+                    code = "PREPARED_PROOF_CONTEXT_MISMATCH",
+                ),
+            )
+        }
+    }
 
     /**
      * Extracts a fresh c_nonce from an INVALID_NONCE_FRESH_NONCE_AVAILABLE error code.
@@ -263,6 +331,23 @@ class RequestCredentialWithFlowCommandImpl(
         }
         val nonce = code.removePrefix(prefix).trim()
         return nonce.ifBlank { null }
+    }
+
+    /** Maps an issuer nonce rejection into a typed activation boundary for prepared execution. */
+    private fun reactivationRequired(error: IdkError): CredentialFlowResult.ReactivationRequired? {
+        val prefix = "INVALID_NONCE_FRESH_NONCE_AVAILABLE:"
+        val nonceFromCode = error.code.takeIf { it.startsWith(prefix) }?.removePrefix(prefix)?.trim()?.ifBlank { null }
+        val isInvalidNonce = error.code.equals("invalid_nonce", ignoreCase = true) || nonceFromCode != null
+        if (!isInvalidNonce) return null
+
+        val issuerNonce = nonceFromCode
+            ?: (error.meta["c_nonce"] as? String)?.takeIf { it.isNotBlank() }
+            ?: (error.meta["nonce"] as? String)?.takeIf { it.isNotBlank() }
+        val retryAfterSeconds = (error.meta["retry_after"] as? Number)?.toLong() ?: error.retryAfter?.inWholeSeconds
+        return CredentialFlowResult.ReactivationRequired(
+            issuerNonce = issuerNonce,
+            retryAfterSeconds = retryAfterSeconds,
+        )
     }
 
     private suspend fun updateSessionStatus(

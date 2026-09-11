@@ -26,6 +26,7 @@ import com.sphereon.cbor.CborString
 import com.sphereon.cbor.toCborItem
 import com.sphereon.crypto.core.cose.CoseAlgorithm
 import com.sphereon.crypto.core.cose.CoseHeaderCbor
+import com.sphereon.crypto.core.cose.CoseMac0Cbor
 import com.sphereon.crypto.core.cose.CoseSign1
 import com.sphereon.mdoc.testutil.coseSign1AsCborArray
 import kotlin.test.Test
@@ -54,6 +55,38 @@ class DeviceSignedCborCodecImplTest {
         assertFailsWith<IllegalArgumentException> {
             codec.decode(Cbor.encode(CborString("invalid"))).getOrThrow()
         }
+    }
+
+    @Test
+    fun deviceSigned_codec_round_trips_detached_cose_mac0() {
+        val expectedMac =
+            CoseMac0Cbor(
+                protectedHeader = CoseHeaderCbor(alg = CoseAlgorithm.HMAC256_256),
+                unprotectedHeader = null,
+                payload = null,
+                tag = CborByteString(ByteArray(32) { (it + 1).toByte() }),
+            )
+        val original =
+            codec
+                .encode(
+                    createTestDeviceSigned().copy(
+                        deviceAuth =
+                            DeviceAuth(
+                                deviceSignature = null,
+                                deviceMac = DeviceMac(expectedMac),
+                                original = null,
+                            ),
+                    ),
+                ).getOrThrow()
+
+        val decoded = codec.decode(original).getOrThrow().value
+        val actualMac = requireNotNull(decoded.deviceAuth.deviceMac)
+        val actualCoseMac0 = requireNotNull(actualMac.coseMac0)
+
+        assertEquals(true, actualMac.isCoseMac0())
+        assertEquals(expectedMac.protectedHeader.alg?.value, actualCoseMac0.protectedHeader.alg?.value)
+        assertEquals(null, actualCoseMac0.payload)
+        assertContentEquals(expectedMac.tag.value, actualCoseMac0.tag.value)
     }
 
     private fun createTestDeviceSigned(): DeviceSigned =

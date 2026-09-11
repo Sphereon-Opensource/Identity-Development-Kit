@@ -44,6 +44,8 @@ data class UrlValidationPolicy(
     val blockedHosts: Set<String> = emptySet(),
     /** Additional hostname suffixes to block (e.g., ".internal", ".local"). */
     val blockedHostSuffixes: Set<String> = emptySet(),
+    /** Optional execution-scoped destination that every request must match canonically. */
+    val exactTargetUri: String? = null,
 ) {
     /**
      * Validate a URL against this policy.
@@ -58,6 +60,10 @@ data class UrlValidationPolicy(
         // Userinfo check
         if (blockUserInfo && (url.user != null || url.password != null)) {
             throw UrlValidationException("URLs with userinfo are not allowed")
+        }
+
+        exactTargetUri?.let { approvedUri ->
+            validateExactTarget(approved = Url(approvedUri), requested = url)
         }
 
         val host = url.host.lowercase()
@@ -85,7 +91,7 @@ data class UrlValidationPolicy(
     }
 
     companion object {
-        /** No URL validation — allows all requests. */
+        /** No URL validation â€” allows all requests. */
         val NONE =
             UrlValidationPolicy(
                 allowedSchemes = emptySet(),
@@ -121,8 +127,59 @@ data class UrlValidationPolicy(
                         ".home.arpa",
                     ),
             )
+
+        /** Exact HTTPS destination guard for one already-approved governed request context. */
+        fun exactTarget(destinationUri: String): UrlValidationPolicy {
+            val destination = Url(destinationUri)
+            if (!destination.protocol.name.equals("https", ignoreCase = true)) {
+                throw UrlValidationException("Governed exact targets require HTTPS")
+            }
+            requireNoAuthorityCredentialsOrFragment(destination)
+            return UrlValidationPolicy(
+                allowedSchemes = setOf("https"),
+                blockUserInfo = true,
+                blockPrivateNetworks = false,
+                blockRfc1918 = false,
+                blockSharedNetworks = false,
+                exactTargetUri = destinationUri,
+            )
+        }
     }
 }
+
+private data class CanonicalUrlTarget(
+    val scheme: String,
+    val host: String,
+    val effectivePort: Int,
+    val encodedPath: String,
+    val query: List<Pair<String, List<String>>>,
+)
+
+private fun validateExactTarget(approved: Url, requested: Url) {
+    requireNoAuthorityCredentialsOrFragment(approved)
+    requireNoAuthorityCredentialsOrFragment(requested)
+    if (approved.canonicalTarget() != requested.canonicalTarget()) {
+        throw UrlValidationException("Request URL does not match the approved governed destination")
+    }
+}
+
+private fun requireNoAuthorityCredentialsOrFragment(url: Url) {
+    if (url.user != null || url.password != null) {
+        throw UrlValidationException("Governed request targets must not contain userinfo")
+    }
+    if (url.fragment.isNotEmpty()) {
+        throw UrlValidationException("Governed request targets must not contain fragments")
+    }
+}
+
+private fun Url.canonicalTarget(): CanonicalUrlTarget =
+    CanonicalUrlTarget(
+        scheme = protocol.name.lowercase(),
+        host = host.trim().trimEnd('.').lowercase(),
+        effectivePort = port,
+        encodedPath = encodedPath,
+        query = parameters.names().sorted().map { name -> name to parameters.getAll(name).orEmpty() },
+    )
 
 /**
  * Thrown when a request URL violates the configured [UrlValidationPolicy].
@@ -235,3 +292,5 @@ private fun parseIpOctet(s: String): Int? =
     } catch (_: NumberFormatException) {
         null
     }
+
+

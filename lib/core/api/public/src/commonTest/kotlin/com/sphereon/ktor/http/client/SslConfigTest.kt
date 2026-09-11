@@ -19,9 +19,11 @@ package com.sphereon.ktor.http.client
 import com.sphereon.ktor.http.client.config.CaOpts
 import com.sphereon.ktor.http.client.config.ClientSslConfig
 import com.sphereon.ktor.http.client.config.KeystoreCertificateOpts
+import com.sphereon.ktor.http.client.config.ResolvedCaCertificateOpts
 import com.sphereon.ktor.http.client.config.ServerSslConfig
 import com.sphereon.ktor.http.client.config.SslConfig
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
+import com.sphereon.ktor.http.client.provider.HttpMinimumTlsVersion
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -202,6 +204,32 @@ class CaOptsTest {
 
         assertEquals(1, opts.additionalCAs.size)
         assertTrue(opts.additionalCAs.contains(cert))
+    }
+
+    @Test
+    fun executionScopedCertificatePemsCanBeSetWithoutKeystoreReferences() {
+        val pem = "-----BEGIN CERTIFICATE-----\nPUBLIC\n-----END CERTIFICATE-----"
+        val certificate = ResolvedCaCertificateOpts(
+            certificateAlias = "governed-ca",
+            certificatePem = pem,
+            certificateFingerprint = "test-ca-fingerprint",
+        )
+        val opts = CaOpts(includePlatformDefaults = false, resolvedCertificates = setOf(certificate))
+
+        assertEquals(setOf(certificate), opts.resolvedCertificates)
+        assertEquals(pem, opts.resolvedCertificates.single().certificatePem)
+        assertFalse(opts.includePlatformDefaults)
+        assertTrue(opts.hasCustomTrust())
+        assertTrue(opts.additionalCAs.isEmpty())
+    }
+
+    @Test
+    fun clientTlsDefaultsToTls12AndCanRaiseTheFloorToTls13() {
+        assertEquals(HttpMinimumTlsVersion.TLS_1_2, ClientSslConfig().minimumTlsVersion)
+        assertEquals(
+            HttpMinimumTlsVersion.TLS_1_3,
+            ClientSslConfig(minimumTlsVersion = HttpMinimumTlsVersion.TLS_1_3).minimumTlsVersion,
+        )
     }
 }
 

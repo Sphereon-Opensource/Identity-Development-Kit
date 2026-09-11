@@ -70,6 +70,90 @@ data class WscaClientAttestationAuthResult(
 )
 
 /**
+ * Caller-supplied facts for one WSCA signing operation. The implementation derives the operation
+ * type, digest binding and nonce while preparing this request; callers cannot choose those values.
+ */
+data class WscaSigningRequest(
+    val walletUnitId: String,
+    val keyRef: WalletAttestedKeyRef,
+    val signingInput: ByteArray,
+    val operationBinding: String,
+    val walletAccountId: String? = keyRef.walletAccountId,
+    val audience: String? = null,
+    val nonce: String? = null,
+) {
+    init {
+        require(walletUnitId.isNotBlank()) { "wallet_wsca_sign_wallet_unit_id_blank" }
+        require(operationBinding.isNotBlank()) { "wallet_wsca_sign_operation_binding_blank" }
+        require(signingInput.isNotEmpty()) { "wallet_wsca_sign_input_empty" }
+        require(walletAccountId == null || walletAccountId.isNotBlank()) { "wallet_wsca_sign_wallet_account_id_blank" }
+        require(audience == null || audience.isNotBlank()) { "wallet_wsca_sign_audience_blank" }
+        require(nonce == null || nonce.isNotBlank()) { "wallet_wsca_sign_nonce_blank" }
+    }
+}
+
+/**
+ * Per-WSCA-instance minting authority for prepared signing contexts. A caller may create an
+ * independent authority for testing or persistence, but an implementation keeps its authority
+ * private and accepts only contexts minted by that exact authority instance.
+ */
+class WscaPreparedSigningFactory private constructor(private val provenance: Any) {
+    companion object {
+        fun create(): WscaPreparedSigningFactory = WscaPreparedSigningFactory(Any())
+    }
+
+    fun mint(
+        walletUnitId: String,
+        keyRef: WalletAttestedKeyRef,
+        walletAccountId: String?,
+        operationBinding: String,
+        operationType: String,
+        digestBinding: String,
+        nonce: String,
+        audience: String,
+        signingInput: ByteArray,
+    ): WscaPreparedSigning =
+        WscaPreparedSigning(
+            provenance = provenance,
+            walletUnitId = walletUnitId,
+            keyRef = keyRef,
+            walletAccountId = walletAccountId,
+            operationBinding = operationBinding,
+            operationType = operationType,
+            digestBinding = digestBinding,
+            nonce = nonce,
+            audience = audience,
+            signingInput = signingInput,
+        )
+
+    fun owns(prepared: WscaPreparedSigning): Boolean = prepared.provenance === provenance
+}
+
+/**
+ * Immutable, implementation-prepared signing context. The exact signing bytes are defensively
+ * copied at preparation and on every read, so a caller cannot mutate what the WSCA authorized.
+ * The non-public constructor and provenance ensure only a [WscaPreparedSigningFactory] can mint one.
+ */
+class WscaPreparedSigning internal constructor(
+    internal val provenance: Any,
+    val walletUnitId: String,
+    val keyRef: WalletAttestedKeyRef,
+    val walletAccountId: String?,
+    val operationBinding: String,
+    val operationType: String,
+    val digestBinding: String,
+    val nonce: String,
+    val audience: String,
+    signingInput: ByteArray,
+) {
+    private val exactSigningInput = signingInput.copyOf()
+
+    val signingInput: ByteArray
+        get() = exactSigningInput.copyOf()
+
+}
+
+/**
  * The wallet-unit secure-component cryptographic surface: the holder-facing facade into a
  * WSCA/WSCD chain through which ALL holder-side crypto (key provisioning and proof/PoP/DPoP signing)
  * is performed. Wsca is the Wallet Secure Cryptographic Application per CIR (EU) 2024/2981 Art. 2(4)
@@ -182,18 +266,29 @@ interface Wsca {
     ): IdkResult<WalletAttestedKeyRef, IdkError>
 
     /**
-     * Produces a raw signature over caller-supplied [signingInput] using the secure-component-held key referenced
-     * by [keyRef] (which must have been obtained from [ensureKey] for the same [walletUnitId]).
-     *
-     * The signing happens behind the WSCA/WSCD boundary; the private key never leaves the WSCD.
-     *
-     * @return the raw signature bytes.
+     * Permanently removes a freshly created credential key that could not be associated with a
+     * credential or its durable public verification metadata. Callers must only use this rollback
+     * operation before the key has been exposed as a bound credential key.
      */
-    suspend fun sign(
+    suspend fun discardCredentialKey(
         walletUnitId: String,
         keyRef: WalletAttestedKeyRef,
-        signingInput: ByteArray,
-        operationBinding: String,
+    ): IdkResult<Unit, IdkError>
+
+    /**
+     * Binds exact signing bytes and caller context to an implementation-owned prepared context.
+     * No user authentication or WSCD operation is performed during preparation.
+     */
+    suspend fun prepareSign(request: WscaSigningRequest): IdkResult<WscaPreparedSigning, IdkError>
+
+    /**
+     * Produces a raw signature after validating that [request] is byte-for-byte and contextually
+     * identical to [prepared]. User authentication and WSCD signing happen only after validation.
+     * The private key never leaves the WSCD.
+     */
+    suspend fun sign(
+        prepared: WscaPreparedSigning,
+        request: WscaSigningRequest,
     ): IdkResult<ByteArray, IdkError>
 
     /**

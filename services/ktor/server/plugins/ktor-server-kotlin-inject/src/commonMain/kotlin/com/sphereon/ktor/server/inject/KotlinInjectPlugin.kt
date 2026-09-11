@@ -18,6 +18,8 @@
 package com.sphereon.ktor.server.inject
 
 import com.sphereon.core.api.app.CoreApiAppExtensionGraph
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelector
 import com.sphereon.core.api.log.LogService
 import com.sphereon.di.app.AppGraph
 import com.sphereon.ktor.server.inject.interceptor.UserContextInterceptor
@@ -25,14 +27,19 @@ import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
 import com.sphereon.ktor.server.inject.resolver.TenantResolver
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
-import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.BaseApplicationPlugin
-import io.ktor.server.application.call
+import io.ktor.server.application.createRouteScopedPlugin
+import io.ktor.server.application.hooks.CallFailed
+import io.ktor.server.application.hooks.ResponseSent
 import io.ktor.server.application.plugin
 import io.ktor.server.request.header
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.RoutingPipelineCall
+import io.ktor.server.routing.routing
 import io.ktor.util.AttributeKey
 
 /**
@@ -130,31 +137,83 @@ class KotlinInjectPlugin(
                     principalResolver = plugin.principalResolver,
                 )
 
-            pipeline.intercept(ApplicationCallPipeline.Plugins) {
-                // Route-scoped Ktor CORS handling runs after application plugins.
-                // A real browser preflight has no bearer token and must therefore
-                // pass through without constructing a tenant/user session; the
-                // CORS plugin will validate the requested origin and method.
-                if (
-                    call.request.httpMethod == HttpMethod.Options &&
-                    call.request.header(HttpHeaders.Origin) != null &&
-                    call.request.header("Access-Control-Request-Method") != null
-                ) {
-                    proceed()
-                    return@intercept
-                }
-                if (plugin.ignoredPathPrefixes.any { call.request.path().startsWith(it) }) {
-                    proceed()
-                    return@intercept
+            val requestScopePlugin =
+                createRouteScopedPlugin("KotlinInjectRequestScope") {
+                    onCall { call ->
+                        // A real browser preflight has no bearer token. Route-scoped CORS validates
+                        // it without route selection or tenant/user/session construction.
+                        if (
+                            call.request.httpMethod == HttpMethod.Options &&
+                            call.request.header(HttpHeaders.Origin) != null &&
+                            call.request.header("Access-Control-Request-Method") != null
+                        ) {
+                            return@onCall
+                        }
+                        if (plugin.ignoredPathPrefixes.any { call.request.path().startsWith(it) }) {
+                            return@onCall
+                        }
+
+                        // Ktor has already selected the concrete route at this point. Universal
+                        // catch-all nodes are preselected from the AppScope metadata catalog before
+                        // any tenant, user, SessionScope, adapter, or endpoint command is created.
+                        if (call.isUniversalHttpAdapterRoute()) {
+                            val routePolicy = call.requireUniversalHttpAdapterRoutePolicy()
+                            val selector =
+                                (plugin.appGraph as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
+                            when (
+                                val selection =
+                                    selector.select(
+                                        call.request.httpMethod.value,
+                                        routePolicy.selectionPath(call.request.path()),
+                                        routePolicy.allowedAdapterIds,
+                                    )
+                            ) {
+                                is HttpAdapterRouteSelection.Selected -> {
+                                    call.attributes.put(SelectedHttpAdapterRouteAttribute, selection.match)
+                                }
+
+                                is HttpAdapterRouteSelection.NotFound -> {
+                                    call.respondText(
+                                        "Not found",
+                                        status = HttpStatusCode.NotFound,
+                                    )
+                                    return@onCall
+                                }
+
+                                is HttpAdapterRouteSelection.Ambiguous -> {
+                                    plugin.logger.error(
+                                        message = "HTTP_ROUTE_SELECTION_FAILED",
+                                        metadata =
+                                            mapOf(
+                                                "reason" to "ambiguous_route",
+                                                "method" to selection.method,
+                                                "candidateCount" to selection.candidates.size.toString(),
+                                            ),
+                                    )
+                                    call.respondText("Internal server error", status = HttpStatusCode.InternalServerError)
+                                    return@onCall
+                                }
+
+                                is HttpAdapterRouteSelection.Misconfigured -> {
+                                    plugin.logger.error(
+                                        message = "HTTP_ROUTE_SELECTION_FAILED",
+                                        metadata = mapOf("reason" to "misconfigured_route", "detail" to selection.message),
+                                    )
+                                    call.respondText("Internal server error", status = HttpStatusCode.InternalServerError)
+                                    return@onCall
+                                }
+                            }
+                        }
+
+                        interceptor.intercept(call)
+                    }
+                    on(ResponseSent) { call -> call.destroyRequestSessionIfPresent() }
+                    on(CallFailed) { call, _ -> call.destroyRequestSessionIfPresent() }
                 }
 
-                val requestContext = interceptor.intercept(call)
-                try {
-                    proceed()
-                } finally {
-                    requestContext.sessionInstance.destroy()
-                }
-            }
+            // Installing on the routing root moves session creation behind Ktor's authoritative
+            // route resolution while retaining the same interceptor for every selected route.
+            pipeline.routing { install(requestScopePlugin) }
 
             plugin.logger.info("KotlinInject plugin installed successfully")
 
@@ -162,6 +221,33 @@ class KotlinInjectPlugin(
         }
     }
 }
+
+private fun io.ktor.server.application.ApplicationCall.isUniversalHttpAdapterRoute(): Boolean {
+    var route = (this as? RoutingPipelineCall)?.route
+    while (route != null) {
+        if (route.attributes.getOrNull(UniversalHttpAdapterRouteAttribute) == true) return true
+        route = route.parent
+    }
+    return false
+}
+
+private fun io.ktor.server.application.ApplicationCall.requireUniversalHttpAdapterRoutePolicy(): UniversalHttpAdapterRoutePolicy {
+    var route = (this as? RoutingPipelineCall)?.route
+    while (route != null) {
+        route.attributes.getOrNull(UniversalHttpAdapterRoutePolicyAttribute)?.let { return it }
+        route = route.parent
+    }
+    error("Universal HTTP adapter route has no immutable selection policy")
+}
+
+private fun io.ktor.server.application.ApplicationCall.destroyRequestSessionIfPresent() {
+    if (attributes.getOrNull(RequestSessionDestroyedAttribute) == true) return
+    attributes.put(RequestSessionDestroyedAttribute, true)
+    attributes.getOrNull(UserContextInterceptor.RequestContextKey)?.sessionInstance?.destroy()
+}
+
+private val RequestSessionDestroyedAttribute: AttributeKey<Boolean> =
+    AttributeKey("sphereon.inject.requestSessionDestroyed")
 
 /**
  * Extension property to access the KotlinInject plugin instance.

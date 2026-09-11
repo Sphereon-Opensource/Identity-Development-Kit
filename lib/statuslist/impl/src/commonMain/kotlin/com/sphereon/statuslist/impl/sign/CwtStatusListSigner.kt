@@ -94,7 +94,27 @@ class CwtStatusListSigner(
 
         // The public Jwk is already in hand from the resolved key — reuse it for the header (DID kid /
         // x5chain) instead of re-fetching from the KMS.
-        val (issuer, header, requireX5Chain) = resolveHeader(args, coseKeyInfo, managed.key as? Jwk)
+        val (issuer, header, requireX5Chain) = try {
+            resolveHeader(args, coseKeyInfo, managed.key as? Jwk)
+        } catch (e: IllegalArgumentException) {
+            return Err(
+                IdkError.fromString(
+                    code = "STATUSLIST_CWT_INVALID_COSE_ALG",
+                    message = e.message ?: "COSE alg is out of range",
+                    category = ErrorCategory.VALIDATION,
+                    exception = e,
+                ),
+            )
+        }
+        if (args.signingKeyMode.equals("x5c", ignoreCase = true) && !requireX5Chain) {
+            return Err(
+                IdkError.fromString(
+                    code = "STATUSLIST_CWT_X5CHAIN_REQUIRED",
+                    message = "mdoc-compatible CWT x5c signing requires a non-empty protected x5chain",
+                    category = ErrorCategory.VALIDATION,
+                ),
+            )
+        }
         val payload = buildClaims(args, issuer).encode()
 
         val input =
@@ -107,7 +127,11 @@ class CwtStatusListSigner(
 
         val signResult =
             try {
-                coseCryptoService.sign1<Any>(input = input, keyInfo = coseKeyInfo, requireX5Chain = requireX5Chain)
+                coseCryptoService.sign1<Any>(
+                    input = input,
+                    keyInfo = KeyInfo<Nothing>(alias = managed.alias ?: keyName, providerId = managed.providerId),
+                    requireX5Chain = requireX5Chain,
+                )
             } catch (e: Exception) {
                 return Err(
                     IdkError.fromString(
@@ -164,7 +188,7 @@ class CwtStatusListSigner(
         jwk: Jwk?,
     ): ResolvedCwtHeader {
         val alg: CoseAlgorithm? =
-            coseKeyInfo.signatureAlgorithm?.cose ?: coseKeyInfo.key.alg?.let { CoseAlgorithm.fromValue(it.value.toInt()) }
+            coseKeyInfo.signatureAlgorithm?.cose ?: coseKeyInfo.key.alg?.let { CoseAlgorithm.fromValue(toIntExact(it.value, "COSE alg")) }
         val header =
             CoseHeaderCbor(alg = alg, typ = CborString(StatusListContentTypes.STATUSLIST_CWT))
         val mode = args.signingKeyMode
@@ -181,7 +205,7 @@ class CwtStatusListSigner(
 
             mode != null && mode.equals("x5c", ignoreCase = true) -> {
                 val chain = jwk?.x5c
-                if (chain != null) {
+                if (!chain.isNullOrEmpty()) {
                     header.x5chain = CborArray(chain.map { it.toCborByteString(Encoding.BASE64) }.toMutableList())
                     ResolvedCwtHeader(args.issuer, header, true)
                 } else {
@@ -216,6 +240,13 @@ class CwtStatusListSigner(
         val header: CoseHeaderCbor,
         val requireX5Chain: Boolean,
     )
+
+    private fun toIntExact(value: Long, field: String): Int {
+        require(value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
+            "$field is outside the signed 32-bit range"
+        }
+        return value.toInt()
+    }
 
     private companion object {
         const val CWT_ISS = 1

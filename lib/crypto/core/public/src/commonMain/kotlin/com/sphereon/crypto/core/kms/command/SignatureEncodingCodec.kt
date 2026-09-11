@@ -80,6 +80,7 @@ object SignatureEncodingCodec {
         require(current + length <= der.size) { "DER INTEGER length exceeds signature" }
         val value = der.copyOfRange(current, current + length)
         current += length
+        require((value[0].toInt() and 0x80) == 0) { "DER INTEGER must be non-negative" }
         require(value.size == 1 || !(value[0] == 0.toByte() && (value[1].toInt() and 0x80) == 0)) {
             "DER INTEGER is not minimally encoded"
         }
@@ -96,6 +97,7 @@ object SignatureEncodingCodec {
         val count = first and 0x7F
         require(count in 1..2) { "Unsupported DER length width: $count" }
         require(offset + 1 + count <= der.size) { "Truncated DER length" }
+        require(count == 1 || (der[offset + 1].toInt() and 0xFF) != 0) { "DER length has a leading zero" }
         var length = 0
         repeat(count) { index ->
             length = (length shl 8) or (der[offset + 1 + index].toInt() and 0xFF)

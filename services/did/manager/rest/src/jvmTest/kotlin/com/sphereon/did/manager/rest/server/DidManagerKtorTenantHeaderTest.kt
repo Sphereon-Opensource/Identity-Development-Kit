@@ -15,7 +15,6 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.di.context.PrincipalInput
 import com.sphereon.di.session.SessionInstance
-import com.sphereon.did.manager.rest.server.adapter.DidManagerHttpAdapter
 import com.sphereon.did.manager.rest.server.ktor.configureDidManager
 import com.sphereon.did.manager.rest.server.ktor.createDidManagerAppGraph
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
@@ -79,9 +78,8 @@ class DidManagerKtorTenantHeaderTest {
                         // a known path so the test is independent of that wiring detail.
                         get("/probe/list-dids") {
                             val session: SessionInstance = call.sessionInstance
-                            val adapter = (session.graph as DidManagerHttpAdapter.Graph).didManagerHttpAdapter
                             val response =
-                                adapter.handleRequest(
+                                DidManagerTestHttpClient(appGraph, session).dispatch(
                                     GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"),
                                 )
                             call.respondText(
@@ -157,9 +155,8 @@ class DidManagerKtorTenantHeaderTest {
                     routing {
                         get("/probe/list-dids") {
                             val session: SessionInstance = call.sessionInstance
-                            val adapter = (session.graph as DidManagerHttpAdapter.Graph).didManagerHttpAdapter
                             val response =
-                                adapter.handleRequest(
+                                DidManagerTestHttpClient(appGraph, session).dispatch(
                                     GenericHttpRequest(method = "GET", path = "/api/did/v1/identifiers"),
                                 )
                             call.respondText(

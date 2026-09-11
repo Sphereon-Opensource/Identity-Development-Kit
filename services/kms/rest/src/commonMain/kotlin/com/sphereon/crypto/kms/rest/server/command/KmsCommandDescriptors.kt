@@ -8,6 +8,9 @@ import com.sphereon.crypto.kms.rest.api.command.GetKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ImportKeyServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.ListKeysServiceCommand
 import com.sphereon.crypto.kms.rest.api.command.RegisterKeyReferenceServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.RegisterCertificateReferenceServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.GetCertificateReferenceServiceCommand
+import com.sphereon.crypto.kms.rest.api.command.ListCertificateReferencesServiceCommand
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.IntoMap
@@ -39,4 +42,16 @@ interface KmsCommandDescriptors {
     @Provides @IntoMap
     @StringKey(RegisterKeyReferenceServiceCommand.COMMAND_ID)
     fun registerKeyReferenceService(impl: RegisterKeyReferenceServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(RegisterCertificateReferenceServiceCommand.COMMAND_ID)
+    fun registerCertificateReferenceService(impl: RegisterCertificateReferenceServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(ListCertificateReferencesServiceCommand.COMMAND_ID)
+    fun listCertificateReferencesService(impl: ListCertificateReferencesServiceCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides @IntoMap
+    @StringKey(GetCertificateReferenceServiceCommand.COMMAND_ID)
+    fun getCertificateReferenceService(impl: GetCertificateReferenceServiceCommandImpl): ServiceCommand<*, *, *> = impl
 }

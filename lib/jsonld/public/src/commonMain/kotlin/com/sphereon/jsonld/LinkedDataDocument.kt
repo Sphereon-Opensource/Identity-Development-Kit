@@ -31,8 +31,8 @@ import kotlinx.serialization.json.JsonElement
  * - [contextUrl] is set only when the document is plain JSON served with a
  *   `Link: rel="http://www.w3.org/ns/json-ld#context"` header that references
  *   an external `@context`. For `application/ld+json` responses this is null.
- * - [content] is the parsed JSON payload as a [JsonElement] (typically a
- *   [kotlinx.serialization.json.JsonObject]).
+ * - [content] is the parsed JSON payload as a [JsonElement] (a
+ *   [kotlinx.serialization.json.JsonObject] or [kotlinx.serialization.json.JsonArray]).
  * - [contentType] is the IANA media type as reported by the source, e.g.
  *   `"application/ld+json"`. Null when the source is the built-in registry or
  *   any other in-memory loader.

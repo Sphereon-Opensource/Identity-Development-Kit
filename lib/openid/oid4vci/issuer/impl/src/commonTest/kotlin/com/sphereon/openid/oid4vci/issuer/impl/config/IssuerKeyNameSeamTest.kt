@@ -161,35 +161,36 @@ class IssuerKeyNameSeamTest {
         return RegistryBackedOid4vciIssuerConfigProvider(
             execution = TenantScopedIssuerTestSessionExecution(TestPrincipalConfigService(PLANTED_PROPERTIES), TENANT_ID),
             instanceIdProvider = holder,
+            authorizationPolicyProvider = TestOid4vciAuthorizationPolicyProvider(),
             keyNameResolver = { resolver },
         )
     }
 
     private companion object {
         const val TENANT_ID = "tenant-acme"
-        const val INSTANCE_ID = "acme"
+        const val INSTANCE_ID = "00000000-0000-4000-8000-000000000031"
         const val CREDENTIAL_CONFIG_ID = "EuPid"
         const val PLANTED_SIGNING_ALIAS = "planted-signing-alias"
         const val PLANTED_DECRYPTION_ALIAS = "planted-decryption-alias"
         const val PLANTED_CREDENTIAL_ALIAS = "planted-credential-alias"
         const val PLANTED_CREDENTIAL_DEFAULT_ALIAS = "planted-credential-default-alias"
-        const val SERVER_SIGNING_KEY = "issuer-signing-acme"
-        const val SERVER_DECRYPTION_KEY = "issuer-request-decryption-acme"
+        const val SERVER_SIGNING_KEY = "issuer-signing-$INSTANCE_ID"
+        const val SERVER_DECRYPTION_KEY = "issuer-request-decryption-$INSTANCE_ID"
 
         val PLANTED_PROPERTIES =
             mapOf<String, Any>(
-                "oid4vci.issuers.acme.identifier" to "https://acme.example.com",
-                "oid4vci.issuers.acme.signed-metadata.enabled" to "true",
-                "oid4vci.issuers.acme.signingKeyAlias" to PLANTED_SIGNING_ALIAS,
-                "oid4vci.issuers.acme.signingKmsProviderId" to "planted-provider",
-                "oid4vci.issuers.acme.encryption.request.mode" to "supported",
-                "oid4vci.issuers.acme.encryption.request.decryptionKeyAlias" to PLANTED_DECRYPTION_ALIAS,
-                "oid4vci.issuers.acme.encryption.request.decryptionKmsProviderId" to "planted-provider",
-                "oid4vci.issuers.acme.encryption.request.encValuesSupported" to "A256GCM",
-                "oid4vci.issuers.acme.credentialConfigurationIds" to "EuPid",
-                "oid4vci.issuers.acme.credentials.[EuPid].format" to "dc+sd-jwt",
-                "oid4vci.issuers.acme.credentials.[EuPid].signingKeyAlias" to PLANTED_CREDENTIAL_ALIAS,
-                "oid4vci.issuers.acme.credentialDefaults.signingKeyAlias" to PLANTED_CREDENTIAL_DEFAULT_ALIAS,
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.identifier" to "https://acme.example.com",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.signed-metadata.enabled" to "true",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.signingKeyAlias" to PLANTED_SIGNING_ALIAS,
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.signingKmsProviderId" to "planted-provider",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.mode" to "supported",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.decryptionKeyAlias" to PLANTED_DECRYPTION_ALIAS,
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.decryptionKmsProviderId" to "planted-provider",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.encryption.request.encValuesSupported" to "A256GCM",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentialConfigurationIds" to "EuPid",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[EuPid].format" to "dc+sd-jwt",
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentials.[EuPid].signingKeyAlias" to PLANTED_CREDENTIAL_ALIAS,
+                "oid4vci.issuers.00000000-0000-4000-8000-000000000031.credentialDefaults.signingKeyAlias" to PLANTED_CREDENTIAL_DEFAULT_ALIAS,
             )
     }
 }

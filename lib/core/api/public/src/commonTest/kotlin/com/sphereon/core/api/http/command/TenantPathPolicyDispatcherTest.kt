@@ -27,6 +27,7 @@ import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.api.log.AsyncLogService
 import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.LoggerConfig
@@ -70,7 +71,7 @@ class TenantPathPolicyDispatcherTest {
                     slugLookup = SlugLookupFake(roots = mapOf("acme" to "tenant-acme")),
                     endpoints = listOf(echoEndpoint(method = HttpMethod.POST, pattern = "/authorize")),
                 )
-            val response = adapter.handleRequest(request("POST", "/acme/authorize"))
+            val response = adapter.handleSelected(request("POST", "/acme/authorize"))
             assertEquals(200, response.statusCode)
             assertEquals("/authorize", captured.last())
             assertEquals("tenant-acme", adapter.providerSeen)
@@ -86,7 +87,7 @@ class TenantPathPolicyDispatcherTest {
                     slugLookup = SlugLookupFake(roots = mapOf("acme" to "tenant-acme")),
                     endpoints = listOf(echoEndpoint(method = HttpMethod.GET, pattern = "/request-uri/{id}")),
                 )
-            val response = adapter.handleRequest(request("GET", "/acme/oid4vp/request-uri/123"))
+            val response = adapter.handleSelected(request("GET", "/acme/oid4vp/request-uri/123"))
             assertEquals(200, response.statusCode)
             assertEquals("/request-uri/123", captured.last())
             assertEquals("tenant-acme", adapter.providerSeen)
@@ -101,7 +102,7 @@ class TenantPathPolicyDispatcherTest {
                     slugLookup = SlugLookupFake(roots = mapOf("acme" to "tenant-acme")),
                     endpoints = listOf(echoEndpoint(method = HttpMethod.POST, pattern = "/foo/authorize")),
                 )
-            val response = adapter.handleRequest(request("POST", "/foo/authorize"))
+            val response = adapter.handleSelected(request("POST", "/foo/authorize"))
             assertEquals(200, response.statusCode)
             assertEquals("/foo/authorize", captured.last())
             // No peel happened → no override fired.
@@ -117,11 +118,56 @@ class TenantPathPolicyDispatcherTest {
                     slugLookup = SlugLookupFake(),
                     endpoints = listOf(echoEndpoint(method = HttpMethod.POST, pattern = "/authorize")),
                 )
-            val response = adapter.handleRequest(request("POST", "/unknown/authorize"))
+            val response = adapter.handleSelected(request("POST", "/unknown/authorize"))
             // Renderer turns the IdkError into an HTTP response — for our test renderer that's a 500 unless wrapped.
             // The important assertion is that NO peel happened and the captured echo never fired.
             assertTrue(captured.isEmpty(), "Endpoint must NOT have run when required peel fails")
             assertEquals(404, response.statusCode)
+        }
+
+    @Test
+    fun leadingSlug_peelsProtocolInstancePrefixWithoutTenantLookup() =
+        runTest {
+            val adapter =
+                adapter(
+                    policy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
+                    slugLookup = SlugLookupFake(),
+                    endpoints = listOf(echoEndpoint(method = HttpMethod.POST, pattern = "/authorize")),
+                )
+            val response = adapter.handleSelected(request("POST", "/as/acme/authorize"))
+            assertEquals(200, response.statusCode)
+            assertEquals("/authorize", captured.last())
+            assertNull(adapter.providerSeen)
+        }
+
+    @Test
+    fun leadingSlug_stripsInstanceAfterProtocolBasePath() =
+        runTest {
+            val adapter =
+                adapter(
+                    policy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
+                    mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/oid4vci"),
+                    slugLookup = SlugLookupFake(),
+                    endpoints = listOf(echoEndpoint(method = HttpMethod.POST, pattern = "/credential")),
+                )
+            val response = adapter.handleSelected(request("POST", "/oid4vci/acme/credential"))
+            assertEquals(200, response.statusCode)
+            assertEquals("/credential", captured.last())
+        }
+
+    @Test
+    fun wellKnownSuffix_peelsProtocolInstanceIssuerPath() =
+        runTest {
+            val adapter =
+                adapter(
+                    policy = TenantPathPolicy.WellKnownSuffix(maxDepth = 2),
+                    slugLookup = SlugLookupFake(),
+                    endpoints = listOf(echoEndpoint(method = HttpMethod.GET, pattern = "/.well-known/openid-configuration")),
+                )
+            val response = adapter.handleSelected(request("GET", "/.well-known/openid-configuration/as/acme"))
+            assertEquals(200, response.statusCode)
+            assertEquals("/.well-known/openid-configuration", captured.last())
+            assertNull(adapter.providerSeen)
         }
 
     @Test
@@ -133,7 +179,7 @@ class TenantPathPolicyDispatcherTest {
                     slugLookup = SlugLookupFake(roots = mapOf("acme" to "tenant-acme")),
                     endpoints = listOf(echoEndpoint(method = HttpMethod.GET, pattern = "/.well-known/openid-configuration")),
                 )
-            val response = adapter.handleRequest(request("GET", "/.well-known/openid-configuration/acme"))
+            val response = adapter.handleSelected(request("GET", "/.well-known/openid-configuration/acme"))
             assertEquals(200, response.statusCode)
             assertEquals("/.well-known/openid-configuration", captured.last())
             assertEquals("tenant-acme", adapter.providerSeen)
@@ -152,7 +198,7 @@ class TenantPathPolicyDispatcherTest {
                         ),
                     endpoints = listOf(echoEndpoint(method = HttpMethod.GET, pattern = "/.well-known/openid-configuration")),
                 )
-            val response = adapter.handleRequest(request("GET", "/.well-known/openid-configuration/tenanta/tenantc"))
+            val response = adapter.handleSelected(request("GET", "/.well-known/openid-configuration/tenanta/tenantc"))
             assertEquals(200, response.statusCode)
             assertEquals("/.well-known/openid-configuration", captured.last())
             // Final descended tenant is the inner child (URL semantic order: parent → child).
@@ -172,7 +218,7 @@ class TenantPathPolicyDispatcherTest {
                         ),
                     endpoints = listOf(echoEndpoint(method = HttpMethod.GET, pattern = "/.well-known/openid-configuration")),
                 )
-            val response = adapter.handleRequest(request("GET", "/.well-known/openid-configuration/tenantb/tenantc"))
+            val response = adapter.handleSelected(request("GET", "/.well-known/openid-configuration/tenantb/tenantc"))
             assertEquals(404, response.statusCode)
             assertTrue(captured.isEmpty())
         }
@@ -186,7 +232,7 @@ class TenantPathPolicyDispatcherTest {
                     slugLookup = SlugLookupFake(roots = mapOf("acme" to "tenant-acme")),
                     endpoints = listOf(echoEndpoint(method = HttpMethod.GET, pattern = "/api/v1/tenants/{tenantId}")),
                 )
-            val response = adapter.handleRequest(request("GET", "/api/v1/tenants/acme"))
+            val response = adapter.handleSelected(request("GET", "/api/v1/tenants/acme"))
             assertEquals(200, response.statusCode)
             assertEquals("/api/v1/tenants/acme", captured.last())
             // None policy → tenant override never set, even though `acme` IS a valid root slug.
@@ -213,7 +259,7 @@ class TenantPathPolicyDispatcherTest {
         pattern: String
     ): HttpEndpointCommand =
         object : HttpEndpointCommand {
-            override val id: String = "echo:$method:$pattern"
+            override val id: String = "test.echo.handle"
             override val isEnabled: Boolean = true
             override val endpoint: HttpEndpointDescriptor =
                 HttpEndpointDescriptor(method = method, pathPattern = pattern)
@@ -226,19 +272,53 @@ class TenantPathPolicyDispatcherTest {
 
     private inner class TestableAdapter(
         policy: TenantPathPolicy,
-        mount: HttpAdapterMount,
+        private val adapterMount: HttpAdapterMount,
         private val slugLookup: RoutableSlugLookup,
-        override val endpointCommands: List<HttpEndpointCommand>,
+        private val endpoints: List<HttpEndpointCommand>,
     ) : CommandBackedHttpAdapter(
             id = "test.routing.adapter",
             execution = TestSessionExecution(),
-            mount = mount,
+            mount = adapterMount,
+            endpointCommandRegistry = FixedEndpointRegistry(endpoints),
             tenantPathPolicy = policy,
         ) {
         @Volatile var providerSeen: String? = null
 
         override val routableSlugLookup: RoutableSlugLookup get() = slugLookup
         override val resolvedTenantIdProvider: MutableResolvedTenantIdProvider = ProviderRecord(this)
+
+        suspend fun handleSelected(request: GenericHttpRequest): GenericHttpResponse {
+            val endpoint = endpoints.single()
+            val relativePattern = endpoint.endpoint.pathPattern
+            val fullPattern =
+                when {
+                    adapterMount.adapterBasePath.isEmpty() || adapterMount.adapterBasePath == "/" -> relativePattern
+                    relativePattern == "/" -> adapterMount.adapterBasePath
+                    else -> adapterMount.adapterBasePath.trimEnd('/') + "/" + relativePattern.trimStart('/')
+                }
+            return handleResolvedRequest(
+                request,
+                HttpAdapterRouteMatch(
+                    adapterId = id,
+                    method = request.method,
+                    originalPath = request.path,
+                    normalizedPath = request.path,
+                    matchedPathPattern = fullPattern,
+                    handlerCommandId = endpoint.id,
+                    tenantIdFromPath = null,
+                ),
+            )
+        }
+    }
+
+    private class FixedEndpointRegistry(
+        endpoints: List<HttpEndpointCommand>,
+    ) : HttpEndpointCommandRegistry {
+        private val endpointsById = endpoints.associateBy(HttpEndpointCommand::id)
+
+        override fun get(handlerCommandId: String): HttpEndpointCommand? = endpointsById[handlerCommandId]
+
+        override fun listHandlerCommandIds(): Set<String> = endpointsById.keys
     }
 
     private class ProviderRecord(

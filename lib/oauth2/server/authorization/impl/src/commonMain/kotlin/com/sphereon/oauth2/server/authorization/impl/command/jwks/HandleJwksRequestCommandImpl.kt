@@ -23,10 +23,10 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.command.GetJwksArgs
+import com.sphereon.oauth2.server.authorization.command.GetJwksCommand
 import com.sphereon.oauth2.server.authorization.command.JwksResult
 import com.sphereon.oauth2.server.authorization.command.jwks.HandleJwksRequestArgs
 import com.sphereon.oauth2.server.authorization.command.jwks.HandleJwksRequestCommand
-import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -34,14 +34,16 @@ import dev.zacsweers.metro.binding
 
 /**
  * Implementation of [HandleJwksRequestCommand]. Body lifted verbatim from
- * `OAuth2Handlers.handleJwksRequest`: a single delegation to `commands.getJwks`.
+ * `OAuth2Handlers.handleJwksRequest`: a single delegation to [GetJwksCommand]. The exact command
+ * is injected directly so publishing public keys cannot construct every unrelated authorization
+ * server command in the request SessionScope.
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<HandleJwksRequestCommand>())
 class HandleJwksRequestCommandImpl(
     execution: SessionExecution,
-    private val authorizationServerService: AuthorizationServerService,
+    private val getJwks: GetJwksCommand,
 ) : TypedServiceCommandAdapter<HandleJwksRequestArgs, JwksResult, IdkError>(
         commandId = HandleJwksRequestCommand.COMMAND_ID,
         execution = execution,
@@ -58,6 +60,6 @@ class HandleJwksRequestCommandImpl(
         applyDuring: (HandleJwksRequestArgs) -> HandleJwksRequestArgs,
     ): IdkResult<JwksResult, IdkError> {
         applyDuring(args)
-        return authorizationServerService.commands.getJwks.execute(GetJwksArgs())
+        return getJwks.execute(GetJwksArgs())
     }
 }

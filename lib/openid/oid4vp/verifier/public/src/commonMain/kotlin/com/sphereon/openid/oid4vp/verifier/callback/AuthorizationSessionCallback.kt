@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vp.verifier.callback
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.api.http.callback.CallbackSigningAlgorithm
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
@@ -36,7 +37,31 @@ interface AuthorizationSessionCallbackDispatcher {
         url: String,
         update: AuthorizationSessionStatusUpdate,
     ): IdkResult<Unit, IdkError>
+
+    /**
+     * Dispatch with signing metadata. Legacy implementers remain source-compatible: unsigned
+     * calls delegate to [dispatch], while signed calls fail closed until this overload is
+     * explicitly implemented.
+     */
+    suspend fun dispatch(
+        url: String,
+        update: AuthorizationSessionStatusUpdate,
+        signing: AuthorizationSessionCallbackSigning?,
+    ): IdkResult<Unit, IdkError> =
+        if (signing == null) {
+            dispatch(url, update)
+        } else {
+            com.sphereon.core.api.Err(
+                IdkError.fromString(message = "Signed authorization session callback is unsupported"),
+            )
+        }
 }
+
+/** Secret reference and algorithm selected for one callback delivery. */
+data class AuthorizationSessionCallbackSigning(
+    val secretRef: String?,
+    val algorithm: CallbackSigningAlgorithm?,
+)
 
 /**
  * Payload for authorization session status updates.

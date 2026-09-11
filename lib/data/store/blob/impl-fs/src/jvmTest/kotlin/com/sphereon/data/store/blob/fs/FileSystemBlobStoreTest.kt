@@ -70,12 +70,12 @@ class FileSystemBlobStoreTest {
         }
 
     @Test
-    fun capabilitiesAdvertiseOnlyImplementedStreamingFeatures() {
+    fun capabilitiesAdvertiseRevisionAndConditionalWriteSupport() {
         assertTrue(store.capabilities.supportsStreamingRead)
         assertTrue(store.capabilities.supportsStreamingWrite)
-        assertFalse(store.capabilities.supportsEtag)
-        assertFalse(store.capabilities.supportsRevisions)
-        assertFalse(store.capabilities.supportsConditionalWrites)
+        assertTrue(store.capabilities.supportsEtag)
+        assertTrue(store.capabilities.supportsRevisions)
+        assertTrue(store.capabilities.supportsConditionalWrites)
         assertFalse(store.capabilities.supportsConditionalDelete)
     }
 
@@ -115,17 +115,20 @@ class FileSystemBlobStoreTest {
         }
 
     @Test
-    fun unsupportedConditionalWriteIsRejectedWithoutChangingContent() =
+    fun conditionalWriteUsesRevisionAndRejectsStaleUpdates() =
         runTest {
             val target = info("conditional.txt")
-            store.put(target, "original".encodeToByteArray())
+            val initial = store.put(target, "original".encodeToByteArray()).value
 
-            val result = store.put(target, "changed".encodeToByteArray(), PutOptions(ifMatch = "\"1\""))
+            val result = store.put(target, "changed".encodeToByteArray(), PutOptions(expectedRevision = initial.revision))
 
-            assertTrue(result.isErr)
-            assertEquals("BLOB_UNSUPPORTED", result.error.code)
+            assertTrue(result.isOk)
+            assertEquals(2L, result.value.revision)
+            val stale = store.put(target, "stale".encodeToByteArray(), PutOptions(expectedRevision = initial.revision))
+            assertTrue(stale.isErr)
+            assertEquals("BLOB_PRECONDITION_FAILED", stale.error.code)
             assertEquals(
-                "original",
+                "changed",
                 store
                     .get(target)
                     .value.data
@@ -408,13 +411,13 @@ class FileSystemBlobStoreTest {
         }
 
     @Test
-    fun putWithoutContentTypeProducesNoSidecar() =
+    fun putWithoutContentTypePersistsRevisionSidecar() =
         runTest {
             val r = info("no-sidecar.txt")
             store.put(r, "data".encodeToByteArray())
 
             val metaPath = "$rootDir/no-sidecar.txt.meta.json".toPath()
-            assertFalse(fakeFs.exists(metaPath), "sidecar should not be created when contentType is null")
+            assertTrue(fakeFs.exists(metaPath), "revision sidecar is required for conditional writes")
         }
 
     @Test

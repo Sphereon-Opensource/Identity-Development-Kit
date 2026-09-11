@@ -20,7 +20,7 @@ class WalletProtocolExecutorTest {
                     sessionId = WalletInteractionSessionId("s1"),
                     sessionWalletUnitId = "wallet",
                     protocol = WalletProtocol.OID4VP,
-                    operation = WalletSecurityOperation.PRESENTATION_SHARING,
+                    operation = WalletSecurityOperation.PRESENT_CREDENTIALS,
                     audience = "verifier",
                     requiredAssurance = WalletSecurityAssurance.BIOMETRIC,
                 )
@@ -30,7 +30,7 @@ class WalletProtocolExecutorTest {
             assertEquals(ProtocolExecutionOwner.WALLET_APP, decision.executionOwner)
             assertEquals(WalletProtocolExecutionPlacement.WALLET_APP, decision.placement)
             assertEquals(true, decision.securityGateRequired)
-            assertEquals(WalletSecurityOperation.PRESENTATION_SHARING, decision.securityOperation)
+            assertEquals(WalletSecurityOperation.PRESENT_CREDENTIALS, decision.securityOperation)
             assertEquals(WalletSecurityAssurance.BIOMETRIC, decision.requiredAssurance)
             assertEquals("verifier", decision.audience)
         }
@@ -71,7 +71,7 @@ class WalletProtocolExecutorTest {
                     sessionId = WalletInteractionSessionId("s1"),
                     sessionWalletUnitId = "wallet",
                     protocol = WalletProtocol.OID4VP,
-                    operation = WalletSecurityOperation.PRESENTATION_SHARING,
+                    operation = WalletSecurityOperation.PRESENT_CREDENTIALS,
                     audience = "verifier",
                 ),
             )
@@ -107,7 +107,7 @@ class WalletProtocolExecutorTest {
                     sessionId = WalletInteractionSessionId("s1"),
                     sessionWalletUnitId = "session-wallet-unit",
                     protocol = WalletProtocol.OID4VCI,
-                    operation = WalletSecurityOperation.HOLDER_PROOF,
+                    operation = WalletSecurityOperation.PRESENT_PROOF,
                 ),
             )
 

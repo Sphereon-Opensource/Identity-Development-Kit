@@ -20,6 +20,7 @@
 package com.sphereon.crypto.kms.provider.azure
 
 import com.sphereon.core.compat.Uuid
+import com.sphereon.core.api.conf.Env
 import com.sphereon.core.defaults.app.staticMinimalTestAppGraph
 import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyVisibility
@@ -32,11 +33,11 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwaAlgorithm
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.sign.model.SignInput
 import com.sphereon.crypto.core.sign.model.Signature
 import com.sphereon.crypto.core.sign.model.SignatureLevel
 import com.sphereon.crypto.core.sign.model.SigningMode
-import com.sphereon.crypto.kms.azure.BuildKonfig
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -68,17 +69,17 @@ class AzureKeyVaultProviderTest {
             AzureKmsProviderConfig(
                 id = "azure-keyvault-test",
                 applicationId = "azure-keyvault-test",
-                keyvaultUrl = assertConfigValue { BuildKonfig.AZURE_KEYVAULT_URL },
-                tenantId = assertConfigValue { BuildKonfig.AZURE_KEYVAULT_TENANT_ID },
+                keyvaultUrl = assertConfigValue { Env.get("AZURE_KEYVAULT_URL") },
+                tenantId = assertConfigValue { Env.get("AZURE_KEYVAULT_TENANT_ID") },
                 hsmType = HSMType.KEYVAULT,
                 credentialOpts =
                     CredentialOpts(
                         credentialMode = CredentialMode.SERVICE_CLIENT_SECRET,
                         secretCredentialOpts =
                             SecretCredentialOpts(
-                                clientId = assertConfigValue { BuildKonfig.AZURE_KEYVAULT_CLIENT_ID },
+                                clientId = assertConfigValue { Env.get("AZURE_KEYVAULT_CLIENT_ID") },
                                 clientSecretId = "sec_azure_integration_credential",
-                                clientSecretMaterial = assertConfigValue { BuildKonfig.AZURE_KEYVAULT_CLIENT_SECRET },
+                                clientSecretMaterial = assertConfigValue { Env.get("AZURE_KEYVAULT_CLIENT_SECRET") },
                             ),
                     ),
                 exponentialBackoffRetryOpts =
@@ -94,9 +95,11 @@ class AzureKeyVaultProviderTest {
 
     private suspend fun getOrCreateTestKeyPair(): ManagedKeyPair {
         if (managedKeyPair == null) {
+            val testAlias = "azure-keyvault-test-${Uuid.v4String()}"
+            println("Azure test key recovery/cleanup intent: alias=$testAlias")
             managedKeyPair =
                 azureKeyVaultCryptoProvider.generateKeyAsync(
-                    alias = "azure-keyvault-test-${Uuid.v4String()}",
+                    alias = testAlias,
                     alg = SignatureAlgorithm.ECDSA_SHA256,
                     keyOperations = arrayOf(KeyOperations.SIGN, KeyOperations.VERIFY),
                 )
@@ -107,18 +110,18 @@ class AzureKeyVaultProviderTest {
     @AfterTest
     fun tearDown() =
         runTest {
-            managedKeyPair?.let {
-                try {
-                    println("Deleting key in tearDown: ${it.kid}")
+            val keyToDelete = managedKeyPair
+            managedKeyPair = null
+            keyToDelete?.let {
+                println("Deleting key in tearDown: ${it.kid}")
+                assertTrue(
                     azureKeyVaultCryptoProvider.deleteKey(
                         it.toManagedKeyInfo<Jwk>(visibility = KeyVisibility.PUBLIC, keyEncoding = KeyEncoding.JOSE),
-                    )
-                    println("Key deleted successfully in tearDown")
-                } catch (expected: Exception) {
-                    println("Error deleting key in tearDown (might not have been created or already deleted): ${expected.message}")
-                }
+                    ),
+                    "Azure test-key cleanup must succeed",
+                )
+                println("Key deleted successfully in tearDown")
             }
-            managedKeyPair = null
         }
 
     @Test
@@ -137,6 +140,16 @@ class AzureKeyVaultProviderTest {
     fun testSupportedDigests() {
         val digests = azureKeyVaultCryptoProvider.supportedDigests()
         assertEquals(listOf(DigestAlg.SHA256, DigestAlg.SHA384, DigestAlg.SHA512), digests.toList())
+    }
+
+    @Test
+    fun standardKeyVaultAdvertisesReadOnlyCertificateCapabilities() {
+        val capabilities = azureKeyVaultCryptoProvider.getCapabilities()
+
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.REGISTER_KEY_REFERENCE))
+        assertTrue(capabilities.supportsOperation(KmsProviderOperation.GET_CERTIFICATE))
+        assertFalse(capabilities.supportsOperation(KmsProviderOperation.GENERATE_CERTIFICATE))
+        assertFalse(capabilities.supportsOperation(KmsProviderOperation.IMPORT_CERTIFICATE))
     }
 
     @Test

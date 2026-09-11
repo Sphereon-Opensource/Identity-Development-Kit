@@ -484,7 +484,12 @@ class LocalWalletPartyDirectory(
                     partyId = partyId,
                     tenantId = scope.tenantId,
                     partyType = PartyType.ORGANIZATION,
-                    origin = PartyOrigin.EXTERNAL,
+                    origin = PartyOrigin.CEREMONY_DISCOVERY,
+                    // Required Party label, not a legal name. Counterparty-supplied, stored
+                    // without a source because Party.displayName has nowhere to carry one.
+                    // That is acceptable: it is the protocol face the holder already saw, not an
+                    // attributed Organization fact. Legal name, contacts and website stay off
+                    // this record until a persist type can keep each fact's source.
                     displayName = evidence.displayName,
                     uri = evidence.organizationUri,
                     jurisdiction = evidence.jurisdiction,
@@ -539,6 +544,8 @@ class LocalWalletPartyDirectory(
         return organization.copy(
             party =
                 organization.party.copy(
+                    // Same as create: a required label, overwritten from evidence only when the
+                    // holder has not taken the name over. Not an attributed legal name.
                     displayName = if (organization.displayNameManagedByUser) organization.party.displayName else evidence.displayName,
                     uri = organization.party.uri ?: evidence.organizationUri,
                     updatedAt = instant,

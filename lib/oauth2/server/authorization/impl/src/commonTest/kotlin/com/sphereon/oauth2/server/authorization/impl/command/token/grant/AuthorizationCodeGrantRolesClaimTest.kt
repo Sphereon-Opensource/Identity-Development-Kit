@@ -28,6 +28,8 @@ import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
@@ -45,6 +47,10 @@ import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequest
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAuthorizationCodeStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryTokenStorageImpl
+import com.sphereon.oauth2.server.authorization.impl.command.token.CreateRefreshTokenCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyRefreshTokenGrantCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
+import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.AuthorizationCodeData
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.wallet.WalletInstanceAttestationEvidence
@@ -101,6 +107,7 @@ class AuthorizationCodeGrantRolesClaimTest {
     private class CapturingCommands(
         private val verifyStub: VerifyAuthorizationCodeGrantCommand,
         private val refreshVerifyStub: VerifyRefreshTokenGrantCommand? = null,
+        private val refreshCreator: CreateRefreshTokenCommand? = null,
     ) : AuthorizationServerService.Commands {
         var capturedAccessTokenArgs: CreateAccessTokenArgs? = null
         var capturedRefreshTokenArgs: CreateRefreshTokenArgs? = null
@@ -127,7 +134,7 @@ class AuthorizationCodeGrantRolesClaimTest {
 
                 override suspend fun execute(args: CreateRefreshTokenArgs): IdkResult<StringResult, IdkError> {
                     capturedRefreshTokenArgs = args
-                    return Ok(StringResult(value = "RT-ROLES"))
+                    return refreshCreator?.execute(args) ?: Ok(StringResult(value = "RT-ROLES"))
                 }
             }
 
@@ -139,6 +146,16 @@ class AuthorizationCodeGrantRolesClaimTest {
 
                 override suspend fun execute(args: CreateTokenResponseArgs): IdkResult<TokenResponse, IdkError> =
                     Ok(TokenResponse(accessToken = args.accessToken, tokenType = args.tokenType, refreshToken = args.refreshToken, scope = args.scope))
+            }
+
+        override val createIdToken: CreateIdTokenCommand =
+            object : CreateIdTokenCommand {
+                override val inputTypeToken = typeToken<CreateIdTokenArgs>()
+                override val outputTypeToken = typeToken<StringResult>()
+                override val isEnabled = true
+
+                override suspend fun execute(args: CreateIdTokenArgs): IdkResult<StringResult, IdkError> =
+                    Ok(StringResult(value = "IDT-ROLES"))
             }
 
         override val parseTokenRequest get(): com.sphereon.oauth2.server.authorization.command.ParseTokenRequestCommand = throw NotImplementedError()
@@ -164,15 +181,19 @@ class AuthorizationCodeGrantRolesClaimTest {
         override val buildServerMetadata get(): com.sphereon.oauth2.server.authorization.command.BuildServerMetadataCommand = throw NotImplementedError()
         override val verifyClientAuthentication get(): com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand = throw NotImplementedError()
         override val createAttestationChallenge get(): com.sphereon.oauth2.server.authorization.command.CreateAttestationChallengeCommand = throw NotImplementedError()
-        override val createIdToken get(): com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand = throw NotImplementedError()
         override val getUserInfo get(): com.sphereon.oauth2.server.authorization.command.GetUserInfoCommand = throw NotImplementedError()
         override val getJwks get(): com.sphereon.oauth2.server.authorization.command.GetJwksCommand = throw NotImplementedError()
     }
 
-    private fun newHandler(): AuthorizationCodeGrantHandlerImpl =
+    private fun newHandler(commands: AuthorizationServerService.Commands): AuthorizationCodeGrantHandlerImpl =
         AuthorizationCodeGrantHandlerImpl(
             authorizationCodeStorage = InMemoryAuthorizationCodeStorageImpl(InMemoryOAuth2BackingStorageImpl()),
             scopeClaimsMapper = null,
+            verifyAuthorizationCodeGrant = commands.verifyAuthorizationCodeGrant,
+            createAccessToken = commands.createAccessToken,
+            createRefreshToken = lazy { commands.createRefreshToken },
+            createIdToken = lazy { commands.createIdToken },
+            createTokenResponse = commands.createTokenResponse,
         )
 
     private fun walletInstanceAttestationEvidence(): WalletInstanceAttestationEvidence =
@@ -198,10 +219,7 @@ class AuthorizationCodeGrantRolesClaimTest {
             signerCertificateProfile = "HARDWARE_SECURE",
         )
 
-    private fun grantContext(
-        commands: AuthorizationServerService.Commands,
-        walletInstanceAttestation: WalletInstanceAttestationEvidence? = null,
-    ): GrantContext {
+    private fun grantContext(walletInstanceAttestation: WalletInstanceAttestationEvidence? = null): GrantContext {
         val tokenRequest =
             TokenRequestData(
                 grantType = GrantType.AUTHORIZATION_CODE,
@@ -212,6 +230,7 @@ class AuthorizationCodeGrantRolesClaimTest {
             )
         return GrantContext(
             tokenRequest = tokenRequest,
+            tenantId = "tenant-test",
             resolvedClientId = "client-1",
             proofJkt = null,
             certThumbprintS256 = null,
@@ -221,13 +240,12 @@ class AuthorizationCodeGrantRolesClaimTest {
                     requestHeaders = emptyMap(),
                     httpUrl = "https://as.example.com/token",
                 ),
-            commands = commands,
             serverConfig = OAuth2ServerInstanceConfig(issuer = "https://as.example.com"),
             walletInstanceAttestation = walletInstanceAttestation,
         )
     }
 
-    private fun refreshGrantContext(commands: AuthorizationServerService.Commands): GrantContext {
+    private fun refreshGrantContext(): GrantContext {
         val tokenRequest =
             TokenRequestData(
                 grantType = GrantType.REFRESH_TOKEN,
@@ -238,6 +256,7 @@ class AuthorizationCodeGrantRolesClaimTest {
             )
         return GrantContext(
             tokenRequest = tokenRequest,
+            tenantId = "tenant-test",
             resolvedClientId = "client-1",
             proofJkt = null,
             certThumbprintS256 = null,
@@ -247,7 +266,6 @@ class AuthorizationCodeGrantRolesClaimTest {
                     requestHeaders = emptyMap(),
                     httpUrl = "https://as.example.com/token",
                 ),
-            commands = commands,
             serverConfig = OAuth2ServerInstanceConfig(issuer = "https://as.example.com", refreshTokenRotation = false),
         )
     }
@@ -270,8 +288,8 @@ class AuthorizationCodeGrantRolesClaimTest {
                     ),
                 ),
             )
-        val handler = newHandler()
-        val context = grantContext(commands)
+        val handler = newHandler(commands)
+        val context = grantContext()
         val result = handler.handle(context.tokenRequest.grantParameters, context)
         assertTrue(result.isOk, "auth-code grant must succeed, got ${if (!result.isOk) result.error else "ok"}")
         val args = commands.capturedAccessTokenArgs
@@ -300,6 +318,41 @@ class AuthorizationCodeGrantRolesClaimTest {
             assertFalse(args.additionalClaims.containsKey("email"), "identity claims must NOT leak into the access token")
             assertFalse(args.additionalClaims.containsKey("name"), "identity claims must NOT leak into the access token")
         }
+
+    @Test
+    fun federatedIdentityUsesStorageOnlyMetadataAndCannotOverrideTokenProtocolClaims() = runTest {
+        val args = mintWithUserClaims(mapOf(
+            "upstream_iss" to JsonPrimitive("https://idp.example.test"),
+            "upstream_sub" to JsonPrimitive("idp-user-42"),
+            "given_name" to "Ada",
+            "employee_id" to "EMP-42",
+            "iss" to "https://untrusted.example.test",
+            "aud" to "untrusted-resource",
+            "exp" to 1L,
+            "sub" to "untrusted-subject",
+            "authorization_details" to "untrusted-authorization",
+            "oidc.internal.injected" to "untrusted-metadata",
+        ))
+        val metadata = assertNotNull(args.additionalClaims["oidc.internal.federation_claims"] as? JsonObject)
+        assertEquals(JsonPrimitive("https://idp.example.test"), metadata["upstream_iss"])
+        assertEquals(JsonPrimitive("idp-user-42"), metadata["upstream_sub"])
+        assertEquals(
+            JsonObject(mapOf("given_name" to JsonPrimitive("Ada"), "employee_id" to JsonPrimitive("EMP-42"))),
+            metadata["userinfo"],
+        )
+        assertFalse(args.additionalClaims.keys.any { it in setOf("given_name", "employee_id", "upstream_iss", "upstream_sub", "iss", "aud", "exp", "sub") })
+    }
+
+    @Test
+    fun localOrMalformedFederationIdentityCreatesNoFederationMetadata() = runTest {
+        for (claims in listOf(
+            mapOf<String, Any>("given_name" to "Ada"),
+            mapOf("upstream_iss" to "  ", "given_name" to "Ada"),
+            mapOf("upstream_iss" to JsonPrimitive(42), "given_name" to "Ada"),
+        )) {
+            assertFalse("oidc.internal.federation_claims" in mintWithUserClaims(claims).additionalClaims)
+        }
+    }
 
     @Test
     fun authenticationContextFromCodeUsesTypedAccessTokenFields() =
@@ -349,8 +402,8 @@ class AuthorizationCodeGrantRolesClaimTest {
                     ),
                 ),
             )
-        val context = grantContext(commands)
-        val result = newHandler().handle(context.tokenRequest.grantParameters, context)
+        val context = grantContext()
+        val result = newHandler(commands).handle(context.tokenRequest.grantParameters, context)
 
             assertTrue(result.isOk)
             assertEquals(listOf(defaultAudience), commands.capturedAccessTokenArgs?.audience)
@@ -379,17 +432,108 @@ class AuthorizationCodeGrantRolesClaimTest {
                         )
                 }
             val commands = CapturingCommands(verifyStub = verifyStub(VerifiedAuthorizationCodeGrant(codeData(), "operator-1", "client-1")), refreshVerifyStub = refreshVerifier)
-            val context = refreshGrantContext(commands)
+            val context = refreshGrantContext()
 
             val result =
                 RefreshTokenGrantHandlerImpl(
                     tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl()),
                     auditEmitter = com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter,
+                    verifyRefreshTokenGrant = commands.verifyRefreshTokenGrant,
+                    createAccessToken = commands.createAccessToken,
+                    createRefreshToken = lazy { commands.createRefreshToken },
+                    createIdToken = lazy { commands.createIdToken },
+                    createTokenResponse = commands.createTokenResponse,
                 ).handle(context.tokenRequest.grantParameters, context)
 
             assertTrue(result.isOk)
             assertEquals(listOf(defaultAudience), commands.capturedAccessTokenArgs?.audience)
         }
+
+    @Test
+    fun federationMetadataSurvivesRealRefreshCreationVerificationAndRotation() = runTest {
+        val execution = OAuth2ServerTestContext("federation-refresh", this@AuthorizationCodeGrantRolesClaimTest).execution
+        val config = TestOAuth2ServersConfigProvider()
+        val storage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
+        val creator = CreateRefreshTokenCommandImpl(execution, storage, config, defaultSecureRandom())
+        val verifier = VerifyRefreshTokenGrantCommandImpl(execution, storage, config)
+        val commands = CapturingCommands(
+            verifyStub(VerifiedAuthorizationCodeGrant(codeData(), "operator-1", "client-1", userClaims = mapOf(
+                "upstream_iss" to "https://idp.example.test", "upstream_sub" to "idp-42", "given_name" to "Ada",
+            ))),
+            refreshVerifyStub = verifier, refreshCreator = creator,
+        )
+        val authContext = grantContext()
+        val initial = newHandler(commands).handle(authContext.tokenRequest.grantParameters, authContext)
+        assertTrue(initial.isOk)
+        val original = assertNotNull(initial.value.refreshToken)
+        val expectedBag = assertNotNull(commands.capturedAccessTokenArgs?.additionalClaims?.get("oidc.internal.federation_claims") as? JsonObject)
+        assertEquals(expectedBag.toString(), commands.capturedRefreshTokenArgs?.federationClaims)
+        val refreshParams = GrantParameters.RefreshToken(original)
+        val context = refreshGrantContext().let { it.copy(
+            tokenRequest = it.tokenRequest.copy(grantParameters = refreshParams),
+            serverConfig = it.serverConfig.copy(refreshTokenRotation = true),
+        ) }
+        val refreshed = RefreshTokenGrantHandlerImpl(
+            tokenStorage = storage,
+            auditEmitter = com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter,
+            verifyRefreshTokenGrant = verifier, createAccessToken = commands.createAccessToken,
+            createRefreshToken = lazy { commands.createRefreshToken }, createIdToken = lazy { commands.createIdToken },
+            createTokenResponse = commands.createTokenResponse,
+        ).handle(refreshParams, context)
+        assertTrue(refreshed.isOk)
+        assertEquals(expectedBag, commands.capturedAccessTokenArgs?.additionalClaims?.get("oidc.internal.federation_claims"))
+        val successor = assertNotNull(refreshed.value.refreshToken)
+        assertTrue(successor != original)
+        assertEquals(expectedBag.toString(), assertNotNull(storage.getRefreshToken(successor).value).federationClaims)
+        val verifiedSuccessor = verifier.execute(VerifyRefreshTokenGrantArgs(successor, "client-1"))
+        assertTrue(verifiedSuccessor.isOk)
+        assertEquals(expectedBag.toString(), verifiedSuccessor.value.federationClaims)
+        val originalRow = assertNotNull(storage.getRefreshToken(original).value)
+        assertTrue(originalRow.revoked)
+        assertEquals(successor, originalRow.replacementRefreshToken)
+        assertFalse(commands.capturedAccessTokenArgs!!.additionalClaims.containsKey("given_name"))
+    }
+
+    @Test
+    fun malformedStoredFederationMetadataRejectsRefreshWithoutMintingOrRotation() = runTest {
+        // Removing the handler's fail-closed decode guard must fail this regression.
+        for (invalidMetadata in listOf("not-json", "{}", "{\"upstream_iss\":42}")) {
+            val execution = OAuth2ServerTestContext("invalid-federation-refresh", this@AuthorizationCodeGrantRolesClaimTest).execution
+            val config = TestOAuth2ServersConfigProvider()
+            val storage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
+            val creator = CreateRefreshTokenCommandImpl(execution, storage, config, defaultSecureRandom())
+            val verifier = VerifyRefreshTokenGrantCommandImpl(execution, storage, config)
+            val created = creator.execute(CreateRefreshTokenArgs(
+                subject = "operator-1", clientId = "client-1", scope = "openid",
+                federationClaims = invalidMetadata,
+            ))
+            assertTrue(created.isOk)
+            val original = created.value.value
+            val originalRow = assertNotNull(storage.getRefreshToken(original).value)
+            val commands = CapturingCommands(
+                verifyStub(VerifiedAuthorizationCodeGrant(codeData(), "operator-1", "client-1")),
+                refreshVerifyStub = verifier, refreshCreator = creator,
+            )
+            val params = GrantParameters.RefreshToken(original)
+            val context = refreshGrantContext().let { it.copy(
+                tokenRequest = it.tokenRequest.copy(grantParameters = params),
+                serverConfig = it.serverConfig.copy(refreshTokenRotation = true),
+            ) }
+            val result = RefreshTokenGrantHandlerImpl(
+                tokenStorage = storage,
+                auditEmitter = com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter,
+                verifyRefreshTokenGrant = verifier, createAccessToken = commands.createAccessToken,
+                createRefreshToken = lazy { commands.createRefreshToken }, createIdToken = lazy { commands.createIdToken },
+                createTokenResponse = commands.createTokenResponse,
+            ).handle(params, context)
+
+            assertTrue(result.isErr, invalidMetadata)
+            assertEquals("INVALID_STATE", result.error.code)
+            assertEquals(null, commands.capturedAccessTokenArgs, "No access token may be minted")
+            assertEquals(null, commands.capturedRefreshTokenArgs, "No successor may be created")
+            assertEquals(originalRow, storage.getRefreshToken(original).value, "Rejected refresh must not rotate or revoke the original")
+        }
+    }
 
     @Test
     fun rolesJsonArrayFromFederatedClaimsLandsInAccessTokenAdditionalClaims() =
@@ -431,8 +575,8 @@ class AuthorizationCodeGrantRolesClaimTest {
                         ),
                     ),
                 )
-            val handler = newHandler()
-            val context = grantContext(commands, walletInstanceAttestationEvidence())
+            val handler = newHandler(commands)
+            val context = grantContext(walletInstanceAttestationEvidence())
             val result = handler.handle(context.tokenRequest.grantParameters, context)
 
             assertTrue(result.isOk, "auth-code grant must succeed, got ${if (!result.isOk) result.error else "ok"}")

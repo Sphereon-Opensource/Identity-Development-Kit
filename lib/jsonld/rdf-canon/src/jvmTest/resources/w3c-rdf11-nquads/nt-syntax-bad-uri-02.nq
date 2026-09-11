@@ -1,0 +1,3 @@
+# Bad IRI : bad escape
+<http://example/\u00ZZ11> <http://example/p> <http://example/o> .
+

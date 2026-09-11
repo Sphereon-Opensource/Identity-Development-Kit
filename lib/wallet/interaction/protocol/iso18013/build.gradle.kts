@@ -46,6 +46,7 @@ kotlin {
                 api(projects.libWalletPublic)
                 api(projects.libMdocCorePublic)
                 api(projects.libMdocDatatransferPublic)
+                api(projects.libStatuslistPublic)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
             }
         }
@@ -63,7 +64,37 @@ kotlin {
                 implementation(projects.libMdocCoreImpl)
                 implementation(projects.libMdocDatatransferImpl)
                 implementation(projects.libWalletImpl)
+                // Product-boundary mso_mdoc issuance/status verification proof: use the actual
+                // OID4VCI format handler and status verifier against the wallet store below.
+                implementation(projects.libOpenidOid4vciIssuerImpl)
+                // Include the production AS/policy/trust bindings required by the issuer
+                // bridge; these are real in-memory/config-backed implementations, not test
+                // doubles.
+                implementation(projects.libOauth2ServerAuthorizationImpl)
+                implementation(projects.libOauth2ServerResourceImpl)
+                implementation(projects.libOpenidOid4vciRestImpl)
+                implementation(projects.libOpenidOid4vcCommonImpl)
+                implementation(projects.libOpenidOid4vpVerifierImpl)
+                implementation(projects.libOpenidOid4vpDcqlStoreImpl)
+                implementation(projects.libOpenidOid4vpHolderImpl)
+                implementation(projects.servicesOid4vciIssuerRest)
+                implementation(projects.libTrustCoreImpl)
+                implementation(projects.libStatuslistImpl)
+                implementation(projects.servicesStatuslistRest)
+                implementation(projects.libTrustX509)
+                implementation(projects.libDataStoreBlobImplMemory)
+                implementation(projects.libDataStoreKvImplMemory)
+                implementation(projects.libCoreEventsImpl)
+                implementation(sphereonlib.io.ktor.client.mock)
                 implementation(projects.libWalletWscdTestFixtures)
+                // This source set hosts Iso18013MdocIntegrationTestAppGraph. The wallet
+                // graph includes OID4VP holder bindings, whose W3C presentation path
+                // requires the Data Integrity command and cryptosuite contributions.
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
+                implementation(project(":lib-openid-oid4vp-verifier-vcdm-impl"))
                 implementation(libs.bundles.app.platform.di)
                 implementation(sphereonlib.software.amazon.app.platform.metro.public)
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)

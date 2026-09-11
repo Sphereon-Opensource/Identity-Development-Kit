@@ -17,9 +17,15 @@
 package com.sphereon.openid.oid4vci.issuer.impl.config
 
 import com.sphereon.statuslist.StatusListDefinitionsProvider
+import com.sphereon.statuslist.CreateStatusListArgs
+import com.sphereon.statuslist.StatusListHostingMode
 import com.sphereon.statuslist.StatusListSpec
+import com.sphereon.statuslist.StatusProofFormat
+import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.impl.config.ConfigDrivenStatusListDefinitionsProvider
+import com.sphereon.core.api.Ok
 import dev.zacsweers.metro.Provider
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -57,11 +63,16 @@ class StatusListBindingFailClosedTest {
     private fun provider(
         properties: Map<String, Any>,
         withDefinitionsSource: Boolean,
+        definitionsSourceOverride: Provider<StatusListDefinitionsProvider>? = null,
     ): ConfigDrivenOid4vciIssuerConfigProvider {
         val execution = TestSessionExecution(TestPrincipalConfigService(properties))
-        val definitionsSource =
-            if (withDefinitionsSource) {
-                Provider<StatusListDefinitionsProvider> { ConfigDrivenStatusListDefinitionsProvider(execution) }
+        val definitionsSource = definitionsSourceOverride ?: if (withDefinitionsSource) {
+                Provider<StatusListDefinitionsProvider> {
+                    ConfigDrivenStatusListDefinitionsProvider(
+                        execution = execution,
+                        statusListDriver = { error("status-list driver is not used by this test") },
+                    )
+                }
             } else {
                 null
             }
@@ -124,5 +135,44 @@ class StatusListBindingFailClosedTest {
             setOf("EuPid"),
             provider(issuerProperties + statusListProperties, withDefinitionsSource = true).statusListBindings.keys,
         )
+    }
+
+    @Test
+    fun issuanceResolutionCanUseTenantPersistedDefinition() = runTest {
+        val persisted =
+            object : StatusListDefinitionsProvider {
+                override val definitions: List<CreateStatusListArgs> = emptyList()
+
+                override fun byId(correlationId: String): CreateStatusListArgs? = null
+
+                override suspend fun resolve(correlationId: String) =
+                    if (correlationId == "eupid-revocation") {
+                        Ok(
+                            CreateStatusListArgs(
+                                correlationId = correlationId,
+                                spec = StatusListSpec.TOKEN_STATUS_LIST,
+                                purposes = listOf(StatusPurpose.REVOCATION),
+                                proofFormat = StatusProofFormat.CWT,
+                                hostingMode = StatusListHostingMode.HOSTED,
+                                issuer = "https://issuer.example.com",
+                                statusListUri = "https://issuer.example.com/public/statuslists/$correlationId",
+                                mdocProfile = com.sphereon.statuslist.MdocStatusListProfile.STATUS_LIST,
+                            ),
+                        )
+                    } else {
+                        Ok(null)
+                    }
+            }
+
+        val result =
+            provider(
+                issuerProperties,
+                withDefinitionsSource = false,
+                definitionsSourceOverride = Provider { persisted },
+            ).statusListBindingForIssuance("EuPid")
+
+        assertTrue(result.isOk, "issuance should resolve a tenant-persisted status-list definition")
+        assertEquals("eupid-revocation", assertNotNull(result.value).statusListCorrelationId)
+        assertEquals(StatusListSpec.TOKEN_STATUS_LIST, result.value?.spec)
     }
 }

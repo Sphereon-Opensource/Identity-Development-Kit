@@ -17,8 +17,8 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.requireJsonBody
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.response.jsonResponse
@@ -38,13 +38,15 @@ import com.sphereon.did.models.DidService
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ListDidServicesEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ListDidServicesEndpointCommand.COMMAND_ID)
 class ListDidServicesEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: ListDidServicesServiceCommand,
@@ -66,8 +68,8 @@ class ListDidServicesEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<AddDidServiceEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(AddDidServiceEndpointCommand.COMMAND_ID)
 class AddDidServiceEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: AddDidServiceServiceCommand,
@@ -91,8 +93,8 @@ class AddDidServiceEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetDidServiceEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetDidServiceEndpointCommand.COMMAND_ID)
 class GetDidServiceEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: GetDidServiceServiceCommand,
@@ -116,8 +118,8 @@ class GetDidServiceEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<UpdateDidServiceEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(UpdateDidServiceEndpointCommand.COMMAND_ID)
 class UpdateDidServiceEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: UpdateDidServiceServiceCommand,
@@ -145,8 +147,8 @@ class UpdateDidServiceEndpointCommandImpl(
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<RemoveDidServiceEndpointCommand>())
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(RemoveDidServiceEndpointCommand.COMMAND_ID)
 class RemoveDidServiceEndpointCommandImpl(
     execution: SessionExecution,
     private val serviceCommand: RemoveDidServiceServiceCommand,

@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vp.verifier.model
 
+import com.sphereon.core.api.http.callback.CallbackSigningAlgorithm
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ResponseMode
@@ -70,6 +71,9 @@ data class AuthorizationSessionCallbackConfig(
      * If empty, all status transitions may be emitted.
      */
     val statuses: List<AuthorizationSessionStatus> = emptyList(),
+    /** Secret reference used to sign this session's callbacks. Absent means the registry default applies. */
+    val secretRef: String? = null,
+    val signing: CallbackSigningAlgorithm? = null,
 )
 
 /**
@@ -183,9 +187,14 @@ data class AuthorizationSession(
     val validationResult: ValidationResult? = null,
     val callback: AuthorizationSessionCallbackConfig? = null,
     /**
-     * Optional URI returned to the wallet after a successful direct-post response.
-     * This is response-endpoint state, not the authorization request's `redirect_uri`.
-     * HAIP 1.0 requires it to be present in the verifier's direct-post response.
+     * Where the wallet sends the user after a `direct_post` / `direct_post.jwt` response: the
+     * OID4VP §7.2 `redirect_uri` the verifier returns in the response body, with the
+     * `response_code` appended. HAIP 1.0 requires it to be present in that response.
+     *
+     * Response-endpoint state, pinned on the session rather than read off
+     * [authorizationRequest]: the authorization request omits `redirect_uri` for the direct_post
+     * modes — `redirect_uri` and `response_uri` are mutually exclusive on the wire — so a
+     * post-completion destination has nowhere else to live.
      */
     val directPostResponseRedirectUri: String? = null,
     /**
@@ -215,6 +224,7 @@ data class AuthorizationSession(
     val createdAt: Long,
     val updatedAt: Long,
     val expiresAt: Long,
+    val templateRevision: String? = null,
 ) {
     init {
         Oid4vpSessionIdentity.requireCanonical("instanceId", instanceId)

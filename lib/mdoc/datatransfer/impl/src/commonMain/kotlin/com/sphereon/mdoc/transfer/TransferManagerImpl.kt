@@ -50,6 +50,7 @@ import com.sphereon.mdoc.data.device.DeviceResponse
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
+import com.sphereon.mdoc.data.device.MacKeys
 import com.sphereon.mdoc.engagement.EngagementInstance
 import com.sphereon.mdoc.logging.IMdocDebugLogger
 import com.sphereon.mdoc.logging.MdocDebugLoggerImpl
@@ -363,6 +364,7 @@ class TransferManagerImpl(
         unprotectedHeader: CoseHeaderCbor?,
         protectedHeader: CoseHeaderCbor?,
         requireDeviceX5Chain: Boolean,
+        macKeys: MacKeys?,
     ): Document {
         log.info("$logId: Signing document with auto-bound session transcript")
 
@@ -391,6 +393,7 @@ class TransferManagerImpl(
                 unprotectedHeader = unprotectedHeader,
                 protectedHeader = protectedHeader,
                 requireDeviceX5Chain = requireDeviceX5Chain,
+                macKeys = macKeys,
             ).also {
                 log.info("$logId: Document signed successfully")
             }
@@ -596,6 +599,7 @@ class TransferManagerImpl(
             document: Document,
             deviceKeyInfo: KeyInfoType<*>?,
             deviceNamespaces: DeviceNameSpaces,
+            macKeys: MacKeys?,
         ): DocumentSigningBuilder =
             apply {
                 signingRequests.add(
@@ -604,6 +608,7 @@ class TransferManagerImpl(
                         document = document,
                         deviceKeyInfo = deviceKeyInfo,
                         deviceNamespaces = deviceNamespaces,
+                        macKeys = macKeys,
                     ),
                 )
             }
@@ -642,6 +647,7 @@ class TransferManagerImpl(
                     unprotectedHeader = signingRequest.unprotectedHeader,
                     protectedHeader = signingRequest.protectedHeader,
                     requireDeviceX5Chain = signingRequest.requireDeviceX5Chain,
+                    macKeys = signingRequest.macKeys,
                 )
             }.also {
                 log.info("$logId: Signed ${it.size} documents successfully")

@@ -412,8 +412,14 @@ object TokenKeyConstants {
     const val PALETTE_BRAND_200 = "palette.brand.200"
     const val PALETTE_BRAND_300 = "palette.brand.300"
     const val PALETTE_BRAND_400 = "palette.brand.400"
+
+    // Half-steps. They exist so the brand gradient can start dark enough for
+    // onPrimary text to clear WCAG 1.4.3 on the top stop while keeping the
+    // gradient depth of the original 400 to 600 ramp.
+    const val PALETTE_BRAND_450 = "palette.brand.450"
     const val PALETTE_BRAND_500 = "palette.brand.500"
     const val PALETTE_BRAND_600 = "palette.brand.600"
+    const val PALETTE_BRAND_650 = "palette.brand.650"
     const val PALETTE_BRAND_700 = "palette.brand.700"
     const val PALETTE_BRAND_800 = "palette.brand.800"
     const val PALETTE_BRAND_900 = "palette.brand.900"

@@ -52,6 +52,7 @@ class WebDidHostingProvider(
         }
 
     override val method: String = "web"
+    override val authorityPriority: Int = 100
 
     override suspend fun resolveDidJson(
         tenantId: String?,

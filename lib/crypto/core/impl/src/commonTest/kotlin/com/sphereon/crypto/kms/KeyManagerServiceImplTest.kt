@@ -18,6 +18,8 @@
 package com.sphereon.crypto.kms
 
 import com.sphereon.core.api.session.asCoreApiServiceGraph
+import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.PKIException
@@ -34,6 +36,7 @@ import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.kmsQuery
 import com.sphereon.crypto.core.kms.model.IdentifierMethod
+import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
 import com.sphereon.crypto.core.testutil.createCryptoTestAppGraph
 import com.sphereon.crypto.core.testutil.supportsDigestSignatureRoundTrip
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
@@ -42,6 +45,7 @@ import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -133,6 +137,25 @@ class KeyManagerServiceImplTest {
         assertEquals("new-default-provider", keyManagerService.defaultProviderId())
     }
 
+    @Test
+    fun algorithmConstrainedLookupPrefersTheRegisteredDefaultWhenItSupportsTheAlgorithm() =
+        runTest {
+            val provider =
+                (app as SoftwareKmsProviderFactoryImpl.Graph).softwareKmsProvider.create(
+                    SoftwareKmsProviderConfig(
+                        id = "preferred-default-provider",
+                        cryptographyProvider = CryptographyProvider.Default.name,
+                    ),
+                    session.asCoreApiServiceGraph().serviceExecution,
+                )
+            keyManagerService.registerProvider(provider, makeDefaultKms = true)
+
+            assertEquals(
+                "preferred-default-provider",
+                keyManagerService.getProvider(providerId = null, alg = SignatureAlgorithm.ECDSA_SHA256).id,
+            )
+        }
+
     // =========== getProvider() Branch Tests ===========
 
     @Test
@@ -146,9 +169,20 @@ class KeyManagerServiceImplTest {
     @Test
     fun getProviderWithProviderIdShouldUseProviderId() =
         runTest {
-            val provider = keyManagerService.getProvider("test-software-provider", null)
+            val provider = keyManagerService.getProvider("test-software-provider", SignatureAlgorithm.ECDSA_SHA256)
             assertNotNull(provider)
             assertEquals("test-software-provider", provider.id)
+        }
+
+    @Test
+    fun getProviderWithProviderIdAndUnsupportedAlgorithmFailsClosed() =
+        runTest {
+            val error =
+                assertFailsWith<PKIException> {
+                    keyManagerService.getProvider("test-software-provider", SignatureAlgorithm.ES256K)
+                }
+
+            assertTrue(error.message.orEmpty().contains("does not support signature algorithm"))
         }
 
     @Test
@@ -249,6 +283,95 @@ class KeyManagerServiceImplTest {
         }
 
     @Test
+    fun rawSigningEnforcesCompoundManagedSelectorAndPreservesSingleSelectorCompatibility() =
+        runTest {
+            val keyA = keyManagerService.generateKey(alias = "raw-selector-a", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyB = keyManagerService.generateKey(alias = "raw-selector-b", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateA = keyA.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val publicA = keyA.joseToManagedKeyInfo(KeyVisibility.PUBLIC)
+            val publicB = keyB.joseToManagedKeyInfo(KeyVisibility.PUBLIC)
+            val aliasA = requireNotNull(privateA.alias)
+            val aliasB = requireNotNull(publicB.alias)
+            val kidA = requireNotNull(privateA.kid)
+            val kidB = requireNotNull(publicB.kid)
+            val providerId = requireNotNull(publicB.providerId)
+            val input = "compound raw selector".encodeToByteArray()
+
+            val mismatch =
+                assertFailsWith<PKIException> {
+                    keyManagerService.createRawSignature(
+                        managedSelector(providerId, alias = aliasB, kid = kidA),
+                        input,
+                        requireX5Chain = false,
+                    )
+                }
+            assertManagedSelectorMismatch(mismatch, providerId, aliasB, kidB, kidA)
+
+            val matching = keyManagerService.createRawSignature(managedSelector(providerId, aliasB, kidB), input, false)
+            assertTrue(keyManagerService.isValidRawSignature(publicB, input, matching))
+            assertFalse(keyManagerService.isValidRawSignature(publicA, input, matching))
+
+            val aliasOnly = keyManagerService.createRawSignature(managedSelector(providerId, alias = aliasB), input, false)
+            assertTrue(keyManagerService.isValidRawSignature(publicB, input, aliasOnly))
+
+            val kidOnly = keyManagerService.createRawSignature(managedSelector(providerId, kid = kidA), input, false)
+            assertTrue(keyManagerService.isValidRawSignature(publicA, input, kidOnly))
+
+            val legacyAliasShapedKid = keyManagerService.createRawSignature(managedSelector(providerId, kid = aliasA), input, false)
+            assertTrue(keyManagerService.isValidRawSignature(publicA, input, legacyAliasShapedKid))
+        }
+
+    @Test
+    fun inlineSigningKeyRemainsAuthoritativeEvenWhenItCarriesAnotherManagedAlias() =
+        runTest {
+            val keyA = keyManagerService.generateKey(alias = "inline-authority-a", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyB = keyManagerService.generateKey(alias = "inline-authority-b", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateA = keyA.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val publicA = keyA.joseToManagedKeyInfo(KeyVisibility.PUBLIC)
+            val publicB = keyB.joseToManagedKeyInfo(KeyVisibility.PUBLIC)
+            val inlineAWithAliasB =
+                KeyInfo(
+                    key = privateA.key,
+                    alias = publicB.alias,
+                    kid = privateA.kid,
+                    providerId = publicB.providerId,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            val input = "inline authority".encodeToByteArray()
+
+            val raw = keyManagerService.createRawSignature(inlineAWithAliasB, input, false)
+            assertTrue(keyManagerService.isValidRawSignature(publicA, input, raw))
+            assertFalse(keyManagerService.isValidRawSignature(publicB, input, raw))
+
+            val digest = hash(input, DigestAlg.SHA256)
+            val digestSignature =
+                keyManagerService.signDigest(
+                    inlineAWithAliasB,
+                    digest,
+                    SignatureAlgorithm.ECDSA_SHA256,
+                    SignatureEncoding.RAW,
+                )
+            assertTrue(
+                keyManagerService.verifyDigest(
+                    publicA,
+                    digest,
+                    digestSignature,
+                    SignatureAlgorithm.ECDSA_SHA256,
+                    SignatureEncoding.RAW,
+                ),
+            )
+            assertFalse(
+                keyManagerService.verifyDigest(
+                    publicB,
+                    digest,
+                    digestSignature,
+                    SignatureAlgorithm.ECDSA_SHA256,
+                    SignatureEncoding.RAW,
+                ),
+            )
+        }
+
+    @Test
     fun isValidRawSignatureShouldReturnTrueForValidSignature() =
         runTest {
             val keyPair = keyManagerService.generateKey(alg = SignatureAlgorithm.ECDSA_SHA256)
@@ -332,6 +455,87 @@ class KeyManagerServiceImplTest {
             )
             assertFalse(keyManagerService.isValidRawSignature(publicKeyInfo, digest, signature))
         }
+
+    @Test
+    fun digestSigningEnforcesCompoundManagedSelectorAndPreservesSingleSelectorCompatibility() =
+        runTest {
+            val keyA = keyManagerService.generateKey(alias = "digest-selector-a", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyB = keyManagerService.generateKey(alias = "digest-selector-b", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateA = keyA.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val publicA = keyA.joseToManagedKeyInfo(KeyVisibility.PUBLIC)
+            val publicB = keyB.joseToManagedKeyInfo(KeyVisibility.PUBLIC)
+            val aliasA = requireNotNull(privateA.alias)
+            val aliasB = requireNotNull(publicB.alias)
+            val kidA = requireNotNull(privateA.kid)
+            val kidB = requireNotNull(publicB.kid)
+            val providerId = requireNotNull(publicB.providerId)
+            val digest = hash("compound digest selector".encodeToByteArray(), DigestAlg.SHA256)
+
+            val mismatch =
+                assertFailsWith<PKIException> {
+                    keyManagerService.signDigest(
+                        keyInfo = managedSelector(providerId, alias = aliasB, kid = kidA),
+                        digest = digest,
+                        signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                        signatureEncoding = SignatureEncoding.RAW,
+                    )
+                }
+            assertManagedSelectorMismatch(mismatch, providerId, aliasB, kidB, kidA)
+
+            suspend fun assertSignsWith(
+                selector: KeyInfo<KeyType>,
+                expectedPublicKey: com.sphereon.crypto.core.KeyInfoType<*>,
+            ) {
+                val signature =
+                    keyManagerService.signDigest(
+                        keyInfo = selector,
+                        digest = digest,
+                        signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                        signatureEncoding = SignatureEncoding.RAW,
+                    )
+                assertTrue(
+                    keyManagerService.verifyDigest(
+                        keyInfo = expectedPublicKey,
+                        digest = digest,
+                        signature = signature,
+                        signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                        signatureEncoding = SignatureEncoding.RAW,
+                    ),
+                )
+            }
+
+            assertSignsWith(managedSelector(providerId, aliasB, kidB), publicB)
+            assertSignsWith(managedSelector(providerId, alias = aliasB), publicB)
+            assertSignsWith(managedSelector(providerId, kid = kidA), publicA)
+            assertSignsWith(managedSelector(providerId, kid = aliasA), publicA)
+        }
+
+    private fun managedSelector(
+        providerId: String,
+        alias: String? = null,
+        kid: String? = null,
+    ): KeyInfo<KeyType> =
+        KeyInfo(
+            providerId = providerId,
+            alias = alias,
+            kid = kid,
+            signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+        )
+
+    private fun assertManagedSelectorMismatch(
+        failure: PKIException,
+        providerId: String,
+        alias: String,
+        canonicalKid: String,
+        requestedKid: String,
+    ) {
+        val message = failure.message.orEmpty()
+        assertContains(message, "Managed signing key selector mismatch")
+        assertContains(message, "alias '$alias'")
+        assertContains(message, "kid '$canonicalKid'")
+        assertContains(message, "provider '$providerId'")
+        assertContains(message, "not requested kid '$requestedKid'")
+    }
 
     // =========== Key Agreement Tests ===========
 
@@ -487,7 +691,7 @@ class KeyManagerServiceImplTest {
         }
 
     @Test
-    fun deleteKeyShouldWork() =
+    fun deleteKeyShouldFailClosedWithoutDurableOwnershipHistory() =
         runTest {
             val keyPair = keyManagerService.generateKey(alg = SignatureAlgorithm.ECDSA_SHA256)
             // Create ResolvedKeyInfo without alias/providerId to avoid validation conflicts
@@ -506,8 +710,15 @@ class KeyManagerServiceImplTest {
                     certChain = null,
                 )
 
-            val deleted = keyManagerService.deleteKey(storedKey)
-            assertTrue(deleted)
+            val result = keyManagerService.deleteKeyResult(storedKey)
+            assertTrue(result.isErr)
+            assertEquals(KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED, result.error.code)
+
+            val failure =
+                assertFailsWith<PKIException> {
+                    keyManagerService.deleteKey(storedKey)
+                }
+            assertTrue(failure.message.orEmpty().lowercase().contains("ownership history"))
         }
 
     // =========== Resolve Public Key Tests ===========

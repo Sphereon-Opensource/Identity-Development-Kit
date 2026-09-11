@@ -20,6 +20,9 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.data.store.blob.InMemoryBlobStoreConfig
+import com.sphereon.data.store.blob.BlobInfoType
+import com.sphereon.data.store.blob.BlobService
+import com.sphereon.data.store.blob.ResolvedBlobInfo
 import com.sphereon.data.store.blob.impl.BlobStoreService
 import com.sphereon.data.store.blob.impl.DefaultBlobService
 import com.sphereon.data.store.blob.impl.DefaultRetentionPolicyService
@@ -31,13 +34,22 @@ import com.sphereon.data.store.kv.KvStoreScopeBinding
 import com.sphereon.data.store.kv.memory.InMemoryKvBackingStorageImpl
 import com.sphereon.data.store.kv.memory.InMemoryKvStoreFactoryImpl
 import com.sphereon.data.store.party.model.IdentifierType
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.wallet.credential.IdentifierRef
 import com.sphereon.wallet.credential.StorageProfile
 import com.sphereon.wallet.credential.StoreRef
 import com.sphereon.wallet.credential.WalletUnitProfile
 import com.sphereon.wallet.credential.WalletProfilePurpose
 import com.sphereon.wallet.credential.WalletStorageMode
+import com.sphereon.wallet.credential.WalletHolderIdentifierKind
+import com.sphereon.wallet.credential.WalletHolderVerificationMethod
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -144,6 +156,31 @@ private fun createWalletUnitBlobService(): DefaultBlobService {
     )
 }
 
+private class RacingWalletUnitBlobService(
+    private val delegate: BlobService,
+    private val walletUnitId: String,
+) : BlobService by delegate {
+    private val mutex = Mutex()
+    private val release = CompletableDeferred<Unit>()
+    private var arrivals = 0
+
+    override suspend fun getBlob(info: BlobInfoType): IdkResult<ResolvedBlobInfo, IdkError> {
+        val result = delegate.getBlob(info)
+        val shouldWait =
+            mutex.withLock {
+                if (info.path != com.sphereon.wallet.credential.walletUnitPath(walletUnitId) || release.isCompleted) {
+                    false
+                } else {
+                    arrivals += 1
+                    if (arrivals == 2) release.complete(Unit)
+                    true
+                }
+            }
+        if (shouldWait) release.await()
+        return result
+    }
+}
+
 class BlobWalletUnitStoreTest {
     @Test
     fun putWalletUnitPersistsStorageProfileAndResolverUsesIt() =
@@ -223,6 +260,66 @@ class BlobWalletUnitStoreTest {
 
             assertTrue(result.isErr)
             assertNull(store.getWalletUnit(INSTANCE_WALLET_A).value)
+        }
+
+    @Test
+    fun registerHolderVerificationMethodPersistsExactTypedMetadataAndRejectsConflicts() =
+        runTest {
+            val store = BlobWalletUnitStore(createWalletUnitBlobService())
+            store.resolveStorageProfile(INSTANCE_WALLET_A)
+            val method =
+                WalletHolderVerificationMethod(
+                    value = "https://wallet.example/jwks#holder-key-1",
+                    controller = "https://wallet.example/holders/alice",
+                    kind = WalletHolderIdentifierKind.JWKS_KID,
+                    signingAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
+
+            val registered = store.registerHolderVerificationMethod(INSTANCE_WALLET_A, "opaque-key-1", method)
+            val repeated = store.registerHolderVerificationMethod(INSTANCE_WALLET_A, "opaque-key-1", method)
+            val conflicting =
+                store.registerHolderVerificationMethod(
+                    INSTANCE_WALLET_A,
+                    "opaque-key-1",
+                    method.copy(kind = WalletHolderIdentifierKind.MANAGED_KID),
+                )
+
+            assertTrue(registered.isOk)
+            assertTrue(repeated.isOk, "identical registration must be idempotent")
+            assertTrue(conflicting.isErr)
+            assertEquals(method, store.getWalletUnit(INSTANCE_WALLET_A).value?.holderVerificationMethods?.get("opaque-key-1"))
+        }
+
+    @Test
+    fun concurrentRegistrationsAcrossStoreInstancesConvergeWithoutLosingEitherKey() =
+        runTest {
+            val delegate = createWalletUnitBlobService()
+            BlobWalletUnitStore(delegate).resolveStorageProfile(INSTANCE_WALLET_A)
+            val racingService = RacingWalletUnitBlobService(delegate, INSTANCE_WALLET_A)
+            val firstStore = BlobWalletUnitStore(racingService)
+            val secondStore = BlobWalletUnitStore(racingService)
+            val first =
+                WalletHolderVerificationMethod(
+                    value = "https://wallet.example/jwks#first",
+                    controller = "https://wallet.example/holders/alice",
+                    kind = WalletHolderIdentifierKind.JWKS_KID,
+                    signingAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            val second = first.copy(value = "https://wallet.example/jwks#second")
+
+            val results =
+                coroutineScope {
+                    listOf(
+                        async { firstStore.registerHolderVerificationMethod(INSTANCE_WALLET_A, "opaque-first", first) },
+                        async { secondStore.registerHolderVerificationMethod(INSTANCE_WALLET_A, "opaque-second", second) },
+                    ).awaitAll()
+                }
+
+            assertTrue(results.all { it.isOk })
+            assertEquals(
+                mapOf("opaque-first" to first, "opaque-second" to second),
+                firstStore.getWalletUnit(INSTANCE_WALLET_A).value?.holderVerificationMethods,
+            )
         }
 
     private fun walletInstance(

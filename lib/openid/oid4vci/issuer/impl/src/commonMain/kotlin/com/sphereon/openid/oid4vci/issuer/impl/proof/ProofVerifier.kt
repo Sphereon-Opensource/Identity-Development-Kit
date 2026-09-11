@@ -20,6 +20,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
+import com.sphereon.openid.oid4vci.issuer.config.ResolveWalletProviderTrustArgs
 import com.sphereon.openid.oid4vci.issuer.proof.VerifiedProof
 import kotlinx.serialization.json.JsonElement
 
@@ -57,6 +58,7 @@ interface ProofVerifier {
         expectedAudience: String,
         expectedClientId: String?,
         credentialConfigId: String,
+        walletProviderTrustArgs: ResolveWalletProviderTrustArgs? = null,
         proofTypeSupported: ProofTypeSupported? = null,
         expectedNonce: String? = null,
         consumeNonce: Boolean = true,

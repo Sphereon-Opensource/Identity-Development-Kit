@@ -21,17 +21,15 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.cache.ScopedCache
 import com.sphereon.jsonld.JsonLdError
 import com.sphereon.jsonld.LinkedDataDocument
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration
 
 /**
  * Decorator that caches successful results from [next] in an app-scoped
  * [ScopedCache] keyed by IRI.
  *
- * Cache value is the raw JSON-LD body as a JSON string; the decorator parses
- * it back to [JsonObject] on hit and serializes on miss-then-store. Cache
+ * Cache value is the serialized [LinkedDataDocument], retaining the final URL,
+ * context link, media type, and profile discovered by the HTTP loader. Cache
  * scope is **app**, not tenant: canonical W3C and UNTP `@context` documents
  * are global and identical for every tenant. Tenant-scoped pin policies are
  * enforced by [IntegrityPinningLinkedDataDocumentLoader] (closer to the
@@ -53,20 +51,14 @@ class CachedLinkedDataDocumentLoader(
         if (cached != null) {
             val parsed =
                 try {
-                    json.parseToJsonElement(cached) as? JsonObject
-                } catch (expected: SerializationException) {
+                    json.decodeFromString(LinkedDataDocument.serializer(), cached)
+                } catch (expected: Exception) {
                     // Corrupt cache entry: drop it and fall through.
                     cache.removeApp(iri)
                     null
                 }
             if (parsed != null) {
-                return Ok(
-                    LinkedDataDocument(
-                        documentUrl = iri,
-                        content = parsed,
-                        contentType = "application/ld+json",
-                    ),
-                )
+                return Ok(parsed)
             }
         }
 
@@ -74,8 +66,8 @@ class CachedLinkedDataDocumentLoader(
         if (downstream.isOk) {
             val doc = downstream.value
             try {
-                cache.putApp(iri, json.encodeToString(JsonObject.serializer(), doc.content as JsonObject), ttl)
-            } catch (expected: SerializationException) {
+                cache.putApp(iri, json.encodeToString(LinkedDataDocument.serializer(), doc), ttl)
+            } catch (expected: Exception) {
                 // Couldn't serialize for cache; not fatal — return the live document.
             }
         }

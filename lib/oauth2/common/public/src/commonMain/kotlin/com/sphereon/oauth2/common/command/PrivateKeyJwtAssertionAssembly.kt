@@ -24,8 +24,8 @@ import kotlin.time.Clock
  * Input for an OAuth `private_key_jwt` client assertion.
  *
  * OpenID Connect Core section 9 requires `iss` and `sub` to equal the client id, and requires
- * `aud`, `jti`, and `exp`. FAPI Security Profile 2.0 narrows `aud` to the authorization server's
- * issuer identifier. The caller therefore passes that issuer as [audience], not the token endpoint.
+ * `aud`, `jti`, and `exp`. The locked service-to-service connector contract binds `aud` to the
+ * effective token endpoint. The caller therefore passes that endpoint URI as [audience].
  */
 data class PrivateKeyJwtAssertionAssemblyRequest(
     val clientId: String,
@@ -109,3 +109,5 @@ class PrivateKeyJwtAssertionAssembly(
         private val ALLOWED_ASYMMETRIC_ALGORITHMS = setOf("PS256", "ES256", "EdDSA", "RS256", "ES384", "ES512")
     }
 }
+
+

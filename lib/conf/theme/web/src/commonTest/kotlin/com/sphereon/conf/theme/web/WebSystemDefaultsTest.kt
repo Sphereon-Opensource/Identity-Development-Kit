@@ -46,14 +46,24 @@ class WebSystemDefaultsTest {
     fun forVariantReturnsCorrectMap() {
         assertEquals(WebSystemDefaults.light, WebSystemDefaults.forVariant(ThemeVariant.LIGHT))
         assertEquals(WebSystemDefaults.dark, WebSystemDefaults.forVariant(ThemeVariant.DARK))
-        assertEquals(WebSystemDefaults.highContrast, WebSystemDefaults.forVariant(ThemeVariant.HIGH_CONTRAST))
+        assertEquals(WebSystemDefaults.highContrastLight, WebSystemDefaults.forVariant(ThemeVariant.HIGH_CONTRAST_LIGHT))
+        assertEquals(WebSystemDefaults.highContrastDark, WebSystemDefaults.forVariant(ThemeVariant.HIGH_CONTRAST_DARK))
     }
 
     @Test
     fun forVariantStringReturnsCorrectMap() {
         assertEquals(WebSystemDefaults.light, WebSystemDefaults.forVariantString("light"))
         assertEquals(WebSystemDefaults.dark, WebSystemDefaults.forVariantString("dark"))
-        assertEquals(WebSystemDefaults.highContrast, WebSystemDefaults.forVariantString("high_contrast"))
+        assertEquals(WebSystemDefaults.highContrastLight, WebSystemDefaults.forVariantString("high_contrast_light"))
+        assertEquals(WebSystemDefaults.highContrastDark, WebSystemDefaults.forVariantString("high_contrast_dark"))
+    }
+
+    @Test
+    fun highContrastGroundsAreDistinct() {
+        // The two high-contrast variants invert rather than mirror, so a copy-paste that pointed
+        // both at the same definition would otherwise pass every other assertion in this file.
+        assertEquals("#000000", WebSystemDefaults.highContrastDark["color.surface"])
+        assertEquals("#FFFFFF", WebSystemDefaults.highContrastLight["color.surface"])
     }
 
     @Test

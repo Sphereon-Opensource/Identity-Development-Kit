@@ -32,7 +32,7 @@
 #                      can still pick the plain-credential variant; combine with
 #                      `haip-enc-required` only when you want both required at once.
 #                      Operator step: paste keystores/key-attester/key-attester.jwks.json
-#                      into the OIDF plan UI's `vci.key_attestation_jwks` field.
+#                      into the OIDF plan's managed key-attestation setup.
 #   default            Plain demo (did:jwk verifier, plain AS); rarely useful here.
 #   did-jwk            Explicit did:jwk verifier prefix, plain AS.
 #   x509-san-dns       x509_san_dns verifier prefix (OID4VP plan), plain AS.

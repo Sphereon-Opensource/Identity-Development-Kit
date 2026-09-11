@@ -22,6 +22,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.pagination.PageMeta
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.did.manager.AddKeyMappingInput
@@ -102,7 +103,6 @@ import com.sphereon.did.manager.command.ListVerificationRelationshipsInput
 import com.sphereon.did.manager.command.ListVerificationRelationshipsServiceCommand
 import com.sphereon.did.manager.command.MethodCapabilityListResponse
 import com.sphereon.did.manager.command.MethodInput
-import com.sphereon.did.manager.command.PageMeta
 import com.sphereon.did.manager.command.RemoveAlsoKnownAsServiceCommand
 import com.sphereon.did.manager.command.RemoveControllerServiceCommand
 import com.sphereon.did.manager.command.RemoveDidServiceServiceCommand
@@ -606,7 +606,7 @@ class ListDidsServiceCommandImpl(
                         offset = offset,
                         page = filter.page,
                         size = effectiveSize,
-                        total = totalElements,
+                        total = totalElements.toLong(),
                         totalPages = totalPages,
                         hasMore = hasMore,
                     ),

@@ -25,10 +25,13 @@ import com.sphereon.core.api.model.Origin
 import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyReferenceFilter
+import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
+import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
+import com.sphereon.crypto.key.persistence.KeyReferenceStoreErrorCodes
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
@@ -50,29 +53,14 @@ import kotlin.time.Instant
 @Inject
 class SqliteKeyReferenceStoreImpl(
     private val database: KeyReferenceDatabaseSqlite,
+    override val ownershipHistoryCapability: KeyReferenceHistoryCapability = KeyReferenceHistoryCapability.UNSUPPORTED,
 ) : KeyReferenceStore {
     private val queries get() = database.keyReferenceQueries
 
     override suspend fun save(record: KeyReferenceRecord): IdkResult<KeyReferenceRecord, IdkError> =
         withContext(IO) {
             try {
-                queries.insertRecord(
-                    id = record.id,
-                    tenantId = record.tenantId,
-                    alias = record.alias,
-                    kid = record.kid,
-                    providerId = record.providerId,
-                    origin = record.origin.name.lowercase(),
-                    keyType = record.keyType?.let { it::class.simpleName },
-                    signatureAlgorithm = record.signatureAlgorithm?.let { it::class.simpleName },
-                    keyVisibility = record.keyVisibility?.name,
-                    keyEncoding = record.keyEncoding?.name,
-                    publicKeyJwk = record.publicKeyJwk,
-                    createdAt = record.createdAt.toString(),
-                    createdById = record.createdById,
-                    updatedAt = record.updatedAt.toString(),
-                    updatedById = record.updatedById,
-                )
+                insertRecord(record)
                 Ok(record)
             } catch (expected: Exception) {
                 Err(IdkError.UNKNOWN_ERROR(message = "Failed to save key reference: ${expected.message}", exception = expected))
@@ -91,10 +79,17 @@ class SqliteKeyReferenceStoreImpl(
                         ).executeAsOneOrNull()
 
                 if (existing != null) {
+                    require(!(record.origin == com.sphereon.core.api.model.Origin.EXTERNAL &&
+                        record.controlMode == ResourceControlMode.PLATFORM_MANAGED &&
+                        record.keyVisibility == com.sphereon.crypto.core.KeyVisibility.PUBLIC) || existing.id == record.id) {
+                        "Public import cannot replace an existing key reference"
+                    }
+
                     queries.updateRecord(
                         id = existing.id,
                         kid = record.kid,
                         origin = record.origin.name.lowercase(),
+                        controlMode = record.controlMode.toStorageValue(),
                         keyType = record.keyType?.let { it::class.simpleName },
                         signatureAlgorithm = record.signatureAlgorithm?.let { it::class.simpleName },
                         keyVisibility = record.keyVisibility?.name,
@@ -103,12 +98,16 @@ class SqliteKeyReferenceStoreImpl(
                         updatedAt = record.updatedAt.toString(),
                         updatedById = record.updatedById,
                     )
-                    Ok(record.copy(id = existing.id))
+                    // Ownership is immutable in the SQL upsert. Return the authoritative owner
+                    // rather than echoing caller input, so callers cannot mistake a rejected
+                    // relabel attempt for a successful ownership change.
+                    Ok(record.copy(id = existing.id, walletUnitId = existing.wallet_unit_id))
                 } else {
-                    save(record)
+                    insertRecord(record)
+                    Ok(record)
                 }
             } catch (expected: Exception) {
-                Err(IdkError.UNKNOWN_ERROR(message = "Failed to upsert key reference: ${expected.message}", exception = expected))
+                Err(upsertError(expected))
             }
         }
 
@@ -156,6 +155,82 @@ class SqliteKeyReferenceStoreImpl(
                 Ok(row?.toKeyReferenceRecord())
             } catch (expected: Exception) {
                 Err(IdkError.UNKNOWN_ERROR(message = "Failed to find key reference by alias: ${expected.message}", exception = expected))
+            }
+        }
+
+    override suspend fun findAllActiveByAlias(
+        tenantId: String,
+        alias: String,
+        providerId: String?,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> =
+        queryMany("active key references by alias") {
+            queries.findAllActiveByAlias(tenantId, alias, providerId).executeAsList()
+        }
+
+    override suspend fun findAllActiveByKid(
+        tenantId: String,
+        kid: String,
+        providerId: String?,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> =
+        queryMany("active key references by kid") {
+            queries.findAllActiveByKid(tenantId, kid, providerId).executeAsList()
+        }
+
+    override suspend fun findAllByAliasIncludingDeleted(
+        tenantId: String,
+        alias: String,
+        providerId: String?,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> =
+        queryMany("key reference history by alias") {
+            queries.findAllByAliasIncludingDeleted(tenantId, alias, providerId).executeAsList()
+        }
+
+    override suspend fun findAllByKidIncludingDeleted(
+        tenantId: String,
+        kid: String,
+        providerId: String?,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> =
+        queryMany("key reference history by kid") {
+            queries.findAllByKidIncludingDeleted(tenantId, kid, providerId).executeAsList()
+        }
+
+    override suspend fun findLatestByAliasIncludingDeleted(
+        tenantId: String,
+        alias: String,
+        providerId: String?,
+    ): IdkResult<KeyReferenceRecord?, IdkError> =
+        withContext(IO) {
+            try {
+                val row =
+                    queries
+                        .findLatestByAliasIncludingDeleted(
+                            tenantId = tenantId,
+                            alias = alias,
+                            providerId = providerId,
+                        ).executeAsOneOrNull()
+                Ok(row?.toKeyReferenceRecord())
+            } catch (expected: Exception) {
+                Err(IdkError.UNKNOWN_ERROR(message = "Failed to find key reference history by alias: ${expected.message}", exception = expected))
+            }
+        }
+
+    override suspend fun findLatestByKidIncludingDeleted(
+        tenantId: String,
+        kid: String,
+        providerId: String?,
+    ): IdkResult<KeyReferenceRecord?, IdkError> =
+        withContext(IO) {
+            try {
+                val row =
+                    queries
+                        .findLatestByKidIncludingDeleted(
+                            tenantId = tenantId,
+                            kid = kid,
+                            providerId = providerId,
+                        ).executeAsOneOrNull()
+                Ok(row?.toKeyReferenceRecord())
+            } catch (expected: Exception) {
+                Err(IdkError.UNKNOWN_ERROR(message = "Failed to find key reference history by kid: ${expected.message}", exception = expected))
             }
         }
 
@@ -253,6 +328,56 @@ class SqliteKeyReferenceStoreImpl(
             }
         }
 
+    private fun insertRecord(record: KeyReferenceRecord) {
+        queries.insertRecord(
+            id = record.id,
+            tenantId = record.tenantId,
+            alias = record.alias,
+            kid = record.kid,
+            providerId = record.providerId,
+            origin = record.origin.name.lowercase(),
+            controlMode = record.controlMode.toStorageValue(),
+            keyType = record.keyType?.let { it::class.simpleName },
+            signatureAlgorithm = record.signatureAlgorithm?.let { it::class.simpleName },
+            keyVisibility = record.keyVisibility?.name,
+            keyEncoding = record.keyEncoding?.name,
+            publicKeyJwk = record.publicKeyJwk,
+            walletUnitId = record.walletUnitId,
+            createdAt = record.createdAt.toString(),
+            createdById = record.createdById,
+            updatedAt = record.updatedAt.toString(),
+            updatedById = record.updatedById,
+        )
+    }
+
+    private suspend fun queryMany(
+        description: String,
+        query: () -> List<Key_reference>,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> =
+        withContext(IO) {
+            try {
+                Ok(query().map { it.toKeyReferenceRecord() })
+            } catch (expected: Exception) {
+                Err(IdkError.UNKNOWN_ERROR(message = "Failed to find $description: ${expected.message}", exception = expected))
+            }
+        }
+
+    private fun upsertError(expected: Exception): IdkError {
+        val message = generateSequence<Throwable>(expected) { it.cause }.joinToString(" ") { it.message.orEmpty() }
+        val isKeyIdentityConflict =
+            message.contains("UNIQUE constraint failed", ignoreCase = true) &&
+                message.contains("key_reference.", ignoreCase = true) &&
+                (message.contains(".alias", ignoreCase = true) || message.contains(".kid", ignoreCase = true))
+        return if (isKeyIdentityConflict) {
+            IdkError.fromString(
+                code = KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT,
+                message = "The key alias or canonical provider key identifier is already registered",
+            )
+        } else {
+            IdkError.UNKNOWN_ERROR(message = "Failed to upsert key reference: ${expected.message}", exception = expected)
+        }
+    }
+
     /**
      * Maps a raw DB row to a [KeyReferenceRecord].
      *
@@ -273,11 +398,13 @@ class SqliteKeyReferenceStoreImpl(
             kid = kid,
             providerId = provider_id,
             origin = Origin.fromValue(origin),
+            controlMode = control_mode.toResourceControlMode(),
             keyType = key_type?.let { KeyTypeMapping.fromValue(it) },
             signatureAlgorithm = signature_algorithm?.let { SignatureAlgorithm.fromValue(it) },
             keyVisibility = key_visibility?.let { KeyVisibility.fromValue(it) },
             keyEncoding = key_encoding?.let { KeyEncoding.fromValue(it) },
             publicKeyJwk = public_key_jwk,
+            walletUnitId = wallet_unit_id,
             createdAt = Instant.parse(created_at),
             createdById = created_by_id,
             updatedAt = Instant.parse(updated_at),
@@ -285,4 +412,17 @@ class SqliteKeyReferenceStoreImpl(
             deletedAt = deleted_at?.let { Instant.parse(it) },
             deletedById = deleted_by_id,
         )
+
+    private fun ResourceControlMode.toStorageValue(): String =
+        when (this) {
+            ResourceControlMode.PLATFORM_MANAGED -> "platform_managed"
+            ResourceControlMode.EXTERNALLY_MANAGED -> "externally_managed"
+        }
+
+    private fun String.toResourceControlMode(): ResourceControlMode =
+        when (this) {
+            "platform_managed" -> ResourceControlMode.PLATFORM_MANAGED
+            "externally_managed" -> ResourceControlMode.EXTERNALLY_MANAGED
+            else -> throw IllegalArgumentException("Unknown key reference control_mode: $this")
+        }
 }

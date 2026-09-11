@@ -29,6 +29,10 @@ data class CredentialStatusReference(
     val uri: String,
     val index: Int,
     val purpose: StatusPurpose? = null,
+    /** Binary identifier used by the ISO/IEC 18013 Identifier List profile. */
+    val identifier: ByteArray? = null,
+    /** Optional MSO-supplied certificate that pins the revocation CWT chain; it is not a trust root. */
+    val certificate: ByteArray? = null,
 )
 
 /**
@@ -117,11 +121,19 @@ suspend fun evaluateCredentialStatus(
     verifiers: Set<CredentialStatusVerifier>,
     claims: JsonObject,
     policy: CredentialStatusPolicy,
+): CredentialStatusEvaluation =
+    evaluateCredentialStatus(verifiers, CredentialStatusInput(claims = claims), policy)
+
+/** Evaluate status using both ordinary claims and authenticated format-specific metadata. */
+suspend fun evaluateCredentialStatus(
+    verifiers: Set<CredentialStatusVerifier>,
+    input: CredentialStatusInput,
+    policy: CredentialStatusPolicy,
 ): CredentialStatusEvaluation {
     if (verifiers.isEmpty()) {
         return CredentialStatusEvaluation(CredentialStatusDecision.SKIPPED, reason = "no credential status verifiers configured")
     }
-    val references = verifiers.flatMap { verifier -> verifier.references(claims).map { verifier to it } }
+    val references = verifiers.flatMap { verifier -> verifier.references(input).map { verifier to it } }
     if (references.isEmpty()) {
         return if (policy.requireStatus) {
             CredentialStatusEvaluation(

@@ -82,6 +82,8 @@ class PolicyLockedCapturedInteractionClient(
         )
     }
 
+    override suspend fun load(sessionId: WalletInteractionSessionId): WalletInteractionSession = delegate.load(sessionId)
+
     override suspend fun resume(sessionId: WalletInteractionSessionId): WalletInteractionSession = delegate.resume(sessionId)
 
     override suspend fun dispatch(sessionId: WalletInteractionSessionId, action: WalletInteractionAction) =

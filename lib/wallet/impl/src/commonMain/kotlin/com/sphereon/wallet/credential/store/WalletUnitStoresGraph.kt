@@ -18,7 +18,6 @@ package com.sphereon.wallet.credential.store
 
 import com.sphereon.di.session.SessionScope
 import com.sphereon.wallet.credential.WalletUnitStores
-import com.sphereon.wallet.credential.WalletStorageProfileResolver
 import dev.zacsweers.metro.ContributesTo
 
 /**
@@ -30,9 +29,4 @@ import dev.zacsweers.metro.ContributesTo
 @ContributesTo(SessionScope::class)
 interface WalletUnitStoresGraph {
     val walletUnitStores: WalletUnitStores
-}
-
-@ContributesTo(SessionScope::class)
-interface WalletStorageProfileResolverGraph {
-    val walletStorageProfileResolver: WalletStorageProfileResolver
 }

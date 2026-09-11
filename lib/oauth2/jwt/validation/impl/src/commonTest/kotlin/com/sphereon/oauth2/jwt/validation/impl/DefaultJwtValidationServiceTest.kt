@@ -23,6 +23,8 @@ import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwkOpts
 import com.sphereon.oauth2.jwt.validation.AccessTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdpConfig
@@ -195,6 +197,37 @@ class DefaultJwtValidationServiceTest {
             assertTrue(result.isErr)
             assertEquals(JwtValidationErrorType.DISCOVERY_FAILED, result.error.type)
             assertEquals(0, stub.invocationCount)
+        }
+
+    @Test
+    fun testCallerEstablishedJwkSkipsOidcDiscovery() =
+        runTest {
+            val issuer = "https://tenant-as.example.com"
+            val idp = IdpConfig.oidc(id = "tenant-as", issuer = issuer)
+            val token =
+                buildJwt(
+                    mapOf(
+                        "iss" to JsonPrimitive(issuer),
+                        "sub" to JsonPrimitive("service-client"),
+                    ),
+                )
+            val stub = StubVerifyJwtCommand.returning(token, Ok(jwtPayload(iss = issuer)))
+            val discovery = StubOidcDiscoveryService.failing(
+                JwtValidationError.discoveryFailed(issuer, "discovery must not be called"),
+            )
+            val trusted = ExternalIdentifierJwkOpts(
+                Jwk.fromJsonObject(
+                    Json.parseToJsonElement("""{"kty":"RSA","n":"AQ","e":"Ag","kid":"managed-key"}""").jsonObject,
+                ),
+            )
+            val svc = service(defaultIdp = idp, stub = stub, discovery = discovery)
+
+            val result = svc.validateAccessToken(token, AccessTokenValidationOptions(trustedIdentifier = trusted))
+
+            assertTrue(result.isOk)
+            assertEquals(0, discovery.invocationCount)
+            assertEquals(null, stub.lastArgs?.jwksUri)
+            assertNotNull(stub.lastArgs?.trustedIdentifier)
         }
 
     // ========== 1. Happy path access token ==========

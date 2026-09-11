@@ -18,7 +18,9 @@
 package com.sphereon.oauth2.jwt.validation
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -107,6 +109,9 @@ data class AccessTokenValidationOptions(
     val requiredScopes: Set<String> = emptySet(),
     /** Allow clock skew override (seconds) */
     val clockSkewSeconds: Long? = null,
+    /** Caller-established local verification material; mutually exclusive with JWKS discovery. */
+    @Transient
+    val trustedIdentifier: IdentifierOptsOrResult? = null,
 )
 
 /**

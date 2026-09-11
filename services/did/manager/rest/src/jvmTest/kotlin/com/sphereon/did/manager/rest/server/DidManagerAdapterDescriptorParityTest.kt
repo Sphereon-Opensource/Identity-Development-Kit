@@ -71,8 +71,8 @@ class DidManagerAdapterDescriptorParityTest {
                 providerKeys,
                 adapterKeys,
                 "Aggregated adapter endpoint set diverged from aggregated descriptor provider catalog. " +
-                    "Add the new endpoint to BOTH the matching *HttpAdapter (ctor + endpointCommands) " +
-                    "AND its *HttpAdapterDescriptorProvider, or remove it from both.",
+                    "Add the new endpoint handler to the keyed HttpEndpointCommand map and its descriptor " +
+                    "to the matching *HttpAdapterDescriptorProvider, or remove it from both.",
             )
             assertEquals(adapterKeys.size, composite.endpointDescriptors.size, "Adapter endpoint set has duplicates.")
             assertEquals(providerKeys.size, providerEndpoints.size, "Descriptor provider list has duplicates.")

@@ -19,13 +19,16 @@ package com.sphereon.oauth2.server.authorization.impl.command.token
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.jose.jws.JwsUtils
 import com.sphereon.crypto.jose.jws.JwsJsonFlattened
 import com.sphereon.crypto.jose.jws.JwsJsonGeneral
 import com.sphereon.crypto.jose.jws.JwsJsonGeneralWithIdentifiers
@@ -37,8 +40,12 @@ import com.sphereon.crypto.jose.jws.PreparedJwsObject
 import com.sphereon.crypto.jose.jws.command.CreateJwsArgs
 import com.sphereon.crypto.jose.jws.command.CreateJwsJsonArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
+import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenTypeIdentifier
+import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
@@ -47,7 +54,10 @@ import com.sphereon.oauth2.server.authorization.impl.policy.DefaultTokenExchange
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryClientRegistryImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAuth2BackingStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySigningKeyStore
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryTokenStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
+import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
+import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdentifierResolver
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.policy.TokenExchangePolicy
 import com.sphereon.oauth2.server.authorization.policy.TokenExchangePolicyDecision
@@ -58,9 +68,12 @@ import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -77,9 +90,16 @@ import kotlin.time.Clock
  * verification failures gracefully (external tokens without signing keys).
  */
 class VerifyTokenExchangeGrantCommandImplTest {
+    private val issuer = "https://as.example.test"
     private val ctx = OAuth2ServerTestContext("verify-token-exchange-test", this)
     private val execution = ctx.execution
     private val jwtService: JwtService = (ctx.session.graph as JwtServiceImpl.Graph).jwtService
+    private val configProvider =
+        TestOAuth2ServersConfigProvider(
+            OAuth2ServersConfig(
+                servers = mapOf("default" to OAuth2ServerInstanceConfig(issuer = issuer)),
+            ),
+        )
 
     // Test client authorized for TOKEN_EXCHANGE
     private val tokenExchangeClient =
@@ -90,6 +110,7 @@ class VerifyTokenExchangeGrantCommandImplTest {
                     GrantType.AUTHORIZATION_CODE,
                     GrantType.TOKEN_EXCHANGE,
                 ),
+            defaultAccessTokenAudience = "enterprise-platform",
         )
 
     // Test client NOT authorized for TOKEN_EXCHANGE
@@ -155,6 +176,27 @@ class VerifyTokenExchangeGrantCommandImplTest {
         return "$header.$payload.$signature"
     }
 
+    private fun localSubjectClaims(
+        subject: String = "user123",
+        clientId: String = tokenExchangeClient.clientId,
+        audience: Any? = "enterprise-platform",
+        expiresAt: Long? = Clock.System.now().epochSeconds + 300,
+        notBefore: Long? = Clock.System.now().epochSeconds - 1,
+        authorizedParty: String? = null,
+        includeIssuer: Boolean = true,
+        email: String? = "user@example.test",
+    ): Map<String, Any> =
+        buildMap {
+            put("sub", subject)
+            put("client_id", clientId)
+            if (includeIssuer) put("iss", issuer)
+            audience?.let { put("aud", it) }
+            expiresAt?.let { put("exp", it) }
+            notBefore?.let { put("nbf", it) }
+            authorizedParty?.let { put("azp", it) }
+            email?.let { put("email", it) }
+        }
+
     private fun encodeBase64Url(input: String): String {
         val bytes = input.encodeToByteArray()
         val table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
@@ -208,6 +250,7 @@ class VerifyTokenExchangeGrantCommandImplTest {
         jwtService: JwtService = this.jwtService,
         signingKeyStore: SigningKeyStore = InMemorySigningKeyStore(),
         signingKeyPublicJwkResolver: AsSigningKeyPublicJwkResolver? = null,
+        serversConfigProvider: TestOAuth2ServersConfigProvider = configProvider,
     ): VerifyTokenExchangeGrantCommandImpl =
         VerifyTokenExchangeGrantCommandImpl(
             execution = execution,
@@ -215,6 +258,7 @@ class VerifyTokenExchangeGrantCommandImplTest {
             tokenExchangePolicy = policy,
             jwtService = jwtService,
             signingKeyStore = signingKeyStore,
+            serversConfigProvider = serversConfigProvider,
             signingKeyPublicJwkResolver = signingKeyPublicJwkResolver,
         )
 
@@ -253,7 +297,7 @@ class VerifyTokenExchangeGrantCommandImplTest {
             val result =
                 command.execute(
                     VerifyTokenExchangeGrantArgs(
-                        subjectToken = createTestJwt(mapOf("sub" to "user123"), kid = kid),
+                        subjectToken = createTestJwt(localSubjectClaims(), kid = kid),
                         subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
                         actorToken = null,
                         actorTokenType = null,
@@ -296,7 +340,15 @@ class VerifyTokenExchangeGrantCommandImplTest {
             val result =
                 command.execute(
                     VerifyTokenExchangeGrantArgs(
-                        subjectToken = createTestJwt(mapOf("sub" to "external-user"), kid = "external-idp-key"),
+                        subjectToken =
+                            createTestJwt(
+                                mapOf(
+                                    "sub" to "external-user",
+                                    "iss" to "https://external-idp.example.test",
+                                    "exp" to Clock.System.now().epochSeconds + 300,
+                                ),
+                                kid = "external-idp-key",
+                            ),
                         subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
                         actorToken = null,
                         actorTokenType = null,
@@ -313,7 +365,328 @@ class VerifyTokenExchangeGrantCommandImplTest {
             assertNull(recordingJwtService.verifyArgs.single().trustedJwks, "External tokens must not be pinned to tenant AS keys")
         }
 
-    private fun signingKey(kid: String): OAuth2SigningKey {
+    @Test
+    fun expiredVerifiedLocalSubjectIsRejected() =
+        runTest {
+            val result =
+                executeLocalSubject(
+                    localSubjectClaims(expiresAt = Clock.System.now().epochSeconds - 1),
+                )
+
+            assertTrue(result.isErr, "An expired local subject token must fail before policy evaluation")
+        }
+
+    @Test
+    fun missingExpirationVerifiedLocalSubjectIsRejected() =
+        runTest {
+            assertTrue(
+                executeLocalSubject(localSubjectClaims(expiresAt = null)).isErr,
+                "A verified local subject token must carry exp",
+            )
+        }
+
+    @Test
+    fun futureNotBeforeVerifiedLocalSubjectIsRejected() =
+        runTest {
+            val result =
+                executeLocalSubject(
+                    localSubjectClaims(notBefore = Clock.System.now().epochSeconds + 60),
+                )
+
+            assertTrue(result.isErr, "A local subject token outside the nbf skew must fail")
+        }
+
+    @Test
+    fun wrongIssuerVerifiedLocalSubjectIsRejected() =
+        runTest {
+            val claims = localSubjectClaims().toMutableMap().apply { put("iss", "https://wrong-issuer.example.test") }
+
+            assertTrue(executeLocalSubject(claims).isErr, "A locally signed token cannot claim another issuer")
+        }
+
+    @Test
+    fun missingIssuerVerifiedLocalSubjectIsRejected() =
+        runTest {
+            assertTrue(
+                executeLocalSubject(localSubjectClaims(includeIssuer = false)).isErr,
+                "A locally signed token must identify this authorization server as issuer",
+            )
+        }
+
+    @Test
+    fun missingAudienceVerifiedLocalSubjectIsRejected() =
+        runTest {
+            assertTrue(
+                executeLocalSubject(localSubjectClaims(audience = null)).isErr,
+                "A local subject token must carry a resource audience",
+            )
+        }
+
+    @Test
+    fun unauthorizedAudienceVerifiedLocalSubjectIsRejected() =
+        runTest {
+            assertTrue(
+                executeLocalSubject(localSubjectClaims(audience = "unauthorized-resource")).isErr,
+                "The local subject audience must be authorized for its issuing client",
+            )
+        }
+
+    @Test
+    fun workloadSubjectFromDifferentClientIsRejected() =
+        runTest {
+            val otherWorkload =
+                tokenExchangeClient.copy(
+                    clientId = "other-workload",
+                    defaultAccessTokenAudience = "enterprise-platform",
+                )
+            val result =
+                executeLocalSubject(
+                    claims =
+                        localSubjectClaims(
+                            subject = otherWorkload.clientId,
+                            clientId = otherWorkload.clientId,
+                            authorizedParty = otherWorkload.clientId,
+                            email = null,
+                        ),
+                    additionalClients = arrayOf(otherWorkload),
+                )
+
+            assertTrue(result.isErr, "A workload subject must be bound to the authenticated exchanger")
+        }
+
+    @Test
+    fun workloadSubjectWithWrongAuthorizedPartyIsRejected() =
+        runTest {
+            val result =
+                executeLocalSubject(
+                    localSubjectClaims(
+                        subject = tokenExchangeClient.clientId,
+                        authorizedParty = "different-client",
+                        email = null,
+                    ),
+                )
+
+            assertTrue(result.isErr, "A workload subject must carry sub == client_id == azp")
+        }
+
+    @Test
+    fun workloadSubjectBoundToExchangingClientIsAccepted() =
+        runTest {
+            val result =
+                executeLocalSubject(
+                    localSubjectClaims(
+                        subject = tokenExchangeClient.clientId,
+                        authorizedParty = tokenExchangeClient.clientId,
+                        email = null,
+                    ),
+                )
+
+            assertTrue(result.isOk, "A valid self-issued workload token must remain exchangeable")
+        }
+
+    @Test
+    fun workloadSubjectWithoutAuthorizedPartyIsRejected() =
+        runTest {
+            val result =
+                executeLocalSubject(
+                    localSubjectClaims(
+                        subject = tokenExchangeClient.clientId,
+                        authorizedParty = null,
+                        email = null,
+                    ),
+                )
+
+            assertTrue(result.isErr, "A workload-shaped subject token must carry azp")
+        }
+
+    @Test
+    fun verifiedLocalHumanSubjectMayBeExchangedByDifferentAuthorizedClient() =
+        runTest {
+            val loginClient =
+                tokenExchangeClient.copy(
+                    clientId = "human-login-client",
+                    defaultAccessTokenAudience = "enterprise-platform",
+                )
+            val result =
+                executeLocalSubject(
+                    claims =
+                        localSubjectClaims(
+                            subject = "human-user-123",
+                            clientId = loginClient.clientId,
+                            email = "human@example.test",
+                        ),
+                    additionalClients = arrayOf(loginClient),
+                )
+
+            assertTrue(result.isOk, "Policy-authorized delegation must not bind a human subject to its original client")
+            assertEquals("human-user-123", result.value.subject)
+            assertEquals(tokenExchangeClient.clientId, result.value.clientId)
+        }
+
+    @Test
+    fun realHumanAccessTokenMintWithStringAudienceIsAcceptedByDifferentAuthorizedExchanger() =
+        runTest {
+            val kid = "authorization-code-human-key"
+            val loginClient =
+                tokenExchangeClient.copy(
+                    clientId = "platform-operator-cli",
+                    grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
+                    defaultAccessTokenAudience = "enterprise-platform",
+                )
+            val recordingJwtService = RecordingJwtService(mintedKid = kid)
+            val mintCommand =
+                CreateAccessTokenCommandImpl(
+                    execution = execution,
+                    jwtService = recordingJwtService,
+                    tokenStorage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl()),
+                    secureRandom = defaultSecureRandom(),
+                    configProvider = configProvider,
+                    signingIdentifierResolver =
+                        fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = kid)),
+                    eventService = null,
+                )
+            val minted =
+                mintCommand.execute(
+                    CreateAccessTokenArgs(
+                        subject = "platform-admin-user",
+                        clientId = loginClient.clientId,
+                        scope = "openid",
+                        audience = listOf("enterprise-platform"),
+                    ),
+                )
+            assertTrue(minted.isOk, "The authorization-code-shaped human access token must mint")
+            val accessToken = minted.value.value
+            val mintedClaims = JwsUtils.decodeBase64UrlToJson(accessToken.split('.')[1])
+            assertTrue(mintedClaims["aud"] is JsonPrimitive, "A single RFC 9068 audience must be a JSON string")
+            assertEquals("enterprise-platform", mintedClaims["aud"]?.jsonPrimitive?.content)
+
+            val store = InMemorySigningKeyStore()
+            assertTrue(store.register(signingKey(kid)).isOk)
+            val exchangeCommand =
+                createCommand(
+                    clientRegistry = setupClientRegistry(tokenExchangeClient, loginClient),
+                    policy = DefaultTokenExchangePolicy(),
+                    jwtService = recordingJwtService,
+                    signingKeyStore = store,
+                    signingKeyPublicJwkResolver = resolverForLocalKeys(),
+                )
+            val exchanged = exchangeCommand.execute(exchangeArgs(accessToken))
+
+            assertTrue(exchanged.isOk, "A policy-authorized different client must exchange the audience-bound human token")
+            assertEquals("platform-admin-user", exchanged.value.subject)
+            assertEquals(tokenExchangeClient.clientId, exchanged.value.clientId)
+        }
+
+    @Test
+    fun localIssuerWithUnknownKidFailsWithoutGenericFallback() =
+        runTest {
+            val recordingJwtService = RecordingJwtService()
+            val command =
+                createCommand(
+                    clientRegistry = setupClientRegistry(tokenExchangeClient),
+                    policy = DefaultTokenExchangePolicy(),
+                    jwtService = recordingJwtService,
+                    signingKeyStore = InMemorySigningKeyStore(),
+                    signingKeyPublicJwkResolver = resolverForLocalKeys(),
+                )
+
+            val result = command.execute(exchangeArgs(createTestJwt(localSubjectClaims(), kid = "unknown-local-kid")))
+
+            assertTrue(result.isErr, "A local issuer with an unknown kid must fail closed")
+            assertTrue(recordingJwtService.verifyArgs.isEmpty(), "Unknown local kids must not reach generic JOSE resolution")
+        }
+
+    @Test
+    fun unresolvableAuthorizationServerIssuerFailsClosed() =
+        runTest {
+            val kid = "local-kid-without-issuer-policy"
+            val store = InMemorySigningKeyStore()
+            assertTrue(store.register(signingKey(kid)).isOk)
+            val recordingJwtService = RecordingJwtService()
+            val command =
+                createCommand(
+                    clientRegistry = setupClientRegistry(tokenExchangeClient),
+                    policy = DefaultTokenExchangePolicy(),
+                    jwtService = recordingJwtService,
+                    signingKeyStore = store,
+                    signingKeyPublicJwkResolver = resolverForLocalKeys(),
+                    serversConfigProvider = TestOAuth2ServersConfigProvider(OAuth2ServersConfig()),
+                )
+
+            val result = command.execute(exchangeArgs(createTestJwt(localSubjectClaims(), kid = kid)))
+
+            assertTrue(result.isErr, "Token exchange must fail closed when the AS issuer cannot be resolved")
+            assertTrue(recordingJwtService.verifyArgs.isEmpty(), "Missing issuer policy must not enter generic JOSE resolution")
+        }
+
+    @Test
+    fun disabledLocalKidFailsWithoutSignatureResolution() =
+        runTest {
+            val kid = "disabled-local-kid"
+            val store = InMemorySigningKeyStore()
+            assertTrue(store.register(signingKey(kid, OAuth2SigningKeyState.DISABLED)).isOk)
+            var resolverCalls = 0
+            val recordingJwtService = RecordingJwtService()
+            val command =
+                createCommand(
+                    clientRegistry = setupClientRegistry(tokenExchangeClient),
+                    policy = DefaultTokenExchangePolicy(),
+                    jwtService = recordingJwtService,
+                    signingKeyStore = store,
+                    signingKeyPublicJwkResolver =
+                        object : AsSigningKeyPublicJwkResolver {
+                            override suspend fun resolve(signingKey: OAuth2SigningKey): Jwk? =
+                                publicJwk(signingKey.kid).also { resolverCalls++ }
+                        },
+                )
+
+            val result = command.execute(exchangeArgs(createTestJwt(localSubjectClaims(), kid = kid)))
+
+            assertTrue(result.isErr, "A disabled local signing key must never validate a subject token")
+            assertEquals(0, resolverCalls)
+            assertTrue(recordingJwtService.verifyArgs.isEmpty())
+        }
+
+    private suspend fun executeLocalSubject(
+        claims: Map<String, Any>,
+        additionalClients: Array<out ClientRegistration> = emptyArray(),
+    ): IdkResult<com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant, IdkError> {
+        val kid = "strict-local-subject-key"
+        val store = InMemorySigningKeyStore()
+        check(store.register(signingKey(kid)).isOk)
+        val command =
+            createCommand(
+                clientRegistry = setupClientRegistry(tokenExchangeClient, *additionalClients),
+                policy = DefaultTokenExchangePolicy(),
+                jwtService = RecordingJwtService(),
+                signingKeyStore = store,
+                signingKeyPublicJwkResolver = resolverForLocalKeys(),
+            )
+        return command.execute(exchangeArgs(createTestJwt(claims, kid = kid)))
+    }
+
+    private fun resolverForLocalKeys(): AsSigningKeyPublicJwkResolver =
+        object : AsSigningKeyPublicJwkResolver {
+            override suspend fun resolve(signingKey: OAuth2SigningKey): Jwk = publicJwk(signingKey.kid)
+        }
+
+    private fun exchangeArgs(subjectToken: String): VerifyTokenExchangeGrantArgs =
+        VerifyTokenExchangeGrantArgs(
+            subjectToken = subjectToken,
+            subjectTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+            actorToken = null,
+            actorTokenType = null,
+            resources = emptyList(),
+            audiences = emptyList(),
+            scope = null,
+            requestedTokenType = TokenTypeIdentifier.ACCESS_TOKEN,
+            clientId = tokenExchangeClient.clientId,
+        )
+
+    private fun signingKey(
+        kid: String,
+        state: OAuth2SigningKeyState = OAuth2SigningKeyState.ACTIVE,
+    ): OAuth2SigningKey {
         val now = Clock.System.now()
         return OAuth2SigningKey(
             tenantId = execution.tenantId,
@@ -324,7 +697,7 @@ class VerifyTokenExchangeGrantCommandImplTest {
                     providerId = "tenant-kms",
                     signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
                 ),
-            state = OAuth2SigningKeyState.ACTIVE,
+            state = state,
             priority = 1,
             createdAt = now,
             notBefore = now,
@@ -863,7 +1236,9 @@ class VerifyTokenExchangeGrantCommandImplTest {
         }
 
     /** Captures whether token exchange selected the pinned-JWKS or generic JwtService branch. */
-    private class RecordingJwtService : JwtService {
+    private class RecordingJwtService(
+        private val mintedKid: String? = null,
+    ) : JwtService {
         val verifyArgs = mutableListOf<VerifyJwsArgs>()
 
         private val notImplemented =
@@ -874,7 +1249,20 @@ class VerifyTokenExchangeGrantCommandImplTest {
 
         override suspend fun prepareJws(args: CreateJwsJsonArgs): IdkResult<PreparedJwsObject, IdkError> = Err(notImplemented)
 
-        override suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError> = Err(notImplemented)
+        override suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError> {
+            val kid = mintedKid ?: return Err(notImplemented)
+            val payload = args.payload as? String ?: return Err(notImplemented)
+            val header =
+                buildJsonObject {
+                    put("alg", "ES256")
+                    put("typ", "at+jwt")
+                    put("kid", kid)
+                }.toString()
+            val compact =
+                listOf(header, payload, "test-signature")
+                    .joinToString(".") { it.encodeToByteArray().encodeToBase64Url() }
+            return Ok(JwtCompactResult(jwt = compact))
+        }
 
         override suspend fun createJwsJsonFlattened(args: CreateJwsJsonArgs): IdkResult<JwsJsonFlattened, IdkError> = Err(notImplemented)
 

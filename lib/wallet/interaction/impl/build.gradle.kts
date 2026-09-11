@@ -47,6 +47,12 @@ kotlin {
                 api(projects.libWalletWscaPublic)
                 api(projects.libWalletWscdPublic)
                 implementation(projects.libCryptoCorePublic)
+                implementation(projects.libDidMethodsJwk)
+                implementation(projects.libDidManagerPublic)
+                implementation(projects.libWalletPublic)
+                // The resolver registry and DID model types are part of the public issuer
+                // authentication resolver contract, so this dependency must be exported.
+                api(projects.libDidResolverPublic)
                 implementation(projects.libDataStoreKvPublic)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
                 implementation(sphereonlib.org.jetbrains.kotlinx.serialization.json)
@@ -58,6 +64,9 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(projects.libDataStoreKvImplMemory)
+                implementation(projects.libDidResolverImpl)
+                implementation(projects.libDidMethodsKey)
+                implementation(projects.libDidMethodsJwk)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
                 implementation(sphereonlib.org.jetbrains.kotlinx.serialization.json)
             }

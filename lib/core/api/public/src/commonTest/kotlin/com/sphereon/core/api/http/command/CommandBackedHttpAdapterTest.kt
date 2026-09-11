@@ -37,6 +37,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.core.api.http.response.jsonResponse
 import com.sphereon.core.api.log.AsyncLogService
@@ -74,7 +75,7 @@ class CommandBackedHttpAdapterTest {
         runTest {
             val endpoint =
                 TestEndpointCommand(
-                    id = "test.get",
+                    id = "test.items.get",
                     endpoint =
                         HttpEndpointDescriptor(
                             method = HttpMethod.GET,
@@ -102,13 +103,13 @@ class CommandBackedHttpAdapterTest {
             val adapter = TestAdapter()
 
             // Test GET /items/{id} - full path with adapter base path
-            val getResponse = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
+            val getResponse = adapter.handleTestRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
             assertEquals(200, getResponse.statusCode)
             assertEquals("""{"item":"42"}""", getResponse.body)
 
             // Test POST /items - full path with adapter base path (endpoint pattern is just "/")
             val postResponse =
-                adapter.handleRequest(
+                adapter.handleTestRequest(
                     GenericHttpRequest(
                         method = "POST",
                         path = "/items",
@@ -119,7 +120,7 @@ class CommandBackedHttpAdapterTest {
             assertEquals("""{"created":true}""", postResponse.body)
 
             // Test DELETE /items/{id} - full path with adapter base path
-            val deleteResponse = adapter.handleRequest(GenericHttpRequest(method = "DELETE", path = "/items/42"))
+            val deleteResponse = adapter.handleTestRequest(GenericHttpRequest(method = "DELETE", path = "/items/42"))
             assertEquals(204, deleteResponse.statusCode)
         }
 
@@ -128,7 +129,7 @@ class CommandBackedHttpAdapterTest {
         runTest {
             val adapter = TestAdapter()
 
-            val response = adapter.handleRequest(GenericHttpRequest(method = "PATCH", path = "/items/42"))
+            val response = adapter.handleTestRequest(GenericHttpRequest(method = "PATCH", path = "/items/42"))
             assertEquals(404, response.statusCode)
             assertTrue(response.body?.contains("Not found") == true)
         }
@@ -155,12 +156,12 @@ class CommandBackedHttpAdapterTest {
             val adapter = TestAdapterWithDisabledEndpoint()
 
             // The GET endpoint is disabled
-            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
+            val response = adapter.handleTestRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
             assertEquals(404, response.statusCode)
 
             // POST still works
             val postResponse =
-                adapter.handleRequest(
+                adapter.handleTestRequest(
                     GenericHttpRequest(
                         method = "POST",
                         path = "/items",
@@ -184,7 +185,7 @@ class CommandBackedHttpAdapterTest {
         runTest {
             val endpoint =
                 TestEndpointCommand(
-                    id = "test.get",
+                    id = "test.items.get",
                     endpoint =
                         HttpEndpointDescriptor(
                             method = HttpMethod.GET,
@@ -207,7 +208,8 @@ class CommandBackedHttpAdapterTest {
             // caller retries, not the 500 a generic exception produces.
             val adapter = TestUnavailableAdapter(TestSessionExecution())
 
-            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
+            val request = GenericHttpRequest(method = "GET", path = "/items/42")
+            val response = adapter.handleCommand(request, "test.items.get", "/items/{id}")
 
             assertEquals(503, response.statusCode)
             assertTrue(
@@ -222,9 +224,88 @@ class CommandBackedHttpAdapterTest {
             // Guard the discrimination: a non-config exception must remain a 500.
             val adapter = TestGenericFailureAdapter(TestSessionExecution())
 
-            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/items/42"))
+            val request = GenericHttpRequest(method = "GET", path = "/items/42")
+            val response = adapter.handleCommand(request, "test.items.get", "/items/{id}")
 
             assertEquals(500, response.statusCode)
+        }
+
+    @Test
+    fun selectedRouteConstructsOnlyItsKeyedEndpointCommand() =
+        runTest {
+            var selectedConstructions = 0
+            var unrelatedConstructions = 0
+            val registry =
+                TestEndpointRegistry(
+                    mapOf(
+                        "test.items.get" to lazy {
+                            selectedConstructions++
+                            TestEndpointCommand(
+                                id = "test.items.get",
+                                endpoint = HttpEndpointDescriptor(HttpMethod.GET, "/{id}"),
+                                responseProvider = { jsonResponse(200, "{}") },
+                            )
+                        },
+                        "test.items.delete" to lazy {
+                            unrelatedConstructions++
+                            TestEndpointCommand(
+                                id = "test.items.delete",
+                                endpoint = HttpEndpointDescriptor(HttpMethod.DELETE, "/{id}"),
+                            )
+                        },
+                    ),
+                )
+            val adapter =
+                object : CommandBackedHttpAdapter(
+                    id = "test.http.adapter",
+                    execution = TestSessionExecution(),
+                    mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
+                    endpointCommandRegistry = registry,
+                ) {}
+            val request = GenericHttpRequest(method = "GET", path = "/items/42")
+
+            val response = adapter.handleCommand(request, "test.items.get", "/items/{id}")
+
+            assertEquals(200, response.statusCode)
+            assertEquals(1, selectedConstructions)
+            assertEquals(0, unrelatedConstructions)
+        }
+
+    @Test
+    fun nonProtocolAdapterPreservesFirstEndpointPathSegment() =
+        runTest {
+            val endpoint =
+                TestEndpointCommand(
+                    id = "test.setup.license-request.generate",
+                    endpoint =
+                        HttpEndpointDescriptor(
+                            method = HttpMethod.POST,
+                            pathPattern = "/license-request/generate",
+                        ),
+                    responseProvider = { jsonResponse(200, "{}") },
+                )
+            val adapter =
+                object : CommandBackedHttpAdapter(
+                    id = "test.setup.http",
+                    execution = TestSessionExecution(),
+                    mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/api/platform/setup/v1"),
+                    endpointCommandRegistry = TestEndpointRegistry(mapOf(endpoint.id to lazyOf(endpoint))),
+                    tenantPathPolicy = TenantPathPolicy.None,
+                ) {}
+            val request =
+                GenericHttpRequest(
+                    method = "POST",
+                    path = "/api/platform/setup/v1/license-request/generate",
+                )
+
+            val response =
+                adapter.handleCommand(
+                    request = request,
+                    handlerCommandId = endpoint.id,
+                    matchedPathPattern = "/api/platform/setup/v1/license-request/generate",
+                )
+
+            assertEquals(200, response.statusCode)
         }
 
     // ========== Test fixtures ==========
@@ -252,7 +333,7 @@ class CommandBackedHttpAdapterTest {
             id = "test-adapter",
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
         ) {
-        override val endpointCommands: List<HttpEndpointCommand> =
+        override val testEndpoints: List<HttpEndpointCommand> =
             listOf(
                 TestEndpointCommand(
                     id = "test.items.get",
@@ -305,25 +386,23 @@ class CommandBackedHttpAdapterTest {
     private class TestUnavailableAdapter(
         execution: SessionExecution,
         id: String = "test.http.unavailable",
+        endpoint: HttpEndpointCommand =
+            TestEndpointCommand(
+                id = "test.items.get",
+                endpoint =
+                    HttpEndpointDescriptor(
+                        method = HttpMethod.GET,
+                        pathPattern = "/{id}",
+                        operationId = "getItem",
+                    ),
+                responseProvider = { throw ConfigUnavailableException("remote platform config not ready") },
+            ),
     ) : CommandBackedHttpAdapter(
             id = id,
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
-        ) {
-        override val endpointCommands: List<HttpEndpointCommand> =
-            listOf(
-                TestEndpointCommand(
-                    id = "test.items.get",
-                    endpoint =
-                        HttpEndpointDescriptor(
-                            method = HttpMethod.GET,
-                            pathPattern = "/{id}",
-                            operationId = "getItem",
-                        ),
-                    responseProvider = { throw ConfigUnavailableException("remote platform config not ready") },
-                ),
-            )
-    }
+            endpointCommandRegistry = TestEndpointRegistry(mapOf(endpoint.id to lazyOf(endpoint))),
+        )
 
     /**
      * Real [CommandBackedHttpAdapter] whose single endpoint throws a generic
@@ -331,24 +410,30 @@ class CommandBackedHttpAdapterTest {
      */
     private class TestGenericFailureAdapter(
         execution: SessionExecution,
+        endpoint: HttpEndpointCommand =
+            TestEndpointCommand(
+                id = "test.items.get",
+                endpoint =
+                    HttpEndpointDescriptor(
+                        method = HttpMethod.GET,
+                        pathPattern = "/{id}",
+                        operationId = "getItem",
+                    ),
+                responseProvider = { throw IllegalStateException("boom") },
+            ),
     ) : CommandBackedHttpAdapter(
             id = "test.http.generic-failure",
             execution = execution,
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
-        ) {
-        override val endpointCommands: List<HttpEndpointCommand> =
-            listOf(
-                TestEndpointCommand(
-                    id = "test.items.get",
-                    endpoint =
-                        HttpEndpointDescriptor(
-                            method = HttpMethod.GET,
-                            pathPattern = "/{id}",
-                            operationId = "getItem",
-                        ),
-                    responseProvider = { throw IllegalStateException("boom") },
-                ),
-            )
+            endpointCommandRegistry = TestEndpointRegistry(mapOf(endpoint.id to lazyOf(endpoint))),
+        )
+
+    private class TestEndpointRegistry(
+        private val endpoints: Map<String, Lazy<HttpEndpointCommand>>,
+    ) : HttpEndpointCommandRegistry {
+        override fun get(handlerCommandId: String): HttpEndpointCommand? = endpoints[handlerCommandId]?.value
+
+        override fun listHandlerCommandIds(): Set<String> = endpoints.keys
     }
 
     /**
@@ -359,7 +444,7 @@ class CommandBackedHttpAdapterTest {
             id = "test-adapter-disabled",
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
         ) {
-        override val endpointCommands: List<HttpEndpointCommand> =
+        override val testEndpoints: List<HttpEndpointCommand> =
             listOf(
                 TestEndpointCommand(
                     id = "test.items.get",
@@ -426,6 +511,49 @@ class CommandBackedHttpAdapterTest {
     }
 }
 
+private suspend fun HttpAdapter.handleTestRequest(request: GenericHttpRequest): GenericHttpResponse {
+    val matches =
+        describe().endpoints.flatMap { endpoint ->
+            endpoint.pathPatterns
+                .filter { pattern -> request.matches(endpoint.method.name, pattern) }
+                .map { pattern -> endpoint to pattern }
+        }
+    if (matches.isEmpty()) return errorResponse(404, "Not found: ${request.method} ${request.path}")
+    if (matches.size > 1) return errorResponse(500, "Multiple endpoints match request")
+    val (endpoint, pattern) = matches.single()
+    val handlerCommandId = endpoint.handlerCommandId ?: return errorResponse(500, "Missing test handlerCommandId")
+    return handleResolvedRequest(
+        request,
+        HttpAdapterRouteMatch(
+            adapterId = id,
+            method = request.method,
+            originalPath = request.path,
+            normalizedPath = request.path,
+            matchedPathPattern = pattern,
+            handlerCommandId = handlerCommandId,
+            tenantIdFromPath = null,
+        ),
+    )
+}
+
+private suspend fun HttpAdapter.handleCommand(
+    request: GenericHttpRequest,
+    handlerCommandId: String,
+    matchedPathPattern: String,
+): GenericHttpResponse =
+    handleResolvedRequest(
+        request,
+        HttpAdapterRouteMatch(
+            adapterId = id,
+            method = request.method,
+            originalPath = request.path,
+            normalizedPath = request.path,
+            matchedPathPattern = matchedPathPattern,
+            handlerCommandId = handlerCommandId,
+            tenantIdFromPath = null,
+        ),
+    )
+
 /**
  * Simplified CommandBackedHttpAdapter for testing that doesn't require SessionExecution.
  *
@@ -436,41 +564,49 @@ private abstract class TestCommandBackedAdapter(
     override val id: String,
     private val mount: HttpAdapterMount,
 ) : HttpAdapter {
-    protected abstract val endpointCommands: List<HttpEndpointCommand>
+    protected abstract val testEndpoints: List<HttpEndpointCommand>
 
     private val enabledEndpoints: List<HttpEndpointCommand>
-        get() = endpointCommands.filter { it.isEnabled }
+        get() = testEndpoints.filter { it.isEnabled }
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
             id = id,
             mount = mount,
-            endpoints = enabledEndpoints.map { it.endpoint },
+            endpoints =
+                enabledEndpoints.map { endpoint ->
+                    endpoint.endpoint.copy(
+                        pathPatterns =
+                            endpoint.endpoint.pathPatterns.map { pattern ->
+                                when {
+                                    mount.adapterBasePath.isEmpty() || mount.adapterBasePath == "/" -> pattern
+                                    pattern == "/" -> mount.adapterBasePath
+                                    else -> mount.adapterBasePath + pattern
+                                }
+                            },
+                        handlerCommandId = endpoint.id,
+                    )
+                },
             openApiHints = null,
         )
 
-    override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
+    override suspend fun handleResolvedRequest(
+        request: GenericHttpRequest,
+        route: HttpAdapterRouteMatch,
+    ): GenericHttpResponse {
         // Strip adapter base path before routing to endpoint commands
         val relativeRequest = stripAdapterBasePath(request)
-        val matchingEndpoints = enabledEndpoints.filter { it.supports(relativeRequest) }
-
-        return when (matchingEndpoints.size) {
-            0 -> {
-                errorResponse(404, "Not found: ${request.method} ${request.path}")
-            }
-
-            1 -> {
-                val result = matchingEndpoints.single().execute(relativeRequest)
+        val endpoint = enabledEndpoints.singleOrNull { it.id == route.handlerCommandId }
+        return when (endpoint) {
+            null -> errorResponse(500, "Selected endpoint is not registered")
+            else -> {
+                val result = endpoint.execute(relativeRequest)
                 result.fold(
                     success = { it },
                     failure = { error ->
                         errorResponse(500, error.message.defaultMessage)
                     },
                 )
-            }
-
-            else -> {
-                errorResponse(500, "Multiple endpoints match request")
             }
         }
     }
@@ -497,7 +633,7 @@ class AdditionalCommandBackedHttpAdapterTest {
         runTest {
             val adapter = TestAdapterWithEmptyBasePath()
 
-            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/123"))
+            val response = adapter.handleTestRequest(GenericHttpRequest(method = "GET", path = "/123"))
             assertEquals(200, response.statusCode)
         }
 
@@ -506,7 +642,7 @@ class AdditionalCommandBackedHttpAdapterTest {
         runTest {
             val adapter = TestAdapterWithSlashBasePath()
 
-            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/items/456"))
+            val response = adapter.handleTestRequest(GenericHttpRequest(method = "GET", path = "/items/456"))
             assertEquals(200, response.statusCode)
         }
 
@@ -516,7 +652,7 @@ class AdditionalCommandBackedHttpAdapterTest {
             val adapter = TestAdapterForPathStripping()
 
             // Request path doesn't start with the adapter base path
-            val response = adapter.handleRequest(GenericHttpRequest(method = "GET", path = "/other/123"))
+            val response = adapter.handleTestRequest(GenericHttpRequest(method = "GET", path = "/other/123"))
             assertEquals(404, response.statusCode)
         }
 
@@ -528,10 +664,10 @@ class AdditionalCommandBackedHttpAdapterTest {
             id = "test-adapter-empty",
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = ""),
         ) {
-        override val endpointCommands: List<HttpEndpointCommand> =
+        override val testEndpoints: List<HttpEndpointCommand> =
             listOf(
                 SimpleTestEndpointCommand(
-                    id = "test.get",
+                    id = "test.items.get",
                     endpoint =
                         HttpEndpointDescriptor(
                             method = HttpMethod.GET,
@@ -550,10 +686,10 @@ class AdditionalCommandBackedHttpAdapterTest {
             id = "test-adapter-slash",
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/"),
         ) {
-        override val endpointCommands: List<HttpEndpointCommand> =
+        override val testEndpoints: List<HttpEndpointCommand> =
             listOf(
                 SimpleTestEndpointCommand(
-                    id = "test.get",
+                    id = "test.items.get",
                     endpoint =
                         HttpEndpointDescriptor(
                             method = HttpMethod.GET,
@@ -572,10 +708,10 @@ class AdditionalCommandBackedHttpAdapterTest {
             id = "test-adapter-strip",
             mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/items"),
         ) {
-        override val endpointCommands: List<HttpEndpointCommand> =
+        override val testEndpoints: List<HttpEndpointCommand> =
             listOf(
                 SimpleTestEndpointCommand(
-                    id = "test.get",
+                    id = "test.items.get",
                     endpoint =
                         HttpEndpointDescriptor(
                             method = HttpMethod.GET,
@@ -602,10 +738,10 @@ private abstract class TestCommandBackedAdapterBase(
     override val id: String,
     private val mount: HttpAdapterMount,
 ) : HttpAdapter {
-    protected abstract val endpointCommands: List<HttpEndpointCommand>
+    protected abstract val testEndpoints: List<HttpEndpointCommand>
 
     private val enabledEndpoints: List<HttpEndpointCommand>
-        get() = endpointCommands.filter { it.isEnabled }
+        get() = testEndpoints.filter { it.isEnabled }
 
     override fun describe(): HttpAdapterDescription =
         HttpAdapterDescription(
@@ -622,32 +758,30 @@ private abstract class TestCommandBackedAdapterBase(
                                 mount.adapterBasePath + pattern
                             }
                         }
-                    endpoint.endpoint.copy(pathPatterns = fullPathPatterns)
+                    endpoint.endpoint.copy(
+                        pathPatterns = fullPathPatterns,
+                        handlerCommandId = endpoint.id,
+                    )
                 },
             openApiHints = null,
         )
 
-    override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
+    override suspend fun handleResolvedRequest(
+        request: GenericHttpRequest,
+        route: HttpAdapterRouteMatch,
+    ): GenericHttpResponse {
         val relativeRequest = stripAdapterBasePath(request)
-        val matchingEndpoints = enabledEndpoints.filter { it.supports(relativeRequest) }
-
-        return when (matchingEndpoints.size) {
-            0 -> {
-                errorResponse(404, "Not found: ${request.method} ${request.path}")
-            }
-
-            1 -> {
-                val result = matchingEndpoints.single().execute(relativeRequest)
+        val endpoint = enabledEndpoints.singleOrNull { it.id == route.handlerCommandId }
+        return when (endpoint) {
+            null -> errorResponse(500, "Selected endpoint is not registered")
+            else -> {
+                val result = endpoint.execute(relativeRequest)
                 result.fold(
                     success = { it },
                     failure = { error ->
                         errorResponse(500, error.message.defaultMessage)
                     },
                 )
-            }
-
-            else -> {
-                errorResponse(500, "Multiple endpoints match request")
             }
         }
     }

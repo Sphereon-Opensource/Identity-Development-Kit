@@ -16,18 +16,40 @@
 
 package com.sphereon.openid.oid4vci.issuer.impl.format
 
+import com.sphereon.cbor.CborFullDate
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialRequest
+import com.sphereon.crypto.core.x509.Certificate
+import com.sphereon.statuslist.spi.ReservedStatus
+import com.sphereon.statuslist.spi.StatusClaimMergeTarget
+import com.sphereon.statuslist.spi.StatusReservationHandle
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class MsoMdocFormatHandlerTest {
+    private fun certificate(
+        notBefore: Long,
+        notAfter: Long,
+    ) = Certificate(
+        der = byteArrayOf(1),
+        fingerPrint = "test-fingerprint-$notBefore-$notAfter",
+        issuerDN = "CN=issuer",
+        subjectDN = "CN=subject",
+        notBefore = Instant.fromEpochSeconds(notBefore),
+        notAfter = Instant.fromEpochSeconds(notAfter),
+    )
+
     private fun makeConfig(
         format: String,
         doctype: String? = null,
@@ -184,6 +206,245 @@ class MsoMdocFormatHandlerTest {
         assertEquals(attributes, result.value)
     }
 
+    @Test
+    fun malformedIssuerCertificateIsRejectedInsteadOfUsingAnUnboundedMsoWindow() {
+        val result = calculateMdocCertificateValidityWindow(
+            encodedCertificate = "not-a-certificate",
+            nowEpochSeconds = 5_000L,
+            issuanceClockSkewInSeconds = 60L,
+            expirationInDays = 365,
+        )
+
+        assertTrue(result.isErr)
+        assertEquals("signing_certificate_chain_invalid", result.error.code)
+    }
+
+    @Test
+    fun futureIssuerCertificateIsRejectedInsteadOfMovingTheMsoIntoTheFuture() {
+        val result = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 5_001L, notAfter = 50_000L),
+            nowEpochSeconds = 5_000L,
+            issuanceClockSkewInSeconds = 60L,
+            expirationInDays = 365,
+        )
+
+        assertTrue(result.isErr)
+        assertEquals("signing_certificate_not_yet_valid", result.error.code)
+    }
+
+    @Test
+    fun expiredIssuerCertificateIsRejectedInsteadOfIssuingWithAnExpiredSigner() {
+        val result = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 1_000L, notAfter = 4_999L),
+            nowEpochSeconds = 5_000L,
+            issuanceClockSkewInSeconds = 60L,
+            expirationInDays = 365,
+        )
+
+        assertTrue(result.isErr)
+        assertEquals("signing_certificate_expired", result.error.code)
+    }
+
+    @Test
+    fun reversedIssuerCertificateValidityWindowIsRejected() {
+        val result = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 5_001L, notAfter = 5_000L),
+            nowEpochSeconds = 5_000L,
+            issuanceClockSkewInSeconds = 0L,
+            expirationInDays = 1,
+        )
+
+        assertTrue(result.isErr)
+        assertEquals("signing_certificate_validity_invalid", result.error.code)
+    }
+
+    @Test
+    fun zeroDayMsoValidityWindowIsRejected() {
+        val result = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 1_000L, notAfter = 100_000L),
+            nowEpochSeconds = 5_000L,
+            issuanceClockSkewInSeconds = 0L,
+            expirationInDays = 0,
+        )
+
+        assertTrue(result.isErr)
+        assertEquals("signing_certificate_validity_invalid", result.error.code)
+    }
+
+    @Test
+    fun negativeDayMsoValidityWindowIsRejected() {
+        val result = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 1_000L, notAfter = 100_000L),
+            nowEpochSeconds = 5_000L,
+            issuanceClockSkewInSeconds = 0L,
+            expirationInDays = -1,
+        )
+
+        assertTrue(result.isErr)
+        assertEquals("signing_certificate_validity_invalid", result.error.code)
+    }
+
+    @Test
+    fun hourRoundingIsKeptOnlyWhenTheRoundedInstantIsInsideTheCertificate() {
+        val result = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 5_000L, notAfter = 50_000L),
+            nowEpochSeconds = 7_200L + 60L,
+            issuanceClockSkewInSeconds = 60L,
+            expirationInDays = 1,
+        )
+
+        assertTrue(result.isOk)
+        assertEquals(7_200L, result.value.signedEpochSeconds)
+        assertEquals(result.value.signedEpochSeconds, result.value.validFromEpochSeconds)
+        assertTrue(result.value.validUntilEpochSeconds <= 50_000L)
+    }
+
+    @Test
+    fun certificateLowerBoundReplacesAnOutOfRangeRoundedInstant() {
+        val result = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 4_000L, notAfter = 50_000L),
+            nowEpochSeconds = 4_500L,
+            issuanceClockSkewInSeconds = 60L,
+            expirationInDays = 1,
+        )
+
+        assertTrue(result.isOk)
+        assertEquals(4_000L, result.value.signedEpochSeconds)
+        assertEquals(4_000L, result.value.validFromEpochSeconds)
+    }
+
+    @Test
+    fun validityEndIsCappedAtCertificateNotAfter() {
+        val result = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 1_000L, notAfter = 4_500L),
+            nowEpochSeconds = 4_100L,
+            issuanceClockSkewInSeconds = 0L,
+            expirationInDays = 1,
+        )
+
+        assertTrue(result.isOk)
+        assertEquals(4_500L, result.value.validUntilEpochSeconds)
+        assertTrue(result.value.validUntilEpochSeconds <= 4_500L)
+        assertTrue(result.value.validUntilEpochSeconds > result.value.validFromEpochSeconds)
+    }
+
+    @Test
+    fun impossibleCertificateOrMsoIntervalsAreRejected() {
+        val malformedCertificateInterval = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 5_000L, notAfter = 5_000L),
+            nowEpochSeconds = 5_000L,
+            issuanceClockSkewInSeconds = 0L,
+            expirationInDays = 1,
+        )
+        assertTrue(malformedCertificateInterval.isErr)
+        assertEquals("signing_certificate_validity_invalid", malformedCertificateInterval.error.code)
+
+        val noRemainingCertificateLifetime = calculateMdocCertificateValidityWindow(
+            certificate = certificate(notBefore = 1_000L, notAfter = 3_600L),
+            nowEpochSeconds = 3_600L,
+            issuanceClockSkewInSeconds = 0L,
+            expirationInDays = 1,
+        )
+        assertTrue(noRemainingCertificateLifetime.isErr)
+        assertEquals("signing_certificate_validity_invalid", noRemainingCertificateLifetime.error.code)
+    }
+
+    @Test
+    fun mdocStatusReservationIsConvertedToAnMsoStatusListReference() {
+        val reserved =
+            ReservedStatus(
+                handle = StatusReservationHandle(statusListId = "status-list", statusListIndex = 7),
+                claim =
+                    buildJsonObject {
+                        putJsonObject("status_list") {
+                            put("idx", 7)
+                            put("uri", "https://issuer.example/status/7")
+                        }
+                    },
+                mergeTarget = StatusClaimMergeTarget.MDOC_STATUS,
+            )
+
+        val result = MsoMdocFormatHandler.reservedStatusToMdocStatus(reserved)
+
+        assertTrue(result.isOk)
+        assertEquals(7u, result.value.statusList?.idx)
+        assertEquals("https://issuer.example/status/7", result.value.statusList?.uri)
+    }
+
+    @Test
+    fun mdocStatusReservationPreservesTheAggregationUri() {
+        val reserved =
+            ReservedStatus(
+                handle = StatusReservationHandle(statusListId = "status-list", statusListIndex = 7),
+                claim =
+                    buildJsonObject {
+                        putJsonObject("status_list") {
+                            put("idx", 7)
+                            put("uri", "https://issuer.example/status/7")
+                            put("aggregation_uri", "https://issuer.example/status/aggregate")
+                        }
+                    },
+                mergeTarget = StatusClaimMergeTarget.MDOC_STATUS,
+            )
+
+        val result = MsoMdocFormatHandler.reservedStatusToMdocStatus(reserved)
+
+        assertTrue(result.isOk)
+        assertEquals("https://issuer.example/status/aggregate", result.value.statusList?.aggregationUri)
+    }
+
+    @Test
+    fun mdocStatusReservationRejectsAClaimForAnotherCredentialFormat() {
+        val reserved =
+            ReservedStatus(
+                handle = StatusReservationHandle(statusListId = "status-list", statusListIndex = 7),
+                claim = buildJsonObject { put("status_list", buildJsonObject { put("idx", 7); put("uri", "https://issuer.example/status") }) },
+                mergeTarget = StatusClaimMergeTarget.TOP_LEVEL_STATUS,
+            )
+
+        val result = MsoMdocFormatHandler.reservedStatusToMdocStatus(reserved)
+
+        assertTrue(result.isErr)
+        assertEquals("status_configuration_unsupported", result.error.code)
+    }
+
+    @Test
+    fun mdocStatusReservationRejectsMalformedIndexAndUri() {
+        val reserved =
+            ReservedStatus(
+                handle = StatusReservationHandle(statusListId = "status-list", statusListIndex = 7),
+                claim = buildJsonObject { putJsonObject("status_list") { put("idx", -1); put("uri", "") } },
+                mergeTarget = StatusClaimMergeTarget.MDOC_STATUS,
+            )
+
+        val result = MsoMdocFormatHandler.reservedStatusToMdocStatus(reserved)
+
+        assertTrue(result.isErr)
+        assertEquals("status_reference_invalid", result.error.code)
+    }
+
+    @Test
+    fun mdocIdentifierReservationIsConvertedToAnMsoIdentifierListReference() {
+        val reserved =
+            ReservedStatus(
+                handle = StatusReservationHandle(statusListId = "status-list", statusListIndex = 7),
+                claim = buildJsonObject {
+                    putJsonObject("identifier_list") {
+                        put("id", "AQI")
+                        put("uri", "https://issuer.example/identifiers")
+                    }
+                },
+                mergeTarget = StatusClaimMergeTarget.MDOC_STATUS,
+                identifier = byteArrayOf(1, 2),
+            )
+
+        val result = MsoMdocFormatHandler.reservedStatusToMdocStatus(reserved)
+
+        assertTrue(result.isOk)
+        assertTrue(result.value.identifierList?.id?.contentEquals(byteArrayOf(1, 2)) == true)
+        assertEquals("https://issuer.example/identifiers", result.value.identifierList?.uri)
+    }
+
     // --- JSON to native value conversion tests ---
 
     @Test
@@ -250,6 +511,36 @@ class MsoMdocFormatHandlerTest {
             ),
             MsoMdocFormatHandler.jsonElementToNativeValue(value),
         )
+    }
+
+    @Test
+    fun drivingPrivilegesMaterializesIsoFullDateValuesForCborEncoding() {
+        val result =
+            MsoMdocFormatHandler.jsonElementToMdocValue(
+                "driving_privileges",
+                JsonPrimitive(
+                    """[{"vehicle_category_code":"B","issue_date":"2024-01-01","expiry_date":"2030-01-01"}]""",
+                ),
+            )
+
+        assertTrue(result.isOk)
+        val privileges = assertIs<List<*>>(result.value)
+        val privilege = assertIs<Map<*, *>>(privileges.single())
+        assertEquals("B", privilege["vehicle_category_code"])
+        assertIs<CborFullDate>(privilege["issue_date"])
+        assertIs<CborFullDate>(privilege["expiry_date"])
+    }
+
+    @Test
+    fun drivingPrivilegesRejectsMissingVehicleCategoryCode() {
+        val result =
+            MsoMdocFormatHandler.jsonElementToMdocValue(
+                "driving_privileges",
+                JsonPrimitive("""[{"issue_date":"2024-01-01"}]"""),
+            )
+
+        assertTrue(result.isErr)
+        assertEquals("invalid_credential_request", result.error.code)
     }
 
     @Test

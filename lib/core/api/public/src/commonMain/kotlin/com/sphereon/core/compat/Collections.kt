@@ -52,3 +52,13 @@ fun JsonObject.mergeJsonObject(newProperties: JsonObject): JsonObject {
     result.putAll(newProperties.toMap())
     return JsonObject(result)
 }
+
+/**
+ * Fold a layered chain of optional objects into one with [mergeJsonObject]'s shallow, top-level,
+ * last-wins semantics: later layers replace same-named keys of earlier ones outright, including
+ * nested objects. Null layers are skipped, so a caller can pass an absent layer without branching.
+ *
+ * The canonical shape for `base <- defaults <- overrides` resolution.
+ */
+fun mergeJsonObjects(vararg objects: JsonObject?): JsonObject =
+    objects.filterNotNull().fold(JsonObject(emptyMap())) { merged, layer -> merged.mergeJsonObject(layer) }

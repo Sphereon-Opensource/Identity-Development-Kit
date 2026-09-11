@@ -42,6 +42,7 @@ interface CreateCredentialOfferEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "createCredentialOffer",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vci-rest", "credential-offers"),
                 summary = "Create a new OID4VCI credential offer session",
             )
@@ -66,6 +67,7 @@ interface GetCredentialOfferStatusEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getCredentialOfferStatus",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vci-rest", "credential-offers"),
                 summary = "Get the status of an OID4VCI credential offer session",
             )
@@ -90,6 +92,7 @@ interface DeleteCredentialOfferEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "deleteCredentialOffer",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vci-rest", "credential-offers"),
                 summary = "Delete an OID4VCI credential offer session",
             )

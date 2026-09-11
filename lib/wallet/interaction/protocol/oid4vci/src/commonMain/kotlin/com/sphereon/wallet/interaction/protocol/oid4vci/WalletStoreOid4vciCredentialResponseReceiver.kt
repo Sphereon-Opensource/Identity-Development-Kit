@@ -36,12 +36,17 @@ import com.sphereon.wallet.credential.RefreshPolicy
 import com.sphereon.wallet.credential.RefreshState
 import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
+import com.sphereon.wallet.WalletHolderVerificationMethodResolver
 import com.sphereon.wallet.interaction.WalletCounterpartyRole
 import com.sphereon.wallet.interaction.WalletCounterpartySummary
+import com.sphereon.wallet.interaction.selfAssertedDisplayNameSource
 import com.sphereon.wallet.interaction.WalletCredentialPreview
 import com.sphereon.wallet.interaction.WalletCredentialBranding
 import com.sphereon.wallet.interaction.WalletInteractionContext
 import com.sphereon.wallet.interaction.WalletInteractionState
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.time.Clock
 import com.sphereon.openid.oid4vc.common.DisplayProperties as Oid4vcDisplayProperties
@@ -50,10 +55,13 @@ import com.sphereon.openid.oid4vc.common.LogoProperties as Oid4vcLogoProperties
 import com.sphereon.openid.oid4vci.common.model.ClaimDisplay as Oid4vciClaimDisplay
 import com.sphereon.openid.oid4vci.common.model.CredentialClaim as Oid4vciCredentialClaim
 
+private val walletOid4vciJson = Json { encodeDefaults = false; explicitNulls = false }
+
 class WalletStoreOid4vciCredentialResponseReceiver(
     private val credentialStore: WalletCredentialStore,
     private val issuanceSessionStore: WalletIssuanceSessionStore,
     private val acceptance: Oid4vciIssuedCredentialAcceptance,
+    private val holderVerificationMethodResolver: WalletHolderVerificationMethodResolver? = null,
 ) : Oid4vciCredentialResponseReceiver {
     override suspend fun receiveCredentialResponse(
         context: WalletInteractionContext,
@@ -84,6 +92,21 @@ class WalletStoreOid4vciCredentialResponseReceiver(
         if (holderKeyAliases.size != responseItems.size) {
             error("OID4VCI credential response item count ${responseItems.size} does not match holder key count ${holderKeyAliases.size}")
         }
+        val holderVerificationMethods =
+            if (
+                credentialFormat == CredentialFormat.JWT_VC_JSON ||
+                credentialFormat == CredentialFormat.JWT_VC_JSON_LD ||
+                credentialFormat == CredentialFormat.LDP_VC
+            ) {
+                val resolver = holderVerificationMethodResolver
+                    ?: error("OID4VCI VCDM storage requires an explicit holder signing-identifier association")
+                holderKeyAliases.map { alias ->
+                    resolver.resolve(context.walletUnitId, KeyRef(alias = alias))
+                        ?: error("OID4VCI VCDM storage has no holder signing-identifier association for key '$alias'")
+                }
+            } else {
+                emptyList()
+            }
         val issuerRef = resolvedOffer.offer.credentialIssuer.toIssuerRef()
         val typeRefs = credentialConfiguration.typeRefs(credentialFormat, credentialConfigurationId)
         require(typeRefs.isNotEmpty()) {
@@ -106,20 +129,43 @@ class WalletStoreOid4vciCredentialResponseReceiver(
             } else {
                 existingRecord(context.walletUnitId, issuerRef, credentialConfigurationId)
             }
+        val refreshTargetCredentialInstanceIds =
+            if (refreshTargetCredentialRecordId != null) {
+                val target = existingRecord ?: error("OID4VCI refresh target credential record '$refreshTargetCredentialRecordId' was not found")
+                val requested = sessionState.refreshTargetCredentialInstanceIds
+                val selected =
+                    if (requested.isNotEmpty()) requested
+                    else target.instances.filter { it.lifecycleState == CredentialLifecycleState.ACTIVE }.map { it.id }
+                require(selected.isNotEmpty()) { "OID4VCI refresh target credential record has no active credential instances" }
+                require(selected.distinct().size == selected.size) { "OID4VCI refresh target credential instances must be distinct" }
+                require(selected.all { id -> target.instances.any { it.id == id && it.lifecycleState == CredentialLifecycleState.ACTIVE } }) {
+                    "OID4VCI refresh target credential instances must identify active instances in the target record"
+                }
+                require(
+                    selected.zip(holderKeyAliases).all { (id, alias) ->
+                        target.instances.single { it.id == id }.holderKeyRef?.alias == alias
+                    },
+                ) {
+                    "OID4VCI refresh target instance and holder-key alias mappings must match exactly"
+                }
+                selected
+            } else {
+                emptyList()
+            }
         val now = Clock.System.now()
         val credentialRecordId = existingRecord?.id ?: Uuid.v4String()
         val refreshToken = sessionState.tokens?.refreshToken?.takeIf { it.isNotBlank() }
-        val rotatedRefreshTokenRef =
-            refreshToken?.let { token -> issuanceSessionStore.storeRefreshToken(context.walletUnitId, credentialRecordId, token).getOrNull() }
-        val refreshState: RefreshState? =
-            rotatedRefreshTokenRef?.let { ref ->
-                RefreshState(refreshMethod = CredentialRefreshMethod.OID4VCI_REISSUANCE, refreshTokenRef = ref, policy = RefreshPolicy())
-            }
         val newInstances =
             responseItems.mapIndexed { index, item ->
                 val raw =
-                    (item.credential as? JsonPrimitive)?.content
-                        ?: error("OID4VCI credential response item is not a primitive credential string")
+                    if (credentialFormat == CredentialFormat.LDP_VC) {
+                        (item.credential as? JsonObject)?.let {
+                            walletOid4vciJson.encodeToString(JsonElement.serializer(), it)
+                        } ?: error("OID4VCI ldp_vc credential response item must be a JSON object")
+                    } else {
+                        (item.credential as? JsonPrimitive)?.content
+                            ?: error("OID4VCI credential response item is not a primitive credential string")
+                    }
                 val credentialInstanceId = Uuid.v4String()
                 CredentialInstance(
                     id = credentialInstanceId,
@@ -132,7 +178,11 @@ class WalletStoreOid4vciCredentialResponseReceiver(
                             kind = BodyStorageKind.WALLET_STORE,
                             path = credentialBodyPath(context.walletUnitId, credentialRecordId, credentialInstanceId),
                         ),
-                    holderKeyRef = KeyRef(alias = holderKeyAliases[index]),
+                    holderKeyRef =
+                        KeyRef(
+                            alias = holderKeyAliases[index],
+                            kid = holderVerificationMethods.getOrNull(index)?.value,
+                        ),
                     lifecycleState = CredentialLifecycleState.ACTIVE,
                     validity = CredentialValidityWindow(),
                     issuedAt = now,
@@ -144,7 +194,14 @@ class WalletStoreOid4vciCredentialResponseReceiver(
         // VERIFY: for SD-JWT VC formats, verify the issuer signature of every newly issued
         // instance before storing anything; a failed verification rejects the whole store
         // operation.
-        val verifyResult = acceptance.verify(credentialConfigurationId, credentialFormat, newInstances)
+        val verifyResult =
+            acceptance.verify(
+                credentialConfigurationId = credentialConfigurationId,
+                credentialFormat = credentialFormat,
+                instances = newInstances,
+                issuerAuthentication = state.issuerAuthentication,
+                expectedIssuer = resolvedOffer.offer.credentialIssuer,
+            )
         if (verifyResult.isErr) {
             error(verifyResult.error.message.defaultMessage)
         }
@@ -159,12 +216,26 @@ class WalletStoreOid4vciCredentialResponseReceiver(
         }
         val actualTypeRefs = actualTypeRefsResult.value
         val diagnostics = acceptance.diagnostics(expected = typeRefs, actual = actualTypeRefs, observedAt = now)
+        // Persist a rotated refresh token only after every response item has been validated. A
+        // short/invalid batch must leave both the credential record and its token unchanged.
+        val rotatedRefreshTokenRef =
+            refreshToken?.let { token ->
+                val storedToken = issuanceSessionStore.storeRefreshToken(context.walletUnitId, credentialRecordId, token)
+                if (storedToken.isErr) {
+                    error("Failed to persist OID4VCI refresh token: ${storedToken.error.message.defaultMessage}")
+                }
+                storedToken.value
+            }
+        val refreshState: RefreshState? =
+            rotatedRefreshTokenRef?.let { ref ->
+                RefreshState(refreshMethod = CredentialRefreshMethod.OID4VCI_REISSUANCE, refreshTokenRef = ref, policy = RefreshPolicy())
+            }
 
         val updatedRecord =
             if (refreshTargetCredentialRecordId != null) {
-                // SUPERSEDE: refresh/reissuance REPLACES the holder's usable instance rather than
-                // topping it up - the previously ACTIVE instance(s) transition to SUPERSEDED and the
-                // new instance carries `replacesInstanceId`, via `CredentialRecord.withRefreshedInstance`.
+                // SUPERSEDE: refresh/reissuance replaces only the selected holder instances rather
+                // than topping them up. Untargeted active siblings remain active and every new item
+                // carries the exact instance id it replaces.
                 // Unlike the append/new-record branches below, issuanceProvenance is left untouched
                 // on refresh; only refreshState (rotated token ref, lastRefreshAt, refresh-scoped
                 // diagnostics) and instances change.
@@ -177,15 +248,30 @@ class WalletStoreOid4vciCredentialResponseReceiver(
                     } else {
                         target.refreshState
                     }
-                // Replaced-instance resolution: the instance a verifier would currently be handed
-                // wins, then the last ACTIVE one, then whatever instance exists at all.
-                val replacesInstanceId =
-                    target.presentableInstance(now)?.id
-                        ?: target.instances.lastOrNull { it.lifecycleState == CredentialLifecycleState.ACTIVE }?.id
-                        ?: target.instances.lastOrNull()?.id
-                newInstances.fold(target.copy(refreshState = preservedRefreshState)) { record, instance ->
-                    record.withRefreshedInstance(instance.copy(replacesInstanceId = replacesInstanceId), actualTypeRefs)
+                require(refreshTargetCredentialInstanceIds.size == newInstances.size) {
+                    "OID4VCI refresh response item count must match the selected target instance count"
                 }
+                val refreshedBase =
+                    target.copy(refreshState = preservedRefreshState).withRefreshedInstance(
+                        newInstances.first().copy(replacesInstanceId = refreshTargetCredentialInstanceIds.first()),
+                        actualTypeRefs,
+                    )
+                val selectedIds = refreshTargetCredentialInstanceIds.toSet()
+                val replacedExistingInstances =
+                    target.instances.map { instance ->
+                        if (instance.id in selectedIds && instance.lifecycleState == CredentialLifecycleState.ACTIVE && target.refreshState?.policy?.supersedePreviousActiveInstance != false) {
+                            instance.copy(lifecycleState = CredentialLifecycleState.SUPERSEDED, updatedAt = now)
+                        } else {
+                            instance
+                        }
+                    }
+                refreshedBase.copy(
+                    instances =
+                        replacedExistingInstances +
+                            newInstances.mapIndexed { index, instance ->
+                                instance.copy(replacesInstanceId = refreshTargetCredentialInstanceIds[index])
+                            },
+                )
             } else if (existingRecord != null) {
                 val existingProvenance = existingRecord.issuanceProvenance
                 newInstances.fold(
@@ -403,6 +489,7 @@ class WalletStoreOid4vciCredentialResponseReceiver(
             role = WalletCounterpartyRole.ISSUER,
             identifier = issuerRef.value,
             displayName = resolved?.name ?: issuerRef.value,
+            displayNameSource = selfAssertedDisplayNameSource(resolved?.name),
             logoUri = resolved?.logo?.uri,
         )
     }

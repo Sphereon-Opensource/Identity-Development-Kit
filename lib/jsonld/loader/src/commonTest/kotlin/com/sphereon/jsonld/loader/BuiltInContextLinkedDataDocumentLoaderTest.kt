@@ -17,6 +17,7 @@
 package com.sphereon.jsonld.loader
 
 import com.sphereon.jsonld.JsonLdError
+import com.sphereon.jsonld.WellKnownContexts
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -47,6 +48,18 @@ class BuiltInContextLinkedDataDocumentLoaderTest {
         )
 
     private val loader = BuiltInContextLinkedDataDocumentLoader(registry)
+
+    @Test
+    fun resolvesPinnedVcdm11ContextOffline() =
+        runTest {
+            val default = DefaultBuiltInContextRegistry()
+            val loaderOverDefault = BuiltInContextLinkedDataDocumentLoader(default)
+            val result = loaderOverDefault.loadDocument(WellKnownContexts.VCDM_1_1)
+            assertTrue(result.isOk, "VCDM 1.1 context must resolve from the built-in registry")
+            val document = result.value
+            assertEquals(WellKnownContexts.VCDM_1_1, document.documentUrl)
+            assertTrue(document.content is JsonObject)
+        }
 
     @Test
     fun loadsRegisteredContext() =
@@ -80,6 +93,7 @@ class BuiltInContextLinkedDataDocumentLoaderTest {
         val default = DefaultBuiltInContextRegistry()
         val expected =
             setOf(
+                WellKnownContexts.VCDM_1_1,
                 "https://www.w3.org/ns/credentials/v2",
                 "https://w3id.org/security/data-integrity/v1",
                 "https://w3id.org/security/data-integrity/v2",

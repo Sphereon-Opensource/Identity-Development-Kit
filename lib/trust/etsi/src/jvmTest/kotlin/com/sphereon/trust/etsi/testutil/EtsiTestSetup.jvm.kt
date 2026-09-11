@@ -20,6 +20,7 @@ import com.sphereon.core.defaults.app.DefaultRootScopeProvider
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.app.RootScopeProvider
+import com.sphereon.trust.core.resolver.TrustListResolver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Named
@@ -36,6 +37,7 @@ abstract class JvmEtsiTestAppGraph : AbstractAppGraph() {
             @Provides @Named("profile") profile: String,
             @Provides @Named("version") version: String,
             @Provides rootScopeProvider: RootScopeProvider,
+            @Provides trustListResolvers: Set<TrustListResolver>,
         ): JvmEtsiTestAppGraph
     }
 }
@@ -45,6 +47,7 @@ fun createJvmEtsiTestAppGraph(
     appId: String = application.javaClass.name ?: "<unknown>",
     profile: String = "console-log-profile",
     version: String = "version-example",
+    trustListResolvers: Set<TrustListResolver> = emptySet(),
 ): JvmEtsiTestAppGraph {
     val graph =
         createGraphFactory<JvmEtsiTestAppGraph.Factory>().create(
@@ -53,6 +56,7 @@ fun createJvmEtsiTestAppGraph(
             profile = profile,
             version = version,
             rootScopeProvider = DefaultRootScopeProvider(),
+            trustListResolvers = trustListResolvers,
         )
     graph.initRootScopeProvider()
     return graph

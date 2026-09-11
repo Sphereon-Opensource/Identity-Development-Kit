@@ -43,7 +43,7 @@ class DidHostingRegistryImpl(
         tenantId: String?,
         webLocation: String,
     ): IdkResult<HostedDid?, IdkError> {
-        for (provider in providers) {
+        for (provider in providers.sortedByDescending(DidHostingProvider::authorityPriority)) {
             val result = provider.resolveDidJson(tenantId, webLocation)
             if (result.isErr) return result
             val hosted = result.value

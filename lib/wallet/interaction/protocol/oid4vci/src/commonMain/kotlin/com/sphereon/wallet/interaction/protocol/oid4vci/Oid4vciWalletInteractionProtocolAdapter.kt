@@ -11,9 +11,12 @@ import com.sphereon.openid.oid4vci.common.model.CredentialOffer
 import com.sphereon.openid.oid4vci.common.model.CredentialOfferGrants
 import com.sphereon.openid.oid4vci.common.model.CredentialIssuerMetadata
 import com.sphereon.openid.oid4vci.holder.Oid4vciHolderService
+import com.sphereon.oauth2.client.util.extractQueryParameters
 import com.sphereon.wallet.interaction.WalletCounterpartyRole
+import com.sphereon.wallet.interaction.WalletAttendedAuthorizationRegistry
 import com.sphereon.wallet.interaction.WalletCounterpartyAssociationRequest
 import com.sphereon.wallet.interaction.WalletCounterpartySummary
+import com.sphereon.wallet.interaction.selfAssertedDisplayNameSource
 import com.sphereon.wallet.interaction.WalletCounterpartyTrustRequest
 import com.sphereon.wallet.interaction.WalletCredentialBranding
 import com.sphereon.wallet.interaction.WalletCredentialOfferInfoDescriptor
@@ -26,7 +29,7 @@ import com.sphereon.wallet.interaction.WalletEntryPointKind
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionActionType
 import com.sphereon.wallet.interaction.WalletInteractionContext
-import com.sphereon.wallet.interaction.WalletInteractionError
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
 import com.sphereon.wallet.interaction.WalletInteractionFlowKind
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionProtocolAdapter
@@ -44,7 +47,11 @@ import com.sphereon.wallet.interaction.WalletSecurityOperation
 import com.sphereon.wallet.interaction.WalletSecurityGrantValidation
 import com.sphereon.wallet.interaction.validateFor
 import com.sphereon.wallet.interaction.WalletTrustPolicyAction
+import com.sphereon.wallet.interaction.WalletIssuerAuthenticationRequest
+import com.sphereon.wallet.interaction.WalletIssuerAuthenticationResult
+import com.sphereon.wallet.interaction.admitForIssuer
 import com.sphereon.wallet.interaction.WalletTxCodeSpec
+import com.sphereon.wallet.interaction.classifiedWalletInteractionError
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -56,6 +63,7 @@ import kotlin.time.Clock
 class Oid4vciWalletInteractionProtocolAdapter(
     private val holder: Oid4vciHolderService? = null,
     private val issuanceExecutor: Oid4vciIssuanceExecutor,
+    private val attendedAuthorizationRegistry: WalletAttendedAuthorizationRegistry = WalletAttendedAuthorizationRegistry.none,
     priority: Int = 100,
 ) : WalletInteractionProtocolAdapter {
     override val capability: WalletProtocolCapability =
@@ -114,7 +122,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
             }
         val rawOffer =
             walletInitiatedOffer?.let { Json.encodeToString(CredentialOffer.serializer(), it) }
-                ?: entryPoint.raw
+                ?: entryPoint.raw?.let(::unwrapBrowserCredentialOfferInvocation)
                 ?: entryPoint.parsed
                     ?.takeIf { entryPoint.parsedType == DIGITAL_CREDENTIAL_PROTOCOL }
                     ?.toString()
@@ -136,10 +144,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
                     ).copy(
                         terminal = true,
                         error =
-                            WalletInteractionError(
-                                code = "oid4vci.offer_parse_failed",
+                            classifiedWalletInteractionError(
+                                code = WalletInteractionFailureCodes.OID4VCI_OFFER_PARSE_FAILED,
                                 messageKey = "wallet.interaction.error.oid4vci_offer_parse_failed",
-                                retryable = false,
                             ),
                     )
             return WalletInteractionSession(context.sessionId, state)
@@ -165,7 +172,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
                     ),
                 ).let { trust -> trust.copy(policyAction = context.trustPolicy.evaluate(trust).action) }
                 .copy(counterparty = summary.issuer)
-        if (!encounter.organizationCreated && trust.policyAction == WalletTrustPolicyAction.BLOCK) {
+        val issuerAuthentication = context.resolveIssuerAuthentication(summary.issuer, trust.issuerAuthentication)
+        val resolvedTrust = trust.copy(issuerAuthentication = issuerAuthentication)
+        if (!encounter.organizationCreated && resolvedTrust.policyAction == WalletTrustPolicyAction.BLOCK) {
             val state =
                 context
                     .baseState(
@@ -177,12 +186,13 @@ class Oid4vciWalletInteractionProtocolAdapter(
                     ).copy(
                         counterparty = summary.issuer,
                         counterpartyEncounter = encounter,
-                        trust = trust,
+                        trust = resolvedTrust,
+                        issuerAuthentication = issuerAuthentication,
                         credentialOffer = summary,
                         terminal = true,
                         error =
-                            WalletInteractionError(
-                                code = "oid4vci.issuer_blocked",
+                            classifiedWalletInteractionError(
+                                code = WalletInteractionFailureCodes.OID4VCI_ISSUER_BLOCKED,
                                 messageKey = "wallet.interaction.error.issuer_blocked",
                             ),
                     )
@@ -192,9 +202,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
             when {
                 encounter.organizationCreated -> WalletInteractionStatus.CounterpartyNotice
                 encounter.firstInteraction ||
-                    trust.policyAction == WalletTrustPolicyAction.WARN ||
-                    trust.policyAction == WalletTrustPolicyAction.ASK_USER ||
-                    trust.policyAction == WalletTrustPolicyAction.FIRST_CONTACT_PROMPT -> WalletInteractionStatus.TrustReview
+                    resolvedTrust.policyAction == WalletTrustPolicyAction.WARN ||
+                    resolvedTrust.policyAction == WalletTrustPolicyAction.ASK_USER ||
+                    resolvedTrust.policyAction == WalletTrustPolicyAction.FIRST_CONTACT_PROMPT -> WalletInteractionStatus.TrustReview
                 else -> WalletInteractionStatus.CredentialOfferReview
             }
         val state =
@@ -208,7 +218,8 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 ).copy(
                     counterparty = summary.issuer,
                     counterpartyEncounter = encounter,
-                    trust = trust,
+                    trust = resolvedTrust,
+                    issuerAuthentication = issuerAuthentication,
                     credentialOffer = summary,
                     txCode =
                         if (summary.txCodeRequired) {
@@ -219,6 +230,18 @@ class Oid4vciWalletInteractionProtocolAdapter(
                     credentialPreview = summary.credentialConfigurationIds.map { id -> WalletCredentialPreview(id = id, name = id) },
                 )
         return WalletInteractionSession(context.sessionId, state)
+    }
+
+    /**
+     * A browser wallet accepts the complete browser invocation as an opaque entry point. The
+     * protocol adapter is therefore the first layer that interprets a `credential_offer_uri`
+     * wrapper. When that wrapper carries an OID4VCI deep link, hand the actual offer link to the
+     * holder parser. A normal HTTPS offer document remains unchanged so the holder can fetch it
+     * according to OID4VCI.
+     */
+    private fun unwrapBrowserCredentialOfferInvocation(rawEntryPoint: String): String {
+        val nestedOffer = extractQueryParameters(rawEntryPoint)["credential_offer_uri"] ?: return rawEntryPoint
+        return nestedOffer.takeIf { it.startsWith(CREDENTIAL_OFFER_SCHEME, ignoreCase = true) } ?: rawEntryPoint
     }
 
     private fun invalidWalletInitiatedIssuance(
@@ -237,10 +260,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 ).copy(
                     terminal = true,
                     error =
-                        WalletInteractionError(
-                            code = "oid4vci.wallet_initiated_input_invalid",
+                        classifiedWalletInteractionError(
+                            code = WalletInteractionFailureCodes.OID4VCI_WALLET_INITIATED_INPUT_INVALID,
                             messageKey = "wallet.interaction.error.oid4vci_wallet_initiated_input_invalid",
-                            retryable = false,
                         ),
                 ),
         )
@@ -265,20 +287,21 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 entryPoint = entryPoint,
             )
         val credentialRecordId = entryPoint.parsed.refreshCredentialRecordIdOrNull()
+        val credentialInstanceId = entryPoint.parsed.refreshCredentialInstanceIdOrNull()
         if (credentialRecordId == null) {
             val state =
                 baseState.copy(
                     status = WalletInteractionStatus.Failed,
                     terminal = true,
                     error =
-                        WalletInteractionError(
-                            code = "oid4vci.refresh_credential_record_id_missing",
+                        classifiedWalletInteractionError(
+                            code = WalletInteractionFailureCodes.OID4VCI_REFRESH_CREDENTIAL_RECORD_ID_MISSING,
                             messageKey = "wallet.interaction.error.oid4vci_refresh_credential_record_id_missing",
                         ),
                 )
             return WalletInteractionSession(context.sessionId, state)
         }
-        val result = issuanceExecutor.refreshCredential(context, baseState, credentialRecordId)
+        val result = issuanceExecutor.refreshCredential(context, baseState, credentialRecordId, credentialInstanceId)
         val state =
             when (result) {
                 is Oid4vciIssuanceExecutionResult.Received -> {
@@ -297,10 +320,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
                         status = WalletInteractionStatus.Failed,
                         terminal = !result.retryable,
                         error =
-                            WalletInteractionError(
+                            classifiedWalletInteractionError(
                                 code = result.code,
                                 messageKey = result.messageKey,
-                                retryable = result.retryable,
                                 arguments = result.arguments,
                             ),
                     )
@@ -318,8 +340,8 @@ class Oid4vciWalletInteractionProtocolAdapter(
                         status = WalletInteractionStatus.Failed,
                         terminal = true,
                         error =
-                            WalletInteractionError(
-                                code = "oid4vci.refresh_unexpected_result",
+                            classifiedWalletInteractionError(
+                                code = WalletInteractionFailureCodes.OID4VCI_REFRESH_UNEXPECTED_RESULT,
                                 messageKey = "wallet.interaction.error.oid4vci_refresh_unexpected_result",
                             ),
                     )
@@ -351,7 +373,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
                             error = null,
                         )
                     WalletInteractionStatus.DisclosureConsent -> context.authorizeHolderOperation(sessionState, action)
-                    else -> sessionState.rejectAction("oid4vci.action_continue_not_allowed")
+                    else -> sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_ACTION_CONTINUE_NOT_ALLOWED)
                 }
             }
 
@@ -359,13 +381,13 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 when (sessionState.status) {
                     WalletInteractionStatus.CredentialOfferReview -> context.acceptCredentialOffer(sessionState, action)
                     WalletInteractionStatus.CredentialSelection -> context.authorizeHolderOperation(sessionState, action)
-                    else -> sessionState.rejectAction("oid4vci.action_selection_not_allowed")
+                    else -> sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_ACTION_SELECTION_NOT_ALLOWED)
                 }
             }
 
             WalletInteractionActionType.SUBMIT_TX_CODE -> {
                 if (sessionState.status != WalletInteractionStatus.TxCodeRequired) {
-                    sessionState.rejectAction("oid4vci.action_tx_code_not_allowed")
+                    sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_ACTION_TX_CODE_NOT_ALLOWED)
                 } else {
                     val txCode =
                         action.sensitiveInputRef?.let { ref ->
@@ -376,7 +398,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
                             )
                         }
                     if (txCode.isNullOrBlank()) {
-                        sessionState.rejectAction("oid4vci.tx_code_ref_invalid")
+                        sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_TX_CODE_REF_INVALID)
                     } else {
                         context.updateOid4vciState { it.copy(txCode = txCode) }
                         context.authorizeHolderOperation(sessionState, action)
@@ -386,7 +408,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
 
             WalletInteractionActionType.AUTH_CALLBACK -> {
                 if (sessionState.status != WalletInteractionStatus.AuthorizationRequired) {
-                    sessionState.rejectAction("oid4vci.action_auth_callback_not_allowed")
+                    sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_ACTION_AUTH_CALLBACK_NOT_ALLOWED)
                 } else {
                     val callback =
                         action.sensitiveInputRef?.let { ref ->
@@ -397,7 +419,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
                             )
                         }
                     if (callback.isNullOrBlank()) {
-                        sessionState.rejectAction("oid4vci.auth_callback_ref_invalid")
+                        sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_AUTH_CALLBACK_REF_INVALID)
                     } else {
                         context.updateOid4vciState { it.copy(authorizationCallback = callback) }
                         context.applyIssuanceResult(
@@ -414,7 +436,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
 
             WalletInteractionActionType.APPROVE_SECURITY_CHALLENGE -> {
                 if (sessionState.status != WalletInteractionStatus.SecurityUnlockRequired) {
-                    sessionState.rejectAction("oid4vci.action_security_grant_not_allowed")
+                    sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_ACTION_SECURITY_GRANT_NOT_ALLOWED)
                 } else {
                     val grant =
                         action.sensitiveInputRef?.let { ref ->
@@ -428,14 +450,16 @@ class Oid4vciWalletInteractionProtocolAdapter(
                             Clock.System.now().epochSeconds,
                         )
                     if (grant == null || validation is WalletSecurityGrantValidation.Invalid) {
-                        sessionState.rejectAction("oid4vci.security_grant_ref_invalid")
+                        sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_SECURITY_GRANT_REF_INVALID)
                     } else {
+                        val operationBinding = grant.evidence["operation_binding"].orEmpty()
                         context.storePrivate(
                             mapOf(
                                 "security_grant_id" to grant.grantId,
-                                SECURITY_OPERATION_BINDING_PRIVATE_KEY to grant.evidence["operation_binding"].orEmpty(),
+                                SECURITY_OPERATION_BINDING_PRIVATE_KEY to operationBinding,
                             ),
                         )
+                        attendedAuthorizationRegistry.authorize(sessionState.walletUnitId, operationBinding, grant)
                         context.applyIssuanceResult(
                             sessionState.copy(
                                 revision = sessionState.revision + 1,
@@ -460,7 +484,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
             }
 
             else -> {
-                sessionState.rejectAction("oid4vci.action_not_allowed")
+                sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_ACTION_NOT_ALLOWED)
             }
         }
 
@@ -469,12 +493,12 @@ class Oid4vciWalletInteractionProtocolAdapter(
         action: WalletInteractionAction,
     ): WalletInteractionState {
         if (sessionState.status != WalletInteractionStatus.CounterpartyNotice) {
-            return sessionState.rejectAction("oid4vci.action_counterparty_resolution_not_allowed")
+            return sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_ACTION_COUNTERPARTY_RESOLUTION_NOT_ALLOWED)
         }
         val encounter = sessionState.counterpartyEncounter
-            ?: return sessionState.rejectAction("oid4vci.counterparty_encounter_missing")
+            ?: return sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_COUNTERPARTY_ENCOUNTER_MISSING)
         val decision = action.counterpartyAssociation
-            ?: return sessionState.rejectAction("oid4vci.counterparty_association_missing")
+            ?: return sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_COUNTERPARTY_ASSOCIATION_MISSING)
         val resolvedEncounter =
             counterpartyEncounterRegistry.resolveAssociation(
                 WalletCounterpartyAssociationRequest(
@@ -498,28 +522,31 @@ class Oid4vciWalletInteractionProtocolAdapter(
                     ),
                 ).let { resolved -> resolved.copy(policyAction = trustPolicy.evaluate(resolved).action) }
                 .copy(counterparty = counterparty)
+        val issuerAuthentication = resolveIssuerAuthentication(counterparty, trust.issuerAuthentication)
+        val resolvedTrust = trust.copy(issuerAuthentication = issuerAuthentication)
         val offer = sessionState.credentialOffer?.copy(issuer = counterparty)
-        if (trust.policyAction == WalletTrustPolicyAction.BLOCK) {
+        if (resolvedTrust.policyAction == WalletTrustPolicyAction.BLOCK) {
             return sessionState.copy(
                 status = WalletInteractionStatus.Failed,
                 revision = sessionState.revision + 1,
                 counterparty = counterparty,
                 counterpartyEncounter = resolvedEncounter,
-                trust = trust,
+                trust = resolvedTrust,
+                issuerAuthentication = issuerAuthentication,
                 credentialOffer = offer,
                 terminal = true,
                 error =
-                    WalletInteractionError(
-                        code = "oid4vci.issuer_blocked",
+                    classifiedWalletInteractionError(
+                        code = WalletInteractionFailureCodes.OID4VCI_ISSUER_BLOCKED,
                         messageKey = "wallet.interaction.error.issuer_blocked",
                     ),
             )
         }
         val nextStatus =
             if (resolvedEncounter.firstInteraction ||
-                trust.policyAction == WalletTrustPolicyAction.WARN ||
-                trust.policyAction == WalletTrustPolicyAction.ASK_USER ||
-                trust.policyAction == WalletTrustPolicyAction.FIRST_CONTACT_PROMPT
+                resolvedTrust.policyAction == WalletTrustPolicyAction.WARN ||
+                resolvedTrust.policyAction == WalletTrustPolicyAction.ASK_USER ||
+                resolvedTrust.policyAction == WalletTrustPolicyAction.FIRST_CONTACT_PROMPT
             ) {
                 WalletInteractionStatus.TrustReview
             } else {
@@ -530,7 +557,8 @@ class Oid4vciWalletInteractionProtocolAdapter(
             revision = sessionState.revision + 1,
             counterparty = counterparty,
             counterpartyEncounter = resolvedEncounter,
-            trust = trust,
+            trust = resolvedTrust,
+            issuerAuthentication = issuerAuthentication,
             credentialOffer = offer,
             error = null,
         )
@@ -547,9 +575,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 .orEmpty()
                 .values
                 .flatten()
-        if (selected.isEmpty()) return sessionState.rejectAction("oid4vci.offer_selection_empty")
-        if (selected.size != selected.distinct().size) return sessionState.rejectAction("oid4vci.offer_selection_duplicate")
-        if (selected.any { it !in offered }) return sessionState.rejectAction("oid4vci.offer_selection_unknown")
+        if (selected.isEmpty()) return sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_OFFER_SELECTION_EMPTY)
+        if (selected.size != selected.distinct().size) return sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_OFFER_SELECTION_DUPLICATE)
+        if (selected.any { it !in offered }) return sessionState.rejectAction(WalletInteractionFailureCodes.OID4VCI_OFFER_SELECTION_UNKNOWN)
 
         val accepted =
             sessionState.copy(
@@ -568,10 +596,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
         copy(
             revision = revision + 1,
             error =
-                WalletInteractionError(
+                classifiedWalletInteractionError(
                     code = code,
                     messageKey = "wallet.interaction.error.action_not_allowed",
-                    retryable = true,
                 ),
         )
 
@@ -579,32 +606,42 @@ class Oid4vciWalletInteractionProtocolAdapter(
         sessionState: WalletInteractionState,
         action: WalletInteractionAction,
     ): WalletInteractionState {
+        val operationId = "${sessionState.sessionId.value}-holder-proof"
+        // Explicit launch attribute wins; otherwise bind to this protocol operation (same default
+        // the security gate used to synthesize before operationBinding became a required field).
+        val operationBinding =
+            securityAttribute(WalletSecurityContextAttributes.OPERATION_BINDING)
+                ?: "operation:$operationId"
         val result =
             authorizeProtocolOperation(
                 WalletProtocolExecutionRequest(
-                    operationId = "${sessionState.sessionId.value}-holder-proof",
+                    operationId = operationId,
                     sessionId = sessionState.sessionId,
                     sessionWalletUnitId = sessionState.walletUnitId,
                     protocol = WalletProtocol.OID4VCI,
-                    operation = WalletSecurityOperation.HOLDER_PROOF,
+                    operation = WalletSecurityOperation.PRESENT_PROOF,
                     audience = sessionState.counterparty?.identifier,
                     keyRef = securityAttribute(WalletSecurityContextAttributes.KEY_REF),
-                    walletUnitId = securityAttribute(WalletSecurityContextAttributes.WALLET_UNIT_ID),
+                    walletUnitId = securityAttribute(WalletSecurityContextAttributes.WALLET_UNIT_ID)
+                        ?: sessionState.walletUnitId,
                     walletAccountId = securityAttribute(WalletSecurityContextAttributes.WALLET_ACCOUNT_ID),
                     activationDecisionId = securityAttribute(WalletSecurityContextAttributes.ACTIVATION_DECISION_ID),
                     operationType = securityAttribute(WalletSecurityContextAttributes.OPERATION_TYPE),
+                    operationBinding = operationBinding,
                     operationHash = securityAttribute(WalletSecurityContextAttributes.OPERATION_HASH),
                     nonce = securityAttribute(WalletSecurityContextAttributes.NONCE),
                 ),
             )
         return when (result) {
             is WalletSecurityGateResult.Authorized -> {
+                val operationBinding = result.grant.evidence["operation_binding"].orEmpty()
                 storePrivate(
                     mapOf(
                         "security_grant_id" to result.grant.grantId,
-                        SECURITY_OPERATION_BINDING_PRIVATE_KEY to result.grant.evidence["operation_binding"].orEmpty(),
+                        SECURITY_OPERATION_BINDING_PRIVATE_KEY to operationBinding,
                     ),
                 )
+                attendedAuthorizationRegistry.authorize(sessionState.walletUnitId, operationBinding, result.grant)
                 applyIssuanceResult(sessionState.copy(revision = sessionState.revision + 1, securityChallenge = null), action)
             }
 
@@ -621,8 +658,8 @@ class Oid4vciWalletInteractionProtocolAdapter(
                     status = WalletInteractionStatus.Failed,
                     terminal = true,
                     error =
-                        WalletInteractionError(
-                            code = "oid4vci.security_denied",
+                        classifiedWalletInteractionError(
+                            code = WalletInteractionFailureCodes.OID4VCI_SECURITY_DENIED,
                             messageKey = result.reasonKey,
                             arguments = result.arguments,
                         ),
@@ -650,10 +687,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
                             status = WalletInteractionStatus.Failed,
                             terminal = !notification.retryable,
                             error =
-                                WalletInteractionError(
+                                classifiedWalletInteractionError(
                                     code = notification.code,
                                     messageKey = notification.messageKey,
-                                    retryable = notification.retryable,
                                     arguments = notification.arguments,
                                 ),
                         )
@@ -718,10 +754,9 @@ class Oid4vciWalletInteractionProtocolAdapter(
                     status = WalletInteractionStatus.Failed,
                     terminal = !result.retryable,
                     error =
-                        WalletInteractionError(
+                        classifiedWalletInteractionError(
                             code = result.code,
                             messageKey = result.messageKey,
-                            retryable = result.retryable,
                             arguments = result.arguments,
                         ),
                 )
@@ -749,6 +784,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 role = WalletCounterpartyRole.ISSUER,
                 identifier = credentialIssuer,
                 displayName = activeIssuerDisplay?.name ?: credentialIssuer,
+                displayNameSource = selfAssertedDisplayNameSource(activeIssuerDisplay?.name),
                 logoUri = activeIssuerDisplay?.logo?.uri ?: issuerDisplays.firstNotNullOfOrNull { it.logo?.uri },
                 localizedBranding =
                     issuerDisplays.map { display ->
@@ -810,6 +846,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
         )
 
     companion object {
+        private const val CREDENTIAL_OFFER_SCHEME: String = "openid-credential-offer://"
         const val ADAPTER_ID: String = "oid4vci"
         const val SECURITY_OPERATION_BINDING_PRIVATE_KEY: String = "security_operation_binding"
         const val DIGITAL_CREDENTIAL_PROTOCOL: String = "openid4vci-v1"
@@ -825,6 +862,29 @@ class Oid4vciWalletInteractionProtocolAdapter(
          * refresh entry point: `parsed = {"credentialRecordId": "..."}`.
          */
         const val REFRESH_PARSED_TYPE: String = "com.sphereon.wallet.credential.refresh"
+    }
+}
+
+private suspend fun WalletInteractionContext.resolveIssuerAuthentication(
+    counterparty: WalletCounterpartySummary,
+    trustAuthentication: WalletIssuerAuthenticationResult?,
+): WalletIssuerAuthenticationResult? {
+    val policyResult = issuerAuthenticationResolver.resolve(
+        WalletIssuerAuthenticationRequest(
+            counterparty = counterparty,
+            protocol = WalletProtocol.OID4VCI,
+        ),
+    )
+    val policyAuthentication = policyResult?.admitForIssuer(counterparty.identifier)
+    val admittedTrust = trustAuthentication?.admitForIssuer(counterparty.identifier)
+
+    return when {
+        trustAuthentication != null && admittedTrust == null -> null
+        trustAuthentication != null && policyResult != null && policyAuthentication == null -> null
+        admittedTrust != null && policyAuthentication != null ->
+            admittedTrust.takeIf { it.issuer == policyAuthentication.issuer && it.trustedJwks == policyAuthentication.trustedJwks }
+        admittedTrust != null -> admittedTrust
+        else -> policyAuthentication
     }
 }
 
@@ -860,5 +920,11 @@ private fun WalletInteractionContext.securityAttribute(key: String): String? = a
 private fun JsonElement?.refreshCredentialRecordIdOrNull(): String? =
     (this as? JsonObject)
         ?.get("credentialRecordId")
+        ?.let { (it as? JsonPrimitive)?.contentOrNull }
+        ?.takeIf { it.isNotBlank() }
+
+private fun JsonElement?.refreshCredentialInstanceIdOrNull(): String? =
+    (this as? JsonObject)
+        ?.get("credentialInstanceId")
         ?.let { (it as? JsonPrimitive)?.contentOrNull }
         ?.takeIf { it.isNotBlank() }

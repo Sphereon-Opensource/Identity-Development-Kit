@@ -397,7 +397,7 @@ class JwksUrlExternalIdentifierMockedTest {
         }
 
     @Test
-    fun testResolveSucceedsWithoutKidSelectsFirstKey() =
+    fun testResolveRejectsAmbiguousJwksWithoutKid() =
         runTest {
             val mockExecution = mockk<SessionExecution>(relaxed = true)
             every { mockExecution.sessionContext } returns mockSessionContext
@@ -450,9 +450,29 @@ class JwksUrlExternalIdentifierMockedTest {
             val opts = ExternalIdentifierJwksUrlOpts(identifier = "https://example.com/.well-known/jwks.json")
             val result = service.resolve(opts)
 
-            assertTrue(result.isOk, "Should succeed without kid, selecting first key")
-            assertEquals(null, result.value.selectedKid, "selectedKid should be null when no kid was requested")
-            assertEquals("first-key", result.value.keyInfo.kid, "Should select the first key from JWKS")
+            assertTrue(result.isErr, "Should reject multiple usable keys when kid is omitted")
+            assertTrue(result.error.message.defaultMessage.contains("exactly one usable key"))
+        }
+
+    @Test
+    fun testResolveWithoutKidSelectsTheOnlyUsableKey() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            every { mockExecution.sessionContext } returns mockSessionContext
+            val singleKeyJwks = """{"keys":[{"kty":"EC","crv":"P-256","x":"WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA","y":"F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I","kid":"only-key"}]}"""
+            val httpClient = HttpClient(MockEngine { _ ->
+                respond(singleKeyJwks, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            }) {
+                install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+            }
+            val factory = mockk<HttpClientFactory>()
+            every { factory.createClient(any<HttpClientOptions>()) } returns httpClient
+            val service = JwksUrlExternalIdentifierResolutionServiceImpl(mockExecution, factory)
+
+            val result = service.resolve(ExternalIdentifierJwksUrlOpts(identifier = "https://example.com/.well-known/jwks.json"))
+
+            assertTrue(result.isOk, "Should select the only usable key when kid is omitted")
+            assertEquals("only-key", result.value.keyInfo.kid)
         }
 
     // ========================================================================

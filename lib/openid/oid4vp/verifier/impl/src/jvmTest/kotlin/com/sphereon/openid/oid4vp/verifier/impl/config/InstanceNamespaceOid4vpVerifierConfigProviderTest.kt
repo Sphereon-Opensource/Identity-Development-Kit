@@ -201,8 +201,8 @@ class InstanceNamespaceOid4vpVerifierConfigProviderTest {
     @Test
     fun didWebDomainAcceptsPlatformStoredBareHostAndUrlFallbackValues() {
         assertEquals("acme.saas.localtest.me", verifierHostOf("acme.saas.localtest.me"))
-        assertEquals("acme.saas.localtest.me", verifierHostOf("https://acme.saas.localtest.me:3443/oid4vp"))
-        assertEquals("acme.saas.localtest.me", verifierHostOf("  acme.saas.localtest.me:3443  "))
+        assertEquals("acme.saas.localtest.me:3443", verifierHostOf("https://acme.saas.localtest.me:3443/oid4vp"))
+        assertEquals("acme.saas.localtest.me:3443", verifierHostOf("  acme.saas.localtest.me:3443  "))
         assertNull(verifierHostOf("   "))
     }
 

@@ -171,7 +171,7 @@ class ParseAuthorizationResponseCommandImpl(
         //
         // OID4VP §8.1: when DCQL was used, vp_token is a JSON object keyed by credential-query
         // id, whose values are Presentation(s) that are themselves either strings (compact
-        // formats) or JSON objects (ldp_vc/ldp_vp). The JARM payload may carry vp_token as:
+        // formats) or JSON objects (ldp_vc). The JARM payload may carry vp_token as:
         //  - a JSON string member, when the wallet stringified the DCQL object before embedding
         //    it as a top-level claim, OR
         //  - the DCQL JSON object directly as a structured top-level member.

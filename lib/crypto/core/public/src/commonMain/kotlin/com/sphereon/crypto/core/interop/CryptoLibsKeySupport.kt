@@ -71,6 +71,8 @@ import kotlin.time.Instant
 
 private val RSA_ENCRYPTION_OID = ObjectIdentifier("1.2.840.113549.1.1.1")
 private val EC_PUBLIC_KEY_OID = ObjectIdentifier("1.2.840.10045.2.1")
+private val ED25519_OID = ObjectIdentifier("1.3.101.112")
+private val ED448_OID = ObjectIdentifier("1.3.101.113")
 
 // Single-source EC curve mapping — both directions derived from one list
 private val EC_CURVES =
@@ -152,6 +154,8 @@ private val SIGNATURE_ALGS =
         Triple(SignatureAlgorithm.ECDSA_SHA256, ObjectIdentifier("1.2.840.10045.4.3.2"), emptyList()),
         Triple(SignatureAlgorithm.ECDSA_SHA384, ObjectIdentifier("1.2.840.10045.4.3.3"), emptyList()),
         Triple(SignatureAlgorithm.ECDSA_SHA512, ObjectIdentifier("1.2.840.10045.4.3.4"), emptyList()),
+        Triple(SignatureAlgorithm.ED25519, ED25519_OID, emptyList()),
+        Triple(SignatureAlgorithm.ED448, ED448_OID, emptyList()),
     )
 private val SIGNATURE_ALG_OIDS = SIGNATURE_ALGS.associate { (alg, oid, params) -> alg to Pair(oid, params) }
 private val OID_TO_SIGNATURE_ALG =
@@ -453,10 +457,37 @@ fun SubjectPublicKeyInfo.toJwk(
                 .build()
         }
 
+        ED25519_OID, ED448_OID -> {
+            val curve = if (algorithmOid == ED25519_OID) JwaCurve.Ed25519 else JwaCurve.Ed448
+            Builder()
+                .withGenerateKid(generateKid)
+                .withKty(JwaKeyType.OKP)
+                .withAlg(alg ?: JwaAlgorithm.EdDSA)
+                .withCrv(curve)
+                .withX(subjectPublicKey.bitCarryingBytes.toJwkProp())
+                .withX5c(x5c)
+                .build()
+        }
+
         else -> {
             throw IllegalArgumentException("Unsupported public key algorithm: $algorithmOid")
         }
     }
+
+private fun okpSubjectPublicKeyInfo(
+    algorithmOid: ObjectIdentifier,
+    publicKeyBytes: ByteArray,
+): SubjectPublicKeyInfo {
+    // awesn1 0.4 exposes EC/RSA convenience factories but no generic OKP factory.
+    // Build the RFC 8410 SubjectPublicKeyInfo and let its own DER serializer validate it.
+    val der =
+        Asn1
+            .Sequence {
+                +Asn1.Sequence { +algorithmOid }
+                +Asn1BitString(publicKeyBytes)
+            }.derEncoded
+    return DER.decodeFromByteArray(der)
+}
 
 fun Jwk.toSubjectPublicKeyInfo(): SubjectPublicKeyInfo =
     when (kty) {
@@ -486,6 +517,20 @@ fun Jwk.toSubjectPublicKeyInfo(): SubjectPublicKeyInfo =
                 Asn1Integer.fromUnsignedByteArray(nBytes),
                 Asn1Integer.fromUnsignedByteArray(eBytes),
             )
+        }
+
+        JwaKeyType.OKP -> {
+            val crv = crv ?: throw IllegalArgumentException("OKP key must have crv")
+            val algorithmOid =
+                when (crv) {
+                    JwaCurve.Ed25519 -> ED25519_OID
+                    JwaCurve.Ed448 -> ED448_OID
+                    else -> throw IllegalArgumentException("Unsupported OKP certificate curve: $crv")
+                }
+            val xBytes =
+                x?.decodeFromBase64Url()
+                    ?: throw IllegalArgumentException("OKP key must have x")
+            okpSubjectPublicKeyInfo(algorithmOid, xBytes)
         }
 
         else -> {
@@ -548,6 +593,27 @@ fun Pkcs8PrivateKeyInfo.toJwk(x5c: Array<String>? = null): Jwk =
             builder.build()
         }
 
+        ED25519_OID, ED448_OID -> {
+            val curve = if (algorithmOid == ED25519_OID) JwaCurve.Ed25519 else JwaCurve.Ed448
+            val privateBytes =
+                privateKey
+                    .asPrimitive()
+                    .content
+                    .let { encoded ->
+                        // RFC 8410 wraps the seed in an inner OCTET STRING. Be tolerant of
+                        // providers that emit the raw seed directly.
+                        runCatching { Asn1Element.parse(encoded).asOctetString().content }.getOrElse { encoded }
+                    }
+            Builder()
+                .withGenerateKid(false)
+                .withKty(JwaKeyType.OKP)
+                .withCrv(curve)
+                .withD(privateBytes.toJwkProp())
+                .withAlg(JwaAlgorithm.EdDSA)
+                .withX5c(x5c)
+                .build()
+        }
+
         else -> {
             throw IllegalArgumentException("Unsupported private key algorithm: $algorithmOid")
         }
@@ -598,6 +664,25 @@ fun Jwk.toPkcs8PrivateKeyInfo(): Pkcs8PrivateKeyInfo {
             // unavailable in a GraalVM native image. Build the same RFC 5208
             // structure with the generated serializer passed explicitly.
             ecKey.toPkcs8PrivateKeyInfo(curveOid)
+        }
+
+        JwaKeyType.OKP -> {
+            val crv = crv ?: throw IllegalArgumentException("OKP key must have crv")
+            val algorithmOid =
+                when (crv) {
+                    JwaCurve.Ed25519 -> ED25519_OID
+                    JwaCurve.Ed448 -> ED448_OID
+                    else -> throw IllegalArgumentException("Unsupported OKP private-key curve: $crv")
+                }
+            val privateBytes = d!!.decodeFromBase64Url()
+            val der =
+                Asn1
+                    .Sequence {
+                        +Asn1.Int(0)
+                        +Asn1.Sequence { +algorithmOid }
+                        +Asn1.OctetStringEncapsulating { +Asn1.OctetString(privateBytes) }
+                    }.derEncoded
+            DER.decodeFromByteArray(der)
         }
 
         else -> {

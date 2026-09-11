@@ -96,6 +96,33 @@ data class SessionTranscript(
                 responseUri = responseUri,
             ),
         )
+
+        /**
+         * Build the ISO/IEC TS 18013-7 Annex B OID4VP handover.
+         *
+         * This is intentionally a separate factory from [fromOid4vpClientIdAndResponseUri].
+         * Regular OID4VP/DCQL hashes a four-element handover-info structure, whereas Annex B
+         * hashes the client and response URI together with the mdoc-generated nonce and carries
+         * the authorization-request nonce as the third handover element.
+         */
+        @JsStatic
+        @JvmStatic
+        fun fromIso18013Oid4vp(
+            clientId: String,
+            responseUri: String,
+            mdocGeneratedNonce: String,
+            nonce: String,
+        ): SessionTranscript =
+            SessionTranscript(
+                handover =
+                    Iso18013Oid4vpHandover.fromInputs(
+                        clientId = clientId,
+                        responseUri = responseUri,
+                        mdocGeneratedNonce = mdocGeneratedNonce,
+                        nonce = nonce,
+                    ) as Handover<*, CborItem<*>>,
+                original = null,
+            )
     }
 }
 

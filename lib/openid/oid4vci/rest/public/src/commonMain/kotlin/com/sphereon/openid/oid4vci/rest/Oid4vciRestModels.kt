@@ -16,6 +16,7 @@
 
 package com.sphereon.openid.oid4vci.rest
 
+import com.sphereon.core.api.http.callback.CallbackSigningAlgorithm
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
@@ -115,6 +116,11 @@ data class CreateCredentialOfferInput(
      */
     @kotlinx.serialization.Transient
     val templateId: String? = null,
+    /** Template-owned UUID selector. Never accepted from the public create-offer request body. */
+    @kotlinx.serialization.Transient
+    val templateAuthorizationServerId: String? = null,
+    @kotlinx.serialization.Transient
+    val templateAuthorizationServerAllowedGrants: Set<com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant>? = null,
 )
 
 /**
@@ -211,6 +217,17 @@ data class IssuanceCallbackConfig(
      */
     @SerialName("include_issuance_data")
     val includeIssuanceData: Boolean = false,
+    /**
+     * Per-session override of the webhook registry: reference of the secret used to sign this
+     * session's callbacks. Absent means the matching registered endpoint secret is used, or the
+     * callback is sent unsigned when there is none.
+     */
+    @SerialName("secret_ref")
+    val secretRef: String? = null,
+    /**
+     * Signature scheme for this session's callbacks.
+     */
+    val signing: CallbackSigningAlgorithm? = null,
 )
 
 /**

@@ -30,7 +30,7 @@ import com.sphereon.oauth2.server.authorization.storage.PendingFederation
  * Federated authentication ServiceCommand contracts. Command interfaces live here so LOCAL
  * vs SERVER routing works (the `@GenerateRoutedCommands` plumbing sees them in `-public`),
  * and so transport-routed callers (gRPC) can reference Args/Result types without a hard
- * dependency on the `-impl` module. Tenant is intentionally NOT part of any Args: impls read it from `SessionExecution.sessionContext.context.tenant.tenantId` at the use site.
+ * dependency on the `-impl` module. Tenant is intentionally NOT part of any Args: impls read it from `SessionExecution.tenantId` at the use site.
  */
 
 // ============================================================================
@@ -45,6 +45,7 @@ data class InitiateProviderAuthenticationArgs(
     val flowContext: FlowContext? = null,
     val hint: AuthenticationHint? = null,
     val acrValues: List<String> = emptyList(),
+    val forceReauth: Boolean = false,
     /**
      * Opaque application / login-surface id from `AuthenticationContext.applicationId`.
      * Persisted on the pending federation record so the callback can scope identity
@@ -81,8 +82,10 @@ data class AuthorizationUrl(
 // ============================================================================
 
 data class HandleFederationCallbackArgs(
-    val code: String,
+    val code: String? = null,
     val state: String,
+    val error: String? = null,
+    val errorDescription: String? = null,
 )
 
 /**
@@ -101,6 +104,12 @@ data class ReconciliationCompleteOutcome(
     val redirectUrl: String,
 )
 
+data class UpstreamAuthorizationErrorOutcome(
+    val sessionId: String,
+    val error: String,
+    val errorDescription: String?,
+)
+
 /**
  * Dispatched outcome of [HandleFederationCallbackCommand]: either the normal login
  * completed (a session is ready for code issuance), or a reconciliation flow completed
@@ -115,11 +124,13 @@ data class FederationCallbackOutcome(
     val outcomeType: FederationCallbackOutcomeType,
     val federation: FederationCompleteOutcome? = null,
     val reconciliation: ReconciliationCompleteOutcome? = null,
+    val upstreamError: UpstreamAuthorizationErrorOutcome? = null,
 ) {
     init {
         require(
-            (outcomeType == FederationCallbackOutcomeType.FEDERATION_COMPLETE && federation != null && reconciliation == null) ||
-                (outcomeType == FederationCallbackOutcomeType.RECONCILIATION_COMPLETE && reconciliation != null && federation == null),
+            (outcomeType == FederationCallbackOutcomeType.FEDERATION_COMPLETE && federation != null && reconciliation == null && upstreamError == null) ||
+                (outcomeType == FederationCallbackOutcomeType.RECONCILIATION_COMPLETE && reconciliation != null && federation == null && upstreamError == null) ||
+                (outcomeType == FederationCallbackOutcomeType.UPSTREAM_ERROR && upstreamError != null && federation == null && reconciliation == null),
         ) { "FederationCallbackOutcome payload must match outcomeType" }
     }
 
@@ -135,12 +146,19 @@ data class FederationCallbackOutcome(
                 outcomeType = FederationCallbackOutcomeType.RECONCILIATION_COMPLETE,
                 reconciliation = ReconciliationCompleteOutcome(redirectUrl = redirectUrl),
             )
+
+        fun upstreamError(sessionId: String, error: String, errorDescription: String?): FederationCallbackOutcome =
+            FederationCallbackOutcome(
+                outcomeType = FederationCallbackOutcomeType.UPSTREAM_ERROR,
+                upstreamError = UpstreamAuthorizationErrorOutcome(sessionId, error, errorDescription),
+            )
     }
 }
 
 enum class FederationCallbackOutcomeType {
     FEDERATION_COMPLETE,
     RECONCILIATION_COMPLETE,
+    UPSTREAM_ERROR,
 }
 
 interface HandleFederationCallbackCommand : ServiceCommand<HandleFederationCallbackArgs, FederationCallbackOutcome, AuthenticationError> {
@@ -172,6 +190,9 @@ data class FederatedExchangeResult(
     val upstreamAcr: String?,
     val upstreamAmr: List<String>?,
     val upstreamSid: String?,
+    val upstreamSubject: String,
+    val upstreamAuthTime: kotlin.time.Instant?,
+    val validatedAt: kotlin.time.Instant,
 )
 
 interface ExchangeCodeAndExtractClaimsCommand : ServiceCommand<ExchangeCodeAndExtractClaimsArgs, FederatedExchangeResult, AuthenticationError> {
@@ -280,9 +301,7 @@ data class EnabledFederationProviders(
 
 /**
  * Returns the federation providers currently marked enabled for the active tenant. Used by the
- * login UI to render provider-selection buttons. Resolved against
- * [com.sphereon.oauth2.server.authorization.provider.FederationProviderRegistry] in the impl,
- * mirroring the registry that backs federation initiation.
+ * login UI to render exact canonical federation-binding choices.
  */
 interface ListEnabledFederationProvidersCommand : ServiceCommand<ListEnabledFederationProvidersArgs, EnabledFederationProviders, AuthenticationError> {
     override val commandId: String get() = COMMAND_ID

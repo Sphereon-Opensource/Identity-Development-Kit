@@ -30,6 +30,7 @@ import kotlin.test.assertTrue
 class DidHostingRegistryImplTest {
     private class FakeProvider(
         override val method: String,
+        override val authorityPriority: Int = 0,
         private val managed: Map<String, HostedDid> = emptyMap(),
         private val fail: Boolean = false,
     ) : DidHostingProvider {
@@ -67,6 +68,25 @@ class DidHostingRegistryImplTest {
             val result = registry.resolveDidJson(tenantId = "t1", webLocation = "example.com")
             assertTrue(result is Ok)
             assertEquals(hosted, result.value)
+        }
+
+    @Test
+    fun authoritativeProviderWinsOverSyntheticFallbackRegardlessOfSetOrder() =
+        runTest {
+            val fallback = HostedDid(json = "{\"id\":\"did:web:example.com#fallback\"}", method = "web")
+            val persisted = HostedDid(json = "{\"id\":\"did:web:example.com#persisted\"}", method = "web")
+            val registry =
+                DidHostingRegistryImpl(
+                    linkedSetOf(
+                        FakeProvider("web", managed = mapOf("example.com" to fallback)),
+                        FakeProvider("web", authorityPriority = 100, managed = mapOf("example.com" to persisted)),
+                    ),
+                )
+
+            val result = registry.resolveDidJson(tenantId = "t1", webLocation = "example.com")
+
+            assertTrue(result is Ok)
+            assertEquals(persisted, result.value)
         }
 
     @Test

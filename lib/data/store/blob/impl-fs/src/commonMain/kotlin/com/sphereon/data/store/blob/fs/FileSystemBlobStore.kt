@@ -68,6 +68,9 @@ class FileSystemBlobStore(
 
     override val capabilities: BlobStoreCapabilities =
         BlobStoreCapabilities.SIMPLE.copy(
+            supportsEtag = true,
+            supportsRevisions = true,
+            supportsConditionalWrites = true,
             supportsStreamingRead = true,
             supportsStreamingWrite = true,
             supportsRangeReads = true,
@@ -91,9 +94,6 @@ class FileSystemBlobStore(
     ): IdkResult<BlobDescriptor, IdkError> =
         mutex.withLock {
             try {
-                if (options.ifMatch != null || options.ifNoneMatch != null || options.expectedRevision != null) {
-                    return@withLock Err(BlobStoreError.Unsupported("conditional filesystem write").toIdkError())
-                }
                 val effectiveInfo =
                     if (target.path == null) {
                         target.copy(path = Uuid.random().toString())
@@ -101,6 +101,8 @@ class FileSystemBlobStore(
                         target
                     }
                 val path = resolvePath(effectiveInfo)
+                val currentRevision = validateConditionalPut(path, options)
+                val nextRevision = if (currentRevision == null) 1L else currentRevision + 1L
 
                 if (!options.overwrite && fileSystem.exists(path)) {
                     return@withLock Err(BlobStoreError.AlreadyExists(effectiveInfo.path!!).toIdkError())
@@ -117,18 +119,14 @@ class FileSystemBlobStore(
                 }
 
                 val metadata = effectiveInfo.toBlobMetadata()
-                if (metadata.contentType != null) {
-                    val meta = SidecarMetadata(contentType = metadata.contentType)
-                    val metaJson = json.encodeToString(SidecarMetadata.serializer(), meta)
-                    fileSystem.sink(metaPath(path)).buffer().use { sink ->
-                        sink.writeUtf8(metaJson)
-                    }
-                }
+                writeSidecarMetadata(path, SidecarMetadata(contentType = metadata.contentType, revision = nextRevision))
 
                 val fsMetadata = fileSystem.metadata(path)
                 Ok(toDescriptor(effectiveInfo.path!!, fsMetadata, readSidecarMetadata(path), metadata))
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (_: ConditionalWritePreconditionFailed) {
+                Err(BlobStoreError.PreconditionFailed("conditional filesystem write precondition failed").toIdkError())
             } catch (expected: Exception) {
                 Err(IdkError.fromString(message = "Failed to put blob '${target.path}': ${expected.message}", exception = expected, code = "BLOB_PUT_FAILED"))
             }
@@ -143,11 +141,10 @@ class FileSystemBlobStore(
         mutex.withLock {
             var temporaryPath: Path? = null
             try {
-                if (options.ifMatch != null || options.ifNoneMatch != null || options.expectedRevision != null) {
-                    return@withLock Err(BlobStoreError.Unsupported("conditional filesystem stream write").toIdkError())
-                }
                 val effectiveInfo = target.copy(path = target.path ?: Uuid.random().toString())
                 val path = resolvePath(effectiveInfo)
+                val currentRevision = validateConditionalPut(path, options)
+                val nextRevision = if (currentRevision == null) 1L else currentRevision + 1L
                 if (!options.overwrite && fileSystem.exists(path)) {
                     return@withLock Err(BlobStoreError.AlreadyExists(effectiveInfo.path!!).toIdkError())
                 }
@@ -179,13 +176,13 @@ class FileSystemBlobStore(
                 temporaryPath = null
 
                 val metadata = effectiveInfo.toBlobMetadata()
-                if (metadata.contentType != null) {
-                    writeSidecarMetadata(path, SidecarMetadata(contentType = metadata.contentType))
-                }
+                writeSidecarMetadata(path, SidecarMetadata(contentType = metadata.contentType, revision = nextRevision))
                 val fsMetadata = fileSystem.metadata(path)
                 Ok(toDescriptor(effectiveInfo.path!!, fsMetadata, readSidecarMetadata(path), metadata))
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (_: ConditionalWritePreconditionFailed) {
+                Err(BlobStoreError.PreconditionFailed("conditional filesystem stream write precondition failed").toIdkError())
             } catch (expected: Exception) {
                 Err(
                     IdkError.fromString(
@@ -485,9 +482,40 @@ class FileSystemBlobStore(
         metadata: SidecarMetadata,
     ) {
         val metaJson = json.encodeToString(SidecarMetadata.serializer(), metadata)
-        fileSystem.sink(metaPath(blobPath)).buffer().use { sink ->
+        val temporary = (metaPath(blobPath).toString() + ".tmp-${Uuid.random()}").toPath()
+        fileSystem.sink(temporary).buffer().use { sink ->
             sink.writeUtf8(metaJson)
         }
+        fileSystem.atomicMove(temporary, metaPath(blobPath))
+    }
+
+    /**
+     * Checks all conditional preconditions while holding the store mutex and returns the current
+     * revision for an existing blob. The filesystem backend has one process-local store instance;
+     * the atomic move of the sidecar makes the revision update indivisible for readers.
+     */
+    private fun validateConditionalPut(
+        path: Path,
+        options: PutOptions,
+    ): Long? {
+        val exists = fileSystem.exists(path)
+        val currentRevision = if (exists) (readSidecarMetadata(path)?.revision ?: 1L) else null
+        val currentEtag = currentRevision?.let { "\"$it\"" }
+        options.ifMatch?.let { expected ->
+            if (expected == "*") {
+                if (!exists) throw ConditionalWritePreconditionFailed()
+            } else if (!exists || expected != currentEtag) {
+                throw ConditionalWritePreconditionFailed()
+            }
+        }
+        options.ifNoneMatch?.let { expected ->
+            if (expected == "*" && exists) throw ConditionalWritePreconditionFailed()
+            if (expected != "*" && exists && expected == currentEtag) throw ConditionalWritePreconditionFailed()
+        }
+        options.expectedRevision?.let { expected ->
+            if (!exists || currentRevision != expected) throw ConditionalWritePreconditionFailed()
+        }
+        return currentRevision
     }
 
     private fun toDescriptor(
@@ -503,6 +531,8 @@ class FileSystemBlobStore(
             sizeBytes = fsMetadata.size ?: 0L,
             contentType = sidecar?.contentType ?: effectiveMetadata.contentType,
             filename = path.substringAfterLast('/'),
+            etag = sidecar?.revision?.let { "\"$it\"" },
+            revision = sidecar?.revision ?: 1L,
             createdAt = fsMetadata.createdAtMillis?.let { Instant.fromEpochMilliseconds(it) },
             lastModified = fsMetadata.lastModifiedAtMillis?.let { Instant.fromEpochMilliseconds(it) },
             metadata = effectiveMetadata,
@@ -526,7 +556,10 @@ class FileSystemBlobStore(
 @Serializable
 internal data class SidecarMetadata(
     val contentType: String? = null,
+    val revision: Long = 1L,
 )
+
+private class ConditionalWritePreconditionFailed : IllegalStateException("conditional filesystem write precondition failed")
 
 private class OkioBlobByteSource(
     private val source: BufferedSource,

@@ -22,6 +22,7 @@ import com.sphereon.core.api.conf.ConfigService
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertySource
 import com.sphereon.core.api.conf.TenantConfigService
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.ContextConfig
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.log.SessionLogService
@@ -29,6 +30,17 @@ import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.statuslist.spi.StatusListSigningKeyNameResolver
+import com.sphereon.statuslist.spi.SignStatusListTokenArgs
+import com.sphereon.statuslist.spi.StatusListSigner
+import com.sphereon.statuslist.StatusListToken
+import com.sphereon.statuslist.StatusListSpec
+import com.sphereon.statuslist.StatusProofFormat
+import com.sphereon.statuslist.StatusPurpose
+import com.sphereon.statuslist.CreateStatusListArgs
+import com.sphereon.statuslist.impl.driver.InMemoryStatusListDriver
+import com.sphereon.statuslist.impl.driver.InMemoryStatusListStore
+import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.Instant
 import kotlin.reflect.KClass
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -55,7 +67,10 @@ class ConfigDrivenStatusListDefinitionsProviderTest {
     @Test
     fun withoutAResolverTheConfiguredSigningKeyIsTheOnlySource() {
         val config = RecordingPrincipalConfigService(baseProperties)
-        val provider = ConfigDrivenStatusListDefinitionsProvider(TestSessionExecution(config))
+        val provider = ConfigDrivenStatusListDefinitionsProvider(
+            execution = TestSessionExecution(config),
+            statusListDriver = { error("status-list driver is not used by this test") },
+        )
 
         val definition = assertNotNull(provider.byId("revocation"))
 
@@ -69,6 +84,7 @@ class ConfigDrivenStatusListDefinitionsProviderTest {
             ConfigDrivenStatusListDefinitionsProvider(
                 execution = TestSessionExecution(config),
                 signingKeyNameResolver = { RefusingSigningKeyNameResolver },
+                statusListDriver = { error("status-list driver is not used by this test") },
             )
 
         val definition = assertNotNull(provider.byId("revocation"))
@@ -89,11 +105,54 @@ class ConfigDrivenStatusListDefinitionsProviderTest {
                     "statuslists.[revocation].uri" to "https://issuer.example/statuslists/revocation",
                 ),
             )
-        val provider = ConfigDrivenStatusListDefinitionsProvider(TestSessionExecution(config))
+        val provider = ConfigDrivenStatusListDefinitionsProvider(
+            execution = TestSessionExecution(config),
+            statusListDriver = { error("status-list driver is not used by this test") },
+        )
 
         val definition = assertNotNull(provider.byId("revocation"))
 
         assertNull(definition.signingKeyAlias)
+    }
+
+    @Test
+    fun resolveFallsBackToTenantPersistedDriverDefinition() = runTest {
+        val config = RecordingPrincipalConfigService(emptyMap())
+        val execution = TestSessionExecution(config)
+        val driver =
+            InMemoryStatusListDriver(
+                InMemoryStatusListStore(),
+                object : StatusListSigner {
+                    override suspend fun signStatusListToken(args: SignStatusListTokenArgs) =
+                        Ok(StatusListToken("signed", args.proofFormat.contentType))
+                },
+                execution,
+            )
+        val args =
+            CreateStatusListArgs(
+                correlationId = "rest-created",
+                spec = StatusListSpec.TOKEN_STATUS_LIST,
+                purposes = listOf(StatusPurpose.REVOCATION),
+                proofFormat = StatusProofFormat.CWT,
+                issuer = "https://issuer.example",
+                statusListUri = "https://issuer.example/public/statuslists/rest-created",
+                length = 8,
+                validUntil = Instant.parse("2030-01-01T00:00:00Z"),
+                mdocProfile = com.sphereon.statuslist.MdocStatusListProfile.STATUS_LIST,
+            )
+        assertTrue(driver.createStatusList(args).isOk)
+
+        val provider =
+            ConfigDrivenStatusListDefinitionsProvider(
+                execution = execution,
+                statusListDriver = { driver },
+            )
+        val resolved = provider.resolve("rest-created").getOrElse { error("unexpected resolution failure: $it") }
+
+        assertEquals("rest-created", resolved?.correlationId)
+        assertEquals(StatusListSpec.TOKEN_STATUS_LIST, resolved?.spec)
+        assertEquals(args.validUntil, resolved?.validUntil)
+        assertEquals(args.mdocProfile, resolved?.mdocProfile)
     }
 }
 

@@ -23,6 +23,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfoType
+import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.ManagedKeyPair
@@ -371,6 +372,7 @@ interface KeyManagerService :
      * @param keyOperations The allowed operations for this key
      * @param alg The signature algorithm to use
      * @param keyVisibility The visibility of the key
+     * @param walletUnitId Optional authoritative wallet secure-component owner binding
      * @return IdkResult containing GenerateKeyResult or IdkError
      */
 
@@ -381,6 +383,7 @@ interface KeyManagerService :
         keyOperations: Array<out KeyOperations>? = null,
         alg: SignatureAlgorithm? = null,
         keyVisibility: KeyVisibility? = KeyVisibility.PUBLIC,
+        walletUnitId: String? = null,
     ): IdkResult<GenerateKeyResult, IdkError>
 
     /**
@@ -478,4 +481,13 @@ fun SessionGraph.asKeyManagerServiceGraph(): KeyManagerServiceGraph = this as Ke
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ManagedKeyStoreService", exact = true)
 @JsExportCompat
-interface ManagedKeyStoreService : KeyStoreService
+interface ManagedKeyStoreService : KeyStoreService {
+    /**
+     * Resolves lifecycle metadata only from the platform's registered-key index.
+     * Implementations backed solely by provider inventory return null.
+     */
+    suspend fun findRegisteredKeyReference(
+        aliasOrKid: String,
+        providerId: String? = null,
+    ): ManagedKeyReference? = null
+}

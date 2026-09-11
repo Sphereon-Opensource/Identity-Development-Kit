@@ -14,9 +14,12 @@ import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.wallet.interaction.WalletClaimDescriptor
 import com.sphereon.wallet.interaction.WalletCounterpartyRole
 import com.sphereon.wallet.interaction.WalletCounterpartySummary
+import com.sphereon.wallet.interaction.counterpartyDetailFromDcrMetadata
+import com.sphereon.wallet.interaction.selfAssertedDisplayNameSource
 import com.sphereon.wallet.interaction.WalletDisclosureSummary
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionContext
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionData
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletNestedPresentationChallenge
@@ -34,6 +37,7 @@ class Oid4vpNestedPresentationExecutor(
     private val holder: Oid4vpHolderService,
     private val selectedCredentialResolver: Oid4vpSelectedCredentialResolver,
     private val sdJwtHolderBindingProvider: Oid4vpSdJwtHolderBindingProvider,
+    private val dataIntegrityHolderBindingProvider: Oid4vpDataIntegrityHolderBindingProvider = Oid4vpDataIntegrityHolderBindingProvider.none,
     private val walletConfigProvider: Oid4vpWalletConfigProvider = Oid4vpWalletConfigProvider.none,
 ) : WalletNestedPresentationExecutor {
     override suspend fun preparePresentation(
@@ -72,7 +76,7 @@ class Oid4vpNestedPresentationExecutor(
     ): WalletNestedPresentationExecutionResult<WalletNestedPresentationResponse> {
         val request =
             context.loadNestedRequest()
-                ?: return failed("oid4vp.nested_request_missing", "wallet.interaction.error.oid4vp_nested_request_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VP_NESTED_REQUEST_MISSING, "wallet.interaction.error.oid4vp_nested_request_missing", retryable = true)
         val resolved =
             when (val resolved = resolveNestedRequest(context, state, request)) {
                 is WalletNestedPresentationExecutionResult.Failed -> return resolved
@@ -88,38 +92,66 @@ class Oid4vpNestedPresentationExecutor(
                 )
             } catch (_: Exception) {
                 return failed(
-                    code = "oid4vp.credential_resolution_failed",
+                    code = WalletInteractionFailureCodes.OID4VP_CREDENTIAL_RESOLUTION_FAILED,
                     messageKey = "wallet.interaction.error.oid4vp_credential_resolution_failed",
                     retryable = true,
                 )
             }
+        val operationBinding =
+            state.adapterId?.let { namespace ->
+                context.privateSessionStore
+                    .get(context.sessionId, namespace)
+                    ?.values
+                    ?.get("security_operation_binding")
+            }
+        val selectedCredentialsWithBinding =
+            selectedCredentials.map {
+                it.copy(
+                    holderJwtVpOperationBinding = operationBinding,
+                    holderJwtVpWalletUnitId = context.walletUnitId,
+                )
+            }
+        val dataIntegrityBinding =
+            dataIntegrityHolderBindingProvider
+                .applyHolderBinding(
+                    Oid4vpDataIntegrityHolderBindingRequest(
+                        walletUnitId = context.walletUnitId,
+                        operationBinding = operationBinding,
+                        request = resolved,
+                        selectedCredentials = selectedCredentialsWithBinding,
+                    ),
+                ).getOrElse {
+                    return failed(
+                        WalletInteractionFailureCodes.OID4VP_RESPONSE_CREATION_FAILED,
+                        "wallet.interaction.error.oid4vp_response_creation_failed",
+                        arguments = mapOf("providerErrorCode" to it.code),
+                    )
+                }
         val boundCredentials =
             sdJwtHolderBindingProvider
                 .applyHolderBinding(
                     Oid4vpSdJwtHolderBindingRequest(
                         walletUnitId = context.walletUnitId,
-                        operationBinding =
-                            state.adapterId?.let { namespace ->
-                                context.privateSessionStore
-                                    .get(context.sessionId, namespace)
-                                    ?.values
-                                    ?.get("security_operation_binding")
-                            },
+                        operationBinding = operationBinding,
                         request = resolved,
-                        selectedCredentials = selectedCredentials,
+                        selectedCredentials = dataIntegrityBinding.selectedCredentials,
                     ),
                 ).getOrElse {
                     return failed(
-                        code = "oid4vp.response_creation_failed",
+                        code = WalletInteractionFailureCodes.OID4VP_RESPONSE_CREATION_FAILED,
                         messageKey = "wallet.interaction.error.oid4vp_response_creation_failed",
                         arguments = mapOf("providerErrorCode" to it.code),
                     )
                 }
 
-        val response = holder.createAuthorizationResponse(resolved, boundCredentials)
+        val response = holder.createAuthorizationResponse(
+            resolved,
+            boundCredentials,
+            dataIntegrityBinding.preparedPresentations,
+        )
         if (response.isErr) {
             return failed(
-                code = "oid4vp.response_creation_failed",
+                code = WalletInteractionFailureCodes.OID4VP_RESPONSE_CREATION_FAILED,
                 messageKey = "wallet.interaction.error.oid4vp_response_creation_failed",
                 arguments = mapOf("providerErrorCode" to response.error.code),
             )
@@ -145,12 +177,12 @@ class Oid4vpNestedPresentationExecutor(
                         ),
                     )
                 } catch (_: Exception) {
-                    failed("oid4vp.nested_request_parse_failed", "wallet.interaction.error.oid4vp_request_parse_failed")
+                    failed(WalletInteractionFailureCodes.OID4VP_NESTED_REQUEST_PARSE_FAILED, "wallet.interaction.error.oid4vp_request_parse_failed")
                 }
             } else {
                 val requestUri =
                     request.requestUri
-                        ?: return failed("oid4vp.nested_request_missing", "wallet.interaction.error.oid4vp_nested_request_missing", retryable = true)
+                        ?: return failed(WalletInteractionFailureCodes.OID4VP_NESTED_REQUEST_MISSING, "wallet.interaction.error.oid4vp_nested_request_missing", retryable = true)
                 val result =
                     holder.parseAuthorizationRequest(
                         requestUri = "openid4vp://?request_uri=${requestUri.encodeUrlGraph()}",
@@ -158,7 +190,7 @@ class Oid4vpNestedPresentationExecutor(
                     )
                 if (result.isErr) {
                     failed(
-                        code = "oid4vp.request_parse_failed",
+                        code = WalletInteractionFailureCodes.OID4VP_REQUEST_PARSE_FAILED,
                         messageKey = "wallet.interaction.error.oid4vp_request_parse_failed",
                         arguments = mapOf("providerErrorCode" to result.error.code),
                     )
@@ -175,7 +207,7 @@ class Oid4vpNestedPresentationExecutor(
         val resolved = holder.resolveAuthorizationRequest(authorizationRequest)
         if (resolved.isErr) {
             return failed(
-                code = "oid4vp.request_resolve_failed",
+                code = WalletInteractionFailureCodes.OID4VP_REQUEST_RESOLVE_FAILED,
                 messageKey = "wallet.interaction.error.oid4vp_request_resolve_failed",
                 arguments = mapOf("providerErrorCode" to resolved.error.code),
             )
@@ -249,7 +281,9 @@ class Oid4vpNestedPresentationExecutor(
             role = WalletCounterpartyRole.VERIFIER,
             identifier = verifierInfo.clientId,
             displayName = verifierInfo.displayName ?: verifierInfo.clientId,
+            displayNameSource = selfAssertedDisplayNameSource(verifierInfo.displayName),
             logoUri = verifierInfo.logoUri,
+            detail = counterpartyDetailFromDcrMetadata(request.additionalParameters["client_metadata"]),
             metadata = mapOf("client_id_scheme" to verifierInfo.clientIdScheme.name),
         )
 

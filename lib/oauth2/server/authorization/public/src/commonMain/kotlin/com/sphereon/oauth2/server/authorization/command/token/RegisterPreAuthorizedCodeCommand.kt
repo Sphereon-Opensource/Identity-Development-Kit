@@ -17,7 +17,34 @@
 package com.sphereon.oauth2.server.authorization.command.token
 
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.service.ServiceCommand
+import kotlin.time.Instant
+
+/**
+ * Converts the issuer-supplied absolute epoch-second expiry without allowing an unrepresentable
+ * value or a stale boundary to escape as an exception or reach storage.
+ */
+fun validatePreAuthorizedCodeExpiry(
+    expiresAtEpochSeconds: Long,
+    now: Instant,
+): IdkResult<Instant, IdkError> {
+    val expiry =
+        try {
+            Instant.fromEpochSeconds(expiresAtEpochSeconds)
+        } catch (_: IllegalArgumentException) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Pre-authorized code expiry is not representable"))
+        }
+    if (expiry.epochSeconds != expiresAtEpochSeconds) {
+        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Pre-authorized code expiry is not representable"))
+    }
+    if (expiry <= now) {
+        return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Pre-authorized code expiry must be in the future"))
+    }
+    return Ok(expiry)
+}
 
 /**
  * Args for [RegisterPreAuthorizedCodeCommand]. Carries the basic-auth credentials lifted off the
@@ -34,6 +61,8 @@ data class RegisterPreAuthorizedCodeArgs(
     val code: String,
     val sessionId: String,
     val credentialConfigurationIds: List<String>,
+    /** Absolute expiry supplied by the issuer; registration must never invent a lifetime. */
+    val expiresAtEpochSeconds: Long,
     val txCodeRequired: Boolean = false,
     val txCodeHash: String? = null,
     val issuerIdentifier: String? = null,

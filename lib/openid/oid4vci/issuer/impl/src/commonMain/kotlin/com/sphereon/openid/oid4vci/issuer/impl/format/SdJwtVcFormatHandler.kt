@@ -20,11 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.crypto.core.KeyInfo
-import com.sphereon.crypto.core.jose.Jwk
-import com.sphereon.crypto.core.jose.generateJwkThumbprintUri
 import com.sphereon.crypto.core.kms.KeyManagerService
-import com.sphereon.crypto.core.x509.x5cWithoutTerminalSelfSignedRoot
 import com.sphereon.crypto.jose.jws.command.CreateJwsOpts
 import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
 import com.sphereon.di.session.SessionScope
@@ -48,11 +44,14 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlinx.serialization.json.JsonArray
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlin.time.Clock
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * IETF SD-JWT VC format handler (`dc+sd-jwt`).
@@ -63,6 +62,7 @@ import kotlin.time.Clock
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesIntoSet(SessionScope::class, binding = binding<CredentialFormatHandler>())
+@OptIn(ExperimentalUuidApi::class)
 class SdJwtVcFormatHandler(
     private val sdJwtService: SdJwtService,
     private val kms: KeyManagerService,
@@ -134,8 +134,12 @@ class SdJwtVcFormatHandler(
 
         // Pre-sign: reserve a Token Status List entry (if configured) so the `status.status_list`
         // reference is embedded into the signed SD-JWT.
+        val statusEnricher = statusEnricherProvider?.invoke()
         val reservedStatus =
-            reserveCredentialStatus(statusEnricherProvider?.invoke(), context).getOrElse { return Err(it) }
+            reserveCredentialStatus(statusEnricher, context).getOrElse { return Err(it) }
+        var statusBound = reservedStatus == null
+        try {
+        val credentialId = reservedStatus?.let { Uuid.random().toString() }
 
         // Build the SD-JWT payload using the DSL
         val payload =
@@ -143,6 +147,7 @@ class SdJwtVcFormatHandler(
                 // Standard JWT claims (never SD per RFC 9901 Section 9.7)
                 iss(issClaim)
                 claim("vct", vct)
+                credentialId?.let { claim("jti", it) }
                 iat(iat)
                 if (exp != null) claim("exp", exp)
                 // Status list reference — a standard, never-selectively-disclosed claim.
@@ -201,13 +206,14 @@ class SdJwtVcFormatHandler(
         // `vc+sd-jwt` has distinct W3C VCDM payload semantics and is not an alias
         // accepted by this IETF SD-JWT VC handler.
         val keyIdentifierHeader =
-            resolveSigningHeader(
+            resolveIssuerSigningHeader(
+                kms = kms,
+                issuerKeyIdResolver = issuerKeyIdResolver,
                 keyAlias = keyAlias,
                 mode = context.signingKeyMode,
                 signingVerificationMethodId = signingVerificationMethodId,
-                certChainPath = context.signingCertChainPath,
-                issuerIdentifier = context.issuerIdentifier,
-            )
+                configuredX5c = context.signingX5c,
+            ).getOrElse { return Err(it) }
         val signingHeader: JsonObject =
             buildJsonObject {
                 put("typ", JsonPrimitive(CredentialFormat.SD_JWT_VC.value))
@@ -228,98 +234,27 @@ class SdJwtVcFormatHandler(
                     ),
                 ).getOrElse { return Err(it) }
 
+        reservedStatus?.let { reserved ->
+            checkNotNull(statusEnricher)
+                .bind(reserved.handle, credentialId = credentialId, credentialHash = null)
+                .getOrElse { return Err(it) }
+        }
+        statusBound = true
+
         return Ok(
             CredentialEnvelope(
                 credential = JsonPrimitive(result.sdJwt),
                 format = context.credentialConfiguration.format,
             ),
         )
-    }
-
-    /**
-     * Resolves the signing key identifier for the JWT protected header based on [mode].
-     */
-    private suspend fun resolveSigningHeader(
-        keyAlias: String,
-        mode: SigningKeyMode,
-        signingVerificationMethodId: String?,
-        certChainPath: String?,
-        issuerIdentifier: String,
-    ): JsonObject? =
-        when (mode) {
-            is SigningKeyMode.None -> null
-
-            is SigningKeyMode.Did -> buildJsonObject {
-                put("kid", JsonPrimitive(requireNotNull(signingVerificationMethodId)))
+        } finally {
+            if (!statusBound && reservedStatus != null) {
+                try {
+                    withContext(NonCancellable) { checkNotNull(statusEnricher).cancel(reservedStatus.handle) }
+                } catch (_: Exception) {
+                    // Cleanup must never replace the validation/signing/bind error that caused it.
+                }
             }
-
-            is SigningKeyMode.X5c -> resolveX5cHeader(keyAlias, certChainPath)
-
-            is SigningKeyMode.JwkThumbprint -> resolveJwkThumbprintKid(keyAlias)
-
-            is SigningKeyMode.Federation -> throw UnsupportedOperationException(
-                "OpenID Federation signing mode is not yet implemented",
-            )
-        }
-
-    /**
-     * Creates a DID using the specified [method] from the signing key's public component
-     * and returns the assertionMethod verification method ID as the kid.
-     */
-    private suspend fun resolveDidKid(
-        keyAlias: String,
-        method: String,
-        issuerIdentifier: String,
-    ): JsonObject? {
-        val vmId =
-            issuerKeyIdResolver
-                .resolveDidVerificationMethodId(
-                    keyAlias = keyAlias,
-                    didMethod = method,
-                    issuerIdentifier = issuerIdentifier,
-                )
-                .getOrElse { return null }
-        return buildJsonObject { put("kid", JsonPrimitive(vmId)) }
-    }
-
-    /**
-     * Resolves the X.509 certificate chain for the x5c JWT header.
-     * Primary source: KMS key's x5c field. Fallback: PEM file from [certChainPath].
-     */
-    private suspend fun resolveX5cHeader(
-        keyAlias: String,
-        certChainPath: String?,
-    ): JsonObject? {
-        val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyAlias))
-        if (keyResult.isErr) {
-            return null
-        }
-        val jwk = keyResult.value.key?.key as? Jwk ?: return null
-
-        // Primary: certificate chain from the JWK's x5c field (KMS-stored)
-        // Fallback: PEM file from config (would require file I/O service injection)
-        val chain = jwk.x5c?.let(::x5cWithoutTerminalSelfSignedRoot) ?: return null
-
-        return buildJsonObject {
-            put("x5c", JsonArray(chain.map { JsonPrimitive(it) }))
-        }
-    }
-
-    /**
-     * Computes a JWK Thumbprint URI (RFC 9278) from the signing key's public component
-     * and returns it as the kid in the JWT header.
-     */
-    private suspend fun resolveJwkThumbprintKid(keyAlias: String): JsonObject? {
-        val keyResult = kms.getKeyResult(KeyInfo<Nothing>(alias = keyAlias))
-        if (keyResult.isErr) {
-            return null
-        }
-        val jwk = keyResult.value.key?.key as? Jwk ?: return null
-        val publicJwk = jwk.toPublicKey()
-
-        val thumbprintUri = generateJwkThumbprintUri(publicJwk)
-        return buildJsonObject {
-            put("kid", JsonPrimitive(thumbprintUri))
         }
     }
 

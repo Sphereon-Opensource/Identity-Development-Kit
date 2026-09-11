@@ -28,8 +28,9 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.core.compat.Uuid
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.tryGenerateJwkThumbprint
+import com.sphereon.crypto.dataintegrity.command.AddProofServiceCommand
+import com.sphereon.crypto.jose.jws.StrictCompactJws
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
 import com.sphereon.mdoc.data.device.Document
@@ -46,6 +47,7 @@ import com.sphereon.mdoc.oid4vp.Oid4VPPresentationSubmission
 import com.sphereon.mdoc.oid4vp.Oid4VPSupportedAlgorithm
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.openid.oid4vp.common.CredentialFormat
+import com.sphereon.openid.oid4vc.common.PresentationFormat
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
 import com.sphereon.openid.oid4vp.common.buildOid4vpAuthorizationResponse
@@ -54,9 +56,17 @@ import com.sphereon.openid.oid4vp.common.selectEncryptedResponseJwk
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.holder.CreateAuthorizationResponseCommandService
+import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningIdentifier
+import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningProvider
+import com.sphereon.openid.oid4vp.holder.HolderJwtVpSigningRequest
+import com.sphereon.openid.oid4vp.holder.PreparedPresentation
 import com.sphereon.openid.oid4vp.holder.ResolvedOid4vpRequest
 import com.sphereon.openid.oid4vp.holder.SelectedCredential
 import com.sphereon.openid.oid4vp.holder.credentialDisclosurePathOptions
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmClassifier
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmDocumentKind
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmProfiles
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmVersion
 import com.sphereon.sdjwt.SdJwtCodec
 import com.sphereon.sdjwt.SdJwtPresentation
 import dev.zacsweers.metro.Inject
@@ -64,11 +74,17 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
+import kotlin.time.Clock
 
 /**
  * Implementation of CreateAuthorizationResponseCommand for OpenID4VP.
@@ -96,6 +112,10 @@ import kotlinx.serialization.json.encodeToJsonElement
 @SingleIn(SessionScope::class)
 class CreateAuthorizationResponseCommandImpl(
     execution: SessionExecution,
+    /** Explicit holder-side JWT VP signing seam; private keys never resolve in this command. */
+    private val holderJwtVpSigningProvider: HolderJwtVpSigningProvider,
+    /** Cross-platform Data Integrity proof service backed by the configured KMS/provider graph. */
+    private val addProofServiceCommand: AddProofServiceCommand,
     /**
      * mdoc OID4VP presentation service (ISO 18013-5 / 18013-7). Builds the ISO
      * `DeviceResponse` with a `DeviceAuth` COSE_Sign1 over the OID4VP §B.2.6
@@ -123,7 +143,8 @@ class CreateAuthorizationResponseCommandImpl(
     override suspend fun createAuthorizationResponse(
         request: ResolvedOid4vpRequest,
         selectedCredentials: List<SelectedCredential>,
-    ): IdkResult<AuthorizationResponse, IdkError> = execute(CreateAuthorizationResponseArgs(request, selectedCredentials))
+        preparedPresentations: List<PreparedPresentation>,
+    ): IdkResult<AuthorizationResponse, IdkError> = execute(CreateAuthorizationResponseArgs(request, selectedCredentials, preparedPresentations))
 
     override suspend fun doExecute(
         args: CreateAuthorizationResponseArgs,
@@ -132,6 +153,7 @@ class CreateAuthorizationResponseCommandImpl(
         val processedArgs = applyDuring(args)
         val request = processedArgs.request
         val selectedCredentials = processedArgs.selectedCredentials
+        val preparedPresentations = processedArgs.preparedPresentations
 
         log.debug("Creating authorization response for ${selectedCredentials.size} selected credential(s)")
 
@@ -160,7 +182,13 @@ class CreateAuthorizationResponseCommandImpl(
                     ),
                 )
             }
-            val presentation = resolvePresentation(request, selectedCredentials.single()).getOrElse { return Err(it) }
+            val presentationElement = resolvePresentation(request, selectedCredentials.single()).getOrElse { return Err(it) }
+            val presentation = presentationElement.compactStringOrNull()
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "The mdoc Presentation Definition response requires a compact string presentation",
+                    ),
+                )
             val submission = Oid4VPPresentationSubmission.fromPresentationDefinition(presentationDefinition)
             return Ok(
                 AuthorizationResponse(
@@ -180,7 +208,7 @@ class CreateAuthorizationResponseCommandImpl(
         // key, the holder produces a Key Binding JWT (RFC 9901 §4.3) binding the presentation to
         // the verifier (audience = client_id) and the request nonce; other formats pass through.
         val vpToken =
-            buildVpToken(request, selectedCredentials).getOrElse { error ->
+            buildVpToken(request, selectedCredentials, preparedPresentations).getOrElse { error ->
                 return Err(error)
             }
 
@@ -223,19 +251,111 @@ class CreateAuthorizationResponseCommandImpl(
     private suspend fun buildVpToken(
         request: ResolvedOid4vpRequest,
         credentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
     ): IdkResult<VpToken, IdkError> {
-        val withPresentations = mutableListOf<Pair<String, String>>()
+        validateSelectedCredentialFormats(request, credentials).getOrElse { return Err(it) }
+        validatePreparedPresentations(request, credentials, preparedPresentations).getOrElse { return Err(it) }
+        val withPresentations = mutableListOf<Pair<String, JsonElement>>()
+        val preparedByCredentialId = preparedPresentations.flatMap { prepared ->
+            prepared.credentialIds.map { credentialId -> credentialId to prepared }
+        }.toMap()
+        val emittedPrepared = mutableSetOf<PreparedPresentation>()
         for (credential in credentials) {
-            val presentation =
-                resolvePresentation(request, credential).getOrElse { return Err(it) }
-            withPresentations += credential.credentialQueryId to presentation
+            preparedByCredentialId[credential.credentialId]?.let { prepared ->
+                if (emittedPrepared.add(prepared)) {
+                    prepared.credentialQueryIds.forEach { queryId ->
+                        withPresentations += queryId to prepared.presentation
+                    }
+                }
+                return@let
+            } ?: run {
+                val presentation =
+                    resolvePresentation(request, credential).getOrElse { return Err(it) }
+                withPresentations += credential.credentialQueryId to presentation
+            }
         }
 
         val grouped =
             withPresentations
                 .groupBy({ it.first }, { it.second })
 
-        return Ok(VpToken.fromStrings(grouped))
+        return Ok(VpToken(grouped))
+    }
+
+    private fun validateSelectedCredentialFormats(
+        request: ResolvedOid4vpRequest,
+        credentials: List<SelectedCredential>,
+    ): IdkResult<Unit, IdkError> {
+        val dcqlQuery = request.dcqlQuery ?: return Ok(Unit)
+        credentials.forEach { credential ->
+            val query = dcqlQuery.credentials.find { it.id == credential.credentialQueryId }
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "Selected credential references unknown DCQL Credential Query '${credential.credentialQueryId}'",
+                    ),
+                )
+            val requestedFormat = CredentialFormat.fromValueLenient(query.format)
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "DCQL Credential Query '${query.id}' uses unsupported credential format '${query.format}'",
+                    ),
+                )
+            if (requestedFormat != credential.credentialFormat) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "Selected credential '${credential.credentialId}' declares ${credential.credentialFormat.value}, " +
+                            "but DCQL Credential Query '${query.id}' requires ${requestedFormat.value}",
+                    ),
+                )
+            }
+        }
+        return Ok(Unit)
+    }
+
+    private fun validatePreparedPresentations(
+        request: ResolvedOid4vpRequest,
+        credentials: List<SelectedCredential>,
+        preparedPresentations: List<PreparedPresentation>,
+    ): IdkResult<Unit, IdkError> {
+        val dcqlQuery = request.dcqlQuery
+        val selectedById = credentials.associateBy { it.credentialId }
+        if (selectedById.size != credentials.size) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Selected credential IDs must be unique"))
+        }
+        val preparedCredentialIds = mutableSetOf<String>()
+        preparedPresentations.forEach { prepared ->
+            if (prepared.credentialIds.isEmpty() || prepared.credentialIds.size != prepared.credentialIds.toSet().size) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared presentation must identify one or more unique selected credential IDs"))
+            }
+            if (prepared.credentialIds.any { it in preparedCredentialIds }) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "A selected credential cannot belong to multiple prepared presentations"))
+            }
+            preparedCredentialIds.addAll(prepared.credentialIds)
+            val selected = prepared.credentialIds.map { credentialId ->
+                selectedById[credentialId]
+                    ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared presentation references unselected credential '$credentialId'"))
+            }
+            val selectedQueryIds = selected.map { it.credentialQueryId }.toSet()
+            if (prepared.credentialQueryIds.isEmpty() || prepared.credentialQueryIds.size != prepared.credentialQueryIds.toSet().size ||
+                prepared.credentialQueryIds.toSet() != selectedQueryIds
+            ) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared presentation query IDs must exactly match its selected credentials"))
+            }
+            when (prepared.presentationFormat) {
+                PresentationFormat.LDP_VP -> if (selected.any { it.credentialFormat != CredentialFormat.LDP_VC }) {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared ldp_vp may contain only ldp_vc credentials"))
+                }
+                PresentationFormat.JWT_VP_JSON -> {
+                    return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "JWT VPs must be produced separately for each selected JWT credential"))
+                }
+            }
+            if (dcqlQuery != null && prepared.credentialQueryIds.any { queryId ->
+                    dcqlQuery.credentials.none { it.id == queryId }
+                }) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared presentation references an unknown DCQL Credential Query"))
+            }
+        }
+        return Ok(Unit)
     }
 
     /**
@@ -254,8 +374,8 @@ class CreateAuthorizationResponseCommandImpl(
     private suspend fun resolvePresentation(
         request: ResolvedOid4vpRequest,
         credential: SelectedCredential,
-    ): IdkResult<String, IdkError> {
-        val format = CredentialFormat.fromValueLenient(credential.format)
+    ): IdkResult<JsonElement, IdkError> {
+        val format = credential.credentialFormat
         val holderKeyRef = credential.holderKeyRef
         val credentialQuery = request.dcqlQuery?.credentials?.find { it.id == credential.credentialQueryId }
 
@@ -267,13 +387,47 @@ class CreateAuthorizationResponseCommandImpl(
             )
         }
 
-        if (format?.isMdoc == true) {
-            return resolveMdocPresentation(request, credential)
+        if (credentialQuery != null) {
+            val requestedFormat = CredentialFormat.fromValueLenient(credentialQuery.format)
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "DCQL Credential Query '${credentialQuery.id}' uses unsupported credential format '${credentialQuery.format}'",
+                    ),
+                )
+            if (requestedFormat != format) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "Selected credential '${credential.credentialId}' declares ${format.value}, " +
+                            "but DCQL Credential Query '${credentialQuery.id}' requires ${requestedFormat.value}",
+                    ),
+                )
+            }
         }
 
-        if (format?.isSdJwt != true) {
+        if (format.isMdoc) {
+            val presentation = resolveMdocPresentation(request, credential).getOrElse { return Err(it) }
+            return Ok(JsonPrimitive(presentation))
+        }
+
+        if (format == CredentialFormat.JWT_VC_JSON || format == CredentialFormat.JWT_VC_JSON_LD) {
+            val presentation = resolveVcdmJwtPresentation(request, credential, format).getOrElse { return Err(it) }
+            return Ok(JsonPrimitive(presentation))
+        }
+
+        if (format == CredentialFormat.LDP_VC) {
+            return resolveVcdmDataIntegrityPresentation(request, credential)
+        }
+
+        if (!format.isSdJwt) {
             return Ok(credential.presentation)
         }
+
+        val compactPresentation = credential.presentation.compactStringOrNull()
+            ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Selected ${format.value} credential '${credential.credentialId}' must be a JSON string",
+                ),
+            )
 
         // A null Credential Query denotes the non-DCQL/presentation-definition path. Preserve its
         // established behavior because it has no DCQL holder-binding flag to interpret.
@@ -309,7 +463,7 @@ class CreateAuthorizationResponseCommandImpl(
         val appliedKeyBindingJwt =
             if (credential.sdJwtKeyBindingApplied) {
                 SdJwtCodec
-                    .parse(credential.presentation)
+                    .parse(compactPresentation)
                     .getOrElse { return Err(it) }
                     .keyBindingJwt
                     ?: return Err(
@@ -373,7 +527,7 @@ class CreateAuthorizationResponseCommandImpl(
                     ),
                 )
             }
-            return Ok(credential.presentation)
+            return Ok(JsonPrimitive(compactPresentation))
         }
 
         // With holder binding disabled, disclosure selection is pure standards processing. No key
@@ -382,11 +536,11 @@ class CreateAuthorizationResponseCommandImpl(
             val paths =
                 credentialQuery?.let {
                     SdJwtPresentation.firstSatisfiableDisclosurePaths(
-                        compact = credential.presentation,
+                        compact = compactPresentation,
                         options = request.credentialDisclosurePathOptions(credential.credentialQueryId),
                     )
                 }
-            Ok(SdJwtPresentation.select(compact = credential.presentation, disclosurePaths = paths).presentationWithoutKeyBinding)
+            Ok(JsonPrimitive(SdJwtPresentation.select(compact = compactPresentation, disclosurePaths = paths).presentationWithoutKeyBinding))
         }.getOrElse {
             Err(
                 IdkError.ILLEGAL_ARGUMENT_ERROR(
@@ -394,6 +548,288 @@ class CreateAuthorizationResponseCommandImpl(
                 ),
             )
         }
+    }
+
+    /**
+     * Create one holder-bound VCDM Verifiable Presentation for one selected VC.
+     *
+     * The selected credential remains an independently issuer-secured VC. This method signs a
+     * separate VP for that one VC, even when another selected credential uses the same holder key.
+     * VCDM 1.1 uses the JWT `vp` wrapper; VCDM 2.0 uses a JSON-LD VP at the JOSE payload root and
+     * represents its VC child as an EnvelopedVerifiableCredential data URI object.
+     */
+    private suspend fun resolveVcdmJwtPresentation(
+        request: ResolvedOid4vpRequest,
+        credential: SelectedCredential,
+        format: CredentialFormat,
+    ): IdkResult<String, IdkError> {
+        val compactCredential = credential.presentation.compactStringOrNull()
+            ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Selected ${format.value} credential '${credential.credentialId}' must be a compact JWT string",
+                ),
+            )
+        val classifiedCredential = VcdmClassifier.classifyCompactJws(compactCredential).getOrElse { return Err(it) }
+        if (classifiedCredential.document.kind != VcdmDocumentKind.CREDENTIAL) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Selected ${format.value} input '${credential.credentialId}' is not a VCDM credential",
+                ),
+            )
+        }
+        if (classifiedCredential.credentialFormat != format) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message =
+                            "Selected credential '${credential.credentialId}' is ${classifiedCredential.credentialFormat?.value}, " +
+                            "not the declared ${format.value} format",
+                ),
+            )
+        }
+        val profileValidation =
+            if (classifiedCredential.document.version == VcdmVersion.V1_1) {
+                VcdmProfiles.v1_1.validateCredential(classifiedCredential.document.json)
+            } else {
+                VcdmProfiles.v2_0.validateCredential(classifiedCredential.document.json)
+            }
+        if (!profileValidation.valid) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message =
+                        "Selected credential '${credential.credentialId}' does not satisfy its VCDM profile: " +
+                            profileValidation.errors.joinToString { it.message.defaultMessage },
+                ),
+            )
+        }
+        val holderKeyRef = credential.holderKeyRef?.takeIf { it.isNotBlank() }
+        if (holderKeyRef == null) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Cannot create VCDM Verifiable Presentation: holder key reference is missing",
+                ),
+            )
+        }
+        val holderId = credential.holderId?.takeIf { it.isNotBlank() }
+        if (holderId == null) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Cannot create VCDM Verifiable Presentation: holder identifier is missing",
+                ),
+            )
+        }
+        val holderSigningAlgorithm = credential.holderSigningAlgorithm
+            ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Cannot create VCDM Verifiable Presentation: holder signing algorithm is missing",
+                ),
+            )
+        val expectedJoseAlgorithm = holderSigningAlgorithm.jose
+            ?.takeIf { it.type == com.sphereon.crypto.core.jose.AlgorithmType.SIGNATURE }
+            ?.value
+            ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Cannot create VCDM Verifiable Presentation: holder signing algorithm has no JOSE signature mapping",
+                ),
+            )
+        // OID4VP 1.0 keys vp_formats_supported by Credential Format Identifier. The VP artifact
+        // has its own PresentationFormat, but that must not replace the selected VC format as the
+        // metadata lookup key.
+        val verifierAlgorithms = request.clientMetadata
+            ?.vpFormatsSupported
+            ?.get(format.value)
+            ?.algValuesSupported
+        if (verifierAlgorithms.isNullOrEmpty()) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Verifier metadata must advertise non-empty alg_values for ${format.value}",
+                ),
+            )
+        }
+        if (expectedJoseAlgorithm !in verifierAlgorithms) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Holder signing algorithm '$expectedJoseAlgorithm' is not accepted for ${format.value}: $verifierAlgorithms",
+                ),
+            )
+        }
+        val nonce = request.request.nonce?.takeIf { it.isNotBlank() }
+        if (nonce == null) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Cannot create VCDM Verifiable Presentation: authorization request nonce is missing",
+                ),
+            )
+        }
+        val audience = request.verifierInfo.clientId.takeIf { it.isNotBlank() }
+        if (audience == null) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Cannot create VCDM Verifiable Presentation: verifier audience is missing",
+                ),
+            )
+        }
+
+        val vpPayload =
+            when (format) {
+                CredentialFormat.JWT_VC_JSON ->
+                    buildJsonObject {
+                        put("iss", holderId)
+                        put("aud", audience)
+                        put("nonce", nonce)
+                        put("iat", Clock.System.now().epochSeconds)
+                        putJsonObject("vp") {
+                            putJsonArray("@context") { add(JsonPrimitive(VcdmProfiles.V1_1_CONTEXT)) }
+                            putJsonArray("type") { add(JsonPrimitive("VerifiablePresentation")) }
+                            put("holder", holderId)
+                            putJsonArray("verifiableCredential") { add(JsonPrimitive(compactCredential)) }
+                        }
+                    }
+
+                CredentialFormat.JWT_VC_JSON_LD ->
+                    buildJsonObject {
+                        // VCDM 2.0 requires the base context to be first in the context array.
+                        putJsonArray("@context") { add(JsonPrimitive(VcdmProfiles.V2_0_CONTEXT)) }
+                        putJsonArray("type") { add(JsonPrimitive("VerifiablePresentation")) }
+                        put("holder", holderId)
+                        putJsonArray("verifiableCredential") {
+                            add(
+                                buildJsonObject {
+                                    put("@context", VcdmProfiles.V2_0_CONTEXT)
+                                    put("id", "data:application/vc+jwt,$compactCredential")
+                                    put("type", "EnvelopedVerifiableCredential")
+                                },
+                            )
+                        }
+                        put("iss", holderId)
+                        put("aud", audience)
+                        put("nonce", nonce)
+                        put("iat", Clock.System.now().epochSeconds)
+                    }
+
+                else ->
+                    return Err(
+                        IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            message = "Unsupported VCDM credential format '${format.value}' for VP production",
+                        ),
+                    )
+            }
+
+        val identifier = credential.holderJwtVpSigningIdentifier ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Cannot create VCDM Verifiable Presentation: an explicit holder signing identifier is missing",
+                ),
+            )
+        val signed =
+            holderJwtVpSigningProvider
+                .sign(
+                    HolderJwtVpSigningRequest(
+                        walletUnitId = credential.holderJwtVpWalletUnitId,
+                        payload = vpPayload,
+                        keyReference = holderKeyRef,
+                        signatureAlgorithm = holderSigningAlgorithm,
+                        identifier = identifier,
+                        protectedHeader =
+                            buildJsonObject {
+                                if (format == CredentialFormat.JWT_VC_JSON) {
+                                    // VC-JOSE-COSE / VCDM 1.1 JWT VP representation.
+                                    put("typ", "JWT")
+                                } else {
+                                    // VCDM 2.0 VP secured by JOSE.
+                                    put("typ", "vp+jwt")
+                                    put("cty", "vp")
+                                }
+                            },
+                        operationBinding = credential.holderJwtVpOperationBinding,
+                    ),
+                ).getOrElse { return Err(it) }
+        if (signed.identifier != identifier) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Holder JWT VP signer returned an identifier different from the admitted holder identifier",
+                ),
+            )
+        }
+        val parsed = StrictCompactJws.parse(signed.compactJws).getOrElse { return Err(it) }
+        val algorithm = (parsed.protectedHeader["alg"] as? JsonPrimitive)?.contentOrNull
+        if (algorithm.isNullOrBlank() || algorithm.equals("none", ignoreCase = true)) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Cannot create VCDM Verifiable Presentation with missing or alg:none signature algorithm",
+                ),
+            )
+        }
+        if (algorithm != expectedJoseAlgorithm) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Holder JWT VP signer emitted alg '$algorithm', expected '$expectedJoseAlgorithm'",
+                ),
+            )
+        }
+        if (parsed.protectedHeader["jwk"] != null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Holder JWT VP must not carry embedded JWK trust material"))
+        }
+        when (identifier) {
+            is HolderJwtVpSigningIdentifier.X509 -> {
+                val actualChain = (parsed.protectedHeader["x5c"] as? JsonArray)
+                    ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                if (parsed.protectedHeader["kid"] != null || actualChain != identifier.certificateChain) {
+                    return Err(
+                        IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            message = "Holder JWT VP protected x5c header must equal the admitted X.509 chain and must not carry kid",
+                        ),
+                    )
+                }
+            }
+
+            else -> {
+                val actualKid = (parsed.protectedHeader["kid"] as? JsonPrimitive)?.contentOrNull
+                if (parsed.protectedHeader["x5c"] != null || actualKid != identifier.value) {
+                    return Err(
+                        IdkError.ILLEGAL_ARGUMENT_ERROR(
+                            message = "Holder JWT VP protected header kid must equal the admitted signing identifier",
+                        ),
+                    )
+                }
+            }
+        }
+        val expectedTyp = if (format == CredentialFormat.JWT_VC_JSON) "JWT" else "vp+jwt"
+        if ((parsed.protectedHeader["typ"] as? JsonPrimitive)?.contentOrNull != expectedTyp) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Holder JWT VP protected header typ does not match the VCDM format"))
+        }
+        return Ok(signed.compactJws)
+    }
+
+    /**
+     * Creates one independently holder-secured Data Integrity VP for one selected Data Integrity
+     * VC. OID4VP 1.0 Final uses `ldp_vc` for both the VC and the holder-bound VP; the VCDM type
+     * selects assertion versus authentication proof semantics.
+     */
+    private suspend fun resolveVcdmDataIntegrityPresentation(
+        request: ResolvedOid4vpRequest,
+        credential: SelectedCredential,
+    ): IdkResult<JsonElement, IdkError> {
+        val vc = credential.presentation as? JsonObject
+            ?: return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Selected ldp_vc credential '${credential.credentialId}' must be a JSON object",
+                ),
+            )
+        if (!credential.dataIntegrityProofApplied) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Selected ldp_vc credential '${credential.credentialId}' must be holder-bound by the WSCA before response assembly",
+                ),
+            )
+        }
+        val classification = VcdmClassifier.classifyDocument(vc).getOrElse { return Err(it) }
+        if (classification.kind != VcdmDocumentKind.PRESENTATION || vc["proof"] == null) {
+            return Err(
+                IdkError.ILLEGAL_ARGUMENT_ERROR(
+                    message = "Selected ldp_vc credential '${credential.credentialId}' is not an already-secured VerifiablePresentation",
+                ),
+            )
+        }
+        return Ok(vc)
     }
 
     /**
@@ -448,7 +884,8 @@ class CreateAuthorizationResponseCommandImpl(
 
         val issuerSignedBytes =
             try {
-                credential.presentation.decodeFromBase64Url()
+                credential.presentation.compactStringOrNull()?.decodeFromBase64Url()
+                    ?: throw IllegalArgumentException("mso_mdoc presentation must be a JSON string")
             } catch (expected: Exception) {
                 return Err(
                     IdkError.ILLEGAL_ARGUMENT_ERROR(
@@ -500,6 +937,7 @@ class CreateAuthorizationResponseCommandImpl(
             parsePresentationDefinition(request)
                 ?.input_descriptors
                 ?.firstOrNull { it.id.toString() == credential.credentialQueryId }
+                ?: parsePresentationDefinition(request)?.input_descriptors?.singleOrNull()
         val dcqlCredentialQuery =
             request.dcqlQuery
                 ?.credentials
@@ -542,6 +980,16 @@ class CreateAuthorizationResponseCommandImpl(
             )
         }
 
+        val mdocAlgorithms =
+            presentationDescriptor?.format?.mso_mdoc?.alg
+                ?: issuerSigned.issuerAuth.protectedHeader.alg?.let { arrayOf(it.name) }
+                ?: return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "Cannot create mdoc DeviceResponse for query '${credential.credentialQueryId}': " +
+                                "no IssuerAuth COSE algorithm or verifier-supported mso_mdoc algorithm is available",
+                    ),
+                )
         val presentationDefinition =
             Oid4VPPresentationDefinition(
                 id = credential.credentialQueryId,
@@ -549,7 +997,7 @@ class CreateAuthorizationResponseCommandImpl(
                     arrayOf(
                         Oid4VPInputDescriptor(
                             id = docType,
-                            format = Oid4VPFormat(mso_mdoc = Oid4VPSupportedAlgorithm(alg = arrayOf("ES256"))),
+                            format = Oid4VPFormat(mso_mdoc = Oid4VPSupportedAlgorithm(alg = mdocAlgorithms)),
                             constraints = Oid4VPConstraints(fields = constraintFields.toTypedArray()),
                         ),
                     ),
@@ -581,10 +1029,9 @@ class CreateAuthorizationResponseCommandImpl(
                             match.copy(
                                 deviceKeyInfo =
                                     KeyInfo(
-                                        alias = holderKeyAlias,
-                                        keyVisibility = KeyVisibility.PRIVATE,
-                                        signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
-                                    ),
+                                    alias = holderKeyAlias,
+                                    keyVisibility = KeyVisibility.PRIVATE,
+                                ),
                             )
                         } else {
                             match
@@ -683,6 +1130,9 @@ class CreateAuthorizationResponseCommandImpl(
             }
         return responseJson.decodeFromJsonElement(Oid4VPPresentationDefinition.serializer(), normalized)
     }
+
+    private fun JsonElement.compactStringOrNull(): String? =
+        (this as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
 
     private companion object {
         val responseJson = Json { ignoreUnknownKeys = true }

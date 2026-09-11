@@ -29,6 +29,7 @@ interface ListEquivalentIdsEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listEquivalentIds",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("EquivalentIds"),
                 summary = "List equivalent identifiers",
             )
@@ -47,6 +48,7 @@ interface AddEquivalentIdEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addEquivalentId",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("EquivalentIds"),
                 summary = "Add an equivalent identifier",
             )
@@ -63,6 +65,7 @@ interface RemoveEquivalentIdEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}/equivalent-ids/{equivalentId}",
                 operationId = "removeEquivalentId",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("EquivalentIds"),
                 summary = "Remove an equivalent identifier",
             )

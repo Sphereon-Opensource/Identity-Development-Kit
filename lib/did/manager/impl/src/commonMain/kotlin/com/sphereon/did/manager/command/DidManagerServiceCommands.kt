@@ -20,6 +20,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.pagination.PageMeta
 import com.sphereon.core.api.service.ActionType
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.crypto.core.KeyInfo
@@ -268,25 +269,6 @@ data class Did(
      * on the wire; the projection happens in [com.sphereon.did.manager.impl.command.toServiceResponse].
      */
     val keys: List<KeyMappingResponse>? = null,
-)
-
-/**
- * Canonical pagination metadata, mirroring the OpenAPI `common-components.PageMeta` schema and the
- * `pagination` object emitted by `ResponseBuilder.paginated()`. The `limit`/`offset`/`total`/
- * `hasMore` fields are the stable legacy fields; `page`/`size`/`totalPages` are the additive
- * unified fields.
- */
-@OptIn(ExperimentalObjCName::class)
-@ObjCName("PageMeta", exact = true)
-@Serializable
-data class PageMeta(
-    val limit: Int,
-    val offset: Int,
-    val page: Int,
-    val size: Int,
-    val total: Int,
-    val totalPages: Int,
-    val hasMore: Boolean,
 )
 
 /**

@@ -47,6 +47,7 @@ interface DeactivateWebvhDidServiceCommand :
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "deactivateWebvhDid",
                 tags = setOf("did:webvh"),
                 summary = "Deactivate a did:webvh DID",

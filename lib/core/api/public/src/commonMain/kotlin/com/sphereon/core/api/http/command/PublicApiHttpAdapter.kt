@@ -18,62 +18,44 @@ package com.sphereon.core.api.http.command
 
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.describe.HttpAdapterMount
-import com.sphereon.core.api.service.PublicApiCommand
-import com.sphereon.core.api.service.ServiceCommand
-import com.sphereon.core.compat.JsExportCompat
 
 /**
- * Base class for HTTP adapters that expose [ServiceCommand]s as HTTP endpoints.
+ * Base class for HTTP adapters that expose public service commands as HTTP endpoints.
  *
- * This adapter bridges [ServiceCommand] (typed I/O, authorization, audit, tracing,
- * dual transport) with the HTTP adapter infrastructure ([CommandBackedHttpAdapter],
- * [HttpEndpointCommand]).
- *
- * Subclasses declare their service commands via the [serviceCommands] property.
- * Each command that implements [PublicApiCommand] is automatically wrapped in a
- * [ServiceCommandEndpoint] for metadata-driven routing.
+ * Endpoint wrappers are contributed independently to [HttpEndpointCommandRegistry], so selecting
+ * an adapter does not instantiate every service command behind it.
  *
  * **Usage:**
  * ```kotlin
  * @Inject
  * @SingleIn(SessionScope::class)
- * @ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+ * @ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+ * @StringKey(BookingHttpAdapter.ID)
  * class BookingHttpAdapter(
  *     execution: SessionExecution,
- *     listBookings: ListBookingsServiceCommand,
- *     getBooking: GetBookingServiceCommand
+ *     endpointCommandRegistry: HttpEndpointCommandRegistry,
  * ) : PublicApiHttpAdapter(
  *     id = ID,
  *     execution = execution,
- *     mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/api/booking/v1/bookings")
- * ) {
- *     companion object { const val ID = "RESOURCE-BOOKINGS" }
- *
- *     override val serviceCommands = listOf(listBookings, getBooking)
- * }
+ *     mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/api/booking/v1/bookings"),
+ *     endpointCommandRegistry = endpointCommandRegistry,
+ * )
  * ```
  *
  * @param id Unique identifier for this adapter
  * @param execution The session execution context
  * @param mount The mount configuration for this adapter
+ * @param endpointCommandRegistry Session-scoped lazy endpoint resolver. App-scoped
+ * descriptors remain the source of route metadata.
  */
-@JsExportCompat
 abstract class PublicApiHttpAdapter(
     id: String,
     protected val sessionExecution: SessionExecution,
     mount: HttpAdapterMount,
-) : CommandBackedHttpAdapter(id = id, execution = sessionExecution, mount = mount) {
-    /** Service commands to expose as HTTP endpoints. Must implement [PublicApiCommand]. */
-    abstract val serviceCommands: List<ServiceCommand<*, *, *>>
-
-    override val endpointCommands: List<HttpEndpointCommand> by lazy {
-        serviceCommands.mapNotNull { cmd ->
-            val publicApi = cmd as? PublicApiCommand ?: return@mapNotNull null
-            ServiceCommandEndpoint(
-                serviceCommand = cmd,
-                endpoint = publicApi.httpEndpoint,
-                execution = sessionExecution,
-            )
-        }
-    }
-}
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
+) : CommandBackedHttpAdapter(
+        id = id,
+        execution = sessionExecution,
+        mount = mount,
+        endpointCommandRegistry = endpointCommandRegistry,
+    )

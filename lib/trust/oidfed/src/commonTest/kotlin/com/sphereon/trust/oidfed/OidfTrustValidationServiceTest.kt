@@ -8,6 +8,9 @@ package com.sphereon.trust.oidfed
 
 import com.sphereon.trust.core.model.TrustContext
 import com.sphereon.trust.core.model.TrustStatus
+import com.sphereon.trust.core.model.TrustValidationRequest
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierOIDFEntityIdOpts
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -48,7 +51,31 @@ class OidfTrustValidationServiceTest {
     }
 
     @Test
+    fun callerSuppliedAnchorsAreRejectedByTheLegacyBoundary() {
+        assertFalse(ValidateOidfTrustCommand.callerSuppliedAnchorsRejected(ValidateOidfTrustArgs("https://example.com")))
+        assertTrue(
+            ValidateOidfTrustCommand.callerSuppliedAnchorsRejected(
+                ValidateOidfTrustArgs("https://example.com", trustAnchors = listOf("https://attacker.example")),
+            ),
+        )
+    }
+
+    @Test
     fun trustContextTypeConstant() {
         assertEquals("openid_federation", TrustContext.TYPE_OPENID_FEDERATION)
+    }
+
+    @Test
+    fun unboundProductionValidatorFailsClosedWithTypedResult() = runTest {
+        val validator = NoOpOidfedTrustValidationService
+        assertFalse(validator.supports(TrustContext(TrustContext.TYPE_OPENID_FEDERATION)))
+        val result = validator.validate(
+            TrustValidationRequest(
+                identifier = ExternalIdentifierOIDFEntityIdOpts(identifier = "https://entity.example"),
+                context = TrustContext(TrustContext.TYPE_OPENID_FEDERATION),
+            ),
+        )
+        assertFalse(result.trusted)
+        assertEquals(TrustStatus.VALIDATION_ERROR, result.status)
     }
 }

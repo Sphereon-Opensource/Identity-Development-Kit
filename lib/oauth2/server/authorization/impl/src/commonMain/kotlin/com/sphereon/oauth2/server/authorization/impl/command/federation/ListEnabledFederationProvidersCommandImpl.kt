@@ -27,23 +27,21 @@ import com.sphereon.oauth2.server.authorization.command.federation.EnabledFedera
 import com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersArgs
 import com.sphereon.oauth2.server.authorization.command.federation.ListEnabledFederationProvidersCommand
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
-import com.sphereon.oauth2.server.authorization.provider.FederationProviderRegistry
+import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
 /**
- * Implementation of [ListEnabledFederationProvidersCommand]: returns the registry's enabled
- * provider list. Injecting [FederationProviderRegistry] directly matches the registry-based
- * pattern used by every other federation ServiceCommand.
+ * Returns the exact enabled federation bindings from the transaction runtime authority.
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<ListEnabledFederationProvidersCommand>())
 class ListEnabledFederationProvidersCommandImpl(
     execution: SessionExecution,
-    private val providerRegistry: FederationProviderRegistry,
+    private val providerResolver: FederationProviderRuntimeResolver,
 ) : TypedServiceCommandAdapter<ListEnabledFederationProvidersArgs, EnabledFederationProviders, AuthenticationError>(
         commandId = ListEnabledFederationProvidersCommand.COMMAND_ID,
         execution = execution,
@@ -58,5 +56,6 @@ class ListEnabledFederationProvidersCommandImpl(
     override suspend fun doExecute(
         args: ListEnabledFederationProvidersArgs,
         applyDuring: (ListEnabledFederationProvidersArgs) -> ListEnabledFederationProvidersArgs,
-    ): IdkResult<EnabledFederationProviders, AuthenticationError> = Ok(EnabledFederationProviders(providers = providerRegistry.enabled()))
+    ): IdkResult<EnabledFederationProviders, AuthenticationError> =
+        providerResolver.listEnabled().map(::EnabledFederationProviders)
 }

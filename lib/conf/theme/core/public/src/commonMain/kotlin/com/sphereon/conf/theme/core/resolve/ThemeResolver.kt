@@ -34,7 +34,7 @@ interface ThemeResolver {
      * selects the APPLICATION layer.
      *
      * @param tenant The tenant identifier
-     * @param variant Optional variant to resolve (LIGHT, DARK, HIGH_CONTRAST)
+     * @param variant Optional variant to resolve (LIGHT, DARK, HIGH_CONTRAST_LIGHT, HIGH_CONTRAST_DARK)
      * @param applicationId Optional registered application to resolve for
      * @param principalId Optional principal for per-user overrides
      * @return The resolved theme

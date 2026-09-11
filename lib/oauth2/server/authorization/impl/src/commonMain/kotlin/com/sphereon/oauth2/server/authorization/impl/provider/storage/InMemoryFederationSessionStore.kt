@@ -94,6 +94,20 @@ class InMemoryFederationSessionStore(
             }
         }
 
+    override suspend fun consumePendingFederation(state: String): IdkResult<PendingFederation?, FederationSessionStoreError> =
+        synchronized(this) {
+            val entry = pending[state] ?: return@synchronized Ok(null)
+            val now = clock.now()
+            if (entry.expiresAt <= now) {
+                pending.remove(state)
+                return@synchronized Ok(null)
+            }
+            if (entry.value.callbackConsumedAt != null || entry.value.completed) return@synchronized Ok(null)
+            val consumed = entry.value.copy(callbackConsumedAt = now)
+            pending[state] = entry.copy(value = consumed)
+            Ok(consumed)
+        }
+
     override suspend fun findCompletedPendingBySession(sessionId: String,): IdkResult<PendingFederation?, FederationSessionStoreError> =
         synchronized(this) {
             val now = clock.now()
@@ -117,6 +131,7 @@ class InMemoryFederationSessionStore(
         claimsTtl: Duration,
         upstreamAcr: String?,
         upstreamAmr: List<String>?,
+        evidence: com.sphereon.oauth2.server.authorization.model.NormalizedAuthenticationEvidence,
     ): IdkResult<Unit, FederationSessionStoreError> =
         synchronized(this) {
             val now = clock.now()
@@ -139,6 +154,7 @@ class InMemoryFederationSessionStore(
                     authenticatedAt = now,
                     upstreamAcr = upstreamAcr ?: entry.value.upstreamAcr,
                     upstreamAmr = upstreamAmr ?: entry.value.upstreamAmr,
+                    evidence = evidence,
                 )
             pending[state] = entry.copy(value = updated)
             this.claims[userId] = ClaimsEntry(claims, now + claimsTtl)

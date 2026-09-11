@@ -56,11 +56,13 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -242,6 +244,7 @@ class RestApiTransport(
                             response =
                                 httpClient.post(uri) {
                                     contentType(ContentType.Application.Cbor)
+                                    header(HttpHeaders.Accept, ContentType.Application.Cbor.toString())
                                     header("User-Agent", "mdoc-holder/1.0")
                                     setBody(deviceEngagementMessage)
                                 }
@@ -254,10 +257,13 @@ class RestApiTransport(
                                             uri = uri,
                                             statusCode = response.status.value,
                                             serverMessage = "Server returned ${response.status}",
-                                        ).toIdkError(),
+                                    ).toIdkError(),
                                 )
                             }
-                        } catch (e: Error) {
+                            requireCborResponse(response, "SessionEstablishment")
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
                             log.error("device engagement failed", e)
                             return@withLock Err(
                                 RestApiError
@@ -269,7 +275,7 @@ class RestApiTransport(
                         }
 
                         // Step 2: Receive SessionEstablishment response
-                        val sessionDataBytes = response.bodyAsBytes()
+                        val sessionDataBytes = readBoundedResponseBody(response)
                         log.info("Received SessionEstablishment from reader (${sessionDataBytes.size} bytes)")
                         log.debug(sessionDataBytes.encodeToHex())
 
@@ -584,6 +590,7 @@ class RestApiTransport(
                         val response =
                             httpClient.post(uri) {
                                 contentType(ContentType.Application.Cbor)
+                                header(HttpHeaders.Accept, ContentType.Application.Cbor.toString())
                                 header("User-Agent", "mdoc-holder/1.0")
                                 setBody(sessionDataBytes)
                             }
@@ -599,6 +606,7 @@ class RestApiTransport(
                                 serverMessage = "Server returned ${response.status}",
                             )
                         }
+                        requireCborResponse(response, "SessionData")
                     } catch (e: CancellationException) {
                         // Propagate cancellation without wrapping
                         log.debug("Message send was cancelled")
@@ -708,4 +716,64 @@ class RestApiTransport(
             "sessionTranscript" -> sessionTranscript
             else -> null
         }
+
+    /**
+     * Session-establishment data is supplied by a remote reader. Keep the
+     * response bounded before it reaches the CBOR/session decryptors so an
+     * otherwise valid HTTP response cannot become an unbounded allocation.
+     */
+    private suspend fun readBoundedResponseBody(response: HttpResponse): ByteArray {
+        val declaredLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+        require(declaredLength == null || declaredLength in 0..MAX_RESPONSE_BODY_BYTES) {
+            "REST API response body exceeds the configured maximum"
+        }
+
+        val channel = response.bodyAsChannel()
+        val chunks = mutableListOf<ByteArray>()
+        val buffer = ByteArray(minOf(8 * 1024L, MAX_RESPONSE_BODY_BYTES).toInt())
+        var total = 0L
+        try {
+            while (true) {
+                val count = channel.readAvailable(buffer)
+                if (count < 0) break
+                if (count == 0) continue
+                require(total <= MAX_RESPONSE_BODY_BYTES - count.toLong()) {
+                    "REST API response body exceeds the configured maximum"
+                }
+                total += count
+                chunks += buffer.copyOf(count)
+            }
+        } catch (expected: Exception) {
+            try {
+                channel.cancel(expected)
+            } catch (_: Exception) {
+                // Preserve the primary read/size failure.
+            }
+            throw expected
+        }
+
+        val result = ByteArray(total.toInt())
+        var offset = 0
+        for (chunk in chunks) {
+            chunk.copyInto(result, destinationOffset = offset)
+            offset += chunk.size
+        }
+        return result
+    }
+
+    /**
+     * Annex A exchanges CBOR data items. A successful HTTP status is not enough:
+     * accepting a text or JSON response would pass a misrouted endpoint into the
+     * session decryptor and make protocol errors indistinguishable from data.
+     */
+    private fun requireCborResponse(response: HttpResponse, messageType: String) {
+        val responseType = response.contentType()?.withoutParameters()
+        require(responseType == ContentType.Application.Cbor) {
+            "REST API $messageType response must use Content-Type application/cbor, got ${response.contentType()}"
+        }
+    }
+
+    private companion object {
+        private const val MAX_RESPONSE_BODY_BYTES = 10L * 1024L * 1024L
+    }
 }

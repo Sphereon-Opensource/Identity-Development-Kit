@@ -72,6 +72,16 @@ interface StatusListDriver {
      */
     suspend fun allocateEntry(args: AllocateEntryArgs): IdkResult<StatusListEntry, IdkError>
 
+    /**
+     * Permanently release a pre-sign reservation and clear its status bit.
+     *
+     * The operation is idempotent: it returns `Ok(false)` when the entry is already absent. A
+     * driver MUST remove the persisted entry and publish the resulting bitset; resetting the value
+     * to [com.sphereon.statuslist.StatusValues.VALID] while retaining the row is not cancellation,
+     * because it would continue to consume capacity and remain revocable by stale references.
+     */
+    suspend fun releaseEntry(entry: EntryRef): IdkResult<Boolean, IdkError>
+
     /** Set the status value of an entry (revoke / suspend / reactivate) and re-sign the list. */
     suspend fun updateEntryStatus(args: UpdateEntryStatusArgs): IdkResult<StatusListEntry, IdkError>
 

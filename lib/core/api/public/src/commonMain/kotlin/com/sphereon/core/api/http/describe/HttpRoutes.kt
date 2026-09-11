@@ -24,7 +24,7 @@ import com.sphereon.core.compat.JsExportCompat
  * A single route definition: endpoint metadata plus handler function.
  *
  * This is intended to be the single source of truth so:
- * - endpoint metadata is not duplicated in `describe()` and `handleRequest()`
+ * - endpoint metadata is not duplicated in `describe()` and `handleResolvedRequest()`
  * - generic hosting/dispatching can introspect routes
  */
 @JsExportCompat
@@ -88,6 +88,7 @@ class HttpRouteBuilder internal constructor(
     private val consumes: MutableSet<MediaType> = linkedSetOf()
     private val produces: MutableSet<MediaType> = linkedSetOf()
     private var operationId: String? = null
+    private var handlerCommandId: String? = null
     private val tags: MutableSet<String> = linkedSetOf()
     private var summary: String? = null
     private var handler: (suspend (GenericHttpRequest) -> GenericHttpResponse)? = null
@@ -102,6 +103,11 @@ class HttpRouteBuilder internal constructor(
 
     fun operationId(value: String) {
         operationId = value
+    }
+
+    /** Stable transport-handler identity used by route-first dispatch. */
+    fun handlerCommandId(value: String) {
+        handlerCommandId = value
     }
 
     fun tags(vararg values: String) {
@@ -126,6 +132,7 @@ class HttpRouteBuilder internal constructor(
                     consumes = consumes.toSet(),
                     produces = produces.toSet(),
                     operationId = operationId,
+                    handlerCommandId = handlerCommandId,
                     tags = tags.toSet(),
                     summary = summary,
                 ),

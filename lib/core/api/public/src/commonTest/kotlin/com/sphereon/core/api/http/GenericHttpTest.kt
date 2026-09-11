@@ -305,6 +305,28 @@ class GenericHttpResponseTest {
     }
 
     @Test
+    fun multiValueHeadersDefaultToEmptyAndPreserveRepeatedFields() {
+        val response =
+            GenericHttpResponse(
+                statusCode = 200,
+                multiValueHeaders =
+                    mapOf(
+                        "Set-Cookie" to
+                            listOf(
+                                "owner=opaque; HttpOnly; Secure",
+                                "csrf=token; Secure",
+                            ),
+                    ),
+            )
+
+        assertEquals(
+            listOf("owner=opaque; HttpOnly; Secure", "csrf=token; Secure"),
+            response.multiValueHeaders["Set-Cookie"],
+        )
+        assertTrue(GenericHttpResponse(statusCode = 200).multiValueHeaders.isEmpty())
+    }
+
+    @Test
     fun bodyDefaultsToNull() {
         val response = GenericHttpResponse(statusCode = 200)
         assertNull(response.body)

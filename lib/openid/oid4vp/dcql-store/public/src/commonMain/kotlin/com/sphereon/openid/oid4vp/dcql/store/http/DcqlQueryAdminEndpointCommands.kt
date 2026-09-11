@@ -44,6 +44,7 @@ const val COMMAND_ID = "oid4vp.dcql-http.list"
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listDcqlQueries",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf(DCQL_ADMIN_TAG),
                 summary = "List DCQL query configurations",
             )
@@ -68,6 +69,7 @@ const val COMMAND_ID = "oid4vp.dcql-http.create"
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "createDcqlQuery",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf(DCQL_ADMIN_TAG),
                 summary = "Create a DCQL query configuration",
             )
@@ -91,6 +93,7 @@ const val COMMAND_ID = "oid4vp.dcql-http.get"
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDcqlQuery",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf(DCQL_ADMIN_TAG),
                 summary = "Get a DCQL query configuration",
             )
@@ -115,6 +118,7 @@ const val COMMAND_ID = "oid4vp.dcql-http.replace"
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "replaceDcqlQuery",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf(DCQL_ADMIN_TAG),
                 summary = "Replace a DCQL query configuration",
             )
@@ -139,6 +143,7 @@ const val COMMAND_ID = "oid4vp.dcql-http.patch"
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "patchDcqlQuery",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf(DCQL_ADMIN_TAG),
                 summary = "Partially update a DCQL query configuration",
             )
@@ -162,6 +167,7 @@ const val COMMAND_ID = "oid4vp.dcql-http.delete"
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "deleteDcqlQuery",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf(DCQL_ADMIN_TAG),
                 summary = "Delete a DCQL query configuration",
             )

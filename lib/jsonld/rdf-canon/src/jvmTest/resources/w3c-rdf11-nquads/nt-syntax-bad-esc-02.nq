@@ -1,0 +1,3 @@
+# Bad string escape
+<http://example/s> <http://example/p> "\uWXYZ" .
+

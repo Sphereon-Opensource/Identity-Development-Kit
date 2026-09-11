@@ -177,6 +177,8 @@ data class PaletteTokens(
                 s700 = tokens["${prefix}700"] ?: return null,
                 s800 = tokens["${prefix}800"] ?: return null,
                 s900 = tokens["${prefix}900"] ?: return null,
+                s450 = tokens["${prefix}450"],
+                s650 = tokens["${prefix}650"],
             )
         }
 

@@ -13,6 +13,7 @@ import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputPurpose
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputRef
 import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletSecurityGrant
+import com.sphereon.wallet.interaction.openableAuthorizationUri
 import dev.whyoleg.cryptography.random.CryptographyRandom
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -47,6 +48,15 @@ class StoreBackedWalletInteractionSensitiveInputAuthority(
         }
     }
 
+    override suspend fun peek(
+        sessionId: WalletInteractionSessionId,
+        purpose: WalletInteractionSensitiveInputPurpose,
+        ref: WalletInteractionSensitiveInputRef,
+    ): String? =
+        mutex.withLock {
+            decode(store.get(sessionId, NAMESPACE)?.values.orEmpty(), purpose, ref)
+        }
+
     override suspend fun consume(
         sessionId: WalletInteractionSessionId,
         purpose: WalletInteractionSensitiveInputPurpose,
@@ -54,16 +64,19 @@ class StoreBackedWalletInteractionSensitiveInputAuthority(
     ): String? =
         mutex.withLock {
             val existing = store.get(sessionId, NAMESPACE)?.values.orEmpty()
-            val encoded = existing[ref.value] ?: return@withLock null
-            val expectedPrefix = "${purpose.name}:"
-            if (!encoded.startsWith(expectedPrefix)) return@withLock null
+            val value = decode(existing, purpose, ref) ?: return@withLock null
+            if (purpose == WalletInteractionSensitiveInputPurpose.OID4VCI_AUTHORIZATION_HANDOFF &&
+                openableAuthorizationUri(value) == null
+            ) {
+                throw IllegalArgumentException("wallet_interaction_authorization_handoff_unopenable")
+            }
             val remaining = existing - ref.value
             if (remaining.isEmpty()) {
                 store.remove(sessionId, NAMESPACE)
             } else {
                 store.put(sessionId, WalletInteractionPrivateSessionData(NAMESPACE, remaining))
             }
-            encoded.removePrefix(expectedPrefix)
+            value
         }
 
     override suspend fun clear(sessionId: WalletInteractionSessionId) {
@@ -91,6 +104,17 @@ class StoreBackedWalletInteractionSensitiveInputAuthority(
         )?.let { encoded -> runCatching { json.decodeFromString(WalletSecurityGrant.serializer(), encoded) }.getOrNull() }
 
     private fun encode(purpose: WalletInteractionSensitiveInputPurpose, value: String): String = "${purpose.name}:$value"
+
+    private fun decode(
+        existing: Map<String, String>,
+        purpose: WalletInteractionSensitiveInputPurpose,
+        ref: WalletInteractionSensitiveInputRef,
+    ): String? {
+        val encoded = existing[ref.value] ?: return null
+        val expectedPrefix = "${purpose.name}:"
+        if (!encoded.startsWith(expectedPrefix)) return null
+        return encoded.removePrefix(expectedPrefix)
+    }
 
     private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> byte.toUByte().toString(16).padStart(2, '0') }
 

@@ -22,6 +22,7 @@ import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.openid.oid4vci.issuer.command.OfferRateLimit
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
 import com.sphereon.openid.oid4vci.issuer.store.Oid4vciSessionIdentity
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -80,6 +81,10 @@ data class CredentialOfferSession(
     @SerialName("offer_template")
     @JsExportIgnoreCompat
     val offerTemplate: CredentialOfferTemplate? = null,
+    /** Immutable policy decision used for every continuation or reusable-offer remint. */
+    @SerialName("authorization_policy_snapshot")
+    @JsExportIgnoreCompat
+    val authorizationPolicySnapshot: Oid4vciAuthorizationPolicySnapshot? = null,
 ) {
     init {
         Oid4vciSessionIdentity.requireCanonical("instanceId", instanceId)

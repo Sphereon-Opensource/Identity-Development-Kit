@@ -136,6 +136,7 @@ class SelectingKeyReferenceStore(
     }
 
     override val isAvailable: Boolean get() = delegate.isAvailable
+    override val ownershipHistoryCapability: KeyReferenceHistoryCapability get() = delegate.ownershipHistoryCapability
 
     override suspend fun save(record: KeyReferenceRecord): IdkResult<KeyReferenceRecord, IdkError> = delegate.save(record)
 
@@ -157,6 +158,42 @@ class SelectingKeyReferenceStore(
         alias: String,
         providerId: String?,
     ): IdkResult<KeyReferenceRecord?, IdkError> = delegate.findByAlias(tenantId, alias, providerId)
+
+    override suspend fun findAllActiveByAlias(
+        tenantId: String,
+        alias: String,
+        providerId: String?,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> = delegate.findAllActiveByAlias(tenantId, alias, providerId)
+
+    override suspend fun findAllActiveByKid(
+        tenantId: String,
+        kid: String,
+        providerId: String?,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> = delegate.findAllActiveByKid(tenantId, kid, providerId)
+
+    override suspend fun findAllByAliasIncludingDeleted(
+        tenantId: String,
+        alias: String,
+        providerId: String?,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> = delegate.findAllByAliasIncludingDeleted(tenantId, alias, providerId)
+
+    override suspend fun findAllByKidIncludingDeleted(
+        tenantId: String,
+        kid: String,
+        providerId: String?,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> = delegate.findAllByKidIncludingDeleted(tenantId, kid, providerId)
+
+    override suspend fun findLatestByAliasIncludingDeleted(
+        tenantId: String,
+        alias: String,
+        providerId: String?,
+    ): IdkResult<KeyReferenceRecord?, IdkError> = delegate.findLatestByAliasIncludingDeleted(tenantId, alias, providerId)
+
+    override suspend fun findLatestByKidIncludingDeleted(
+        tenantId: String,
+        kid: String,
+        providerId: String?,
+    ): IdkResult<KeyReferenceRecord?, IdkError> = delegate.findLatestByKidIncludingDeleted(tenantId, kid, providerId)
 
     override suspend fun findAll(
         tenantId: String,

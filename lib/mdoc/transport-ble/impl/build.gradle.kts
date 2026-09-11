@@ -19,7 +19,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.mdoc.transport.ble.impl"
         compileSdk = 35
-        minSdk = 27
         withHostTest { }
         withDeviceTest { }
     }

@@ -91,7 +91,7 @@ class BuildServerMetadataCommandImpl(
     private val configProvider: OAuth2ServersConfigProvider,
     private val signingIdentifierResolver: AsServerSigningIdentifierResolver,
     private val identifierService: MultiManagedIdentifierService,
-    private val grantHandlers: Set<GrantHandler>,
+    private val grantHandlers: Map<String, Lazy<GrantHandler>>,
     private val kmsProviderRegistry: KmsProviderRegistry,
     private val buildSignedMetadata: com.sphereon.oauth2.server.authorization.command.BuildSignedAuthorizationServerMetadataCommand,
 ) : TypedServiceCommandAdapter<BuildServerMetadataArgs, AuthorizationServerMetadata, IdkError>(
@@ -144,6 +144,32 @@ class BuildServerMetadataCommandImpl(
         val consistency = validateServerMetadataConsistency(config)
         if (!consistency.isOk) return Err(consistency.error)
 
+        val activeSigningAlgs = runCatching { signingIdentifierResolver.supportedSigningAlgorithms() }.getOrDefault(emptySet())
+        if (activeSigningAlgs.isNotEmpty()) {
+            val unavailableIdTokenAlgs =
+                config.idTokenSigningAlgValuesSupported.orEmpty().filterNot { configured ->
+                    activeSigningAlgs.any { it.equals(configured, ignoreCase = true) }
+                }
+            if (unavailableIdTokenAlgs.isNotEmpty()) {
+                return Err(
+                    AuthorizationServerError.ServerError(
+                        details = "Configured ID-token signing algorithms have no ACTIVE private key: ${unavailableIdTokenAlgs.joinToString()}",
+                    ),
+                )
+            }
+            val unavailableJarmAlgs =
+                config.authorizationSigningAlgValuesSupported.orEmpty().filterNot { configured ->
+                    activeSigningAlgs.any { it.equals(configured, ignoreCase = true) }
+                }
+            if (unavailableJarmAlgs.isNotEmpty()) {
+                return Err(
+                    AuthorizationServerError.ServerError(
+                        details = "Configured JARM signing algorithms have no ACTIVE private key: ${unavailableJarmAlgs.joinToString()}",
+                    ),
+                )
+            }
+        }
+
         val baseUrl =
             (
                 baseUrlOverride?.takeIf { it.isNotBlank() }
@@ -195,13 +221,12 @@ class BuildServerMetadataCommandImpl(
                 grantTypesSupported =
                     buildList {
                         addAll(config.grantTypesEnabled)
-                        // Handler-contributed URNs gated by their feature policy. The Set<GrantHandler>
-                        // is the source of truth for which grant URNs are wired in this build; each
-                        // URN is advertised only when the corresponding feature gate is on, so an
-                        // operator who keeps `tokenExchange = NOT_SUPPORTED` or `deviceFlow = NOT_SUPPORTED`
-                        // gets a discovery doc free of those URNs even though the handlers are on
-                        // the classpath.
-                        val contributedGrantTypes = grantHandlers.map { it.grantType }.toSet()
+                        // Handler map keys are pure contribution metadata and do not construct any
+                        // SessionScope handler merely to build discovery. Each URN is advertised
+                        // only when its feature gate is on, so an operator who keeps
+                        // `tokenExchange = NOT_SUPPORTED` or `deviceFlow = NOT_SUPPORTED` gets a
+                        // discovery doc free of those URNs even though the handlers are wired.
+                        val contributedGrantTypes = grantHandlers.keys
                         // RFC 8693: advertise the token-exchange URN when the handler is contributed
                         // and the feature is enabled. Operators flip the feature policy without having
                         // to hand-edit `grantTypesEnabled`.
@@ -458,6 +483,10 @@ class BuildServerMetadataCommandImpl(
     }
 
     private suspend fun deriveSigningAlgsFromKey(): List<String> {
+        val activeAlgorithms = signingIdentifierResolver.supportedSigningAlgorithms()
+        if (activeAlgorithms.isNotEmpty()) {
+            return activeAlgorithms.toList()
+        }
         val serverIdentifier = signingIdentifierResolver.resolveSigningIdentifier()
         if (serverIdentifier == null) {
             log.warn(

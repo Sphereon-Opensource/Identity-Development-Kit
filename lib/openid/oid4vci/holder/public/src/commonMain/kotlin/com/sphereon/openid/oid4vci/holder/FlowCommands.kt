@@ -134,6 +134,19 @@ interface SendNotificationWithRetryCommand : ServiceCommand<SendNotificationWith
 // ============================================================================
 
 /**
+ * Selects whether the credential flow creates a fresh proof or finalizes a proof batch prepared
+ * by a server-owned workflow. Prepared proofs are deliberately carried as an in-process value;
+ * they are not a wire/REST-serializable command mode.
+ */
+sealed interface RequestCredentialWithFlowProofMode {
+    data object Unattended : RequestCredentialWithFlowProofMode
+
+    data class Prepared(
+        val proofBatch: PreparedCredentialRequestProofBatch,
+    ) : RequestCredentialWithFlowProofMode
+}
+
+/**
  * Args for the full credential issuance flow including proof creation, optional nonce
  * retry, deferred polling, and notification.
  *
@@ -171,6 +184,8 @@ data class RequestCredentialWithFlowArgs(
     val notificationEndpoint: String? = null,
     val credentialResponseEncryption: RequestedCredentialResponseEncryption? = null,
     val decryptionKey: ManagedIdentifierOptsOrResult? = null,
+    /** Server-owned prepared proof execution. Defaults to normal unattended proof creation. */
+    val proofMode: RequestCredentialWithFlowProofMode = RequestCredentialWithFlowProofMode.Unattended,
 )
 
 /**
@@ -212,6 +227,15 @@ sealed class CredentialFlowResult {
         val transactionId: String,
         val attemptsMade: Int,
         val lastInterval: Int,
+    ) : CredentialFlowResult()
+
+    /**
+     * Prepared proof execution stopped because the issuer rejected its nonce. Orchestration must
+     * acquire a new activation and prepare a new proof; this flow never retries a prepared proof.
+     */
+    data class ReactivationRequired(
+        val issuerNonce: String? = null,
+        val retryAfterSeconds: Long? = null,
     ) : CredentialFlowResult()
 }
 

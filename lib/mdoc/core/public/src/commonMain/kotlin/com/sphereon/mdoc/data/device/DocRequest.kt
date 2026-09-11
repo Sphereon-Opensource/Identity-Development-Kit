@@ -76,6 +76,10 @@ data class DocRequest(
             requestInfo: Map<String, Any>? = null,
         ): DeviceItemsRequest.Builder = builder().withDocType(docType).withRequestInfo(requestInfo)
 
+        fun withDocRequestInfo(docRequestInfo: DocRequestInfo?) = apply {
+            builder().withDocRequestInfo(docRequestInfo)
+        }
+
         @JsName("withReaderAuth")
         fun withReaderAuth(readerAuth: COSE_Sign1<ReaderAuthenticationBytes>) = apply { this.readerAuth = readerAuth }
 

@@ -16,7 +16,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.data.store.kv.android.secure"
         compileSdk = 36
-        minSdk = 27
         withDeviceTest { }
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)

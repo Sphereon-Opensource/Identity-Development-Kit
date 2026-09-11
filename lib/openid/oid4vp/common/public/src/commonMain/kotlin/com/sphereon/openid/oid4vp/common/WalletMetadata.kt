@@ -36,7 +36,7 @@ import kotlin.native.ObjCName
  * The wallet metadata includes:
  * - VP formats supported by the wallet
  * - Algorithm support for various credential types
- * - Key proof types supported
+ * - Data Integrity proof type and cryptosuite identifiers supported for `ldp_vc`
  * - Optional wallet identification
  *
  * Reference: OpenID4VP 1.0 Final Section 5.2 and Section 9
@@ -59,7 +59,7 @@ data class WalletMetadata(
     /**
      * VP formats supported by the wallet.
      *
-     * Keys are format identifiers (e.g., "dc+sd-jwt", "mso_mdoc", "jwt_vp_json").
+     * Keys are format identifiers (e.g., "dc+sd-jwt", "mso_mdoc", "jwt_vc_json").
      * Values contain algorithm support information for each format.
      *
      * Required per OpenID4VP 1.0 Section 9.
@@ -129,7 +129,8 @@ data class WalletMetadata(
  * @property sdJwtAlgValuesSupported JWS algorithms supported for SD-JWT (for dc+sd-jwt format)
  * @property kbJwtAlgValuesSupported JWS algorithms for Key Binding JWT (for dc+sd-jwt format)
  * @property algValuesSupported General JWS algorithms supported (for JWT formats)
- * @property proofTypesSupported Proof types supported (for LDP formats)
+ * @property proofTypeValues Data Integrity proof type identifiers (for ldp_vc)
+ * @property cryptosuiteValues Data Integrity cryptosuite identifiers (for ldp_vc)
  * @property issuerAuthAlgValuesSupported COSE algorithms for IssuerAuth (for mso_mdoc format)
  * @property deviceAuthAlgValuesSupported COSE algorithms for DeviceAuth (for mso_mdoc format)
  */
@@ -152,16 +153,20 @@ data class VpFormatSupport(
     val kbJwtAlgValuesSupported: List<String>? = null,
     /**
      * General JWS algorithms supported.
-     * Applicable to "jwt_vp_json" and similar JWT formats.
+     * Applicable to "jwt_vc_json" and similar JWT formats.
      */
     @SerialName("alg_values")
     val algValuesSupported: List<String>? = null,
     /**
-     * Proof types supported for Linked Data Proofs.
-     * Applicable to "ldp_vp" and similar LD formats.
+     * Data Integrity proof type identifiers supported for `ldp_vc`.
      */
-    @SerialName("proof_types_supported")
-    val proofTypesSupported: List<String>? = null,
+    @SerialName("proof_type_values")
+    val proofTypeValues: List<String>? = null,
+    /**
+     * Data Integrity cryptosuite identifiers supported for `ldp_vc`.
+     */
+    @SerialName("cryptosuite_values")
+    val cryptosuiteValues: List<String>? = null,
     /**
      * COSE algorithms supported for IssuerAuth in mdoc.
      * Values are COSE algorithm numbers (e.g., -7 for ES256).
@@ -188,7 +193,8 @@ val validateVpFormatSupport =
             !it.sdJwtAlgValuesSupported.isNullOrEmpty() ||
                 !it.kbJwtAlgValuesSupported.isNullOrEmpty() ||
                 !it.algValuesSupported.isNullOrEmpty() ||
-                !it.proofTypesSupported.isNullOrEmpty() ||
+                !it.proofTypeValues.isNullOrEmpty() ||
+                !it.cryptosuiteValues.isNullOrEmpty() ||
                 !it.issuerAuthAlgValuesSupported.isNullOrEmpty() ||
                 !it.deviceAuthAlgValuesSupported.isNullOrEmpty()
         }
@@ -204,6 +210,22 @@ val validateVpFormatSupport =
 
         constrain("alg_values must contain valid JWS algorithm identifiers") {
             it.algValuesSupported?.all { alg -> alg.matches("[A-Z0-9-]+".toRegex()) } ?: true
+        }
+
+        constrain("proof_type_values must not be empty if specified") {
+            it.proofTypeValues?.isNotEmpty() ?: true
+        }
+
+        constrain("cryptosuite_values must not be empty if specified") {
+            it.cryptosuiteValues?.isNotEmpty() ?: true
+        }
+
+        constrain("proof_type_values must contain non-blank identifiers") {
+            it.proofTypeValues?.all(String::isNotBlank) ?: true
+        }
+
+        constrain("cryptosuite_values must contain non-blank identifiers") {
+            it.cryptosuiteValues?.all(String::isNotBlank) ?: true
         }
     }
 
@@ -368,16 +390,28 @@ class WalletMetadataBuilder {
             )
     }
 
-    /**
-     * Add support for JWT VP format.
-     */
-    fun supportJwtVpJson(algValues: List<String> = listOf("ES256", "ES384", "RS256")) =
+    /** Add support for the JWT-secured W3C credential/presentation format. */
+    fun supportJwtVcJson(algValues: List<String> = listOf("ES256", "ES384", "RS256")) =
         apply {
-            vpFormatsSupported["jwt_vp_json"] =
+            vpFormatsSupported["jwt_vc_json"] =
                 VpFormatSupport(
                     algValuesSupported = algValues,
                 )
         }
+
+    /**
+     * Add support for W3C Data Integrity credentials (`ldp_vc`).
+     */
+    fun supportLdpVc(
+        proofTypeValues: List<String> = listOf("DataIntegrityProof"),
+        cryptosuiteValues: List<String>? = null,
+    ) = apply {
+        vpFormatsSupported["ldp_vc"] =
+            VpFormatSupport(
+                proofTypeValues = proofTypeValues,
+                cryptosuiteValues = cryptosuiteValues,
+            )
+    }
 
     /**
      * Add support for a custom VP format.

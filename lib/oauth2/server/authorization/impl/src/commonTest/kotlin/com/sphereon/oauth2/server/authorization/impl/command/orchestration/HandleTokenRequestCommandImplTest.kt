@@ -139,23 +139,23 @@ class HandleTokenRequestCommandImplTest {
     private val noOpSecureRandom = defaultSecureRandom()
 
     /** DPoP-verify stub that always rejects: tests in this file never present DPoP headers. */
-    private val rejectingDpopVerify: VerifyDpopProofCommand =
-        object : VerifyDpopProofCommand {
+    private val rejectingDpopVerify: Lazy<VerifyDpopProofCommand> =
+        lazyOf(object : VerifyDpopProofCommand {
             override val inputTypeToken = typeToken<VerifyDpopProofOptions>()
             override val outputTypeToken = typeToken<VerifyDpopProofResult>()
             override val isEnabled = true
 
             override suspend fun execute(args: VerifyDpopProofOptions): IdkResult<VerifyDpopProofResult, IdkError> = Err(IdkError.fromString(code = "invalid_dpop_proof", message = "test stub"))
-        }
+        })
 
-    private fun newDpopJtiCache(): DpopProofJtiCache = InMemoryDpopProofJtiCacheImpl(InMemorySingleUseObjectStore())
+    private fun newDpopJtiCache(): Lazy<DpopProofJtiCache> = lazyOf(InMemoryDpopProofJtiCacheImpl(InMemorySingleUseObjectStore()))
 
     /**
      * Lightweight [DpopNonceManager] for unit tests: never requires nonce, returns predictable
      * fixed values. Tests that exercise nonce challenges should construct their own manager.
      */
-    private fun newDpopNonceManager(): DpopNonceManager =
-        object : DpopNonceManager {
+    private fun newDpopNonceManager(): Lazy<DpopNonceManager> =
+        lazyOf(object : DpopNonceManager {
             private var counter = 0
 
             override suspend fun currentNonce(): String = "test-nonce-current"
@@ -163,7 +163,7 @@ class HandleTokenRequestCommandImplTest {
             override suspend fun rotate(): String = "test-nonce-rotated-${++counter}"
 
             override suspend fun isValid(nonce: String): Boolean = true
-        }
+        })
 
     private fun newTokenStorage(): InMemoryTokenStorageImpl = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
 
@@ -192,12 +192,9 @@ class HandleTokenRequestCommandImplTest {
      */
     private val testClock: Clock = Clock.System
 
-    /**
-     * Build the [Set] of [com.sphereon.oauth2.server.authorization.command.token.GrantHandler]s
-     * the orchestrator dispatches to. Each test exercises one grant; instantiating all six
-     * here keeps the per-test setup uniform and exercises the dispatcher's `supports()` lookup.
-     */
+    /** Builds lazy keyed handlers without constructing grants unrelated to the parsed request. */
     private fun grantHandlersFor(
+        commands: com.sphereon.oauth2.server.authorization.service.AuthorizationServerService.Commands,
         tokenStorage: TokenStorage,
         verifyDeviceCodeGrant: VerifyDeviceCodeGrantCommand = rejectingVerifyDeviceCodeGrant,
         deviceAuthorizationStorage: com.sphereon.oauth2.server.authorization.storage.DeviceAuthorizationStorage = newDeviceAuthorizationStorage(),
@@ -209,27 +206,70 @@ class HandleTokenRequestCommandImplTest {
         refreshAuditEmitter: com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEmitter =
             com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter,
         clock: Clock = testClock,
-    ): Set<com.sphereon.oauth2.server.authorization.command.token.GrantHandler> =
-        setOf(
-            com.sphereon.oauth2.server.authorization.impl.command.token.grant.AuthorizationCodeGrantHandlerImpl(
-                authorizationCodeStorage = authorizationCodeStorage,
-                scopeClaimsMapper = null,
-            ),
-            com.sphereon.oauth2.server.authorization.impl.command.token.grant.RefreshTokenGrantHandlerImpl(
-                tokenStorage = tokenStorage,
-                auditEmitter = refreshAuditEmitter,
-            ),
-            com.sphereon.oauth2.server.authorization.impl.command.token.grant
-                .ClientCredentialsGrantHandlerImpl(),
-            com.sphereon.oauth2.server.authorization.impl.command.token.grant
-                .TokenExchangeGrantHandlerImpl(),
-            com.sphereon.oauth2.server.authorization.impl.command.token.grant
-                .PreAuthorizedCodeGrantHandlerImpl(),
-            com.sphereon.oauth2.server.authorization.impl.command.token.grant.DeviceCodeGrantHandlerImpl(
-                verifyDeviceCodeGrantCommand = verifyDeviceCodeGrant,
-                deviceAuthorizationStorage = deviceAuthorizationStorage,
-                clock = clock,
-            ),
+        clientRegistry: ClientRegistry = newClientRegistry(),
+    ): Map<String, Lazy<com.sphereon.oauth2.server.authorization.command.token.GrantHandler>> =
+        mapOf(
+            com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.AUTHORIZATION_CODE to
+                lazy {
+                    com.sphereon.oauth2.server.authorization.impl.command.token.grant.AuthorizationCodeGrantHandlerImpl(
+                        authorizationCodeStorage = authorizationCodeStorage,
+                        scopeClaimsMapper = null,
+                        verifyAuthorizationCodeGrant = commands.verifyAuthorizationCodeGrant,
+                        createAccessToken = commands.createAccessToken,
+                        createRefreshToken = lazy { commands.createRefreshToken },
+                        createIdToken = lazy { commands.createIdToken },
+                        createTokenResponse = commands.createTokenResponse,
+                    )
+                },
+            com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.REFRESH_TOKEN to
+                lazy {
+                    com.sphereon.oauth2.server.authorization.impl.command.token.grant.RefreshTokenGrantHandlerImpl(
+                        tokenStorage = tokenStorage,
+                        auditEmitter = refreshAuditEmitter,
+                        verifyRefreshTokenGrant = commands.verifyRefreshTokenGrant,
+                        createAccessToken = commands.createAccessToken,
+                        createRefreshToken = lazy { commands.createRefreshToken },
+                        createIdToken = lazy { commands.createIdToken },
+                        createTokenResponse = commands.createTokenResponse,
+                    )
+                },
+            com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.CLIENT_CREDENTIALS to
+                lazy {
+                    com.sphereon.oauth2.server.authorization.impl.command.token.grant.ClientCredentialsGrantHandlerImpl(
+                        verifyClientCredentialsGrant = commands.verifyClientCredentialsGrant,
+                        createAccessToken = commands.createAccessToken,
+                        createTokenResponse = commands.createTokenResponse,
+                    )
+                },
+            com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.TOKEN_EXCHANGE to
+                lazy {
+                    com.sphereon.oauth2.server.authorization.impl.command.token.grant.TokenExchangeGrantHandlerImpl(
+                        verifyTokenExchangeGrant = commands.verifyTokenExchangeGrant,
+                        createAccessToken = commands.createAccessToken,
+                        createTokenResponse = commands.createTokenResponse,
+                    )
+                },
+            com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.PRE_AUTHORIZED_CODE to
+                lazy {
+                    com.sphereon.oauth2.server.authorization.impl.command.token.grant.PreAuthorizedCodeGrantHandlerImpl(
+                        verifyPreAuthorizedCodeGrant = commands.verifyPreAuthorizedCodeGrant,
+                        createAccessToken = commands.createAccessToken,
+                        createTokenResponse = commands.createTokenResponse,
+                    )
+                },
+            com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.DEVICE_CODE to
+                lazy {
+                    com.sphereon.oauth2.server.authorization.impl.command.token.grant.DeviceCodeGrantHandlerImpl(
+                        verifyDeviceCodeGrantCommand = verifyDeviceCodeGrant,
+                        deviceAuthorizationStorage = deviceAuthorizationStorage,
+                        clock = clock,
+                        createAccessToken = commands.createAccessToken,
+                        createRefreshToken = lazy { commands.createRefreshToken },
+                        createIdToken = lazy { commands.createIdToken },
+                        createTokenResponse = commands.createTokenResponse,
+                        clientRegistry = clientRegistry,
+                    )
+                },
         )
 
     private fun serviceForClientCredentialsFlow(
@@ -294,6 +334,97 @@ class HandleTokenRequestCommandImplTest {
     }
 
     @Test
+    fun tokenDispatchConstructsOnlyTheSelectedGrantHandler() =
+        runTest {
+            var selectedConstructions = 0
+            var unrelatedConstructions = 0
+            var dpopVerifierConstructions = 0
+            var dpopReplayCacheConstructions = 0
+            var dpopNonceManagerConstructions = 0
+            val parse =
+                stubParseTokenRequest {
+                    Ok(
+                        TokenRequestData(
+                            grantType = GrantType.CLIENT_CREDENTIALS,
+                            clientId = "client-1",
+                            clientAuthentication = ClientAuthenticationConfig.Anonymous,
+                            grantParameters = GrantParameters.ClientCredentials(scope = "read"),
+                            httpUrl = "https://as.example.com/token",
+                        ),
+                    )
+                }
+            val verifyClient =
+                stubVerifyClientAuthentication {
+                    Ok(VerifiedClientAuthentication(clientId = "client-1", method = ClientAuthenticationMethod.NONE))
+                }
+            val selected =
+                object : com.sphereon.oauth2.server.authorization.command.token.GrantHandler {
+                    override val grantType =
+                        com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.CLIENT_CREDENTIALS
+
+                    override fun supports(params: GrantParameters): Boolean = params is GrantParameters.ClientCredentials
+
+                    override suspend fun handle(
+                        params: GrantParameters,
+                        context: com.sphereon.oauth2.server.authorization.command.token.GrantContext,
+                    ): IdkResult<TokenResponse, IdkError> = Ok(TokenResponse(accessToken = "selected", tokenType = "Bearer"))
+                }
+            val handlers: Map<String, Lazy<com.sphereon.oauth2.server.authorization.command.token.GrantHandler>> =
+                mapOf(
+                    selected.grantType to
+                        lazy {
+                            selectedConstructions++
+                            selected
+                        },
+                    com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.REFRESH_TOKEN to
+                        lazy<com.sphereon.oauth2.server.authorization.command.token.GrantHandler> {
+                            unrelatedConstructions++
+                            error("unrelated grant handler must not be constructed")
+                        },
+                )
+            val command =
+                HandleTokenRequestCommandImpl(
+                    execution = ctx.execution,
+                    parseTokenRequestCommand = parse,
+                    verifyClientAuthenticationCommand = verifyClient,
+                    serversConfigProvider = configProvider,
+                    verifyDpopProofCommand =
+                        lazy {
+                            dpopVerifierConstructions++
+                            error("DPoP verifier must not be constructed without a proof")
+                        },
+                    dpopProofJtiCache =
+                        lazy {
+                            dpopReplayCacheConstructions++
+                            error("DPoP replay cache must not be constructed without a proof")
+                        },
+                    dpopNonceManager =
+                        lazy {
+                            dpopNonceManagerConstructions++
+                            error("DPoP nonce manager must not be constructed without a proof")
+                        },
+                    grantHandlers = handlers,
+                )
+
+            val result =
+                command.execute(
+                    HandleTokenRequestArgs(
+                        requestBody = mapOf("grant_type" to listOf("client_credentials")),
+                        requestHeaders = emptyMap(),
+                        httpUrl = "https://as.example.com/token",
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("selected", result.value.accessToken)
+            assertEquals(1, selectedConstructions)
+            assertEquals(0, unrelatedConstructions)
+            assertEquals(0, dpopVerifierConstructions)
+            assertEquals(0, dpopReplayCacheConstructions)
+            assertEquals(0, dpopNonceManagerConstructions)
+        }
+
+    @Test
     fun clientCredentialsGrantHappyPath() =
         runTest {
             val clientAuthorization =
@@ -343,13 +474,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -443,13 +574,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = preAuthorizedConfigProvider,
-                    clientRegistry = registry,
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = setOf(handler),
+                    grantHandlers = mapOf(handler.grantType to lazyOf(handler)),
                 )
 
             val result =
@@ -521,13 +652,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -599,13 +730,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -636,13 +767,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -866,13 +997,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = rotatingConfigProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = tokenStorage),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = tokenStorage),
                 )
 
             val result =
@@ -970,13 +1101,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = nonRotatingConfigProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = tokenStorage),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = tokenStorage),
                 )
 
             val result =
@@ -1119,13 +1250,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = oidcConfigProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = tokenStorage),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = tokenStorage),
                 )
 
             val result =
@@ -1259,13 +1390,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = oidcConfigProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = tokenStorage),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = tokenStorage),
                 )
 
             val result =
@@ -1304,8 +1435,8 @@ class HandleTokenRequestCommandImplTest {
      * Lightweight DPoP-verify stub that always Ok-returns a fixed thumbprint. Tests that need
      * proof-jkt continuity supply the thumbprint they want to assert against.
      */
-    private fun acceptingDpopVerify(jkt: String): VerifyDpopProofCommand =
-        object : VerifyDpopProofCommand {
+    private fun acceptingDpopVerify(jkt: String): Lazy<VerifyDpopProofCommand> =
+        lazyOf(object : VerifyDpopProofCommand {
             override val inputTypeToken = typeToken<VerifyDpopProofOptions>()
             override val outputTypeToken = typeToken<VerifyDpopProofResult>()
             override val isEnabled = true
@@ -1324,7 +1455,7 @@ class HandleTokenRequestCommandImplTest {
                         jwkThumbprint = jkt,
                     ),
                 )
-        }
+        })
 
     /**
      * RFC 9449 §10.1: refresh-token grant rejects a DPoP proof with a thumbprint different from
@@ -1390,13 +1521,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = attackerJkt),
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = tokenStorage),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = tokenStorage),
                 )
 
             val result =
@@ -1498,13 +1629,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = rotatedJkt),
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = tokenStorage),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = tokenStorage),
                 )
 
             val result =
@@ -1577,13 +1708,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = proofJkt),
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -1704,13 +1835,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = attackerJkt),
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -1799,13 +1930,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = subjectJkt),
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -1902,13 +2033,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = nonceConfigProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = acceptingDpopVerify(jkt = "jkt-test"),
                     dpopProofJtiCache = newDpopJtiCache(),
-                    dpopNonceManager = nonceManager,
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    dpopNonceManager = lazyOf(nonceManager),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -1949,8 +2080,8 @@ class HandleTokenRequestCommandImplTest {
                 )
             // Build a verify stub that returns a payload with a stale nonce baked in.
             val staleNonce = "stale-nonce-XYZ"
-            val staleNonceVerify: VerifyDpopProofCommand =
-                object : VerifyDpopProofCommand {
+            val staleNonceVerify: Lazy<VerifyDpopProofCommand> =
+                lazyOf(object : VerifyDpopProofCommand {
                     override val inputTypeToken = typeToken<VerifyDpopProofOptions>()
                     override val outputTypeToken = typeToken<VerifyDpopProofResult>()
                     override val isEnabled = true
@@ -1970,7 +2101,7 @@ class HandleTokenRequestCommandImplTest {
                                 jwkThumbprint = "jkt-stale",
                             ),
                         )
-                }
+                })
 
             val service =
                 serviceForClientCredentialsFlow(
@@ -2004,13 +2135,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = nonceConfigProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = staleNonceVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
-                    dpopNonceManager = nonceManager,
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    dpopNonceManager = lazyOf(nonceManager),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -2049,8 +2180,8 @@ class HandleTokenRequestCommandImplTest {
                     ),
                 )
             val activeNonce = "fresh-nonce-AAA"
-            val activeNonceVerify: VerifyDpopProofCommand =
-                object : VerifyDpopProofCommand {
+            val activeNonceVerify: Lazy<VerifyDpopProofCommand> =
+                lazyOf(object : VerifyDpopProofCommand {
                     override val inputTypeToken = typeToken<VerifyDpopProofOptions>()
                     override val outputTypeToken = typeToken<VerifyDpopProofResult>()
                     override val isEnabled = true
@@ -2070,7 +2201,7 @@ class HandleTokenRequestCommandImplTest {
                                 jwkThumbprint = "jkt-fresh",
                             ),
                         )
-                }
+                })
 
             val service =
                 serviceForClientCredentialsFlow(
@@ -2112,13 +2243,13 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = nonceConfigProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = activeNonceVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
-                    dpopNonceManager = nonceManager,
-                    grantHandlers = grantHandlersFor(tokenStorage = newTokenStorage()),
+                    dpopNonceManager = lazyOf(nonceManager),
+                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
                 )
 
             val result =
@@ -2196,13 +2327,17 @@ class HandleTokenRequestCommandImplTest {
             val command =
                 HandleTokenRequestCommandImpl(
                     execution = ctx.execution,
-                    authorizationServerService = service,
+                    parseTokenRequestCommand = service.commands.parseTokenRequest,
+                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
                     serversConfigProvider = configProvider,
-                    clientRegistry = newClientRegistry(),
                     verifyDpopProofCommand = rejectingDpopVerify,
                     dpopProofJtiCache = newDpopJtiCache(),
                     dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(tokenStorage = tokenStorage, refreshAuditEmitter = auditCapturing),
+                    grantHandlers = grantHandlersFor(
+                        commands = service.commands,
+                        tokenStorage = tokenStorage,
+                        refreshAuditEmitter = auditCapturing,
+                    ),
                 )
 
             val result =
@@ -2227,6 +2362,7 @@ class HandleTokenRequestCommandImplTest {
                 auditCapturing.events.filter { it.type == com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEventType.REFRESH_TOKEN_REUSE_DETECTED }
             assertEquals(1, reuseEvents.size, "exactly one REFRESH_TOKEN_REUSE_DETECTED event must fire on revoked-token replay")
             val event = reuseEvents.single()
+            assertEquals(ctx.execution.sessionContext.context.tenant.tenantId, event.tenantId)
             assertEquals("client-1", event.clientId)
             assertEquals("invalid_grant", event.errorCode)
             assertEquals("refresh_token", event.metadata["grant_type"])
@@ -2240,6 +2376,7 @@ class HandleTokenRequestCommandImplTest {
     internal class CapturingOAuth2AuditEmitter : com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEmitter {
         data class Captured(
             val type: com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEventType,
+            val tenantId: String,
             val clientId: String?,
             val subject: String?,
             val metadata: Map<String, String>,
@@ -2252,13 +2389,14 @@ class HandleTokenRequestCommandImplTest {
 
         override suspend fun emit(
             type: com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEventType,
+            tenantId: String,
             clientId: String?,
             subject: String?,
             metadata: Map<String, String>,
             errorCode: String?,
             errorMessage: String?,
         ) {
-            _events.add(Captured(type, clientId, subject, metadata, errorCode, errorMessage))
+            _events.add(Captured(type, tenantId, clientId, subject, metadata, errorCode, errorMessage))
         }
     }
 }

@@ -23,8 +23,8 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
@@ -45,6 +45,8 @@ import com.sphereon.statuslist.hosting.rest.StatusListHostingApiConstants.Tags
 import com.sphereon.statuslist.spi.StatusListDriver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -179,6 +181,7 @@ interface GetStatusListEntryStatusEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getStatusListEntryStatus",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = ADMIN_TAGS,
                 summary = "Read the status of a status-list index",
             )
@@ -187,7 +190,8 @@ interface GetStatusListEntryStatusEndpointCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetStatusListEntryStatusEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetStatusListEntryStatusEndpointCommand.COMMAND_ID)
 class GetStatusListEntryStatusEndpointCommandImpl(
     execution: SessionExecution,
     private val statusListDriverProvider: Provider<StatusListDriver>? = null,
@@ -230,6 +234,7 @@ interface RevokeStatusListEntryEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "revokeStatusListEntry",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = ADMIN_TAGS,
                 summary = "Revoke the credential at a status-list index",
             )
@@ -238,7 +243,8 @@ interface RevokeStatusListEntryEndpointCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<RevokeStatusListEntryEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(RevokeStatusListEntryEndpointCommand.COMMAND_ID)
 class RevokeStatusListEntryEndpointCommandImpl(
     execution: SessionExecution,
     private val statusListDriverProvider: Provider<StatusListDriver>? = null,
@@ -311,6 +317,7 @@ interface ClearStatusListEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "clearStatusList",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = ADMIN_TAGS,
                 summary = "Reset a status list to all-valid (clear all revocations)",
             )
@@ -319,7 +326,8 @@ interface ClearStatusListEndpointCommand : HttpEndpointCommand {
 
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ClearStatusListEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ClearStatusListEndpointCommand.COMMAND_ID)
 class ClearStatusListEndpointCommandImpl(
     execution: SessionExecution,
     private val statusListDriverProvider: Provider<StatusListDriver>? = null,

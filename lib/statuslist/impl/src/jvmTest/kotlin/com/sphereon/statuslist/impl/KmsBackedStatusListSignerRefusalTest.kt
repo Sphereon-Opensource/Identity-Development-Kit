@@ -21,6 +21,8 @@ import com.sphereon.crypto.core.CoseCryptoService
 import com.sphereon.crypto.core.CryptoServices
 import com.sphereon.crypto.core.cose.CoseSign1CborCodecImpl
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.jose.jws.JwtService
 import com.sphereon.crypto.jose.jws.JwtServiceImpl
@@ -32,6 +34,7 @@ import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.impl.sign.CwtStatusListSigner
 import com.sphereon.statuslist.impl.sign.JwsStatusListSigner
 import com.sphereon.statuslist.impl.sign.LocalStatusListJwsSigningService
+import com.sphereon.statuslist.impl.sign.MdocCwtStatusListSigner
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import dev.whyoleg.cryptography.CryptographyProvider
 import kotlinx.coroutines.test.runTest
@@ -81,6 +84,7 @@ class KmsBackedStatusListSignerRefusalTest {
             NoopDidProviderRegistry,
             NoopDidResolverRegistry,
             CwtStatusListSigner(coseCryptoService, CoseSign1CborCodecImpl(), keyManagerService, NoopDidProviderRegistry),
+            MdocCwtStatusListSigner(coseCryptoService, CoseSign1CborCodecImpl(), keyManagerService),
         )
 
     private fun args(
@@ -130,5 +134,19 @@ class KmsBackedStatusListSignerRefusalTest {
 
             assertTrue(result.isErr)
             assertEquals("STATUSLIST_SIGNING_KEY_UNRESOLVABLE", result.error.code)
+        }
+
+    @Test
+    fun mdocX5cModeRefusesWhenProtectedChainIsMissing() =
+        runTest {
+            val keyAlias = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+                .joseToManagedKeyInfo(KeyVisibility.PRIVATE).alias ?: error("generated key has no alias")
+            val result =
+                signer().signStatusListToken(
+                    args(signingKeyName = keyAlias, proofFormat = StatusProofFormat.CWT).copy(signingKeyMode = "x5c"),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("STATUSLIST_CWT_X5CHAIN_REQUIRED", result.error.code)
         }
 }

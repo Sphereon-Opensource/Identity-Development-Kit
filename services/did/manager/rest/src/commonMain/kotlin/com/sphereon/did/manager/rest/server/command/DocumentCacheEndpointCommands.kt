@@ -29,6 +29,7 @@ interface GetDidDocumentEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDidDocument",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("DocumentCache"),
                 summary = "Get the current DID document",
             )
@@ -46,6 +47,7 @@ interface RefreshDidDocumentEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "refreshDidDocument",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("DocumentCache"),
                 summary = "Force a re-resolution of an EXTERNAL DID's document",
             )
@@ -62,6 +64,7 @@ interface InvalidateDidDocumentEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}/document/cache",
                 operationId = "invalidateDidDocument",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("DocumentCache"),
                 summary = "Invalidate the cached document for a DID",
             )

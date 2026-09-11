@@ -34,7 +34,9 @@ import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.common.model.VerifyDpopProofOptions
 import com.sphereon.oauth2.server.authorization.command.ClientAuthenticationEndpoint
 import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestArgs
+import com.sphereon.oauth2.server.authorization.command.ParseTokenRequestCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
 import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestArgs
@@ -42,10 +44,10 @@ import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequest
 import com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager
 import com.sphereon.oauth2.server.authorization.dpop.DpopProofJtiCache
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.impl.command.TokenPathStage
+import com.sphereon.oauth2.server.authorization.impl.command.TokenPathStageTimings
 import com.sphereon.oauth2.server.authorization.impl.command.token.grant.errOf
 import com.sphereon.oauth2.server.authorization.impl.command.token.grant.invalidDpopProof
-import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
-import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -69,13 +71,13 @@ import kotlin.time.Instant
 @ContributesBinding(SessionScope::class, binding = binding<HandleTokenRequestCommand>())
 class HandleTokenRequestCommandImpl(
     execution: SessionExecution,
-    private val authorizationServerService: AuthorizationServerService,
+    private val parseTokenRequestCommand: ParseTokenRequestCommand,
+    private val verifyClientAuthenticationCommand: VerifyClientAuthenticationCommand,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
-    @Suppress("unused") private val clientRegistry: ClientRegistry,
-    private val verifyDpopProofCommand: VerifyDpopProofCommand,
-    private val dpopProofJtiCache: DpopProofJtiCache,
-    private val dpopNonceManager: DpopNonceManager,
-    private val grantHandlers: Set<GrantHandler>,
+    private val verifyDpopProofCommand: Lazy<VerifyDpopProofCommand>,
+    private val dpopProofJtiCache: Lazy<DpopProofJtiCache>,
+    private val dpopNonceManager: Lazy<DpopNonceManager>,
+    private val grantHandlers: Map<String, Lazy<GrantHandler>>,
 ) : TypedServiceCommandAdapter<HandleTokenRequestArgs, TokenResponse, IdkError>(
         commandId = HandleTokenRequestCommand.COMMAND_ID,
         execution = execution,
@@ -85,33 +87,53 @@ class HandleTokenRequestCommandImpl(
     HandleTokenRequestCommand {
     override val commandId: String get() = HandleTokenRequestCommand.COMMAND_ID
 
-    private val commands get() = authorizationServerService.commands
-
     override suspend fun supports(args: Any): Boolean = args is HandleTokenRequestArgs
 
     override suspend fun doExecute(
         args: HandleTokenRequestArgs,
         applyDuring: (HandleTokenRequestArgs) -> HandleTokenRequestArgs,
     ): IdkResult<TokenResponse, IdkError> {
+        val timings = TokenPathStageTimings(operation = "token-request")
+        var outcome = "failed"
+        return try {
+            executeTokenRequest(args, applyDuring, timings).also { result ->
+                outcome = if (result.isOk) "success" else "rejected"
+            }
+        } finally {
+            timings.report(log, outcome)
+        }
+    }
+
+    private suspend fun executeTokenRequest(
+        args: HandleTokenRequestArgs,
+        applyDuring: (HandleTokenRequestArgs) -> HandleTokenRequestArgs,
+        timings: TokenPathStageTimings,
+    ): IdkResult<TokenResponse, IdkError> {
         val applied = applyDuring(args)
 
         // Parse the token request
         val tokenRequest =
-            commands.parseTokenRequest
-                .execute(
-                    ParseTokenRequestArgs(
-                        requestBody = applied.requestBody,
-                        requestHeaders = applied.requestHeaders,
-                        httpUrl = applied.httpUrl,
-                        clientCertificateDer = applied.clientCertificateDer,
-                    ),
-                ).getOrElse { error -> return Err(error) }
+            timings
+                .record(TokenPathStage.PARSE_REQUEST) {
+                    parseTokenRequestCommand
+                        .execute(
+                            ParseTokenRequestArgs(
+                                requestBody = applied.requestBody,
+                                requestHeaders = applied.requestHeaders,
+                                httpUrl = applied.httpUrl,
+                                clientCertificateDer = applied.clientCertificateDer,
+                            ),
+                        )
+                }.getOrElse { error -> return Err(error) }
 
         // RFC 9449 §5: verify any DPoP proof on the token request and bind the resulting JWK
         // thumbprint as `cnf.jkt` on the issued access token. The thumbprint from the verified
         // proof always wins over the optional `dpop_jkt` query parameter the wallet sent at
         // /authorize (which is just an upfront commitment per RFC 9449 §10).
-        val proofJktResult = verifyDpopProofIfPresent(applied.httpUrl, tokenRequest.dpopProof, tokenRequest.httpMethod)
+        val proofJktResult =
+            timings.record(TokenPathStage.DPOP_PROOF_VERIFICATION) {
+                verifyDpopProofIfPresent(applied.httpUrl, tokenRequest.dpopProof, tokenRequest.httpMethod)
+            }
         val proofJkt = proofJktResult.getOrElse { error -> return Err(error) }
 
         // Per OID4VCI 1.0 §6.1: when the AS advertises
@@ -135,17 +157,27 @@ class HandleTokenRequestCommandImpl(
                 tokenRequest.clientAuthentication
             }
 
+        // Keep selected-command construction separate from execution. The command lives in the
+        // request SessionScope, so otherwise its DI cost is folded into client authentication and
+        // cannot be distinguished from registry/configuration I/O inside the command itself.
+        val selectedVerifyClientAuthentication =
+            timings.record(TokenPathStage.CLIENT_AUTHENTICATION_COMMAND_RESOLUTION) {
+                verifyClientAuthenticationCommand
+            }
+
         // Verify client authentication
         val verifiedAuth =
-            commands.verifyClientAuthentication
-                .execute(
-                    VerifyClientAuthenticationArgs(
-                        clientAuthentication = effectiveAuth,
-                        clientId = tokenRequest.clientId,
-                        tokenEndpointUrl = applied.httpUrl,
-                        endpoint = ClientAuthenticationEndpoint.TOKEN,
-                    ),
-                ).getOrElse { error -> return Err(error) }
+            timings
+                .record(TokenPathStage.CLIENT_AUTHENTICATION) {
+                    selectedVerifyClientAuthentication.execute(
+                        VerifyClientAuthenticationArgs(
+                            clientAuthentication = effectiveAuth,
+                            clientId = tokenRequest.clientId,
+                            tokenEndpointUrl = applied.httpUrl,
+                            endpoint = ClientAuthenticationEndpoint.TOKEN,
+                        ),
+                    )
+                }.getOrElse { error -> return Err(error) }
 
         val certThumbprint =
             computeCertThumbprintIfBound(
@@ -156,28 +188,36 @@ class HandleTokenRequestCommandImpl(
         val context =
             GrantContext(
                 tokenRequest = tokenRequest,
+                tenantId = execution.tenantId,
                 resolvedClientId = verifiedAuth.clientId,
                 clientInstanceKeyJkt = verifiedAuth.clientInstanceKey?.let(::generateJwkThumbprint),
                 proofJkt = proofJkt,
                 certThumbprintS256 = certThumbprint,
                 applied = applied,
-                commands = commands,
                 serverConfig = serversConfigProvider.serverConfig,
                 walletInstanceAttestation = verifiedAuth.walletInstanceAttestation,
             )
 
+        val grantType = tokenRequest.grantType.value
         val handler =
-            grantHandlers.firstOrNull { it.supports(tokenRequest.grantParameters) }
-                ?: return errOf(
-                    AuthorizationServerError.UnsupportedGrantType(grantType = tokenRequest.grantType.value),
-                )
+            grantHandlers[grantType]?.value
+                ?: return errOf(AuthorizationServerError.UnsupportedGrantType(grantType = grantType))
+        if (handler.grantType != grantType || !handler.supports(tokenRequest.grantParameters)) {
+            return errOf(
+                AuthorizationServerError.ServerError(
+                    details = "Grant handler binding mismatch for '$grantType'",
+                ),
+            )
+        }
 
-        return dispatchWithVerifiedClientAuthorization(
-            handler = handler,
-            params = tokenRequest.grantParameters,
-            context = context,
-            clientAuthorization = verifiedAuth.clientAuthorization,
-        )
+        return timings.record(TokenPathStage.GRANT_DISPATCH) {
+            dispatchWithVerifiedClientAuthorization(
+                handler = handler,
+                params = tokenRequest.grantParameters,
+                context = context,
+                clientAuthorization = verifiedAuth.clientAuthorization,
+            )
+        }
     }
 
     /**
@@ -211,7 +251,7 @@ class HandleTokenRequestCommandImpl(
         }
 
         val verified =
-            verifyDpopProofCommand
+            verifyDpopProofCommand.value
                 .execute(
                     VerifyDpopProofOptions(
                         dpopProof = dpopProofToken,
@@ -226,12 +266,12 @@ class HandleTokenRequestCommandImpl(
         if (nonceRequired) {
             val proofNonce = verified.payload.nonce
             if (proofNonce == null) {
-                val fresh = dpopNonceManager.rotate()
+                val fresh = dpopNonceManager.value.rotate()
                 log.warn("Rejecting token request with use_dpop_nonce: DPoP proof carried no `nonce` claim. Issued fresh DPoP-Nonce='$fresh'.")
                 return errOf(AuthorizationServerError.UseDpopNonce(dpopNonce = fresh))
             }
-            if (!dpopNonceManager.isValid(proofNonce)) {
-                val fresh = dpopNonceManager.rotate()
+            if (!dpopNonceManager.value.isValid(proofNonce)) {
+                val fresh = dpopNonceManager.value.rotate()
                 log.warn(
                     "Rejecting token request with use_dpop_nonce: DPoP proof `nonce` claim '$proofNonce' is unknown or expired " +
                         "(not in the active rolling window). Issued fresh DPoP-Nonce='$fresh'.",
@@ -241,11 +281,11 @@ class HandleTokenRequestCommandImpl(
         }
 
         val jti = verified.payload.jti
-        if (dpopProofJtiCache.hasBeenUsed(jti)) {
+        if (dpopProofJtiCache.value.hasBeenUsed(jti)) {
             return invalidDpopProof("DPoP proof jti '$jti' has already been used")
         }
         val iat = Instant.fromEpochSeconds(verified.payload.iat)
-        dpopProofJtiCache.markAsUsed(jti, iat + DPOP_JTI_REPLAY_WINDOW)
+        dpopProofJtiCache.value.markAsUsed(jti, iat + DPOP_JTI_REPLAY_WINDOW)
         return Ok(verified.jwkThumbprint)
     }
 

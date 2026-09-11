@@ -57,6 +57,7 @@ interface ReplayWebvhLogServiceCommand :
                 consumes = setOf(MediaType.ApplicationJson),
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "replayWebvhLog",
                 tags = setOf("did:webvh"),
                 summary = "Validate a did:webvh log and resolve a chosen entry's state",

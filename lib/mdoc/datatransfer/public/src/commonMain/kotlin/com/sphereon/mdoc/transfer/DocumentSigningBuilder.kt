@@ -23,6 +23,7 @@ import com.sphereon.mdoc.data.device.DeviceNameSpaces
 import com.sphereon.mdoc.data.device.DeviceResponse
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.Document
+import com.sphereon.mdoc.data.device.MacKeys
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.js.JsName
 import kotlin.native.ObjCName
@@ -73,6 +74,7 @@ interface DocumentSigningBuilder {
      * @param document The Document to sign
      * @param deviceKeyInfo The device key (null = derive from MSO)
      * @param deviceNamespaces Device-signed namespaces (usually empty)
+     * @param macKeys Reader-advertised keys used for second-edition COSE_Mac0 device authentication
      * @return This builder for method chaining
      */
     @JsName("addDocument")
@@ -81,6 +83,7 @@ interface DocumentSigningBuilder {
         document: Document,
         deviceKeyInfo: KeyInfoType<*>? = null,
         deviceNamespaces: DeviceNameSpaces = DeviceNameSpaces(mapOf()),
+        macKeys: MacKeys? = null,
     ): DocumentSigningBuilder
 
     /**

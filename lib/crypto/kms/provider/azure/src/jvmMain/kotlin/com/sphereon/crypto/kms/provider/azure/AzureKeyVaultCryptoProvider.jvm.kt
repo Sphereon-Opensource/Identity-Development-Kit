@@ -49,6 +49,7 @@ import com.azure.core.http.policy.RetryOptions
 import com.azure.core.http.policy.RetryPolicy
 import com.azure.security.keyvault.certificates.CertificateClientBuilder
 import com.azure.security.keyvault.certificates.CertificateServiceVersion
+import com.azure.security.keyvault.certificates.models.KeyVaultCertificate
 import com.azure.security.keyvault.keys.KeyAsyncClient
 import com.azure.security.keyvault.keys.KeyClientBuilder
 import com.azure.security.keyvault.keys.KeyServiceVersion
@@ -71,10 +72,20 @@ import com.sphereon.crypto.core.kms.BackendKeyOperationProofProvider
 import com.sphereon.crypto.core.kms.BackendKeyProvedDecryption
 import com.sphereon.crypto.core.kms.BackendKeyProvedEncryption
 import com.sphereon.crypto.core.kms.BackendSymmetricKmsKeyLifecycle
+import com.sphereon.crypto.core.kms.ProviderCertificateLookup
+import com.sphereon.crypto.core.kms.ProviderCertificateReference
+import com.sphereon.crypto.core.kms.ProviderCertificateReferenceService
+import com.sphereon.crypto.core.kms.ProviderNativeObjectLookup
+import com.sphereon.crypto.core.kms.ProviderNativeObjectType
+import com.sphereon.crypto.core.kms.ProviderTenantAssignmentVerifier
 import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.toKeyReference
 import com.sphereon.crypto.core.kms.EncryptionResult
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
 import java.security.SecureRandom
 import java.security.MessageDigest
 import java.time.Duration
@@ -86,9 +97,11 @@ import kotlinx.coroutines.reactor.awaitSingle
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import com.sphereon.core.compat.Uuid
 import com.sphereon.core.api.decodeFromBase64
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
@@ -105,12 +118,15 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.sign.requireSigningKeyCompatible
+import com.sphereon.crypto.core.sign.keyCompatibilityFailure
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.crypto.core.kms.CertificateOptions
 import com.sphereon.crypto.core.kms.PredefinedKmsProviderTypes
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.command.SignatureEncodingCodec
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
 import com.sphereon.crypto.core.sign.model.SignInput
 import com.sphereon.crypto.core.sign.model.SignOutput
 import com.sphereon.crypto.core.sign.model.SignOutputData
@@ -118,6 +134,45 @@ import com.sphereon.crypto.core.sign.model.Signature
 import com.sphereon.crypto.core.sign.model.SignatureLevel
 import com.sphereon.crypto.core.sign.model.SigningMode
 import com.sphereon.crypto.core.x509.Certificate
+import com.sphereon.crypto.core.x509.certificateFromDer
+import kotlinx.coroutines.CancellationException
+
+/** Public-only snapshot returned by the internal Azure certificate-client seam. */
+internal data class AzureCertificateClientRead(
+    val certificateId: String?,
+    val keyId: String?,
+    val certificateDer: ByteArray,
+    val tags: Map<String, String> = emptyMap(),
+)
+
+/** Public-only snapshot returned by the internal Azure key-client seam. */
+internal data class AzureKeyClientRead(
+    val keyId: String?,
+    val name: String?,
+    val version: String?,
+    val tags: Map<String, String>,
+)
+
+/** JVM-internal boundary around the authenticated Azure key client. */
+internal fun interface AzureKeyTenantAssignmentReader {
+    suspend fun read(
+        name: String,
+        version: String?,
+    ): AzureKeyClientRead
+}
+
+/**
+ * JVM-internal boundary around the authenticated Azure certificate client.
+ *
+ * Keeping Azure SDK models behind this seam lets deterministic tests exercise the
+ * public provider contract without exposing SDK types through common/public APIs.
+ */
+internal fun interface AzureCertificateClientReader {
+    suspend fun read(
+        alias: String,
+        version: String?,
+    ): AzureCertificateClientRead
+}
 
 /**
  * Implementation of the Azure Key Vault Crypto Provider for JVM environments.
@@ -127,6 +182,8 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
     config: AzureKmsProviderConfig,
 //    settings: KeyProviderSettings
 ) : BaseAzureKeyvaultCryptoProvider(config/*, settings*/),
+    ProviderCertificateReferenceService,
+    ProviderTenantAssignmentVerifier,
     BackendKeyOperationProofProvider,
     BackendSymmetricKmsKeyLifecycle {
 
@@ -145,6 +202,22 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
 
     private val hasCertsApi = config.hsmType == HSMType.KEYVAULT
 
+    private var keyTenantAssignmentReader: AzureKeyTenantAssignmentReader =
+        AzureKeyTenantAssignmentReader { name, version ->
+            val key =
+                if (version == null) {
+                    keyClient.getKey(name).awaitSingle()
+                } else {
+                    keyClient.getKey(name, version).awaitSingle()
+                }
+            AzureKeyClientRead(
+                keyId = key.id,
+                name = key.properties.name,
+                version = key.properties.version,
+                tags = key.properties.tags.orEmpty(),
+            )
+        }
+
     private val certClient = if (hasCertsApi) {
         with(config) {
             CertificateClientBuilder()
@@ -159,6 +232,96 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
                 .buildAsyncClient()
         }
     } else null
+
+    private var certificateClientReader: AzureCertificateClientReader? =
+        certClient?.let { client ->
+            AzureCertificateClientReader { alias, version ->
+                val certificate: KeyVaultCertificate =
+                    if (version == null) {
+                        client.getCertificate(alias).awaitSingle()
+                    } else {
+                        client.getCertificateVersion(alias, version).awaitSingle()
+                    }
+                AzureCertificateClientRead(
+                    certificateId = certificate.id ?: certificate.properties?.id,
+                    keyId = certificate.keyId,
+                    certificateDer = certificate.cer.copyOf(),
+                    tags = certificate.properties?.tags.orEmpty(),
+                )
+            }
+        }
+
+    internal constructor(
+        config: AzureKmsProviderConfig,
+        certificateClientReader: AzureCertificateClientReader,
+    ) : this(config) {
+        require(config.hsmType == HSMType.KEYVAULT) {
+            "Azure certificate reads require a standard Key Vault configuration"
+        }
+        this.certificateClientReader = certificateClientReader
+    }
+
+    internal constructor(
+        config: AzureKmsProviderConfig,
+        keyTenantAssignmentReader: AzureKeyTenantAssignmentReader,
+        certificateClientReader: AzureCertificateClientReader,
+    ) : this(config, certificateClientReader) {
+        this.keyTenantAssignmentReader = keyTenantAssignmentReader
+    }
+
+    override val supportsProviderCertificateReferenceReads: Boolean
+        get() = hasCertsApi && certificateClientReader != null
+
+    override suspend fun isAssignedToTenant(
+        lookup: ProviderNativeObjectLookup,
+        tenantId: String,
+    ): Boolean {
+        if (tenantId.isBlank()) {
+            return false
+        }
+        if (lookup.type == ProviderNativeObjectType.CERTIFICATE && !hasCertsApi) {
+            return false
+        }
+
+        return try {
+            when (lookup.type) {
+                ProviderNativeObjectType.KEY -> {
+                    val (name, version) = parseAzureKeyLookup(config.keyvaultUrl, lookup)
+                    val key = keyTenantAssignmentReader.read(name, version)
+                    resolveAzureKeyIdentity(
+                        configuredVaultUrl = config.keyvaultUrl,
+                        lookup = lookup,
+                        returnedKeyId = key.keyId,
+                        returnedName = key.name,
+                        returnedVersion = key.version,
+                    )
+                    azureTenantTagMatches(key.tags, tenantId)
+                }
+
+                ProviderNativeObjectType.CERTIFICATE -> {
+                    val reader = certificateClientReader ?: return false
+                    val certificateLookup =
+                        ProviderCertificateLookup(
+                            alias = lookup.alias,
+                            id = lookup.id,
+                        )
+                    val (alias, version) = parseAzureCertificateLookup(certificateLookup)
+                    val certificate = reader.read(alias, version)
+                    resolveAzureCertificateIdentity(
+                        configuredVaultUrl = config.keyvaultUrl,
+                        lookup = certificateLookup,
+                        returnedCertificateId = certificate.certificateId,
+                        returnedKeyId = certificate.keyId,
+                    )
+                    azureTenantTagMatches(certificate.tags, tenantId)
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     /**
      * Generates a new key pair in Azure Key Vault.
@@ -255,23 +418,29 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         input: ByteArray,
         requireX5Chain: Boolean
     ): ByteArray {
-        val keyVaultKey = keyClient.getKey(keyInfo.alias).awaitSingleOrNull()
-            ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.alias}")
+        requireManagedSigningKeySelection(keyInfo)
+        val keyVaultKey = fetchAzureKey(keyInfo)
 
+        val resolved = keyVaultKey.toManagedKeyInfo()
+        val algorithm = keyInfo.signatureAlgorithm ?: keyVaultKey.toSignatureAlgorithm()
+            ?: throw SignClientException("Azure RSA keys require an explicit signing algorithm")
+        keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(algorithm) }
+        resolved.signingPolicyInfo().requireSigningKeyCompatible(algorithm)
         val cryptoClient = cryptographyClientFor(keyInfo)
-        val signResult = cryptoClient.sign(keyVaultKey.toSignatureAlgorithm(), hash(keyInfo, input)).awaitSingleOrNull()
+        val signResult = cryptoClient.sign(algorithm.toAzureSignatureAlgorithm(), hash(algorithm, input)).awaitSingleOrNull()
             ?: throw SignClientException("Failed to create raw signature for key: ${keyInfo.alias}")
 
         return signResult.signature
     }
 
-    private fun hash(keyInfo: KeyInfoType<*>, input: ByteArray): ByteArray {
-        val digestAlg = DigestAlg.fromValue(
-            keyInfo.signatureAlgorithm?.digestAlgorithm?.name
-                ?: throw IllegalArgumentException("Digest algorithm is required")
+    private fun hash(algorithm: SignatureAlgorithm, input: ByteArray): ByteArray =
+        hash(
+            DigestAlg.fromValue(
+                algorithm.digestAlgorithm?.name
+                    ?: throw IllegalArgumentException("Digest algorithm is required"),
+            ),
+            input,
         )
-        return hash(digestAlg, input)
-    }
 
     private fun hash(digestAlg: com.sphereon.crypto.core.generic.DigestAlg, input: ByteArray): ByteArray {
         return hash(input, digestAlg)
@@ -291,13 +460,16 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         input: ByteArray,
         signature: ByteArray
     ): Boolean {
-        val keyVaultKey = keyClient.getKey(keyInfo.alias).awaitSingleOrNull()
-            ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.alias}")
+        val keyVaultKey = fetchAzureKey(keyInfo)
 
         val cryptoClient = cryptographyClientFor(keyInfo)
 
-        val algorithm = keyVaultKey.toSignatureAlgorithm()
-        val verifyResult = cryptoClient.verify(algorithm, hash(keyInfo, input), signature).awaitSingleOrNull()
+        val algorithm = keyInfo.signatureAlgorithm ?: keyVaultKey.toSignatureAlgorithm()
+            ?: throw SignClientException("Azure RSA keys require an explicit verification algorithm")
+        val resolved = keyVaultKey.toManagedKeyInfo()
+        keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(algorithm) }
+        resolved.signingPolicyInfo().requireVerificationKeyCompatible(algorithm)
+        val verifyResult = cryptoClient.verify(algorithm.toAzureSignatureAlgorithm(), hash(algorithm, input), signature).awaitSingleOrNull()
             ?: throw SignClientException("Failed to verify signature for key: ${keyInfo.alias}")
 
         return verifyResult.isValid
@@ -310,10 +482,13 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         signatureEncoding: SignatureEncoding,
         requireX5Chain: Boolean,
     ): ByteArray {
-        keyClient.getKey(keyInfo.alias).awaitSingleOrNull()
-            ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.alias}")
+        requireManagedSigningKeySelection(keyInfo)
+        val keyVaultKey = fetchAzureKey(keyInfo)
         requireDigestLength(signatureAlgorithm, digest)
-        val cryptoClient = keyClient.getCryptographyAsyncClient(keyInfo.alias)
+        val resolved = keyVaultKey.toManagedKeyInfo()
+        keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(signatureAlgorithm) }
+        resolved.signingPolicyInfo().requireSigningKeyCompatible(signatureAlgorithm)
+        val cryptoClient = cryptographyClientFor(keyInfo)
         val signResult = cryptoClient.sign(signatureAlgorithm.toAzureSignatureAlgorithm(), digest).awaitSingleOrNull()
             ?: throw SignClientException("Failed to create digest signature for key: ${keyInfo.alias}")
         return normalizeAzureSignatureOutput(signResult.signature, signatureEncoding, signatureAlgorithm)
@@ -326,10 +501,12 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         signatureAlgorithm: SignatureAlgorithm,
         signatureEncoding: SignatureEncoding,
     ): Boolean {
-        keyClient.getKey(keyInfo.alias).awaitSingleOrNull()
-            ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${keyInfo.alias}")
+        val keyVaultKey = fetchAzureKey(keyInfo)
         requireDigestLength(signatureAlgorithm, digest)
-        val cryptoClient = keyClient.getCryptographyAsyncClient(keyInfo.alias)
+        val resolved = keyVaultKey.toManagedKeyInfo()
+        keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(signatureAlgorithm) }
+        resolved.signingPolicyInfo().requireVerificationKeyCompatible(signatureAlgorithm)
+        val cryptoClient = cryptographyClientFor(keyInfo)
         val nativeSignature = normalizeAzureSignatureInput(signature, signatureEncoding, signatureAlgorithm)
         val verifyResult = cryptoClient.verify(signatureAlgorithm.toAzureSignatureAlgorithm(), digest, nativeSignature).awaitSingleOrNull()
             ?: throw SignClientException("Failed to verify digest signature for key: ${keyInfo.alias}")
@@ -351,20 +528,24 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         signatureAlgorithm: SignatureAlgorithm?
     ): SignOutput {
         val actualKeyInfo = keyInfo ?: throw SignClientException("Key info must be provided for signature creation")
-        signatureAlgorithm ?: actualKeyInfo.signatureAlgorithm
-            ?: throw SignClientException("signatureAlgorithm must be provided or derivable from keyInfo")
-
         val signatureValue = when (signInput.signMode) {
             SigningMode.DOCUMENT -> {
                 // Raw document data — createRawSignature handles hashing internally
-                createRawSignature(actualKeyInfo, signInput.input, false)
+                val requestedKeyInfo = signatureAlgorithm?.let {
+                    KeyInfo.fromDTO(actualKeyInfo).copy(signatureAlgorithm = it)
+                } ?: actualKeyInfo
+                createRawSignature(requestedKeyInfo, signInput.input, false)
             }
             SigningMode.DIGEST -> {
                 // Input is already a digest — sign directly without additional hashing
-                val cryptoClient = keyClient.getCryptographyAsyncClient(actualKeyInfo.alias)
-                val keyVaultKey = keyClient.getKey(actualKeyInfo.alias).awaitSingleOrNull()
-                    ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${actualKeyInfo.alias}")
-                val signResult = cryptoClient.sign(keyVaultKey.toSignatureAlgorithm(), signInput.input).awaitSingleOrNull()
+                val cryptoClient = cryptographyClientFor(actualKeyInfo)
+                val keyVaultKey = fetchAzureKey(actualKeyInfo)
+                val actualAlgorithm = signatureAlgorithm ?: actualKeyInfo.signatureAlgorithm ?: keyVaultKey.toSignatureAlgorithm()
+                    ?: throw SignClientException("Azure RSA keys require an explicit signing algorithm")
+                val resolved = keyVaultKey.toManagedKeyInfo()
+                actualKeyInfo.key?.let { actualKeyInfo.requireSigningKeyCompatible(actualAlgorithm) }
+                resolved.signingPolicyInfo().requireSigningKeyCompatible(actualAlgorithm)
+                val signResult = cryptoClient.sign(actualAlgorithm.toAzureSignatureAlgorithm(), signInput.input).awaitSingleOrNull()
                     ?: throw SignClientException("Failed to create signature for key: ${actualKeyInfo.alias}")
                 signResult.signature
             }
@@ -394,10 +575,14 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
             }
             SigningMode.DIGEST -> {
                 // Input is already a digest — verify directly without additional hashing
-                val cryptoClient = keyClient.getCryptographyAsyncClient(signature.keyInfo.alias)
-                val keyVaultKey = keyClient.getKey(signature.keyInfo.alias).awaitSingleOrNull()
-                    ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${signature.keyInfo.alias}")
-                val verifyResult = cryptoClient.verify(keyVaultKey.toSignatureAlgorithm(), signInput.input, signature.value).awaitSingleOrNull()
+                val cryptoClient = cryptographyClientFor(signature.keyInfo)
+                val keyVaultKey = fetchAzureKey(signature.keyInfo)
+                val algorithm = signature.keyInfo.signatureAlgorithm ?: keyVaultKey.toSignatureAlgorithm()
+                    ?: throw SignClientException("Azure RSA keys require an explicit verification algorithm")
+                val resolved = keyVaultKey.toManagedKeyInfo()
+                signature.keyInfo.key?.let { signature.keyInfo.requireVerificationKeyCompatible(algorithm) }
+                resolved.signingPolicyInfo().requireVerificationKeyCompatible(algorithm)
+                val verifyResult = cryptoClient.verify(algorithm.toAzureSignatureAlgorithm(), signInput.input, signature.value).awaitSingleOrNull()
                     ?: throw SignClientException("Failed to verify signature for key: ${signature.keyInfo.alias}")
                 verifyResult.isValid
             }
@@ -434,8 +619,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
      * @throws SignClientException if the key cannot be found in Azure Key Vault
      */
     override suspend fun getKey(keyInfo: KeyInfoType<*>): ManagedKeyInfoType<*> {
-        val reference = keyInfo.kid ?: keyInfo.alias
-            ?: throw IllegalArgumentException("Either alias or kid must be provided")
+        val reference = azureKeyReference(keyInfo)
         val kvNames = kidToKVKeyName(reference)
         // Try the certificate first if available
         val keyEntry = if (hasCertsApi && certClient != null) {
@@ -446,7 +630,9 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
                     certClient.getCertificateVersion(kvNames.first, kvNames.second)
                 }
                 certificate
-                    .awaitSingleOrNull()?.toManagedCertInfo()
+                    .awaitSingleOrNull()
+                    ?.toManagedCertInfo()
+                    ?.preserveAzurePublicJwkCertificateMetadata()
             } catch (_: ResourceNotFoundException) {
                 null
             }
@@ -464,6 +650,52 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
             ?: throw SignClientException("Key not found in Azure Key Vault for reference: $reference")
         } catch (expected: Exception) {
             throw SignClientException("keyClient.getKey failed for ${kvNames.first}", expected)
+        }
+    }
+
+    override suspend fun getCertificate(
+        lookup: ProviderCertificateLookup,
+    ): IdkResult<ProviderCertificateReference, IdkError> = readCertificateReference(lookup)
+
+    private suspend fun readCertificateReference(
+        lookup: ProviderCertificateLookup,
+    ): IdkResult<ProviderCertificateReference, IdkError> {
+        if (!supportsProviderCertificateReferenceReads) {
+            return certificateReadError(
+                IdkError.UNSUPPORTED_OPERATION_ERROR(operation = "provider certificate read"),
+            )
+        }
+        if (lookup.alias.isBlank()) {
+            return certificateReadError(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Provider certificate lookup is invalid"))
+        }
+
+        return try {
+            val (alias, version) = parseAzureCertificateLookup(lookup)
+            val certificate = certificateClientReader!!.read(alias, version)
+            val identity =
+                resolveAzureCertificateIdentity(
+                    configuredVaultUrl = config.keyvaultUrl,
+                    lookup = lookup,
+                    returnedCertificateId = certificate.certificateId,
+                    returnedKeyId = certificate.keyId,
+                )
+            val leaf = certificateFromDer(certificate.certificateDer)
+            Ok(
+                ProviderCertificateReference(
+                    providerId = id,
+                    alias = identity.alias,
+                    id = identity.id,
+                    certificate = leaf,
+                ),
+            ).asResult()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: ResourceNotFoundException) {
+            certificateReadError(IdkError.NOT_FOUND_ERROR(message = "Provider certificate was not found"))
+        } catch (_: IllegalArgumentException) {
+            certificateReadError(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Provider certificate lookup is invalid"))
+        } catch (_: Exception) {
+            certificateReadError(IdkError.UNKNOWN_ERROR(message = "Provider certificate read failed"))
         }
     }
 
@@ -542,6 +774,8 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         try {
             keyClient.beginDeleteKey(name).last().awaitSingle()
             return true
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            throw cancellation
         } catch (_: Exception) {
             return false
         }
@@ -574,7 +808,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         algorithm: ContentEncryptionAlgorithm,
         additionalAuthenticatedData: ByteArray?
     ): EncryptionResult {
-        val cryptoClient = keyClient.getCryptographyAsyncClient(keyInfo.alias)
+        val cryptoClient = cryptographyClientFor(keyInfo)
 
         // Generate IV based on algorithm requirements
         val iv = ByteArray(algorithm.ivLength)
@@ -637,7 +871,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         authTag: ByteArray,
         additionalAuthenticatedData: ByteArray?
     ): ByteArray {
-        val cryptoClient = keyClient.getCryptographyAsyncClient(keyInfo.alias)
+        val cryptoClient = cryptographyClientFor(keyInfo)
 
         val decryptParams = when (algorithm) {
             ContentEncryptionAlgorithm.A128GCM -> {
@@ -821,14 +1055,27 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
      * always persists and supplies the resolved kid.
      */
     private fun cryptographyClientFor(keyInfo: KeyInfoType<*>): com.azure.security.keyvault.keys.cryptography.CryptographyAsyncClient {
-        val reference = keyInfo.kid ?: keyInfo.alias
-            ?: throw SignClientException("A key id or alias is required for key wrapping")
+        val reference = azureKeyReference(keyInfo)
         val (name, version) = kidToKVKeyName(reference)
         return if (version.isBlank()) {
             keyClient.getCryptographyAsyncClient(name)
         } else {
             keyClient.getCryptographyAsyncClient(name, version)
         }
+    }
+
+    /**
+     * Resolve operator aliases before canonical kids. A request carrying both fields is
+     * intentionally bound to the alias; the kid is metadata and must not redirect the
+     * cryptography client to a different Azure key/version.
+     */
+    private suspend fun fetchAzureKey(keyInfo: KeyInfoType<*>): KeyVaultKey {
+        val (name, version) = kidToKVKeyName(azureKeyReference(keyInfo))
+        return if (version.isBlank()) {
+            keyClient.getKey(name).awaitSingleOrNull()
+        } else {
+            keyClient.getKey(name, version).awaitSingleOrNull()
+        } ?: throw SignClientException("Key not found in Azure Key Vault for reference: ${azureKeyReference(keyInfo)}")
     }
 
     private fun requireImmutableAzureKeyIdentity(keyInfo: KeyInfoType<*>): String {
@@ -941,6 +1188,20 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
 
 }
 
+private fun ManagedKeyInfoType<*>.signingPolicyInfo(): KeyInfoType<*> {
+    val dto = KeyInfo.fromDTO(this)
+    return if ((dto.key as? JwkType)?.alg == null) dto.copy(signatureAlgorithm = null) else dto
+}
+
+/** Azure aliases are tenant-scoped operational references and take precedence over metadata kids. */
+internal fun azureKeyReference(keyInfo: KeyInfoType<*>): String =
+    keyInfo.alias ?: keyInfo.kid
+    ?: throw SignClientException("A key id or alias is required for Azure Key Vault operations")
+
+private fun KeyInfoType<*>.requireVerificationKeyCompatible(requestedAlgorithm: SignatureAlgorithm) {
+    keyCompatibilityFailure(requestedAlgorithm, KeyOperations.VERIFY)?.let { throw IllegalArgumentException(it) }
+}
+
 private fun requireSymmetricNonExportableAzureKey(key: KeyVaultKey): KeyVaultKey {
     require(key.keyType == KeyType.OCT_HSM) { "Azure key is not hardware-protected symmetric key material" }
     require(key.properties.isEnabled == true && key.properties.isExportable != true) {
@@ -1007,6 +1268,228 @@ private fun azureDecryptParameters(
         else -> throw SignClientException("Attested Azure decryption requires an AES-GCM algorithm")
     }
 
+internal data class AzureCertificateIdentity(
+    val alias: String,
+    val id: String,
+)
+
+internal data class AzureKeyIdentity(
+    val alias: String,
+    val id: String,
+)
+
+/**
+ * Validates the identity returned by Azure before a tenant tag can be trusted.
+ * The SDK response is deliberately reduced to the exact configured vault,
+ * requested name, and requested version before its tags are inspected.
+ */
+internal fun resolveAzureKeyIdentity(
+    configuredVaultUrl: String,
+    lookup: ProviderNativeObjectLookup,
+    returnedKeyId: String?,
+    returnedName: String?,
+    returnedVersion: String?,
+): AzureKeyIdentity {
+    rejectIf(lookup.type != ProviderNativeObjectType.KEY)
+    val configuredVault = configuredVaultUrl.trimEnd('/')
+    rejectIf(configuredVault.isBlank())
+    val (requestedAlias, requestedVersion) = parseAzureKeyLookup(configuredVaultUrl, lookup)
+    rejectIf(requestedAlias != lookup.alias)
+
+    val keyMatch = returnedKeyId?.let { AZURE_KEY_ID.matchEntire(it) }
+    rejectIf(keyMatch == null)
+    rejectIf(!keyMatch!!.groupValues[1].equals(configuredVault, ignoreCase = true))
+    rejectIf(keyMatch.groupValues[2] != requestedAlias)
+    rejectIf(returnedName != requestedAlias || keyMatch.groupValues[2] != returnedName)
+
+    val actualVersion = keyMatch.groupValues[3]
+    rejectIf(returnedVersion != actualVersion)
+    requestedVersion?.let { rejectIf(it != actualVersion) }
+
+    lookup.id?.let { requestedId ->
+        val requestedIdentity = parseRequestedKeyIdentity(requestedId, lookup.alias, configuredVault)
+        rejectIf(requestedIdentity.first != requestedAlias || requestedIdentity.second != actualVersion)
+    }
+
+    return AzureKeyIdentity(
+        alias = requestedAlias,
+        id = "$requestedAlias:$actualVersion",
+    )
+}
+
+/**
+ * Validates the identities returned by Azure before any public result is built.
+ *
+ * Azure returns full vault URLs for certificate and key ids. Those URLs are
+ * intentionally consumed only for validation; the public identity is the
+ * provider's configured id plus the stable `name:version` certificate id.
+ */
+internal fun resolveAzureCertificateIdentity(
+    configuredVaultUrl: String,
+    lookup: ProviderCertificateLookup,
+    returnedCertificateId: String?,
+    returnedKeyId: String?,
+): AzureCertificateIdentity {
+    val configuredVault = configuredVaultUrl.trimEnd('/')
+    rejectIf(configuredVault.isBlank())
+    rejectIf(lookup.alias.isBlank() || !AZURE_CERTIFICATE_NAME.matches(lookup.alias))
+
+    val certificateMatch = returnedCertificateId?.let { AZURE_CERTIFICATE_ID.matchEntire(it) }
+    rejectIf(certificateMatch == null)
+    val certificateVault = certificateMatch!!.groupValues[1]
+    val certificateAlias = certificateMatch.groupValues[2]
+    val certificateVersion = certificateMatch.groupValues[3]
+    rejectIf(!certificateVault.equals(configuredVault, ignoreCase = true))
+    rejectIf(certificateAlias != lookup.alias)
+
+    val keyMatch = returnedKeyId?.let { AZURE_KEY_ID.matchEntire(it) }
+    rejectIf(keyMatch == null)
+    rejectIf(!keyMatch!!.groupValues[1].equals(configuredVault, ignoreCase = true))
+    rejectIf(keyMatch.groupValues[2] != certificateAlias || keyMatch.groupValues[3] != certificateVersion)
+
+    lookup.id?.let { requestedId ->
+        val requestedIdentity = parseRequestedCertificateIdentity(requestedId, lookup.alias, configuredVault)
+        rejectIf(requestedIdentity.first != certificateAlias || requestedIdentity.second != certificateVersion)
+    }
+
+    return AzureCertificateIdentity(
+        alias = certificateAlias,
+        id = "$certificateAlias:$certificateVersion",
+    )
+}
+
+private fun parseAzureCertificateLookup(lookup: ProviderCertificateLookup): Pair<String, String?> {
+    rejectIf(lookup.alias.isBlank() || !AZURE_CERTIFICATE_NAME.matches(lookup.alias))
+    val requestedId = lookup.id ?: return lookup.alias to null
+    val versionedUri = AZURE_CERTIFICATE_ID.matchEntire(requestedId)
+    if (versionedUri != null) {
+        rejectIf(versionedUri.groupValues[2] != lookup.alias)
+        return lookup.alias to versionedUri.groupValues[3]
+    }
+    val canonical = AZURE_CERTIFICATE_CANONICAL_ID.matchEntire(requestedId)
+    if (canonical == null) {
+        rejectIf(!AZURE_CERTIFICATE_VERSION.matches(requestedId))
+        return lookup.alias to requestedId
+    }
+    rejectIf(canonical.groupValues[1] != lookup.alias)
+    return lookup.alias to canonical.groupValues[2]
+}
+
+private fun parseAzureKeyLookup(
+    configuredVaultUrl: String,
+    lookup: ProviderNativeObjectLookup,
+): Pair<String, String?> {
+    rejectIf(lookup.type != ProviderNativeObjectType.KEY)
+    rejectIf(lookup.alias.isBlank() || !AZURE_CERTIFICATE_NAME.matches(lookup.alias))
+    val requestedId = lookup.id ?: return lookup.alias to null
+    val versionedUri = AZURE_KEY_ID.matchEntire(requestedId)
+    if (versionedUri != null) {
+        rejectIf(!versionedUri.groupValues[1].equals(configuredVaultUrl.trimEnd('/'), ignoreCase = true))
+        rejectIf(versionedUri.groupValues[2] != lookup.alias)
+        return lookup.alias to versionedUri.groupValues[3]
+    }
+    val canonical = AZURE_KEY_CANONICAL_ID.matchEntire(requestedId)
+    if (canonical != null) {
+        rejectIf(canonical.groupValues[1] != lookup.alias)
+        return lookup.alias to canonical.groupValues[2]
+    }
+    rejectIf(!AZURE_CERTIFICATE_VERSION.matches(requestedId))
+    return lookup.alias to requestedId
+}
+
+private fun parseRequestedKeyIdentity(
+    requestedId: String,
+    alias: String,
+    configuredVaultUrl: String,
+): Pair<String, String> {
+    val versionedUri = AZURE_KEY_ID.matchEntire(requestedId)
+    if (versionedUri != null) {
+        rejectIf(!versionedUri.groupValues[1].equals(configuredVaultUrl, ignoreCase = true))
+        rejectIf(versionedUri.groupValues[2] != alias)
+        return versionedUri.groupValues[2] to versionedUri.groupValues[3]
+    }
+    val canonical = AZURE_KEY_CANONICAL_ID.matchEntire(requestedId)
+    if (canonical != null) {
+        rejectIf(canonical.groupValues[1] != alias)
+        return canonical.groupValues[1] to canonical.groupValues[2]
+    }
+    rejectIf(!AZURE_CERTIFICATE_VERSION.matches(requestedId))
+    return alias to requestedId
+}
+
+private fun parseRequestedCertificateIdentity(
+    requestedId: String,
+    alias: String,
+    configuredVaultUrl: String,
+): Pair<String, String> {
+    val versionedUri = AZURE_CERTIFICATE_ID.matchEntire(requestedId)
+    if (versionedUri != null) {
+        rejectIf(!versionedUri.groupValues[1].equals(configuredVaultUrl, ignoreCase = true))
+        rejectIf(versionedUri.groupValues[2] != alias)
+        return versionedUri.groupValues[2] to versionedUri.groupValues[3]
+    }
+    val canonical = AZURE_CERTIFICATE_CANONICAL_ID.matchEntire(requestedId)
+    if (canonical == null) {
+        rejectIf(!AZURE_CERTIFICATE_VERSION.matches(requestedId))
+        return alias to requestedId
+    }
+    rejectIf(canonical.groupValues[1] != alias)
+    return canonical.groupValues[1] to canonical.groupValues[2]
+}
+
+private fun rejectIf(condition: Boolean) {
+    if (condition) {
+        throw IllegalArgumentException("Azure certificate identity rejected")
+    }
+}
+
+private fun <V> certificateReadError(error: IdkError): IdkResult<V, IdkError> = Err(error).asResult()
+
+private fun azureTenantTagMatches(
+    tags: Map<String, String>,
+    tenantId: String,
+): Boolean {
+    val expected = tenantId.encodeToByteArray()
+    return tags.entries.any { (key, value) ->
+        key == AZURE_TENANT_ASSIGNMENT_TAG_KEY &&
+            MessageDigest.isEqual(value.encodeToByteArray(), expected)
+    }
+}
+
+/**
+ * Keeps public certificate metadata attached to provider JWKs.
+ *
+ * Azure's certificate mapper supplies x5c. If a provider JWK already supplies
+ * x5t or x5t#S256, those values are authoritative and are preserved. When a
+ * provider supplies the public chain without either thumbprint, derive the
+ * standard base64url thumbprints from the exact leaf DER bytes.
+ */
+internal fun preserveAzurePublicJwkCertificateMetadata(jwk: Jwk): Jwk {
+    val certificateDer = jwk.x5c?.firstOrNull()?.let { it.decodeFromBase64() } ?: return jwk
+    val x5t = jwk.x5t ?: MessageDigest.getInstance("SHA-1").digest(certificateDer).encodeToBase64Url()
+    val x5tS256 = jwk.x5t_S256 ?: MessageDigest.getInstance("SHA-256").digest(certificateDer).encodeToBase64Url()
+    return jwk.copy(x5t = x5t, x5t_S256 = x5tS256)
+}
+
+private fun ManagedKeyInfoType<Jwk>.preserveAzurePublicJwkCertificateMetadata(): ManagedKeyInfoType<Jwk> {
+    val preservedJwk = preserveAzurePublicJwkCertificateMetadata(key)
+    if (preservedJwk == key) {
+        return this
+    }
+    return ManagedKeyInfo.fromKeyInfo(KeyInfo.fromDTO(this).copy(key = preservedJwk))
+}
+
 private val AZURE_VERSIONED_KEY_ID =
     Regex("^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?/keys/[A-Za-z0-9-]{1,127}/[A-Za-z0-9]{1,128}$")
 private val AZURE_BINDING_ALIAS = Regex("^[A-Za-z0-9][A-Za-z0-9-]{0,126}$")
+private val AZURE_CERTIFICATE_NAME = Regex("^[A-Za-z0-9-]{1,127}$")
+private val AZURE_CERTIFICATE_ID =
+    Regex("^(https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?)/certificates/([A-Za-z0-9-]{1,127})/([A-Za-z0-9]{1,128})$")
+private val AZURE_KEY_ID =
+    Regex("^(https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?)/keys/([A-Za-z0-9-]{1,127})/([A-Za-z0-9]{1,128})$")
+private val AZURE_CERTIFICATE_CANONICAL_ID =
+    Regex("^([A-Za-z0-9-]{1,127}):([A-Za-z0-9]{1,128})$")
+private val AZURE_KEY_CANONICAL_ID =
+    Regex("^([A-Za-z0-9-]{1,127}):([A-Za-z0-9]{1,128})$")
+private val AZURE_CERTIFICATE_VERSION = Regex("^[A-Za-z0-9]{1,128}$")
+private const val AZURE_TENANT_ASSIGNMENT_TAG_KEY = "sphereon-tenant-id"

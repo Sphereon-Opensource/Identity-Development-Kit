@@ -29,7 +29,7 @@ import kotlin.time.Instant
  *
  * @property id Unique identifier for this definition
  * @property name Human-readable name
- * @property variant Optional variant (LIGHT/DARK/HIGH_CONTRAST). Null = common baseline for this scope.
+ * @property variant Optional variant (LIGHT, DARK, HIGH_CONTRAST_LIGHT, HIGH_CONTRAST_DARK). Null = common baseline for this scope.
  * @property parentId Optional parent definition to inherit from
  * @property scope The hierarchical scope at which this definition applies
  * @property productType Required when [scope] is PRODUCT; absent otherwise

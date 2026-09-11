@@ -30,6 +30,7 @@ import com.sphereon.core.api.session.currentTimeMillis
 import com.sphereon.di.app.App
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.di.context.AnonymousUserGraphManager
+import com.sphereon.di.context.ClassifiedPrincipalInput
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.IdentityResolutionResult
 import com.sphereon.di.context.PrincipalAware
@@ -255,7 +256,13 @@ class UserContextManagerImpl(
         return createOrGetContextInternal(
             tenantContextData = tenantContext.tenant,
             principal = principal,
-            principalType = PrincipalType.USER,
+            // An identity string carries no classification, so an ordinary input stays USER.
+            // An input that knows what it is (a Temporal worker's system principal, a scheduler
+            // dispatch) says so, and must be believed: the same identity comes back over the
+            // transport as a workload token, and both paths key the same `tenant:principal`
+            // context. Defaulting those to USER makes whichever path runs second fail with
+            // "Principal classification mismatch for existing context".
+            principalType = (principalInput as? ClassifiedPrincipalInput)?.principalType ?: PrincipalType.USER,
             makeActive = makeActive,
         ).instance
     }

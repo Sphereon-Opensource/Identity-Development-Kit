@@ -187,6 +187,14 @@ class CborLabelTest {
     }
 
     @Test
+    fun testCoseLabelFromUIntPreservesValuesAboveIntRange() {
+        val uint = CborUInt(Int.MAX_VALUE.toLong() + 1)
+        val label = CoseLabel.fromCborItem(uint)
+        assertIs<NumberLabel>(label)
+        assertEquals(Int.MAX_VALUE.toLong() + 1, label.value)
+    }
+
+    @Test
     fun testCoseLabelFromNInt() {
         val nint = CborNInt(42)
         val label = CoseLabel.fromCborItem(nint)

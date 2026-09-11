@@ -16,25 +16,22 @@
 
 package com.sphereon.core.api.http.dispatch
 
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.compat.JsExportCompat
-import com.sphereon.di.HasOrder
+import com.sphereon.core.compat.JsExportIgnoreCompat
+import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.ContributesTo
 import kotlin.jvm.JvmStatic
 
 /**
  * Startup, metadata-only index of contributed HTTP adapters.
  *
- * This is intended to live in App scope and must not require instantiating Session-scoped adapters.
- *
- * **Replacement via DI:**
- * This interface extends [HasOrder] so multiple implementations can be contributed,
- * and the highest-priority one (lowest [getOrder] value) wins. Use [com.sphereon.di.selectByOrder]
- * to select the winning implementation from a `Set<HttpAdapterCatalog>`.
- *
- * The codebase standard is to depend on interfaces (not concrete implementations).
+ * This lives in App scope and must not require instantiating Session-scoped adapters. There is one
+ * canonical catalog per application graph; deployments constrain exposure through route-mount policy.
  */
 @JsExportCompat
-interface HttpAdapterCatalog : HasOrder {
+interface HttpAdapterCatalog {
     val descriptions: List<HttpAdapterDescription>
     val diagnostics: HttpAdapterCatalogDiagnostics
 
@@ -46,6 +43,19 @@ interface HttpAdapterCatalog : HasOrder {
      * Throws when collisions/ambiguities are detected.
      */
     fun requireNoCollisions()
+
+    /**
+     * Session-boundary access to the already-validated application route catalog.
+     *
+     * Transport authorization resolves only a handler identity that the catalog
+     * exposes. This is required for legacy [com.sphereon.core.api.http.RoutedHttpAdapter]
+     * endpoints, whose handlers are inline rather than standalone endpoint commands.
+     */
+    @JsExportIgnoreCompat
+    @ContributesTo(SessionScope::class)
+    interface Graph {
+        val httpAdapterCatalog: HttpAdapterCatalog
+    }
 }
 
 @JsExportCompat
@@ -69,27 +79,48 @@ data class HttpAdapterCatalogDiagnostics(
                         )
                 }
 
-            // Overlapping mounts (serverPrefix + tenant mode + base path) with overlapping endpoints by method+pattern
+            // Overlapping physical mounts with overlapping endpoint patterns and tenant-path policies.
+            // A required leading slug and a required suffix slug are disjoint route spaces even
+            // when their normalized handler patterns are identical.
             descriptions
                 .groupBy { it.mountKey() }
                 .filter { (_, group) -> group.size > 1 }
                 .forEach { (mountKey, group) ->
-                    val endpointToAdapters = linkedMapOf<EndpointKey, MutableList<String>>()
+                    val endpointToAdapters = linkedMapOf<EndpointKey, MutableList<HttpAdapterDescription>>()
                     group.forEach { desc ->
                         desc.endpoints.forEach { ep ->
-                            endpointToAdapters
-                                .getOrPut(EndpointKey(ep.method.name, ep.pathPattern)) { mutableListOf() }
-                                .add(desc.id)
+                            ep.pathPatterns.forEach { pattern ->
+                                endpointToAdapters
+                                    .getOrPut(EndpointKey(ep.method.name, pattern)) { mutableListOf() }
+                                    .add(desc)
+                            }
                         }
                     }
 
                     endpointToAdapters
-                        .filter { (_, ids) -> ids.distinct().size > 1 }
-                        .forEach { (endpointKey, ids) ->
+                        .forEach { (endpointKey, adapters) ->
+                            val overlappingIds = linkedSetOf<String>()
+                            adapters.indices.forEach { firstIndex ->
+                                for (secondIndex in firstIndex + 1 until adapters.size) {
+                                    val first = adapters[firstIndex]
+                                    val second = adapters[secondIndex]
+                                    if (
+                                        first.id != second.id &&
+                                        tenantPathPoliciesMayOverlap(
+                                            first.mount.tenantPathPolicy,
+                                            second.mount.tenantPathPolicy,
+                                        )
+                                    ) {
+                                        overlappingIds += first.id
+                                        overlappingIds += second.id
+                                    }
+                                }
+                            }
+                            if (overlappingIds.size <= 1) return@forEach
                             collisions +=
                                 HttpAdapterCatalogCollision(
                                     type = HttpAdapterCatalogCollisionType.OVERLAPPING_ENDPOINT,
-                                    message = "Overlapping endpoint ${endpointKey.method} ${endpointKey.pathPattern} for mount $mountKey in adapters: ${ids.distinct().sorted().joinToString(", ")}",
+                                    message = "Overlapping endpoint ${endpointKey.method} ${endpointKey.pathPattern} for mount $mountKey in adapters: ${overlappingIds.sorted().joinToString(", ")}",
                                 )
                         }
                 }
@@ -98,13 +129,15 @@ data class HttpAdapterCatalogDiagnostics(
             descriptions.forEach { desc ->
                 val seen = linkedSetOf<EndpointKey>()
                 desc.endpoints.forEach { ep ->
-                    val key = EndpointKey(ep.method.name, ep.pathPattern)
-                    if (!seen.add(key)) {
-                        collisions +=
-                            HttpAdapterCatalogCollision(
-                                type = HttpAdapterCatalogCollisionType.DUPLICATE_ENDPOINT_IN_ADAPTER,
-                                message = "Adapter '${desc.id}' declares duplicate endpoint ${key.method} ${key.pathPattern}",
-                            )
+                    ep.pathPatterns.forEach { pattern ->
+                        val key = EndpointKey(ep.method.name, pattern)
+                        if (!seen.add(key)) {
+                            collisions +=
+                                HttpAdapterCatalogCollision(
+                                    type = HttpAdapterCatalogCollisionType.DUPLICATE_ENDPOINT_IN_ADAPTER,
+                                    message = "Adapter '${desc.id}' declares duplicate endpoint ${key.method} ${key.pathPattern}",
+                                )
+                        }
                     }
                 }
             }
@@ -144,6 +177,14 @@ private fun HttpAdapterDescription.mountKey(): MountKey =
         tenantPathMode = mount.tenantPathMode.name,
         adapterBasePath = normalizePathPrefix(mount.adapterBasePath),
     )
+
+private fun tenantPathPoliciesMayOverlap(
+    first: TenantPathPolicy,
+    second: TenantPathPolicy,
+): Boolean =
+    (!first.required && !second.required) ||
+        (first is TenantPathPolicy.LeadingSlug && second is TenantPathPolicy.LeadingSlug) ||
+        (first is TenantPathPolicy.WellKnownSuffix && second is TenantPathPolicy.WellKnownSuffix)
 
 fun normalizePathPrefix(value: String): String {
     val trimmed = value.trim()

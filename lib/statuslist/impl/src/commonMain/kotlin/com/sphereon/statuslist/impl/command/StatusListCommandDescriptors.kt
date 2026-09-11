@@ -20,6 +20,7 @@ import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.di.session.SessionScope
 import com.sphereon.statuslist.command.CheckCredentialStatusCommand
 import com.sphereon.statuslist.command.CreateStatusListCommand
+import com.sphereon.statuslist.command.DeleteStatusListCommand
 import com.sphereon.statuslist.command.GetStatusListCommand
 import com.sphereon.statuslist.command.GetStatusListEntryCommand
 import com.sphereon.statuslist.command.GetStatusListTokenCommand
@@ -43,6 +44,11 @@ interface StatusListCommandDescriptors {
     @IntoMap
     @StringKey(GetStatusListCommand.COMMAND_ID)
     fun getStatusList(impl: GetStatusListCommandImpl): ServiceCommand<*, *, *> = impl
+
+    @Provides
+    @IntoMap
+    @StringKey(DeleteStatusListCommand.COMMAND_ID)
+    fun deleteStatusList(impl: DeleteStatusListCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides
     @IntoMap
@@ -82,6 +88,9 @@ interface StatusListCommandDescriptors {
 
     @Provides
     fun bindGetStatusList(impl: GetStatusListCommandImpl): GetStatusListCommand = impl
+
+    @Provides
+    fun bindDeleteStatusList(impl: DeleteStatusListCommandImpl): DeleteStatusListCommand = impl
 
     @Provides
     fun bindListStatusLists(impl: ListStatusListsCommandImpl): ListStatusListsCommand = impl

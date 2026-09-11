@@ -83,7 +83,7 @@ class BuildServerMetadataGoldenTest {
                     configProvider = provider,
                     signingIdentifierResolver = fixedSigningIdentifierResolver(),
                     identifierService = ctx.identifierService,
-                    grantHandlers = emptySet(),
+            grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
                         com.sphereon.oauth2.server.authorization.impl.testutil
@@ -144,7 +144,7 @@ class BuildServerMetadataGoldenTest {
                     configProvider = provider,
                     signingIdentifierResolver = fixedSigningIdentifierResolver(),
                     identifierService = ctx.identifierService,
-                    grantHandlers = emptySet(),
+            grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
                         com.sphereon.oauth2.server.authorization.impl.testutil
@@ -167,7 +167,7 @@ class BuildServerMetadataGoldenTest {
                     configProvider = provider,
                     signingIdentifierResolver = fixedSigningIdentifierResolver(),
                     identifierService = ctx.identifierService,
-                    grantHandlers = emptySet(),
+            grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
                         com.sphereon.oauth2.server.authorization.impl.testutil
@@ -219,7 +219,7 @@ class BuildServerMetadataGoldenTest {
                     configProvider = provider,
                     signingIdentifierResolver = fixedSigningIdentifierResolver(ManagedOptsAlias(identifier = alias)),
                     identifierService = ctx.identifierService,
-                    grantHandlers = emptySet(),
+            grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
                         com.sphereon.oauth2.server.authorization.impl.testutil
@@ -296,7 +296,7 @@ class BuildServerMetadataGoldenTest {
                             ),
                         ),
                     identifierService = ctx.identifierService,
-                    grantHandlers = emptySet(),
+            grantHandlers = emptyMap(),
                     kmsProviderRegistry = ctx.kmsProviderRegistry,
                     buildSignedMetadata =
                         com.sphereon.oauth2.server.authorization.impl.testutil

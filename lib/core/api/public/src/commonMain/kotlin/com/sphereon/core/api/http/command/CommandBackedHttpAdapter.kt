@@ -1,5 +1,5 @@
 ﻿/*
- * Â© 2026 Sphereon International B.V.
+ * © 2026 Sphereon International B.V.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,21 +26,24 @@ import com.sphereon.core.api.http.CompiledPathPattern
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpAdapter
-import com.sphereon.core.api.http.RoutableHttpAdapter
 import com.sphereon.core.api.http.describe.HttpAdapterDescription
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.core.api.http.error.DefaultRestErrorRenderer
 import com.sphereon.core.api.http.error.HttpErrorRenderer
-import com.sphereon.core.api.http.response.errorResponse
-import com.sphereon.core.api.session.Command
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.api.session.CommandId
 import com.sphereon.core.api.session.ExecutionScopedAdapter
 import com.sphereon.core.api.session.ICommandExecutionExtension
 import com.sphereon.core.api.session.ICommandInitExtension
 import com.sphereon.core.api.session.IEnhancedCommandExecutionExtension
-import com.sphereon.core.api.session.MultiService
 import com.sphereon.di.context.MutableResolvedTenantIdProvider
+import kotlin.coroutines.cancellation.CancellationException
+
+data class ResolvedHttpRequest(
+    val request: GenericHttpRequest,
+    val route: HttpAdapterRouteMatch,
+)
 
 /**
  * Base class for HTTP adapters backed by the IDK command infrastructure.
@@ -58,27 +61,21 @@ import com.sphereon.di.context.MutableResolvedTenantIdProvider
  * - Returns a `GenericHttpResponse` as output
  * - Delegates to child [HttpEndpointCommand]s based on request matching
  *
- * This follows the `MultiService` pattern from the command infrastructure, where the adapter
- * acts as an aggregator that selects and executes the appropriate endpoint command.
+ * The AppScope route catalog chooses the handler identity. This SessionScope adapter then resolves
+ * exactly that one endpoint command from [HttpEndpointCommandRegistry].
  *
  * ## Usage
  *
  * ```kotlin
  * class MyHttpAdapter(
  *     execution: SessionExecution,
- *     private val myService: MyService
+ *     endpointCommandRegistry: HttpEndpointCommandRegistry,
  * ) : CommandBackedHttpAdapter(
  *     id = "example.http.adapter",
  *     execution = execution,
- *     mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/my")
- * ) {
- *     override val endpointCommands: List<HttpEndpointCommand> by lazy {
- *         listOf(
- *             GetItemEndpointCommand(execution, myService),
- *             CreateItemEndpointCommand(execution, myService)
- *         )
- *     }
- * }
+ *     mount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/my"),
+ *     endpointCommandRegistry = endpointCommandRegistry,
+ * )
  * ```
  *
  * ## Comparison with RoutedHttpAdapter
@@ -102,10 +99,11 @@ abstract class CommandBackedHttpAdapter(
     override val id: String,
     execution: SessionExecution,
     protected val mount: HttpAdapterMount,
+    private val endpointCommandRegistry: HttpEndpointCommandRegistry,
     isEnabled: Boolean = true,
-    initExtensions: Array<ICommandInitExtension<GenericHttpRequest, GenericHttpResponse, IdkError>> = emptyArray(),
-    executionExtensions: Array<ICommandExecutionExtension<GenericHttpRequest, GenericHttpResponse, IdkError>> = emptyArray(),
-    enhancedExecutionExtensions: Array<IEnhancedCommandExecutionExtension<GenericHttpRequest, GenericHttpResponse, IdkError>> = emptyArray(),
+    initExtensions: Array<ICommandInitExtension<ResolvedHttpRequest, GenericHttpResponse, IdkError>> = emptyArray(),
+    executionExtensions: Array<ICommandExecutionExtension<ResolvedHttpRequest, GenericHttpResponse, IdkError>> = emptyArray(),
+    enhancedExecutionExtensions: Array<IEnhancedCommandExecutionExtension<ResolvedHttpRequest, GenericHttpResponse, IdkError>> = emptyArray(),
     protected open val errorRenderer: HttpErrorRenderer = DefaultRestErrorRenderer(),
     /**
      * Per-adapter routable-slug peel policy. Defaults to [TenantPathPolicy.None] —
@@ -115,7 +113,7 @@ abstract class CommandBackedHttpAdapter(
      * - Authorization / token / par / callback adapters: [TenantPathPolicy.LeadingSlug]
      */
     open val tenantPathPolicy: TenantPathPolicy = TenantPathPolicy.None,
-) : ExecutionScopedAdapter<GenericHttpRequest, GenericHttpResponse, IdkError>(
+) : ExecutionScopedAdapter<ResolvedHttpRequest, GenericHttpResponse, IdkError>(
         id = CommandId(id).value,
         isEnabled = isEnabled,
         initExtensions = initExtensions,
@@ -123,21 +121,11 @@ abstract class CommandBackedHttpAdapter(
         execution = execution,
         enhancedExecutionExtensions = enhancedExecutionExtensions,
     ),
-    HttpAdapter,
-    RoutableHttpAdapter,
-    MultiService<GenericHttpRequest, GenericHttpResponse, IdkError> {
-    /**
-     * The endpoint commands that this adapter delegates to.
-     *
-     * Override this to provide the list of endpoint commands. Use `lazy` initialization
-     * to ensure commands are constructed after the adapter is fully initialized.
-     */
-    protected abstract val endpointCommands: List<HttpEndpointCommand>
-
+    HttpAdapter {
     /**
      * Slug lookup used by [TenantPathPolicy.LeadingSlug] / [TenantPathPolicy.WellKnownSuffix]
      * peeling. Defaults to a no-op implementation that returns null for every
-     * lookup so legacy adapters compile and run unchanged. Adapters with a
+     * lookup. Adapters with a
      * non-`None` [tenantPathPolicy] MUST override this with the AppScope-injected
      * [RoutableSlugLookup] binding (the EDK `lib-tenant-resolution-impl` module
      * contributes a postgres-backed implementation; without it, peels never
@@ -148,7 +136,7 @@ abstract class CommandBackedHttpAdapter(
     /**
      * Mutable session-scoped tenant override. The dispatcher writes the descended
      * tenant id here on a successful peel and clears it after the matched
-     * endpoint returns. Defaults to a no-op so legacy adapters compile; adapters
+     * endpoint returns. Adapters
      * with a non-`None` [tenantPathPolicy] should override this with the
      * SessionScope-injected [MutableResolvedTenantIdProvider] binding so
      * `SessionExecution.tenantId` reflects the descended value during dispatch.
@@ -160,18 +148,6 @@ abstract class CommandBackedHttpAdapter(
      */
     protected open val openApiHints: OpenApiHints? = null
 
-    // ========== MultiService implementation ==========
-
-    @Suppress("UNCHECKED_CAST")
-    override val commands: MutableList<Command<GenericHttpRequest, GenericHttpResponse, IdkError>>
-        get() = enabledEndpoints.toMutableList() as MutableList<Command<GenericHttpRequest, GenericHttpResponse, IdkError>>
-
-    /**
-     * Enabled endpoint commands (filtered by isEnabled).
-     */
-    private val enabledEndpoints: List<HttpEndpointCommand>
-        get() = endpointCommands.filter { it.isEnabled }
-
     /**
      * Simplified constructor for common use cases.
      */
@@ -179,11 +155,13 @@ abstract class CommandBackedHttpAdapter(
         id: String,
         execution: SessionExecution,
         mount: HttpAdapterMount,
+        endpointCommandRegistry: HttpEndpointCommandRegistry,
         errorRenderer: HttpErrorRenderer = DefaultRestErrorRenderer(),
     ) : this(
         id = id,
         execution = execution,
         mount = mount,
+        endpointCommandRegistry = endpointCommandRegistry,
         isEnabled = true,
         initExtensions = emptyArray(),
         executionExtensions = emptyArray(),
@@ -197,64 +175,19 @@ abstract class CommandBackedHttpAdapter(
         HttpAdapterDescription(
             id = id,
             mount = mount.copy(tenantPathPolicy = tenantPathPolicy),
-            endpoints =
-                enabledEndpoints.map { endpoint ->
-                    // Prepend adapter base path for catalog/dispatcher matching.
-                    // Endpoint commands define patterns relative to the adapter's base path,
-                    // but the dispatcher expects full paths for candidate selection.
-                    // Multi-pattern descriptors prepend the base to every pattern.
-                    val fullPathPatterns =
-                        endpoint.endpoint.pathPatterns.map { pattern ->
-                            if (mount.adapterBasePath.isEmpty() || mount.adapterBasePath == "/") {
-                                pattern
-                            } else {
-                                mount.adapterBasePath + pattern
-                            }
-                        }
-                    endpoint.endpoint.copy(pathPatterns = fullPathPatterns)
-                },
+            endpoints = emptyList(),
             openApiHints = openApiHints,
         )
 
-    override suspend fun handleRequest(request: GenericHttpRequest): GenericHttpResponse {
-        val result = execute(request)
+    override suspend fun handleResolvedRequest(
+        request: GenericHttpRequest,
+        route: HttpAdapterRouteMatch,
+    ): GenericHttpResponse {
+        val result = execute(ResolvedHttpRequest(request, route))
         return result.fold(
             success = { response -> response },
             failure = { error -> errorRenderer.render(error, request) },
         )
-    }
-
-    // ========== RoutableHttpAdapter implementation ==========
-
-    override fun canHandle(request: GenericHttpRequest): Boolean {
-        val basePath = mount.adapterBasePath
-        // If a base path is configured, check if the request path starts with it
-        if (basePath.isNotEmpty() && basePath != "/") {
-            return request.path.startsWith(basePath)
-        }
-        // No base path - check if any endpoint pattern's first segment matches
-        // This is a heuristic for routing; the actual matching happens in supports()
-        val requestFirstSegment =
-            request.path
-                .trimStart('/')
-                .split('/')
-                .firstOrNull() ?: ""
-        return enabledEndpoints.any { endpoint ->
-            if (!endpoint.endpoint.method.name
-                    .equals(request.method, ignoreCase = true)
-            ) {
-                return@any false
-            }
-            // Multi-pattern descriptors: any pattern's first segment can claim the route.
-            endpoint.endpoint.pathPatterns.any { pattern ->
-                val patternFirstSegment =
-                    pattern
-                        .trimStart('/')
-                        .split('/')
-                        .firstOrNull() ?: ""
-                patternFirstSegment.startsWith("{") || patternFirstSegment == requestFirstSegment
-            }
-        }
     }
 
     // ========== Command implementation ==========
@@ -263,77 +196,40 @@ abstract class CommandBackedHttpAdapter(
         if (!isEnabled) {
             return false
         }
-        if (args !is GenericHttpRequest) {
+        if (args !is ResolvedHttpRequest) {
             return false
         }
-        val relativeRequest = stripAdapterBasePath(args)
-        if (enabledEndpoints.any { endpoint -> endpoint.supports(relativeRequest) }) {
-            return true
-        }
-        // No as-is match. If the policy permits peeling, see whether ANY peel
-        // could plausibly match an endpoint pattern. We only check the raw
-        // pattern shape here (length / segment count) to avoid hitting
-        // [routableSlugLookup] from supports — that's an I/O call we save for
-        // doExecute. The conservative check is: under LeadingSlug(maxDepth=N),
-        // pattern can match if path has at most N more leading segments than
-        // the longest endpoint pattern. Symmetrically for WellKnownSuffix.
-        return when (val policy = tenantPathPolicy) {
-            TenantPathPolicy.None -> false
-            is TenantPathPolicy.LeadingSlug -> couldPeelLeading(relativeRequest, policy.maxDepth)
-            is TenantPathPolicy.WellKnownSuffix -> couldPeelTrailing(relativeRequest, policy.maxDepth)
-        }
-    }
-
-    private fun couldPeelLeading(
-        request: GenericHttpRequest,
-        maxDepth: Int
-    ): Boolean {
-        val reqSegments = request.path.split('/').filter { it.isNotEmpty() }
-        return enabledEndpoints.any { endpoint ->
-            if (!endpoint.endpoint.method.name
-                    .equals(request.method, ignoreCase = true)
-            ) {
-                return@any false
-            }
-            // Peel up to `maxDepth` from the front: synthesize candidate paths and
-            // try to match against any pattern this descriptor exposes.
-            (1..minOf(maxDepth, reqSegments.size)).any { peel ->
-                val remaining = "/" + reqSegments.drop(peel).joinToString("/")
-                val peeled = request.copy(path = remaining)
-                endpoint.endpoint.pathPatterns.any { pattern ->
-                    peeled.matches(endpoint.endpoint.method.name, pattern)
-                }
-            }
-        }
-    }
-
-    private fun couldPeelTrailing(
-        request: GenericHttpRequest,
-        maxDepth: Int
-    ): Boolean {
-        val reqSegments = request.path.split('/').filter { it.isNotEmpty() }
-        return enabledEndpoints.any { endpoint ->
-            if (!endpoint.endpoint.method.name
-                    .equals(request.method, ignoreCase = true)
-            ) {
-                return@any false
-            }
-            (1..minOf(maxDepth, reqSegments.size)).any { peel ->
-                val remaining =
-                    if (reqSegments.size - peel <= 0) "/" else "/" + reqSegments.dropLast(peel).joinToString("/")
-                val peeled = request.copy(path = remaining)
-                endpoint.endpoint.pathPatterns.any { pattern ->
-                    peeled.matches(endpoint.endpoint.method.name, pattern)
-                }
-            }
-        }
+        return args.route.adapterId == id
     }
 
     override suspend fun doExecute(
-        args: GenericHttpRequest,
-        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+        args: ResolvedHttpRequest,
+        applyDuring: (ResolvedHttpRequest) -> ResolvedHttpRequest,
     ): IdkResult<GenericHttpResponse, IdkError> {
-        val request = applyDuring(args)
+        val resolvedRequest = applyDuring(args)
+        val request = resolvedRequest.request
+        val selectedRoute = resolvedRequest.route
+        if (selectedRoute.adapterId != id) {
+            return Err(
+                IdkError.UNKNOWN_ERROR(
+                    message = "Preselected adapter '${selectedRoute.adapterId}' does not match runtime adapter '$id'",
+                ),
+            )
+        }
+        val endpoint =
+            endpointCommandRegistry.get(selectedRoute.handlerCommandId)
+                ?: return Err(
+                    IdkError.UNKNOWN_ERROR(
+                        message = "No HTTP endpoint command '${selectedRoute.handlerCommandId}' is registered",
+                    ),
+                )
+        val endpointIdentityError = validateSelectedEndpoint(selectedRoute, endpoint)
+        if (endpointIdentityError != null) {
+            return Err(IdkError.UNKNOWN_ERROR(message = endpointIdentityError))
+        }
+        if (!endpoint.isEnabled) {
+            return Err(IdkError.NOT_FOUND_ERROR(message = "Not found: ${request.method} ${request.path}"))
+        }
         // Defense-in-depth: refuse paths that contain traversal or encoded-slash
         // tokens BEFORE peel evaluation. Endpoint pattern matchers below also
         // reject these (no real route uses `..` or `%2F`), but failing early keeps
@@ -354,7 +250,7 @@ abstract class CommandBackedHttpAdapter(
         // Build the candidate set: 0-peel match + any successful peels under the
         // declared tenantPathPolicy. The longest peel that produces a matching
         // endpoint wins (ties broken by endpoint pattern specificity).
-        val candidates = collectPeelCandidates(relativeRequest)
+        val candidates = collectPeelCandidates(relativeRequest, endpoint)
 
         if (candidates.isEmpty()) {
             // RequiredSlug failed-to-peel and as-is also misses → distinct error
@@ -418,6 +314,8 @@ abstract class CommandBackedHttpAdapter(
 
         return try {
             winner.endpoint.execute(requestWithParams)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (unavailable: ConfigUnavailableException) {
             // A config read raced a lazy/remote config fetch that is not ready
             // yet (or the platform serving it is briefly unreachable). This is a
@@ -465,26 +363,21 @@ abstract class CommandBackedHttpAdapter(
      * descending in that direction (a slug is a prefix of further descent — if
      * the closer one isn't valid, the further one can't be either).
      */
-    private suspend fun collectPeelCandidates(relativeRequest: GenericHttpRequest): List<PeelCandidate> {
+    private suspend fun collectPeelCandidates(
+        relativeRequest: GenericHttpRequest,
+        endpoint: HttpEndpointCommand,
+    ): List<PeelCandidate> {
         val candidates = mutableListOf<PeelCandidate>()
 
         // 0-peel: try as-is.
-        enabledEndpoints
-            .filter { endpoint -> endpoint.supports(relativeRequest) }
-            .forEach { endpoint ->
-                candidates +=
-                    PeelCandidate(
-                        peelDepth = 0,
-                        endpoint = endpoint,
-                        strippedRequest = relativeRequest,
-                        descendedTenantId = null,
-                    )
-            }
+        if (endpoint.supports(relativeRequest)) {
+            candidates += PeelCandidate(0, endpoint, relativeRequest, null)
+        }
 
         when (val policy = tenantPathPolicy) {
             TenantPathPolicy.None -> Unit
-            is TenantPathPolicy.LeadingSlug -> peelLeading(relativeRequest, policy.maxDepth, candidates)
-            is TenantPathPolicy.WellKnownSuffix -> peelTrailing(relativeRequest, policy.maxDepth, candidates)
+            is TenantPathPolicy.LeadingSlug -> peelLeading(relativeRequest, policy.maxDepth, endpoint, candidates)
+            is TenantPathPolicy.WellKnownSuffix -> peelTrailing(relativeRequest, policy.maxDepth, endpoint, candidates)
         }
 
         return candidates
@@ -493,12 +386,14 @@ abstract class CommandBackedHttpAdapter(
     private suspend fun peelLeading(
         relativeRequest: GenericHttpRequest,
         maxDepth: Int,
+        endpoint: HttpEndpointCommand,
         out: MutableList<PeelCandidate>,
     ) {
         val segments = relativeRequest.path.split('/').filter { it.isNotEmpty() }
         var currentTenantId: String? = null
         val baseTenantId = relativeRequest.resolvedTenantId
         var parent: String? = baseTenantId
+        var previousWasProtocolPrefix = false
         for (i in 1..minOf(maxDepth, segments.size)) {
             val seg = segments[i - 1]
             // Slug-shape gate before the DB hit. Stops peel at the first
@@ -510,29 +405,31 @@ abstract class CommandBackedHttpAdapter(
                     routableSlugLookup.findRootBySlug(seg)
                 } else {
                     routableSlugLookup.findChildBySlug(parent, seg)
-                } ?: break
-            currentTenantId = resolved.tenantId
-            parent = resolved.tenantId
+                }
+            if (resolved != null) {
+                currentTenantId = resolved.tenantId
+                parent = resolved.tenantId
+                previousWasProtocolPrefix = false
+            } else if (seg in PROTOCOL_PREFIX_SEGMENTS || previousWasProtocolPrefix) {
+                // `/as/{instance}` and leftover `/{instance}` after a protocol
+                // base-path strip are instance routing, not tenant slugs.
+                previousWasProtocolPrefix = seg in PROTOCOL_PREFIX_SEGMENTS
+            } else {
+                break
+            }
 
             val remainingPath = "/" + segments.drop(i).joinToString("/")
             val stripped = relativeRequest.copy(path = if (remainingPath == "/") "/" else remainingPath)
-            enabledEndpoints
-                .filter { endpoint -> endpoint.supports(stripped) }
-                .forEach { endpoint ->
-                    out +=
-                        PeelCandidate(
-                            peelDepth = i,
-                            endpoint = endpoint,
-                            strippedRequest = stripped,
-                            descendedTenantId = currentTenantId,
-                        )
-                }
+            if (endpoint.supports(stripped)) {
+                out += PeelCandidate(i, endpoint, stripped, currentTenantId)
+            }
         }
     }
 
     private suspend fun peelTrailing(
         relativeRequest: GenericHttpRequest,
         maxDepth: Int,
+        endpoint: HttpEndpointCommand,
         out: MutableList<PeelCandidate>,
     ) {
         val segments = relativeRequest.path.split('/').filter { it.isNotEmpty() }
@@ -568,28 +465,20 @@ abstract class CommandBackedHttpAdapter(
                 parent = resolved.tenantId
                 lastResolved = resolved.tenantId
             }
-            if (!allResolved) {
-                // This peel depth doesn't produce a valid chain — but a deeper
-                // peel might (when the outer parent appears at peelCount+1). We
-                // do NOT short-circuit here; peelTrailing keeps walking up to
-                // maxDepth.
+            if (!allResolved && !isOpaqueProtocolIssuerPath(peeled)) {
+                // This peel depth doesn't produce a valid tenant chain — but a
+                // deeper peel might (when the outer parent appears at
+                // peelCount+1), or the suffix may be a protocol instance path
+                // (`/as/{id}`) rather than a tenant tree.
                 continue
             }
             currentTenantId = lastResolved
 
             val remainingPath = if (remaining.isEmpty()) "/" else "/" + remaining.joinToString("/")
             val stripped = relativeRequest.copy(path = remainingPath)
-            enabledEndpoints
-                .filter { endpoint -> endpoint.supports(stripped) }
-                .forEach { endpoint ->
-                    out +=
-                        PeelCandidate(
-                            peelDepth = peelCount,
-                            endpoint = endpoint,
-                            strippedRequest = stripped,
-                            descendedTenantId = currentTenantId,
-                        )
-                }
+            if (endpoint.supports(stripped)) {
+                out += PeelCandidate(peelCount, endpoint, stripped, currentTenantId)
+            }
         }
     }
 
@@ -611,11 +500,83 @@ abstract class CommandBackedHttpAdapter(
      */
     private fun pathHasUnsafeTokens(path: String): Boolean = FORBIDDEN_PATH_TOKENS.any { token -> path.contains(token, ignoreCase = true) }
 
+    private fun validateSelectedEndpoint(
+        route: HttpAdapterRouteMatch,
+        endpoint: HttpEndpointCommand,
+    ): String? {
+        if (endpoint.id != route.handlerCommandId) {
+            return "Resolved HTTP endpoint command '${endpoint.id}' does not match selected handler '${route.handlerCommandId}'"
+        }
+        if (!endpoint.endpoint.method.name.equals(route.method, ignoreCase = true)) {
+            return "Resolved HTTP endpoint command '${endpoint.id}' has method ${endpoint.endpoint.method}, expected ${route.method}"
+        }
+        val catalogPatterns =
+            endpoint.endpoint.pathPatterns.map { pattern ->
+                when {
+                    mount.adapterBasePath.isEmpty() || mount.adapterBasePath == "/" -> pattern
+                    pattern == "/" -> mount.adapterBasePath
+                    else -> mount.adapterBasePath.trimEnd('/') + "/" + pattern.trimStart('/')
+                }
+            }
+        if (route.matchedPathPattern !in catalogPatterns) {
+            return "Resolved HTTP endpoint command '${endpoint.id}' does not declare selected pattern '${route.matchedPathPattern}'"
+        }
+        return null
+    }
+
     companion object {
         private val SAFE_SLUG_RE = Regex("^[a-z][a-z0-9-]{0,62}$")
 
         private val FORBIDDEN_PATH_TOKENS = listOf("..", "//", "%2f", "%5c", "\\")
+
+        /** Public protocol mount segments that are never tenant slugs. */
+        private val PROTOCOL_PREFIX_SEGMENTS = setOf("as", "oid4vci", "oid4vp")
+
+        /**
+         * First path segment of a real protocol endpoint after the adapter base
+         * (`/oid4vci`, `/oid4vp`). Anything else in that position is an instance id.
+         */
+        private val PROTOCOL_LEAF_FIRST_SEGMENTS =
+            setOf(
+                "backend",
+                "credential",
+                "deferredCredential",
+                "nonce",
+                "notification",
+                "credentials",
+                "invite",
+                "request-uri",
+                "request_uri",
+                "auth",
+                "direct_post",
+                "account-action",
+                "ready",
+            )
     }
+
+    private fun isOpaqueProtocolIssuerPath(peeled: List<String>): Boolean {
+        if (peeled.isEmpty()) return false
+        if (peeled.size == 1) return peeled[0] in PROTOCOL_PREFIX_SEGMENTS
+        return peeled[0] in PROTOCOL_PREFIX_SEGMENTS && peeled.drop(1).all { isSafeSlugSegment(it) }
+    }
+
+    /**
+     * After the adapter base (`/oid4vci`, `/oid4vp`) is removed, an instance id
+     * may remain (`/acme/credential`). Strip that one segment when it is not
+     * itself a protocol leaf.
+     */
+    private fun stripOptionalInstanceSegment(relativePath: String): String {
+        val segments = relativePath.split('/').filter { it.isNotEmpty() }
+        if (segments.size < 2) return if (relativePath.isEmpty()) "/" else relativePath
+        val head = segments.first()
+        if (!isSafeSlugSegment(head) || head in PROTOCOL_LEAF_FIRST_SEGMENTS || head in PROTOCOL_PREFIX_SEGMENTS) {
+            return if (relativePath.startsWith("/")) relativePath else "/$relativePath"
+        }
+        val remaining = "/" + segments.drop(1).joinToString("/")
+        return remaining
+    }
+
+    private fun String.lastPathSegment(): String = trim('/').substringAfterLast('/')
 
     /**
      * Strip the adapter's base path from the request path.
@@ -639,7 +600,13 @@ abstract class CommandBackedHttpAdapter(
                         it
                     }
                 }
-            return request.copy(path = relativePath)
+            val routedPath =
+                if (basePath.lastPathSegment() in PROTOCOL_PREFIX_SEGMENTS) {
+                    stripOptionalInstanceSegment(relativePath)
+                } else {
+                    relativePath
+                }
+            return request.copy(path = routedPath)
         }
 
         val policy = tenantPathPolicy
@@ -665,25 +632,13 @@ abstract class CommandBackedHttpAdapter(
 
     private fun List<String>.startsWithSegments(prefix: List<String>): Boolean = size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
 
-    override fun getById(commandId: String): Command<GenericHttpRequest, GenericHttpResponse, IdkError>? {
-        @Suppress("UNCHECKED_CAST")
-        return endpointCommands.firstOrNull { it.id == commandId } as? Command<GenericHttpRequest, GenericHttpResponse, IdkError>
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    override fun addCommand(filter: com.sphereon.core.api.session.BaseCommand<*, *, *>): com.sphereon.core.api.session.BasePipelineCommand<GenericHttpRequest, GenericHttpResponse, IdkError> =
-        throw UnsupportedOperationException("CommandBackedHttpAdapter uses declarative endpoint commands; use endpointCommands property")
-
-    @Suppress("UNCHECKED_CAST")
-    override fun removeCommand(filter: com.sphereon.core.api.session.BaseCommand<*, *, *>): com.sphereon.core.api.session.BasePipelineCommand<GenericHttpRequest, GenericHttpResponse, IdkError> =
-        throw UnsupportedOperationException("CommandBackedHttpAdapter uses declarative endpoint commands; use endpointCommands property")
 }
 
 /**
  * No-op [RoutableSlugLookup] used as the dispatcher's default when a subclass
  * with `tenantPathPolicy = None` declines to inject a real implementation.
  * Always returns null so adapters compile and dispatch without slug routing —
- * the safe default for legacy adapters that never peel.
+ * the safe default for adapters that never peel.
  */
 private object NoOpRoutableSlugLookupSingleton : RoutableSlugLookup {
     override suspend fun findRootBySlug(slug: String): RoutableSlugLookup.Resolved? = null

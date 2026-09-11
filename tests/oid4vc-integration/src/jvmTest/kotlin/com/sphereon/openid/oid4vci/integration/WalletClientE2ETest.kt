@@ -18,32 +18,29 @@ package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.HttpAdapter
+import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelector
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.jose.jwe.DecryptJweCommand
 import com.sphereon.crypto.jose.jwe.JweServiceImpl
 import com.sphereon.di.session.SessionScope
+import com.sphereon.ktor.http.client.config.HttpClientConfigResolverImpl
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
+import com.sphereon.ktor.http.client.provider.HttpClientProviderImpl
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
-import com.sphereon.oauth2.server.authorization.impl.http.OAuth2AuthorizationHttpAdapter
-import com.sphereon.oauth2.server.authorization.impl.http.OAuth2DiscoveryHttpAdapter
-import com.sphereon.oauth2.server.authorization.impl.http.OAuth2FederationHttpAdapter
-import com.sphereon.oauth2.server.authorization.impl.http.OAuth2InternalHttpAdapter
-import com.sphereon.oauth2.server.authorization.impl.http.OAuth2TokenHttpAdapter
-import com.sphereon.oauth2.server.authorization.impl.http.OAuth2UserInfoHttpAdapter
 import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialDefinition
 import com.sphereon.openid.oid4vci.common.model.ProofTypeSupported
 import com.sphereon.openid.oid4vci.common.model.stringValues
 import com.sphereon.openid.oid4vci.holder.ExchangePreAuthorizedCodeArgs
-import com.sphereon.oauth2.common.command.ApplyClientAuthenticationCommand
-import com.sphereon.oauth2.client.command.ExchangeTokenCommand
 import com.sphereon.oauth2.client.impl.clientauth.ApplyClientAuthenticationCommandImpl
 import com.sphereon.oauth2.client.impl.token.ExchangeTokenCommandImpl
+import com.sphereon.oauth2.client.impl.token.OAuth2TokenEndpointTransportImpl
 import com.sphereon.openid.oid4vci.holder.Oid4vciHolderConfig
 import com.sphereon.openid.oid4vci.holder.RequestCredentialArgs
 import com.sphereon.openid.oid4vci.holder.RequestNonceArgs
@@ -56,8 +53,6 @@ import com.sphereon.openid.oid4vci.holder.impl.SignedMetadataVerifier
 import com.sphereon.openid.oid4vci.issuer.bridge.ConsumePreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.command.BuildIssuerMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
-import com.sphereon.openid.oid4vci.issuer.impl.http.Oid4vciIssuerMetadataHttpAdapter
-import com.sphereon.openid.oid4vci.issuer.impl.http.Oid4vciIssuerProtocolHttpAdapter
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
@@ -65,7 +60,6 @@ import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.claimsPathPointer
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
-import com.sphereon.openid.oid4vp.verifier.impl.http.Oid4vpVerifierHttpAdapter
 import dev.zacsweers.metro.ContributesTo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -113,8 +107,8 @@ interface HolderCommandDepsGraph {
  * by the actual server-side HTTP adapters without network I/O.
  */
 class InProcessHttpClientFactory(
-    private val adapters: Set<HttpAdapter>,
-    private val hostToAdapterOverrides: Map<String, (GenericHttpRequest) -> suspend () -> GenericHttpResponse> = emptyMap(),
+    private val routeSelector: HttpAdapterRouteSelector,
+    private val dispatcher: HttpAdapterDispatcher,
 ) : HttpClientFactory {
     override fun createClient(options: HttpClientOptions): HttpClient {
         val engine =
@@ -155,22 +149,13 @@ class InProcessHttpClientFactory(
                         bodySupplier = body?.let { { it } },
                     )
 
-                // Try each adapter until one handles the request (not 404). Skip adapters
-                // whose canHandle() returns false so adapters that share the root mount but
-                // serve different paths don't pollute the result with their unsupported-arg
-                // error responses.
-                var response: GenericHttpResponse? = null
-                for (adapter in adapters) {
-                    if (adapter is com.sphereon.core.api.http.RoutableHttpAdapter && !adapter.canHandle(genericRequest)) {
-                        continue
+                val resp =
+                    when (val selection = routeSelector.select(method, path)) {
+                        is HttpAdapterRouteSelection.Selected -> dispatcher.dispatch(genericRequest, selection.match)
+                        is HttpAdapterRouteSelection.NotFound -> GenericHttpResponse(404, emptyMap(), "Not found")
+                        is HttpAdapterRouteSelection.Ambiguous -> GenericHttpResponse(500, emptyMap(), "Ambiguous route")
+                        is HttpAdapterRouteSelection.Misconfigured -> GenericHttpResponse(500, emptyMap(), selection.message)
                     }
-                    val result = adapter.handleRequest(genericRequest)
-                    if (result.statusCode != 404 || adapters.size == 1) {
-                        response = result
-                        break
-                    }
-                }
-                val resp = response ?: GenericHttpResponse(404, emptyMap(), "Not found")
 
                 respond(
                     content = resp.body ?: "",
@@ -249,59 +234,16 @@ class WalletClientE2ETest {
         )
 
     // =========================================================================
-    // Helper: extract adapters from DI graph
+    // Helper: create InProcessHttpClientFactory wired to route-first dispatch
     // =========================================================================
 
-    private fun issuerAdapter(): Oid4vciIssuerProtocolHttpAdapter {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
-        return adapters.filterIsInstance<Oid4vciIssuerProtocolHttpAdapter>().firstOrNull()
-            ?: error("Oid4vciIssuerProtocolHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
-    }
-
-    private fun metadataAdapter(): Oid4vciIssuerMetadataHttpAdapter {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
-        return adapters.filterIsInstance<Oid4vciIssuerMetadataHttpAdapter>().firstOrNull()
-            ?: error("Oid4vciIssuerMetadataHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
-    }
-
-    private fun oauthAdapters(): List<HttpAdapter> {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
-        val oauth2 =
-            adapters.filter { adapter ->
-                adapter is OAuth2DiscoveryHttpAdapter ||
-                    adapter is OAuth2TokenHttpAdapter ||
-                    adapter is OAuth2AuthorizationHttpAdapter ||
-                    adapter is OAuth2UserInfoHttpAdapter ||
-                    adapter is OAuth2FederationHttpAdapter ||
-                    adapter is OAuth2InternalHttpAdapter
-            }
-        require(oauth2.isNotEmpty()) {
-            "No OAuth2 AS HttpAdapter found in DI graph. Found: ${adapters.map { it::class.simpleName }}"
-        }
-        return oauth2
-    }
-
-    private fun verifierAdapter(): Oid4vpVerifierHttpAdapter {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
-        return adapters.filterIsInstance<Oid4vpVerifierHttpAdapter>().firstOrNull()
-            ?: error("Oid4vpVerifierHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
-    }
-
-    // =========================================================================
-    // Helper: create InProcessHttpClientFactory wired to server adapters
-    // =========================================================================
-
-    private fun createInProcessFactory(): InProcessHttpClientFactory {
-        // Order matters: specific-path adapters first, catch-all metadata adapter last
-        return InProcessHttpClientFactory(
-            adapters = (listOf(issuerAdapter()) + oauthAdapters() + metadataAdapter()).toCollection(linkedSetOf()),
-        )
-    }
-
-    private fun createInProcessFactoryWithVerifier(): InProcessHttpClientFactory =
+    private fun createInProcessFactory(): InProcessHttpClientFactory =
         InProcessHttpClientFactory(
-            adapters = (listOf(verifierAdapter(), issuerAdapter()) + oauthAdapters() + metadataAdapter()).toCollection(linkedSetOf()),
+            routeSelector = (ctx.app as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector,
+            dispatcher = (ctx.session.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher,
         )
+
+    private fun createInProcessFactoryWithVerifier(): InProcessHttpClientFactory = createInProcessFactory()
 
     // =========================================================================
     // Helper: manually construct holder commands with mock factory
@@ -322,15 +264,19 @@ class WalletClientE2ETest {
     }
 
     private fun createExchangePreAuthorizedCodeCommand(factory: InProcessHttpClientFactory): ExchangePreAuthorizedCodeCommandImpl {
-        // The pre-auth exchange delegates HTTP to the oauth2 client commands (HAIP-era
-        // constructor); the in-process factory is consumed by those commands via the graph.
-        // Hermetic routing: construct the oauth2 commands directly over the purpose-built
-        // in-process factory so the token exchange hits the test routes (the graph commands
-        // would use the session factory, which has no routes for this scenario).
+        // The canonical token transport consumes an HttpClientProvider. Adapt the purpose-built
+        // in-process factory through the production provider so token exchange still reaches the
+        // real HTTP adapters without network I/O.
+        val httpClients = HttpClientProviderImpl(factory, HttpClientConfigResolverImpl(ctx.execution))
+        val tokenTransport =
+            OAuth2TokenEndpointTransportImpl(
+                httpClients = httpClients,
+                applyClientAuthenticationCommand = ApplyClientAuthenticationCommandImpl(ctx.execution),
+            )
         return ExchangePreAuthorizedCodeCommandImpl(
             execution = ctx.execution,
             applyClientAuthenticationCommand = ApplyClientAuthenticationCommandImpl(ctx.execution),
-            exchangeTokenCommand = ExchangeTokenCommandImpl(ctx.execution, factory),
+            exchangeTokenCommand = ExchangeTokenCommandImpl(ctx.execution, tokenTransport),
         )
     }
 
@@ -510,10 +456,11 @@ class WalletClientE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vc-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
             assertTrue(
@@ -705,10 +652,11 @@ class WalletClientE2ETest {
             val offerResult =
                 issuer.createCredentialOffer(
                     CreateCredentialOfferArgs(
-                        instanceId = "oid4vc-integration-issuer",
+                        instanceId = OID4VCI_TEST_ISSUER_INSTANCE_ID,
                         issuerId = issuerUrl,
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = OID4VCI_TEST_AUTHORIZATION_POLICY_SNAPSHOT,
                     ),
                 )
             assertTrue(offerResult.isOk, "Offer creation should succeed")

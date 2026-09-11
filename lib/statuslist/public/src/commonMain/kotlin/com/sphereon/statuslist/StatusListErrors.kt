@@ -21,6 +21,12 @@ import com.sphereon.core.api.error.IdkError
 
 /** Stable, machine-readable domain errors for the status-list feature. */
 object StatusListErrors {
+    fun invalidMdocProfile(reason: String): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_INVALID_MDOC_PROFILE",
+            message = "Invalid ISO/IEC 18013-5 mdoc status-list profile: $reason",
+            category = ErrorCategory.VALIDATION,
+        )
     fun listNotFound(ref: String): IdkError =
         IdkError.fromString(
             code = "STATUSLIST_LIST_NOT_FOUND",
@@ -39,6 +45,13 @@ object StatusListErrors {
         IdkError.fromString(
             code = "STATUSLIST_DUPLICATE_CORRELATION_ID",
             message = "A status list with correlationId '$correlationId' already exists",
+            category = ErrorCategory.CONFLICT,
+        )
+
+    fun duplicateStatusListUri(statusListUri: String): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_DUPLICATE_URI",
+            message = "A status list is already hosted at '$statusListUri'",
             category = ErrorCategory.CONFLICT,
         )
 
@@ -67,6 +80,8 @@ object StatusListErrors {
             existing.bitsPerStatus != requested.bitsPerStatus -> incompatibleDefinitionRefresh(existing.correlationId, "bitsPerStatus")
             existing.length != requested.length -> incompatibleDefinitionRefresh(existing.correlationId, "length")
             existing.statusListUri != requested.statusListUri -> incompatibleDefinitionRefresh(existing.correlationId, "statusListUri")
+            existing.mdocProfile != requested.mdocProfile -> incompatibleDefinitionRefresh(existing.correlationId, "mdocProfile")
+            existing.aggregationUri != requested.aggregationUri -> incompatibleDefinitionRefresh(existing.correlationId, "aggregationUri")
             else -> null
         }
 
@@ -129,11 +144,13 @@ object StatusListErrors {
     fun verificationFailed(
         uri: String,
         reason: String,
+        cause: Throwable? = null,
     ): IdkError =
         IdkError.fromString(
             code = "STATUSLIST_VERIFICATION_FAILED",
             message = "Status list at $uri failed verification: $reason",
             category = ErrorCategory.VALIDATION,
+            exception = cause as? Exception,
         )
 
     fun bitstringListTooShort(bits: Long): IdkError =
@@ -166,6 +183,36 @@ object StatusListErrors {
                     "'$format' format handler does not support status enrichment; refusing to issue a credential " +
                     "that could never be revoked",
             category = ErrorCategory.UNAVAILABLE,
+        )
+
+    /**
+     * An ISO mdoc status-list profile is meaningful only when it is embedded in an mso_mdoc MSO.
+     * Silently treating such a binding as an ordinary JWT/VC status claim would produce a token
+     * whose configured revocation representation cannot be resolved by an mdoc verifier.
+     */
+    fun mdocProfileUnsupportedForFormat(
+        credentialConfigurationId: String,
+        format: String,
+    ): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_MDOC_PROFILE_UNSUPPORTED_FORMAT",
+            message =
+                "Credential configuration '$credentialConfigurationId' binds an ISO 18013-5 " +
+                    "status-list profile, but format '$format' is not mso_mdoc; refusing to issue " +
+                    "a credential with an incompatible status representation",
+            category = ErrorCategory.VALIDATION,
+        )
+
+    fun bindingDefinitionMismatch(
+        statusListId: String,
+        field: String,
+    ): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_BINDING_DEFINITION_MISMATCH",
+            message =
+                "Status-list binding for '$statusListId' does not match the stored definition at '$field'; " +
+                    "refusing to issue with an ambiguous status representation",
+            category = ErrorCategory.VALIDATION,
         )
 
     fun bindingUnresolvable(
@@ -206,6 +253,29 @@ object StatusListErrors {
 
     /** Validate creation args against spec invariants. Returns null when valid. */
     fun validateCreateArgs(args: CreateStatusListArgs): IdkError? {
+        if (args.mdocProfile != null) {
+            if (args.length <= 0) return invalidMdocProfile("length must be greater than zero")
+            if (args.bitsPerStatus !in intArrayOf(1, 2, 4, 8)) {
+                return invalidMdocProfile("bitsPerStatus must be 1, 2, 4, or 8")
+            }
+            if (args.spec != StatusListSpec.TOKEN_STATUS_LIST) {
+                return invalidMdocProfile("the mdoc profile requires the Token Status List spec")
+            }
+            if (args.proofFormat != StatusProofFormat.CWT) {
+                return invalidMdocProfile("the mdoc profile requires CWT proof")
+            }
+            if (args.bitsPerStatus != 1) {
+                return invalidMdocProfile("the mdoc profile requires bitsPerStatus=1")
+            }
+            if (args.validUntil == null) {
+                return invalidMdocProfile("mdoc revocation CWT requires validUntil/exp")
+            }
+            if (args.mdocProfile == MdocStatusListProfile.IDENTIFIER_LIST &&
+                args.purposes.any { it != StatusPurpose.REVOCATION }
+            ) {
+                return invalidMdocProfile("an Identifier List can only represent revocation")
+            }
+        }
         if (args.spec == StatusListSpec.BITSTRING_STATUS_LIST) {
             val bits = args.length.toLong() * args.bitsPerStatus
             if (bits < MIN_BITSTRING_STATUS_LIST_BITS) return bitstringListTooShort(bits)

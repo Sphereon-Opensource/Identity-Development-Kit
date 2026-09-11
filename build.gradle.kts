@@ -1,11 +1,20 @@
 @file:Suppress("UnstableApiUsage")
 
-import com.android.build.gradle.AppExtension
-import com.android.build.gradle.LibraryExtension
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import org.jetbrains.kotlin.gradle.targets.js.testing.KotlinJsTest
+
+val sphereonBuildProfile = (System.getenv("SPHEREON_BUILD_PROFILE")
+    ?: System.getProperty("sphereon.build.profile"))?.trim()?.lowercase()
+
+if (sphereonBuildProfile == "forms") {
+    plugins.withType<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin> {
+        extensions.configure<org.jetbrains.kotlin.gradle.targets.js.npm.NpmExtension> {
+            lockFileDirectory.set(rootProject.layout.projectDirectory.dir("kotlin-js-store/forms"))
+        }
+    }
+}
 
 // Detect host architecture and OS
 val osName = System.getProperty("os.name").lowercase()
@@ -185,21 +194,6 @@ subprojects {
             force("org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion")
         }
     }
-
-    plugins.withId("com.android.library") {
-        extensions.configure<LibraryExtension> {
-            defaultConfig {
-                minSdk = 27
-            }
-        }
-    }
-    plugins.withId("com.android.application") {
-        extensions.configure<AppExtension> {
-            defaultConfig {
-                minSdk = 27
-            }
-        }
-    }
 }
 
 repositories {
@@ -242,8 +236,9 @@ fun getNpmVersion(): String {
     // Get git commit hash (workingDir needed for composite builds)
     val gitCommitHash = providers.exec {
         workingDir = rootDir
+        isIgnoreExitValue = true
         commandLine("git", "rev-parse", "--short=7", "HEAD")
-    }.standardOutput.asText.get().replace("\n", "").trim()
+    }.standardOutput.asText.get().replace("\n", "").trim().ifEmpty { "nogit" }
 
     // npm registry rejects republishing the same version, so each SNAPSHOT publish
     // must produce a unique version. Add a monotonic build id (CI run number, or
@@ -505,9 +500,15 @@ abstract class VerifyWalletKmsBoundaryTask : org.gradle.api.DefaultTask() {
             )
         // Directory-exempt rule: any file under a lib/wallet/wscd/ module is a concrete WSCD
         // implementation by construction, so raw KMS imports there are in-boundary, not violations.
+        // EDK remote wallet-unit WSCD adapters live under lib/wallet/unit/remote/.../wscd/ and
+        // import KMS graph types only to replace them out of the consuming application graph.
         // allowlistedFilePaths is reserved for named, temporary leftovers only (see the task
         // registration below).
-        fun isUnderWscdDirectory(file: java.io.File): Boolean = file.canonicalFile.path.replace('\\', '/').contains("/lib/wallet/wscd/")
+        fun isUnderWscdDirectory(file: java.io.File): Boolean {
+            val path = file.canonicalFile.path.replace('\\', '/')
+            return path.contains("/lib/wallet/wscd/") ||
+                (path.contains("/lib/wallet/unit/remote/") && path.contains("/wscd/"))
+        }
         // Flag the bare package text too, not only import lines - catches fully-qualified inline usage
         // (e.g. a type reference spelled out as com.sphereon.crypto.core.kms.KeyManagerService without
         // an import line) that the import-only regex above would miss.
@@ -1153,6 +1154,7 @@ val verifyWalletKitTargetContractTask =
     tasks.register("verifyWalletKitTargetContract") {
         group = "verification"
         description = "Requires the settled wallet-kit JVM, classic JS, WasmJS, and iOS target matrix"
+        notCompatibleWithConfigurationCache("Reads wallet Gradle scripts from the source tree")
         val walletKitBuild = rootDir.resolve("wallet/kit/build.gradle.kts")
         inputs.file(walletKitBuild)
         doLast {
@@ -1179,6 +1181,7 @@ val verifyWalletProductUiTargetContractTask =
     tasks.register("verifyWalletProductUiTargetContract") {
         group = "verification"
         description = "Requires JVM, classic JS, WasmJS, Android, and iOS across the wallet product UI chain"
+        notCompatibleWithConfigurationCache("Reads wallet Gradle scripts from the source tree")
         val productBuilds =
             linkedMapOf(
                 "lib-conf-theme-compose" to rootDir.resolve("lib/conf/theme/compose/build.gradle.kts"),
@@ -1248,6 +1251,7 @@ val verifyWalletUiDependencyVersionsTask =
     tasks.register("verifyWalletUiDependencyVersions") {
         group = "verification"
         description = "Pins the supported Compose Multiplatform and Navigation 3 versions for every wallet target"
+        notCompatibleWithConfigurationCache("Reads wallet and BOM Gradle scripts from the source tree")
         val composeBom = rootDir.resolve("gradle-build-support/versions/gradle-plugin-bom/build.gradle.kts")
         val libraryBom = rootDir.resolve("gradle-build-support/versions/library-bom/build.gradle.kts")
         val walletBuilds =
@@ -1304,6 +1308,7 @@ val verifyWalletWebRuntimeBoundaryTask =
     tasks.register("verifyWalletWebRuntimeBoundary") {
         group = "verification"
         description = "Keeps the Wasm renderer free of local runtime/Node/VDX implementation code"
+        notCompatibleWithConfigurationCache("Reads wallet Wasm/Node sources from the source tree")
         val wasmSources = fileTree(rootDir.resolve("wallet/reference/wasm/src/wasmJsMain")) { include("**/*.kt") }
         val nodeMain = rootDir.resolve("wallet/reference/node/src/jsMain/kotlin/com/sphereon/wallet/reference/local/NodeLocalWalletReferenceMain.kt")
         val idkRootPath = rootDir.canonicalPath
@@ -1341,11 +1346,22 @@ val verifyWalletWebRuntimeBoundaryTask =
         }
     }
 
+val kmpTargetsForWalletVerify = (System.getProperty("kmp.targets") ?: "jvm")
+    .split(",").map { it.trim().lowercase() }
+val wasmEnabledForWalletVerify =
+    "all" in kmpTargetsForWalletVerify ||
+        "wasmjs" in kmpTargetsForWalletVerify ||
+        "wasm" in kmpTargetsForWalletVerify
+
 val verifyWalletWasmArtifactBoundaryTask =
     tasks.register("verifyWalletWasmArtifactBoundary") {
         group = "verification"
         description = "Proves the browser artifact cannot link Node filesystem or local wallet authority code"
-        dependsOn(":wallet-reference-wasm:compileDevelopmentExecutableKotlinWasmJs")
+        notCompatibleWithConfigurationCache("Inspects compiled Wasm artifacts and is skipped for JVM-only builds")
+        onlyIf { wasmEnabledForWalletVerify }
+        if (wasmEnabledForWalletVerify) {
+            dependsOn(":wallet-reference-wasm:compileDevelopmentExecutableKotlinWasmJs")
+        }
         val executableRoot =
             rootDir.resolve("wallet/reference/wasm/build/compileSync/wasmJs/main/developmentExecutable/kotlin")
         outputs.upToDateWhen { false }
@@ -1379,6 +1395,8 @@ val verifyWalletWasmDependencyBoundaryTask =
     tasks.register("verifyWalletWasmDependencyBoundary") {
         group = "verification"
         description = "Rejects wallet authority, filesystem, storage and network stacks from the Wasm renderer graph"
+        notCompatibleWithConfigurationCache("Resolves the Wasm compile classpath and is skipped for JVM-only builds")
+        onlyIf { wasmEnabledForWalletVerify }
         doLast {
             val configuration =
                 requireNotNull(rootProject.findProject(":wallet-reference-wasm"))
@@ -1410,11 +1428,19 @@ val verifyWalletWasmDependencyBoundaryTask =
 
 gradle.projectsEvaluated {
     val walletRoot = rootDir.toPath().resolve("wallet").toAbsolutePath().normalize()
+    // Live OIDF wallet adapter lives outside wallet/ so the conformance lane is not
+    // coupled to wallet-runner's product tests. It is still a wallet consumer, not a
+    // production leak of the AGPL product tree.
+    val walletExemptRoots =
+        listOf(
+            walletRoot,
+            rootDir.toPath().resolve("tests/oidf/conformance/oid4vc-wallet").toAbsolutePath().normalize(),
+        )
     verifyWalletBoundaryTask.configure {
         violations.set(
             rootProject.subprojects.flatMap { project ->
                 val projectPath = project.projectDir.toPath().toAbsolutePath().normalize()
-                if (projectPath.startsWith(walletRoot)) {
+                if (walletExemptRoots.any { projectPath.startsWith(it) }) {
                     emptyList()
                 } else {
                     project.configurations.flatMap { configuration ->
@@ -1638,6 +1664,7 @@ gradle.projectsEvaluated {
                     "wallet-presentation-contracts",
                     "wallet-app-public",
                     "lib-wallet-interaction-presenter",
+                    "lib-catalog-public",
                 ),
             "wallet-presentation-molecule" to setOf("wallet-presentation-contracts"),
             "wallet-ui-compose" to

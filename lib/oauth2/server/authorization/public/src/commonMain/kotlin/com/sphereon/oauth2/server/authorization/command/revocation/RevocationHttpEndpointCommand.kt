@@ -35,6 +35,7 @@ interface RevocationHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "revokeToken",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("revocation"),
                 summary = "RFC 7009 OAuth 2.0 Token Revocation",
             )

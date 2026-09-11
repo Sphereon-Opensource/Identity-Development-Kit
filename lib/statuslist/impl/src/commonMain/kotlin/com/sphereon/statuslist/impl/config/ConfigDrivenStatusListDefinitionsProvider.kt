@@ -17,18 +17,23 @@
 package com.sphereon.statuslist.impl.config
 
 import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import com.sphereon.statuslist.CreateStatusListArgs
 import com.sphereon.statuslist.DEFAULT_STATUS_LIST_LENGTH
 import com.sphereon.statuslist.StatusListDefinitionsProvider
+import com.sphereon.statuslist.StatusListRef
 import com.sphereon.statuslist.StatusListHostingMode
 import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.StatusPurpose
+import com.sphereon.statuslist.MdocStatusListProfile
 import com.sphereon.statuslist.spi.StatusListPublisher
 import com.sphereon.statuslist.spi.StatusListPublisherIds
+import com.sphereon.statuslist.spi.StatusListDriver
 import com.sphereon.statuslist.spi.StatusListSigningKeyNameResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -57,6 +62,9 @@ import dev.zacsweers.metro.binding
  *       signingKeyAlias: <kms-alias>      # only read when no signing-key-name resolver is bound
  *       signingKeyMode: jwk               # jwk, x5c, or did:<method>
  *       ttlSeconds: 3600                  # optional
+ *       mdocProfile: status_list           # optional: status_list or identifier_list
+ *       aggregationUri: https://...        # optional mdoc aggregation endpoint
+ *       validUntil: 2030-01-01T00:00:00Z   # required for an mdoc profile (CWT exp)
  * ```
  *
  * Bracket-quote the list id (`"[revocation]"`) so the property-key normaliser preserves it verbatim.
@@ -79,6 +87,17 @@ class ConfigDrivenStatusListDefinitionsProvider(
      * a value planted there can never reach a definition, the store, or a signer.
      */
     private val signingKeyNameResolver: Provider<StatusListSigningKeyNameResolver>? = null,
+    /**
+     * Tenant-scoped source used by runtime issuance resolution.
+     *
+     * This dependency is deliberately required. Metro does not inject a nullable/defaulted
+     * Provider parameter when a concrete binding exists (the default is treated as the optional
+     * fallback), which made the provider silently lose the production Postgres driver and made
+     * REST-created lists invisible to issuance. Every status-list implementation supplies at
+     * least the reference in-memory driver; durable deployments replace that binding with their
+     * tenant-scoped driver.
+     */
+    private val statusListDriver: Provider<StatusListDriver>,
 ) : StatusListDefinitionsProvider {
     private val configService: PrincipalConfigService
         get() = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
@@ -91,6 +110,30 @@ class ConfigDrivenStatusListDefinitionsProvider(
         }
 
     override fun byId(correlationId: String): CreateStatusListArgs? = definitions.firstOrNull { it.correlationId == correlationId }
+
+    override suspend fun resolve(correlationId: String): com.sphereon.core.api.IdkResult<CreateStatusListArgs?, com.sphereon.core.api.error.IdkError> {
+        byId(correlationId)?.let { return Ok(it) }
+        val driver = statusListDriver.invoke()
+        val persisted = driver.getStatusList(StatusListRef(correlationId = correlationId)).getOrElse { return Err(it) }
+            ?: return Ok(null)
+        return Ok(persisted.toDefinition())
+    }
+
+    private fun com.sphereon.statuslist.StatusListResult.toDefinition() =
+        CreateStatusListArgs(
+            correlationId = correlationId,
+            spec = spec,
+            purposes = purposes,
+            proofFormat = proofFormat,
+            hostingMode = hostingMode,
+            issuer = issuer,
+            statusListUri = statusListUri,
+            length = length,
+            bitsPerStatus = bitsPerStatus,
+            mdocProfile = mdocProfile,
+            aggregationUri = aggregationUri,
+            validUntil = validUntil,
+        )
 
     private fun buildDefinition(
         id: String,
@@ -139,6 +182,11 @@ class ConfigDrivenStatusListDefinitionsProvider(
         val signingVerificationMethodId = configService.getPropertyAsString("$prefix.verificationMethodId")?.takeIf { it.isNotBlank() }
         val signingCertChainPath = configService.getPropertyAsString("$prefix.signingCertChainPath")?.takeIf { it.isNotBlank() }
         val ttlSeconds = configService.getPropertyAsString("$prefix.ttlSeconds")?.toLongOrNull()
+        val validUntil = configService.getPropertyAsString("$prefix.validUntil")?.let { value ->
+            runCatching { kotlinx.datetime.Instant.parse(value) }.getOrNull()
+        }
+        val mdocProfile = configService.getPropertyAsString("$prefix.mdocProfile")?.let { parseMdocProfile(it) }
+        val aggregationUri = configService.getPropertyAsString("$prefix.aggregationUri")?.takeIf { it.isNotBlank() }
         // The list token's `iss`: per-list override, then the global default, then the origin of the
         // hosting URI (so a self-contained config need only set the root-path `uri`).
         val issuer =
@@ -160,6 +208,9 @@ class ConfigDrivenStatusListDefinitionsProvider(
             signingVerificationMethodId = signingVerificationMethodId,
             signingCertChainPath = signingCertChainPath,
             ttlSeconds = ttlSeconds,
+            validUntil = validUntil,
+            mdocProfile = mdocProfile,
+            aggregationUri = aggregationUri,
         )
     }
 
@@ -173,6 +224,9 @@ class ConfigDrivenStatusListDefinitionsProvider(
         StatusProofFormat.entries.firstOrNull {
             it.value.equals(value, ignoreCase = true) || it.name.equals(value, ignoreCase = true)
         }
+
+    private fun parseMdocProfile(value: String): MdocStatusListProfile? =
+        MdocStatusListProfile.fromValue(value.replace('-', '_'))
 
     private fun defaultProofFormat(spec: StatusListSpec): StatusProofFormat =
         when (spec) {

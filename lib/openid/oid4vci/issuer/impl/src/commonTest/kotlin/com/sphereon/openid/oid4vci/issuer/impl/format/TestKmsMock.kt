@@ -37,6 +37,7 @@ import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.ManagedKeyPair
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.CertificateOptions
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import com.sphereon.crypto.core.kms.EncryptionResult
@@ -88,6 +89,16 @@ class TestKmsMock : KeyManagerService {
     private val keys = mutableMapOf<String, ManagedKeyInfoType<*>>()
     private var defaultProviderId: String = "test-provider"
     private var defaultResolverId: String = "test-resolver"
+
+    /** Install deterministic key material for issuer protected-header tests. */
+    fun putTestJwk(alias: String, jwk: Jwk) {
+        keys[alias] =
+            ManagedKeyInfo(
+                alias = alias,
+                providerId = defaultProviderId,
+                resolvedKeyInfo = ResolvedKeyInfo(key = jwk, alias = alias),
+            )
+    }
 
     override fun defaultProviderId(): String = defaultProviderId
 
@@ -416,6 +427,7 @@ class TestKmsMock : KeyManagerService {
         keyOperations: Array<out KeyOperations>?,
         alg: SignatureAlgorithm?,
         keyVisibility: KeyVisibility?,
+        walletUnitId: String?,
     ): IdkResult<GenerateKeyResult, IdkError> = Ok(GenerateKeyResult(generateKey(providerId, alias, use, keyOperations, alg, keyVisibility)))
 
     override suspend fun listKeysResult(providerId: String?): IdkResult<ListKeysResult, IdkError> {

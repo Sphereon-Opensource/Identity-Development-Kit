@@ -74,9 +74,6 @@ services:
       - OIDC_BASIC_CLIENT1_SECRET=${OIDC_BASIC_CLIENT1_SECRET:-basic-client1-secret-change-me}
       - OIDC_BASIC_CLIENT2_SECRET=${OIDC_BASIC_CLIENT2_SECRET:-basic-client2-secret-change-me}
       - OIDC_BASIC_CLIENT_POST_SECRET=${OIDC_BASIC_CLIENT_POST_SECRET:-basic-clientpost-secret-change-me}
-      # HAIP §4.4.1 wallet-attestation x5c trust. Off by default — the AS uses per-client
-      # `trustedAttesterJwks` JWK pinning then. The HAIP profile flips these on and points the
-      # bundle at trust-anchors/wallet-attester-ca.pem (mounted read-only from the host below).
       - TRUST_ANCHORS_X509_ENABLED=${TRUST_ANCHORS_X509_ENABLED:-false}
       - TRUST_ANCHORS_X509_CA_BUNDLE_PATHS_0=${TRUST_ANCHORS_X509_CA_BUNDLE_PATHS_0:-}
       # Unique-per-organization ALIAS used in the OIDF conformance suite redirect URI:
@@ -144,23 +141,14 @@ services:
       # The conformance encryption-required profile flips both to `true` (see
       # profiles/conformance-haip-enc-required.env). When enabled, the policy values
       # default to `iso_18045_moderate`; KEY_STORAGE / USER_AUTH overrides accept a single
-      # comma-separated list of ISO 18045 attack-potential-resistance levels. JWKS is a
-      # JSON array of JWK objects pasted from the OIDF plan's `vci_key_attestation_jwks`.
+      # comma-separated list of ISO 18045 attack-potential-resistance levels.
       - OID4VCI_EUPID_KEY_ATTESTATIONS_REQUIRED=${OID4VCI_EUPID_KEY_ATTESTATIONS_REQUIRED:-false}
       - OID4VCI_EUPID_KEY_ATTESTATIONS_KEY_STORAGE=${OID4VCI_EUPID_KEY_ATTESTATIONS_KEY_STORAGE:-iso_18045_moderate}
       - OID4VCI_EUPID_KEY_ATTESTATIONS_USER_AUTH=${OID4VCI_EUPID_KEY_ATTESTATIONS_USER_AUTH:-iso_18045_moderate}
-      - OID4VCI_EUPID_KEY_ATTESTER_JWKS=${OID4VCI_EUPID_KEY_ATTESTER_JWKS:-}
       - OID4VCI_MDL_KEY_ATTESTATIONS_REQUIRED=${OID4VCI_MDL_KEY_ATTESTATIONS_REQUIRED:-false}
       - OID4VCI_MDL_KEY_ATTESTATIONS_KEY_STORAGE=${OID4VCI_MDL_KEY_ATTESTATIONS_KEY_STORAGE:-iso_18045_moderate}
       - OID4VCI_MDL_KEY_ATTESTATIONS_USER_AUTH=${OID4VCI_MDL_KEY_ATTESTATIONS_USER_AUTH:-iso_18045_moderate}
-      - OID4VCI_MDL_KEY_ATTESTER_JWKS=${OID4VCI_MDL_KEY_ATTESTER_JWKS:-}
-      # Global X.509 trust anchors for OID4VCI 1.0 §7.2 key-attestation x5c chain
-      # validation. Mirrors the AS wallet-attestation wiring (same wallet attester signs
-      # both): the conformance HAIP profile points this at wallet-attester-ca.pem so
-      # the issuer accepts attestations carrying x5c chains anchored at that CA.
-      - TRUST_ANCHORS_X509_ENABLED=${TRUST_ANCHORS_X509_ENABLED:-false}
-      - TRUST_ANCHORS_X509_CA_BUNDLE_PATHS_0=${TRUST_ANCHORS_X509_CA_BUNDLE_PATHS_0:-}
-    volumes:
+      volumes:
       - ./config/oid4vci-issuer.yml:/app/config/application.yml:ro
       - ./keystores/oid4vci-issuer:/app/keystore
       - ./trust-anchors:/app/trust-anchors:ro

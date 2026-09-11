@@ -28,7 +28,6 @@ kotlin {
     android {
         namespace = "com.sphereon.conf.theme.ui.compose"
         compileSdk = 35
-        minSdk = 27
     }
     configureJsTargetIfEnabled {
         browser()

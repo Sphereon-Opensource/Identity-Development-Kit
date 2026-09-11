@@ -51,6 +51,7 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -1306,13 +1307,13 @@ class AbstractCoseCryptoServiceTest {
         }
 
     @Test
-    fun sign1WithKidInKeyInfoShouldTakePrecedence() =
+    fun sign1ShouldRejectKeyInfoKidConflictingWithInlineKeyIdentity() =
         runTest {
             val managedKeyPair = keyManagerService.generateKey(alg = SignatureAlgorithm.ECDSA_SHA256)
             val keyInfo = managedKeyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
             val coseKey = CoseJoseKeyMappingService.toCoseKey(keyInfo.key!!)
 
-            // KeyInfo with explicit kid
+            // Explicit metadata must not relabel different inline key identity.
             val keyInfoWithKid =
                 KeyInfo<CoseKeyType>(
                     key = coseKey,
@@ -1331,15 +1332,15 @@ class AbstractCoseCryptoServiceTest {
                     payload = CborByteString("test".encodeToByteArray()),
                 )
 
-            val result =
+            val failure = assertFailsWith<PKIException> {
                 coseCryptoService.sign1<Any>(
                     input = input,
                     keyInfo = keyInfoWithKid,
                     requireX5Chain = false,
                 )
-
-            // KeyInfo kid should take precedence
-            assertNotNull(result)
+            }
+            assertContains(failure.message.orEmpty(), "Inline key kid")
+            assertContains(failure.message.orEmpty(), "does not match selected kid 'my-explicit-kid'")
         }
 
     @Test

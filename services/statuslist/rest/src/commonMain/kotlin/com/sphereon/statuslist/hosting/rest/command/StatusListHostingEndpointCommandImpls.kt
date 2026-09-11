@@ -18,6 +18,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.response.ResponseBuilder
@@ -35,6 +36,8 @@ import com.sphereon.statuslist.hosting.rest.StatusListHostingConfig
 import com.sphereon.statuslist.hosting.rest.http.GetStatusListTokenByCorrelationIdEndpointCommand
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
@@ -57,6 +60,7 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
     endpoint: HttpEndpointDescriptor,
     private val getStatusList: GetStatusListCommand,
     private val service: GetStatusListTokenCommand,
+    private val hostingConfig: StatusListHostingConfig,
 ) : HttpEndpointCommandAdapter(
         id = id,
         execution = execution,
@@ -79,7 +83,10 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
     }
 
     private fun StatusListToken.toRawResponse(): GenericHttpResponse {
-        val maxAge = ttlSeconds ?: StatusListHostingApiConstants.DEFAULT_CACHE_MAX_AGE_SECONDS
+        val maxAge =
+            hostingConfig.cacheMaxAgeSeconds
+                ?: ttlSeconds
+                ?: StatusListHostingApiConstants.DEFAULT_CACHE_MAX_AGE_SECONDS
         return ResponseBuilder.bytesResponse(
             // rawBytes() serves the binary CWT (COSE_Sign1) verbatim, or the UTF-8 JWS for JWT/VC-JWT.
             data = rawBytes(),
@@ -92,18 +99,20 @@ abstract class AbstractGetStatusListTokenEndpointCommand(
 /** `GET /public/statuslists/{correlationId}` resolves the token by business correlation id. */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetStatusListTokenByCorrelationIdEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetStatusListTokenByCorrelationIdEndpointCommand.COMMAND_ID)
 class GetStatusListTokenByCorrelationIdEndpointCommandImpl(
     execution: SessionExecution,
     getStatusList: GetStatusListCommand,
     service: GetStatusListTokenCommand,
     private val hostingConfig: StatusListHostingConfig,
 ) : AbstractGetStatusListTokenEndpointCommand(
-        id = CommandIds.HTTP_GET_TOKEN_BY_CORRELATION_ID,
+        id = GetStatusListTokenByCorrelationIdEndpointCommand.COMMAND_ID,
         execution = execution,
         endpoint = GetStatusListTokenByCorrelationIdEndpointCommand.ENDPOINT,
         getStatusList = getStatusList,
         service = service,
+        hostingConfig = hostingConfig,
     ),
     GetStatusListTokenByCorrelationIdEndpointCommand {
     override fun resolveRef(request: GenericHttpRequest): IdkResult<StatusListRef, IdkError> {

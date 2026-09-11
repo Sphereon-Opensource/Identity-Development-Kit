@@ -45,6 +45,7 @@ import com.sphereon.crypto.core.generic.hash
 import com.sphereon.mdoc.data.device.decodeDeviceItemsRequest
 import com.sphereon.mdoc.engagement.DeviceEngagementCborCodec
 import com.sphereon.mdoc.engagement.DeviceEngagementCborCodecImpl
+import com.sphereon.mdoc.transfer.reader.Iso18013Oid4vpHandover
 import com.sphereon.mdoc.transfer.reader.Handover
 import com.sphereon.mdoc.transfer.reader.NfcHandover
 import com.sphereon.mdoc.transfer.reader.OID4VPHandover
@@ -447,6 +448,18 @@ private fun encodeHandoverItem(value: Handover<*, CborItem<*>>): CborItem<*> =
             CborByteString(value.readerEngagementHash)
         }
 
+        is Iso18013Oid4vpHandover -> {
+            // ISO/IEC TS 18013-7 Annex B uses a different OID4VP handover from
+            // OpenID4VP 1.0 final: [clientIdHash, responseUriHash, nonce].
+            CborArray(
+                mutableListOf(
+                    CborByteString(value.clientIdHash),
+                    CborByteString(value.responseUriHash),
+                    CborString(value.nonce),
+                ),
+            )
+        }
+
         is NfcHandover -> {
             CborArray(
                 mutableListOf(
@@ -509,8 +522,18 @@ private fun decodeHandoverItem(item: CborItem<*>): Handover<*, CborItem<*>> =
 
 @Suppress("UNCHECKED_CAST")
 private fun decodeArrayHandover(item: CborArray<CborItem<*>>): Handover<*, CborItem<*>> {
+    if (item.value.size == 3) {
+        val clientIdHash = requireByteString(item.value[0], "Iso18013Oid4vpHandover clientIdHash").value
+        val responseUriHash = requireByteString(item.value[1], "Iso18013Oid4vpHandover responseUriHash").value
+        val nonce = requireString(item.value[2], "Iso18013Oid4vpHandover nonce").value
+        require(clientIdHash.isNotEmpty()) { "Iso18013Oid4vpHandover clientIdHash must not be empty" }
+        require(responseUriHash.isNotEmpty()) { "Iso18013Oid4vpHandover responseUriHash must not be empty" }
+        require(nonce.isNotEmpty()) { "Iso18013Oid4vpHandover nonce must not be empty" }
+        return Iso18013Oid4vpHandover(clientIdHash, responseUriHash, nonce) as Handover<*, CborItem<*>>
+    }
+
     require(item.value.size == 2) {
-        "Handover array must contain exactly 2 items (NFC: [select, request]; OID4VP: [\"OpenID4VPHandover\", hash])"
+        "Handover array must contain 2 items (NFC: [select, request]; OID4VP final: [\"OpenID4VPHandover\", hash]) or 3 items (ISO 18013-7 Annex B)"
     }
     // OID4VP §B.2.6 wraps the handover hash with a literal type tag in the first slot.
     // NFC encodes byte strings (or nil) in both slots, so the type tag of element 0 is the

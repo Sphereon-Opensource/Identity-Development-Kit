@@ -42,6 +42,11 @@ import com.sphereon.mdoc.engagement.DeviceEngagementCborCodecImpl
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethod
 import com.sphereon.mdoc.transfer.device.DeviceRetrievalMethodType
 import com.sphereon.mdoc.transfer.device.RestApiOptions
+import com.sphereon.mdoc.transfer.OriginInfo
+import com.sphereon.mdoc.transfer.OriginInfoCategory
+import com.sphereon.mdoc.transfer.OriginInfoDetails
+import com.sphereon.mdoc.transfer.OriginInfoType
+import com.sphereon.mdoc.transfer.OriginInfoValidator
 import com.sphereon.mdoc.transfer.reader.ReaderEngagement
 import com.sphereon.mdoc.transfer.reader.ReaderEngagementCborCodecImpl
 import com.sphereon.mdoc.transfer.reader.ReaderEngagementSecurity
@@ -499,6 +504,18 @@ class RestApiWebsiteE2ETest {
         }
     }
 
+    @Test
+    fun test_toApp_rejects_private_network_uri() {
+        val privateUri = "https://127.0.0.1/mdoc/session/123"
+
+        try {
+            RestApiConnectionMethod(RestApiOptions(uri = privateUri))
+            fail("Should have rejected private-network URI")
+        } catch (e: IllegalArgumentException) {
+            e.message shouldContain "blocked"
+        }
+    }
+
     /**
      * **TEST 4: Parse ReaderEngagement with Multiple Retrieval Methods**
      *
@@ -558,13 +575,23 @@ class RestApiWebsiteE2ETest {
      * **TEST 5: Origin Info Validation**
      *
      * ISO 18013-7 Annex A.3 requires origin info to prevent phishing.
-     * (This test is a placeholder for future implementation)
      */
     @Test
     fun test_origin_info_prevents_phishing_attacks() {
-        // TODO: Implement when DeviceEngagement includes OriginInfo
-        // Should validate that domain in OriginInfo matches reader URI
-        log.info("Origin info validation - pending implementation")
+        fun domainOrigin(domain: String) =
+            OriginInfo(
+                cat = OriginInfoCategory(1u),
+                type = OriginInfoType(1u),
+                details = OriginInfoDetails(mapOf(OriginInfoDetails.DOMAIN to domain)),
+                original = null,
+            )
+
+        OriginInfoValidator
+            .validate(arrayOf(domainOrigin("reader.example.com")), "reader.example.com")
+            .isOk shouldBe true
+        OriginInfoValidator
+            .validate(arrayOf(domainOrigin("attacker.example.com")), "reader.example.com")
+            .isOk shouldBe false
     }
 
     // ========================================

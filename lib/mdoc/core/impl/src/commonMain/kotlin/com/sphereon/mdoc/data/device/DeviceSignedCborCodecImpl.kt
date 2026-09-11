@@ -31,6 +31,8 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.cose.COSE_Sign1
+import com.sphereon.crypto.core.cose.CoseMac0CborCodec
+import com.sphereon.crypto.core.cose.CoseMac0CborCodecImpl
 import com.sphereon.crypto.core.cose.CoseSign1CborCodec
 import com.sphereon.crypto.core.cose.CoseSign1CborCodecImpl
 import com.sphereon.mdoc.DecodedMdoc
@@ -46,18 +48,20 @@ import dev.zacsweers.metro.binding
 class DeviceSignedCborCodecImpl(
     private val cborParser: CborParser,
     private val coseSign1Codec: CoseSign1CborCodec,
+    private val coseMac0Codec: CoseMac0CborCodec,
 ) : DeviceSignedCborCodec {
     constructor(
         cborParser: CborParser = CborParserImpl(),
     ) : this(
         cborParser = cborParser,
         coseSign1Codec = CoseSign1CborCodecImpl(cborParser),
+        coseMac0Codec = CoseMac0CborCodecImpl(cborParser),
     )
 
     override fun encode(value: DeviceSigned): IdkResult<ByteArray, IdkError> =
         encodeValue(
             typeName = "DeviceSigned",
-            operation = { encodeDeviceSigned(value, cborParser, coseSign1Codec) },
+            operation = { encodeDeviceSigned(value, cborParser, coseSign1Codec, coseMac0Codec) },
         )
 
     override fun decode(bytes: ByteArray): IdkResult<DecodedMdoc<DeviceSigned>, IdkError> =
@@ -66,13 +70,13 @@ class DeviceSignedCborCodecImpl(
             decodeValue(
                 typeName = "DeviceSigned",
                 bytes = bytes,
-                operation = { decodeDeviceSigned(map, bytes, coseSign1Codec) },
+                operation = { decodeDeviceSigned(map, bytes, coseSign1Codec, coseMac0Codec) },
             )
         }
 
     override fun decode(item: CborItem<*>): IdkResult<DeviceSigned, IdkError> =
         try {
-            Ok(decodeDeviceSigned(requireStringLabelMap(item, "DeviceSigned"), null, coseSign1Codec))
+            Ok(decodeDeviceSigned(requireStringLabelMap(item, "DeviceSigned"), null, coseSign1Codec, coseMac0Codec))
         } catch (e: IllegalArgumentException) {
             Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Failed to decode DeviceSigned: ${e.message}", throwable = e))
         } catch (expected: Throwable) {
@@ -109,6 +113,7 @@ private fun encodeDeviceSigned(
     value: DeviceSigned,
     cborParser: CborParser,
     coseSign1Codec: CoseSign1CborCodec,
+    coseMac0Codec: CoseMac0CborCodec,
 ): ByteArray {
     value.original?.let { return it }
 
@@ -116,7 +121,7 @@ private fun encodeDeviceSigned(
         CborMap(
             mutableMapOf(
                 DeviceSigned.NAME_SPACES to CborEncodedItem<CborMap<CborString, CborMap<CborString, CborItem<*>>>>(encodeDeviceNameSpaces(value.nameSpaces)),
-                DeviceSigned.DEVICE_AUTH to encodeDeviceAuth(value.deviceAuth, cborParser, coseSign1Codec),
+                DeviceSigned.DEVICE_AUTH to encodeDeviceAuth(value.deviceAuth, cborParser, coseSign1Codec, coseMac0Codec),
             ),
         ),
     )
@@ -142,13 +147,16 @@ private fun encodeDeviceAuth(
     value: DeviceAuth,
     cborParser: CborParser,
     coseSign1Codec: CoseSign1CborCodec,
+    coseMac0Codec: CoseMac0CborCodec,
 ): CborMap<StringLabel, CborItem<*>> {
     val entries = mutableMapOf<StringLabel, CborItem<*>>()
     value.deviceSignature?.let {
         entries[DeviceAuth.DEVICE_SIGNATURE] = encodeCborItem(coseSign1Codec.encode(it).getOrThrow(), cborParser)
     }
     value.deviceMac?.let {
-        entries[DeviceAuth.DEVICE_MAC] = it.toCborItem()
+        entries[DeviceAuth.DEVICE_MAC] =
+            it.coseMac0?.let { mac -> encodeCborItem(coseMac0Codec.encode(mac).getOrThrow(), cborParser) }
+                ?: it.toCborItem()
     }
     return CborMap(entries)
 }
@@ -157,6 +165,7 @@ private fun decodeDeviceSigned(
     structure: CborMap<StringLabel, CborItem<*>>,
     original: ByteArray?,
     coseSign1Codec: CoseSign1CborCodec,
+    coseMac0Codec: CoseMac0CborCodec,
 ): DeviceSigned {
     val encodedNameSpaces: CborEncodedItem<CborMap<CborItem<*>, CborItem<*>>> = DeviceSigned.NAME_SPACES.required(structure)
 
@@ -170,6 +179,7 @@ private fun decodeDeviceSigned(
             decodeDeviceAuth(
                 normalizeStringLabelMap(DeviceSigned.DEVICE_AUTH.required(structure), "DeviceAuth"),
                 coseSign1Codec,
+                coseMac0Codec,
             ),
         original = original,
     )
@@ -178,15 +188,30 @@ private fun decodeDeviceSigned(
 private fun decodeDeviceAuth(
     structure: CborMap<StringLabel, CborItem<*>>,
     coseSign1Codec: CoseSign1CborCodec,
+    coseMac0Codec: CoseMac0CborCodec,
 ): DeviceAuth {
     val deviceSignature =
         DeviceAuth.DEVICE_SIGNATURE
             .optional<CborArray<CborItem<*>>>(structure)
             ?.let { decodeDeviceSignature(it, coseSign1Codec) }
     val deviceMac =
-        DeviceAuth.DEVICE_MAC
-            .optional<CborString>(structure)
-            ?.let { DeviceMac.fromCborItem(it) }
+        structure.value[DeviceAuth.DEVICE_MAC]?.let { item ->
+            when (item) {
+                is CborString -> DeviceMac.fromCborItem(item)
+                else ->
+                    DeviceMac.fromCoseMac0(
+                        coseMac0Codec
+                            .decode(com.sphereon.cbor.Cbor.encode(item))
+                            .getOrThrow()
+                            .value
+                            .also { mac ->
+                                require(mac.payload == null) {
+                                    "DeviceMac COSE_Mac0 must use a detached payload"
+                                }
+                            },
+                    )
+            }
+        }
 
     return DeviceAuth(
         deviceSignature = deviceSignature,

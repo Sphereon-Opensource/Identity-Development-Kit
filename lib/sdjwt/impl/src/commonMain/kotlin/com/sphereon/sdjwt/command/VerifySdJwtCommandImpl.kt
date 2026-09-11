@@ -92,6 +92,7 @@ class VerifySdJwtCommandImpl(
                 verifier.verify(
                     sdJwtString = appliedArgs.sdJwt,
                     identifier = appliedArgs.identifier,
+                    trustedJwks = appliedArgs.trustedJwks,
                     expectedAudience = appliedArgs.expectedAudience,
                     expectedNonce = appliedArgs.expectedNonce,
                     validateDisclosures = appliedArgs.validateDisclosures,

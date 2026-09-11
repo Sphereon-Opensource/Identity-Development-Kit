@@ -29,9 +29,23 @@ import com.sphereon.jsonld.LinkedDataDocument
  * - `CachedLinkedDataDocumentLoader`: tenant-scoped in-memory cache.
  * - `IntegrityPinningLinkedDataDocumentLoader`: enforces a configured
  *   `sha256` digest on the wire before returning.
- * - `HttpLinkedDataDocumentLoader`: fetches via [com.sphereon.ktor.http.client.provider.HttpClientFactory].
- * - `DefaultLinkedDataDocumentLoader`: composes the four in the order
- *   built-in → cached → integrity-pinning → HTTP.
+ * - `HttpLinkedDataDocumentLoader`: fetches via
+ *   [com.sphereon.ktor.http.client.provider.HttpClientFactory] with manual
+ *   redirect handling; it is an internal production terminator, not an
+ *   arbitrary consumer-composable HTTP client.
+ * - `DefaultLinkedDataDocumentLoader`: composes the five-stage production
+ *   chain in the order BuiltIn → Allowlist → IntegrityPinning → Cached → lazy
+ *   Http. The HTTP terminator is constructed only when remote resolution
+ *   reaches it; unsupported manual-redirect construction fails closed as a
+ *   typed result, while bundled contexts remain available.
+ *
+ * The HTTP terminator is an internal production detail with manual redirect
+ * handling; consumers receive the [LinkedDataDocumentLoader] or the default
+ * production composition rather than an arbitrary auto-following client. The
+ * default chain constructs that terminator lazily, after bundled, allowlist,
+ * integrity, and cache short-circuits have missed. Platforms that cannot
+ * expose manual 3xx responses therefore serve bundled contexts and return a
+ * typed failure for remote contexts.
  *
  * Implementations MUST be safe to invoke from any [SessionScope] coroutine,
  * MUST NOT block, and MUST surface failure as an [IdkResult] error rather than

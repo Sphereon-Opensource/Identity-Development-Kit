@@ -16,7 +16,12 @@
 
 package com.sphereon.openid.oid4vci.issuer.dsl
 
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerSpecProfile
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -24,6 +29,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalUuidApi::class)
 class IssuerCommandDslTest {
     // -----------------------------------------------------------------------
     // createOfferArgs — pre-authorized code grant with tx code
@@ -32,14 +38,14 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithPreAuthGrantAndTxCode() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant(txCodeRequired = true)
             }
 
         assertEquals("https://issuer.example.com", args.issuerId)
-        assertEquals("issuer-instance-command-dsl", args.instanceId)
+        assertEquals(INSTANCE_ID, args.instanceId)
         assertEquals(listOf("UniversityDegree"), args.credentialConfigurationIds)
         assertEquals(true, args.preAuthorizedCodeGrant)
         assertEquals(false, args.authorizationCodeGrant)
@@ -55,7 +61,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithPreAuthGrantWithoutTxCode() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("MembershipCard")
                 preAuthorizedCodeGrant()
@@ -72,7 +78,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithAuthCodeGrantOnly() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("EmployeeID")
                 authorizationCodeGrant()
@@ -90,7 +96,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithBothGrants() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant(txCodeRequired = false)
@@ -108,7 +114,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithPreSeededAttributes() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant()
@@ -134,7 +140,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithoutAttributesGivesNull() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant()
@@ -150,7 +156,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithMultipleCredentialConfigurations() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree", "MembershipCard", "EmployeeID")
                 preAuthorizedCodeGrant()
@@ -169,7 +175,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithSingleCredentialFunction() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credential("PID")
                 preAuthorizedCodeGrant()
@@ -185,7 +191,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsMixingCredentialAndCredentials() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credential("PID")
                 credentials("UniversityDegree", "MembershipCard")
@@ -205,7 +211,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsWithCustomTtl() {
         val args =
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant()
@@ -222,7 +228,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsMissingIssuerIdFails() {
         assertFailsWith<IllegalArgumentException> {
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 credentials("UniversityDegree")
                 preAuthorizedCodeGrant()
             }
@@ -236,7 +242,7 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsMissingCredentialsFails() {
         assertFailsWith<IllegalArgumentException> {
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 preAuthorizedCodeGrant()
             }
@@ -250,11 +256,28 @@ class IssuerCommandDslTest {
     @Test
     fun createOfferArgsMissingGrantTypeFails() {
         assertFailsWith<IllegalArgumentException> {
-            createOfferArgs(instanceId = "issuer-instance-command-dsl") {
+            createOfferArgs(instanceId = INSTANCE_ID, authorizationPolicySnapshot = SNAPSHOT) {
                 issuerId("https://issuer.example.com")
                 credentials("UniversityDegree")
                 // no preAuthorizedCodeGrant() or authorizationCodeGrant()
             }
         }
+    }
+
+    private companion object {
+        const val INSTANCE_ID = "00000000-0000-4000-8000-000000000041"
+        val SNAPSHOT = Oid4vciAuthorizationPolicySnapshot(
+            issuerId = Uuid.parse(INSTANCE_ID),
+            authorizationServerId = Uuid.parse("00000000-0000-4000-8000-000000000042"),
+            authorizationServerIssuer = "https://as.example.com",
+            applicableGrants = setOf(
+                Oid4vciAuthorizationGrant.AUTHORIZATION_CODE,
+                Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE,
+            ),
+            profile = Oid4vciIssuerSpecProfile.OID4VCI_1_0_FINAL,
+            profileRevision = 7,
+            authorizationServerRevision = 11,
+            bindingRevision = 13,
+        )
     }
 }

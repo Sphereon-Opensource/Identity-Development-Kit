@@ -88,6 +88,21 @@ data class TrustValidationResult(
     val details: String? = null,
     val validatedAt: Instant? = null,
     val discoveredEntities: List<DiscoveredEntityInfo> = emptyList(),
+    /**
+     * Ordered hops from leaf to anchor. Absent means the mechanism produced no chain.
+     * Not a replacement for [validationPath] or [discoveredEntities].
+     */
+    val trustChain: TrustChain? = null,
+    /**
+     * Whether the chain's anchor is admitted by assigned trust domains. Absent means admission
+     * was not evaluated. Distinct from [trustChain] link verification.
+     */
+    val domainAdmission: TrustDomainAdmission? = null,
+    /**
+     * Whether the party may issue this attestation type. Absent means nothing on the path
+     * could answer. Distinct from a broken link and from an unadmitted anchor.
+     */
+    val attestationAuthorisation: AttestationAuthorisation? = null,
 )
 
 /**

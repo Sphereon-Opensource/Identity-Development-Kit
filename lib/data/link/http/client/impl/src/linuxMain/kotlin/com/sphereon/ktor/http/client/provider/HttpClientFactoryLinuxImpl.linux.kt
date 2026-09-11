@@ -71,6 +71,10 @@ class HttpClientFactoryLinuxImpl(
             }
 
             options.additionalConfig?.invoke(this)
+
+            // Keep the caller-selected option last so an arbitrary additionalConfig cannot
+            // silently re-enable auto-follow for a governed (false) client.
+            followRedirects = options.followRedirects
         }.also { client ->
             val validationPolicy = options.urlValidation
             if (validationPolicy != null) {

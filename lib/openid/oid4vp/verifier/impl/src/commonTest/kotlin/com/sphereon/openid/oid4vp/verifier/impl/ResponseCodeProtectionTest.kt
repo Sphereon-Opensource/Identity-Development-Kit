@@ -38,12 +38,16 @@ import com.sphereon.oauth2.common.jarm.JarmVerificationResult
 import com.sphereon.oauth2.common.jarm.VerifyJarmResponseArgs
 import com.sphereon.oauth2.common.jarm.VerifyJarmResponseCommand
 import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.crypto.dataintegrity.resolution.VerificationMethodResolutionPolicy
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseArgs
 import com.sphereon.openid.oid4vp.verifier.RetrieveAuthorizationResponseArgs
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommand
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
@@ -58,6 +62,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -78,6 +83,7 @@ class ResponseCodeProtectionTest {
         val handleCommand: HandleDirectPostResponseCommandImpl,
         val retrieveCommand: RetrieveAuthorizationResponseCommandImpl,
         val authorizationSessionStore: TestAuthorizationSessionStore,
+        val validateCommand: MockValidateAuthorizationResponseCommand,
         val clock: MutableClock,
     )
 
@@ -99,11 +105,12 @@ class ResponseCodeProtectionTest {
                 verifyJarmCommand = MockVerifyJarmResponseCommand(),
             )
         val authorizationSessionStore = TestAuthorizationSessionStore()
+        val validateCommand = MockValidateAuthorizationResponseCommand()
         val handleCommand =
             HandleDirectPostResponseCommandImpl(
                 execution = execution,
                 parseAuthorizationResponseCommand = parseCommand,
-                validateAuthorizationResponseCommand = MockValidateAuthorizationResponseCommand(),
+                validateAuthorizationResponseCommand = validateCommand,
                 authorizationSessionStore = authorizationSessionStore,
                 responseCodeStore = store,
             )
@@ -112,7 +119,7 @@ class ResponseCodeProtectionTest {
                 execution = execution,
                 responseCodeStore = store,
             )
-        return TestFixture(store, parseCommand, handleCommand, retrieveCommand, authorizationSessionStore, clock)
+        return TestFixture(store, parseCommand, handleCommand, retrieveCommand, authorizationSessionStore, validateCommand, clock)
     }
 
     private suspend fun TestFixture.persistAuthorizationSession(
@@ -184,6 +191,64 @@ class ResponseCodeProtectionTest {
                 "Expected query param response_code per OID4VP spec, got: ${response.redirectUri}",
             )
             assertTrue(response.expiresAt > f.clock.now().toEpochMilliseconds())
+        }
+
+    @Test
+    fun `direct_post forwards verifier admitted authentication and Data Integrity policy`() =
+        runTest {
+            val f = createFixture()
+            val originalRequest =
+                AuthorizationRequest(
+                    clientId = "https://verifier.example.com",
+                    redirectUri = "https://verifier.example.com/callback",
+                    state = "trusted-resolution-state",
+                )
+            val trustedAuthentications =
+                listOf(
+                    TrustedAuthenticationResolution(
+                        controller = "https://holder.example.com",
+                        trustedJwks =
+                            JsonObject(
+                                mapOf(
+                                    "keys" to
+                                        JsonArray(
+                                            listOf(
+                                                JsonObject(
+                                                    mapOf(
+                                                        "kty" to JsonPrimitive("EC"),
+                                                        "crv" to JsonPrimitive("P-256"),
+                                                        "x" to JsonPrimitive("WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA"),
+                                                        "y" to JsonPrimitive("F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I"),
+                                                        "kid" to JsonPrimitive("holder-key"),
+                                                    ),
+                                                ),
+                                            ),
+                                        ),
+                                ),
+                            ),
+                    ),
+                )
+            val resolutionPolicy = VerificationMethodResolutionPolicy.empty()
+            val args =
+                HandleDirectPostResponseArgs(
+                    responseParams =
+                        mapOf(
+                            "vp_token" to """{"query":["eyJhbGciOiJFUzI1NiJ9.payload.sig"]}""",
+                            "state" to "trusted-resolution-state",
+                        ),
+                    originalRequest = originalRequest,
+                    dcqlQuery = DcqlQuery(credentials = listOf(DcqlCredentialQuery(id = "cred", format = "dc+sd-jwt", meta = sdJwtVcMeta("urn:test:credential")))),
+                    redirectUri = "https://verifier.example.com/callback",
+                    trustedAuthentications = trustedAuthentications,
+                    verificationMethodResolutionPolicy = resolutionPolicy,
+                )
+            f.persistAuthorizationSession(args, instanceId = "verifier-instance-trusted-resolution")
+
+            assertIs<Ok<*>>(f.handleCommand.handleDirectPostResponse(args))
+
+            val captured = assertNotNull(f.validateCommand.lastArgs)
+            assertSame(trustedAuthentications, captured.trustedAuthentications)
+            assertSame(resolutionPolicy, captured.verificationMethodResolutionPolicy)
         }
 
     @Test
@@ -505,8 +570,12 @@ class ResponseCodeProtectionTest {
         override val inputTypeToken: TypeToken<ValidateAuthorizationResponseArgs> = typeToken<ValidateAuthorizationResponseArgs>()
         override val outputTypeToken: TypeToken<ValidationResult> = typeToken<ValidationResult>()
 
-        override suspend fun execute(args: ValidateAuthorizationResponseArgs): IdkResult<ValidationResult, IdkError> =
-            Ok(ValidationResult(valid = true, matchedCredentials = emptyList(), errors = emptyList()))
+        var lastArgs: ValidateAuthorizationResponseArgs? = null
+
+        override suspend fun execute(args: ValidateAuthorizationResponseArgs): IdkResult<ValidationResult, IdkError> {
+            lastArgs = args
+            return Ok(ValidationResult(valid = true, matchedCredentials = emptyList(), errors = emptyList()))
+        }
     }
 
     /**

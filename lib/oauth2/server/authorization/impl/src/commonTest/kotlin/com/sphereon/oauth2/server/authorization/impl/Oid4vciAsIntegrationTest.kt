@@ -16,6 +16,8 @@
 
 package com.sphereon.oauth2.server.authorization.impl
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
@@ -24,6 +26,7 @@ import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs
+import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyAuthorizationCodeGrantCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyPreAuthorizedCodeGrantCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryAuthorizationCodeStorageImpl
@@ -37,13 +40,21 @@ import com.sphereon.oauth2.server.authorization.model.AuthorizationCodeData
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
+import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * Integration tests for OID4VCI flows through the Authorization Server.
@@ -417,6 +428,336 @@ class Oid4vciAsIntegrationTest {
         }
 
     @Test
+    fun wrongTxCodeDoesNotConsumePreAuthorizedCode() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val preAuthCodeStorage = InMemoryPreAuthorizedCodeStorage(storage)
+            val correctTxCode = "123456"
+            val txCodeHashValue = hash(correctTxCode.encodeToByteArray(), DigestAlg.SHA256).encodeToBase64Url()
+            val now = Clock.System.now()
+            val preAuthData =
+                PreAuthorizedCodeData(
+                    sessionId = "oid4vci-session-txcode-retry",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    subject = "did:example:txcode-retry",
+                    txCodeRequired = true,
+                    txCodeHash = txCodeHashValue,
+                    clientId = oid4vciClient.clientId,
+                    createdAt = now,
+                    expiresAt = now + 10.minutes,
+                )
+            assertTrue(preAuthCodeStorage.storePreAuthorizedCode("pre-auth-code-txcode-retry", preAuthData).isOk)
+
+            val verifyCommand =
+                VerifyPreAuthorizedCodeGrantCommandImpl(
+                    execution = execution,
+                    preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
+                )
+
+            val wrongResult =
+                verifyCommand.execute(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = "pre-auth-code-txcode-retry",
+                        txCode = "999999",
+                        clientId = oid4vciClient.clientId,
+                    ),
+                )
+            assertTrue(wrongResult.isErr, "Wrong tx_code must be rejected")
+            assertEquals("invalid_grant", wrongResult.error.code)
+
+            val retryResult =
+                verifyCommand.execute(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = "pre-auth-code-txcode-retry",
+                        txCode = correctTxCode,
+                        clientId = oid4vciClient.clientId,
+                    ),
+                )
+            assertTrue(retryResult.isOk, "The same code must remain usable after a wrong tx_code")
+            assertEquals("oid4vci-session-txcode-retry", retryResult.value.sessionId)
+        }
+
+    @Test
+    fun expiredPreAuthorizedCodeIsRejected() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val preAuthCodeStorage = InMemoryPreAuthorizedCodeStorage(storage)
+            val now = Clock.System.now()
+            val preAuthData =
+                PreAuthorizedCodeData(
+                    sessionId = "oid4vci-session-expired",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    subject = "did:example:expired",
+                    clientId = oid4vciClient.clientId,
+                    createdAt = now - 10.minutes,
+                    expiresAt = now - 1.seconds,
+                )
+            assertTrue(preAuthCodeStorage.storePreAuthorizedCode("pre-auth-code-expired", preAuthData).isOk)
+
+            val verifyCommand =
+                VerifyPreAuthorizedCodeGrantCommandImpl(
+                    execution = execution,
+                    preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
+                )
+
+            val result =
+                verifyCommand.execute(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = "pre-auth-code-expired",
+                        txCode = null,
+                        clientId = oid4vciClient.clientId,
+                    ),
+                )
+            assertTrue(result.isErr, "Expired pre-authorized code must be rejected")
+            assertEquals("invalid_grant", result.error.code)
+        }
+
+    @Test
+    fun preAuthorizedCodeWithExpirationAtNowIsRejected() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val preAuthCodeStorage = InMemoryPreAuthorizedCodeStorage(storage)
+            val now = Instant.parse("2026-01-01T00:00:00Z")
+            val fixedClock =
+                object : Clock {
+                    override fun now(): Instant = now
+                }
+            val preAuthData =
+                PreAuthorizedCodeData(
+                    sessionId = "oid4vci-session-expiration-boundary",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    subject = "did:example:expiration-boundary",
+                    clientId = oid4vciClient.clientId,
+                    createdAt = now - 10.minutes,
+                    expiresAt = now,
+                )
+            assertTrue(preAuthCodeStorage.storePreAuthorizedCode("pre-auth-code-expiration-boundary", preAuthData).isOk)
+
+            val verifyCommand =
+                VerifyPreAuthorizedCodeGrantCommandImpl(
+                    execution = execution,
+                    preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = fixedClock,
+                )
+
+            val result =
+                verifyCommand.execute(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = "pre-auth-code-expiration-boundary",
+                        txCode = null,
+                        clientId = oid4vciClient.clientId,
+                    ),
+                )
+            assertTrue(result.isErr, "A pre-authorized code expiring at now must be rejected")
+            assertEquals("invalid_grant", result.error.code)
+        }
+
+    @Test
+    fun replacementAfterValidationCannotMintTheOriginalGrant() =
+        runTest {
+            val now = Instant.parse("2026-01-01T00:00:00Z")
+            val original =
+                PreAuthorizedCodeData(
+                    sessionId = "oid4vci-session-original",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    subject = "did:example:original",
+                    clientId = oid4vciClient.clientId,
+                    createdAt = now - 10.minutes,
+                    expiresAt = now + 10.minutes,
+                )
+            val replacement = original.copy(sessionId = "oid4vci-session-replacement", subject = "did:example:replacement")
+            val preAuthCodeStorage = ReplacingPreAuthorizedCodeStorage(original, replacement)
+            val fixedClock =
+                object : Clock {
+                    override fun now(): Instant = now
+                }
+            val verifyCommand =
+                VerifyPreAuthorizedCodeGrantCommandImpl(
+                    execution = execution,
+                    preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = fixedClock,
+                )
+
+            val result =
+                verifyCommand.execute(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = "pre-auth-code-replaced",
+                        txCode = null,
+                        clientId = oid4vciClient.clientId,
+                    ),
+                )
+
+            assertTrue(result.isErr, "A record replaced after validation must not be consumed")
+            assertEquals("invalid_grant", result.error.code)
+            assertEquals("oid4vci-session-replacement", preAuthCodeStorage.current.sessionId)
+        }
+
+    @Test
+    fun expirationDuringValidationCannotBeCommitted() =
+        runTest {
+            val initialNow = Instant.parse("2026-01-01T00:00:00Z")
+            val expiration = initialNow + 1.seconds
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val preAuthCodeStorage = InMemoryPreAuthorizedCodeStorage(storage)
+            val preAuthData =
+                PreAuthorizedCodeData(
+                    sessionId = "oid4vci-session-expiry-advance",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    subject = "did:example:expiry-advance",
+                    clientId = oid4vciClient.clientId,
+                    createdAt = initialNow,
+                    expiresAt = expiration,
+                )
+            assertTrue(preAuthCodeStorage.storePreAuthorizedCode("pre-auth-code-expiry-advance", preAuthData).isOk)
+            val advancingClock =
+                object : Clock {
+                    private var calls = 0
+
+                    override fun now(): Instant =
+                        if (calls++ == 0) initialNow else expiration
+                }
+            val verifyCommand =
+                VerifyPreAuthorizedCodeGrantCommandImpl(
+                    execution = execution,
+                    preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = advancingClock,
+                )
+
+            val result =
+                verifyCommand.execute(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = "pre-auth-code-expiry-advance",
+                        txCode = null,
+                        clientId = oid4vciClient.clientId,
+                    ),
+                )
+
+            assertTrue(result.isErr, "A code expiring during validation must not be committed")
+            assertEquals("invalid_grant", result.error.code)
+        }
+
+    @Test
+    fun compareAndConsumeRejectsReplacementAndLeavesReplacementInStorage() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val preAuthCodeStorage = InMemoryPreAuthorizedCodeStorage(storage)
+            val now = Instant.parse("2026-01-01T00:00:00Z")
+            val original =
+                PreAuthorizedCodeData(
+                    sessionId = "oid4vci-session-original-record",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    subject = "did:example:original-record",
+                    clientId = oid4vciClient.clientId,
+                    createdAt = now,
+                    expiresAt = now + 10.minutes,
+                )
+            val replacement = original.copy(sessionId = "oid4vci-session-replacement-record")
+            assertTrue(preAuthCodeStorage.storePreAuthorizedCode("pre-auth-code-replacement-record", original).isOk)
+            assertTrue(preAuthCodeStorage.storePreAuthorizedCode("pre-auth-code-replacement-record", replacement).isOk)
+
+            val result =
+                preAuthCodeStorage.consumePreAuthorizedCodeIfValid(
+                    code = "pre-auth-code-replacement-record",
+                    expectedData = original,
+                    now = now,
+                )
+
+            assertTrue(result.isOk)
+            assertNull(result.value, "A replaced record must not be consumed as the original")
+            assertEquals(replacement, preAuthCodeStorage.findPreAuthorizedCode("pre-auth-code-replacement-record").value)
+        }
+
+    @Test
+    fun wrongClientBindingDoesNotConsumePreAuthorizedCode() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val preAuthCodeStorage = InMemoryPreAuthorizedCodeStorage(storage)
+            val now = Clock.System.now()
+            val preAuthData =
+                PreAuthorizedCodeData(
+                    sessionId = "oid4vci-session-client-binding",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    subject = "did:example:client-binding",
+                    clientId = oid4vciClient.clientId,
+                    createdAt = now,
+                    expiresAt = now + 10.minutes,
+                )
+            assertTrue(preAuthCodeStorage.storePreAuthorizedCode("pre-auth-code-client-binding", preAuthData).isOk)
+
+            val verifyCommand =
+                VerifyPreAuthorizedCodeGrantCommandImpl(
+                    execution = execution,
+                    preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
+                )
+
+            val wrongClientResult =
+                verifyCommand.execute(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = "pre-auth-code-client-binding",
+                        txCode = null,
+                        clientId = "different-client",
+                    ),
+                )
+            assertTrue(wrongClientResult.isErr, "A client-bound code must reject a different client")
+            assertEquals("invalid_grant", wrongClientResult.error.code)
+
+            val retryResult =
+                verifyCommand.execute(
+                    VerifyPreAuthCodeArgs(
+                        preAuthorizedCode = "pre-auth-code-client-binding",
+                        txCode = null,
+                        clientId = oid4vciClient.clientId,
+                    ),
+                )
+            assertTrue(retryResult.isOk, "The bound client must still be able to use the code")
+        }
+
+    @Test
+    fun concurrentValidPreAuthorizedCodeAttemptsOnlyAllowOneSuccess() =
+        runTest {
+            val storage = InMemoryOAuth2BackingStorageImpl()
+            val preAuthCodeStorage = InMemoryPreAuthorizedCodeStorage(storage)
+            val now = Clock.System.now()
+            val preAuthData =
+                PreAuthorizedCodeData(
+                    sessionId = "oid4vci-session-concurrent",
+                    credentialConfigurationIds = listOf("IdentityCredential"),
+                    subject = "did:example:concurrent",
+                    clientId = oid4vciClient.clientId,
+                    createdAt = now,
+                    expiresAt = now + 10.minutes,
+                )
+            assertTrue(preAuthCodeStorage.storePreAuthorizedCode("pre-auth-code-concurrent", preAuthData).isOk)
+
+            val verifyCommand =
+                VerifyPreAuthorizedCodeGrantCommandImpl(
+                    execution = execution,
+                    preAuthorizedCodeStorage = preAuthCodeStorage,
+                    clock = Clock.System,
+                )
+
+            val results =
+                coroutineScope {
+                    (1..16).map {
+                        async(Dispatchers.Default) {
+                            verifyCommand.execute(
+                                VerifyPreAuthCodeArgs(
+                                    preAuthorizedCode = "pre-auth-code-concurrent",
+                                    txCode = null,
+                                    clientId = oid4vciClient.clientId,
+                                ),
+                            )
+                        }
+                    }.awaitAll()
+                }
+            assertEquals(1, results.count { it.isOk }, "Concurrent valid exchanges must allow exactly one success")
+            assertEquals(15, results.count { it.isErr && it.error.code == "invalid_grant" })
+        }
+
+    @Test
     fun testPreAuthorizedCodeWithMissingTxCodeFails() =
         runTest {
             val storage = InMemoryOAuth2BackingStorageImpl()
@@ -459,4 +800,38 @@ class Oid4vciAsIntegrationTest {
                 )
             assertTrue(result.isErr, "Exchange with missing tx_code must fail when tx_code is required")
         }
+
+    private class ReplacingPreAuthorizedCodeStorage(
+        initial: PreAuthorizedCodeData,
+        replacement: PreAuthorizedCodeData,
+    ) : PreAuthorizedCodeStorage {
+        private val replacementData = replacement
+        var current: PreAuthorizedCodeData = initial
+
+        override suspend fun storePreAuthorizedCode(
+            code: String,
+            data: PreAuthorizedCodeData,
+        ): IdkResult<Unit, AuthorizationServerError.StorageError> {
+            current = data
+            return Ok(Unit)
+        }
+
+        override suspend fun findPreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> = Ok(current)
+
+        override suspend fun consumePreAuthorizedCodeIfValid(
+            code: String,
+            expectedData: PreAuthorizedCodeData,
+            now: Instant,
+        ): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> {
+            current = replacementData
+            return Ok(null)
+        }
+
+        override suspend fun consumePreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> {
+            current = replacementData
+            return Ok(current)
+        }
+
+        override suspend fun isCodeUsed(code: String): IdkResult<Boolean, AuthorizationServerError.StorageError> = Ok(false)
+    }
 }

@@ -39,6 +39,7 @@ import com.sphereon.wallet.party.WalletPartyInteractionRecord
 import com.sphereon.wallet.party.WalletPartyScope
 import com.sphereon.wallet.provider.RevocationReason
 import com.sphereon.wallet.provider.UnitProvisioningRequest
+import com.sphereon.wallet.provider.WalletProviderKind
 import com.sphereon.wallet.provider.WalletUnitStatus
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.unit.WalletSolutionRef
@@ -88,7 +89,7 @@ class LocalWalletProviderTest {
         runTest {
             val provider = newProvider().provider
 
-            val result = provider.provisionUnit(UnitProvisioningRequest(profileId = "alice", wscdProfile = WscdProfile.Software))
+            val result = provider.provisionUnit(UnitProvisioningRequest(profileId = "alice", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
 
             assertTrue(result.isOk, "provisionUnit failed: ${if (result.isErr) result.error else ""}")
             assertEquals("wu-alice", result.value.walletUnitId)
@@ -105,7 +106,7 @@ class LocalWalletProviderTest {
     fun provisionUnitIsIdempotentPerProfileId() =
         runTest {
             val provider = newProvider().provider
-            val request = UnitProvisioningRequest(profileId = "bob", wscdProfile = WscdProfile.Software)
+            val request = UnitProvisioningRequest(profileId = "bob", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL)
 
             val first = provider.provisionUnit(request)
             val second = provider.provisionUnit(request)
@@ -120,7 +121,7 @@ class LocalWalletProviderTest {
         runTest {
             val setup = newProvider()
             val provider = setup.provider
-            provider.provisionUnit(UnitProvisioningRequest(profileId = "carol", wscdProfile = WscdProfile.Software))
+            provider.provisionUnit(UnitProvisioningRequest(profileId = "carol", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
                 .let { assertTrue(it.isOk, "provisionUnit failed") }
 
             val now = Clock.System.now()
@@ -183,7 +184,7 @@ class LocalWalletProviderTest {
     fun issueInstanceAttestationFailsClosedWhenExpectedWalletInstanceIdMismatches() =
         runTest {
             val provider = newProvider().provider
-            provider.provisionUnit(UnitProvisioningRequest(profileId = "dave", wscdProfile = WscdProfile.Software))
+            provider.provisionUnit(UnitProvisioningRequest(profileId = "dave", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
                 .let { assertTrue(it.isOk, "provisionUnit failed") }
 
             val result =
@@ -208,7 +209,7 @@ class LocalWalletProviderTest {
     fun issueInstanceAttestationRejectsATechnicalTtlOfTwentyFourHoursOrMore() =
         runTest {
             val provider = newProvider().provider
-            provider.provisionUnit(UnitProvisioningRequest(profileId = "erin", wscdProfile = WscdProfile.Software))
+            provider.provisionUnit(UnitProvisioningRequest(profileId = "erin", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
                 .let { assertTrue(it.isOk, "provisionUnit failed") }
 
             val result =
@@ -232,11 +233,11 @@ class LocalWalletProviderTest {
         }
 
     @Test
-    fun issueKeyAttestationDelegatesToWscaAttestKeysWithHonestSoftwareClaimsAndSharesTheWiaKey() =
+    fun issueKeyAttestationUsesProviderOwnedKeyWithHonestSoftwareClaimsAndSharesTheWiaKey() =
         runTest {
             val setup = newProvider()
             val provider = setup.provider
-            provider.provisionUnit(UnitProvisioningRequest(profileId = "frank", wscdProfile = WscdProfile.Software))
+            provider.provisionUnit(UnitProvisioningRequest(profileId = "frank", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
                 .let { assertTrue(it.isOk, "provisionUnit failed") }
 
             val holderKey =
@@ -276,9 +277,10 @@ class LocalWalletProviderTest {
                 )
             assertTrue(kaResult.isOk, "issueKeyAttestation failed: ${if (kaResult.isErr) kaResult.error else ""}")
             val decodedKa = decodeCompactJwt(kaResult.value.artifact.material.value)
+            assertEquals(setup.providerConfig.providerId, decodedKa.payload["iss"]?.jsonPrimitive?.content, "KA issuer must be the configured provider")
 
-            // Honest Software claims: the lowest ceiling of every WscdProfile, exactly as
-            // LocalWscaTest asserts for wsca.attestKeys directly.
+            // Honest Software claims: the lowest ceiling of every WscdProfile, matching the
+            // holder-facing WSCA contract.
             val keyStorage = decodedKa.payload["key_storage"]!!.jsonObject
             val userAuthentication = decodedKa.payload["user_authentication"]!!.jsonObject
             assertEquals("none", keyStorage["security_level"]?.jsonPrimitive?.content)
@@ -286,18 +288,107 @@ class LocalWalletProviderTest {
             assertFalse(keyStorage["non_exportable"]!!.jsonPrimitive.content.toBoolean())
             assertEquals("low", userAuthentication["assurance_level"]?.jsonPrimitive?.content)
 
-            // WIA and KA are both signed by the SAME provider key (same explicit alias regardless of
-            // the walletUnitId scope each path passes to Wsca.ensureKey - see the KDoc on
-            // LocalWalletProvider.issueKeyAttestation). verifySignature proves this for each
+            // WIA and KA are both signed by the SAME provider key (the provider-local collaborator
+            // uses the exact key resolved by providerSignerKey for both artifact kinds).
+            // verifySignature proves this for each
             // artifact independently: it checks the artifact's signature against the key resolved
             // by the documented alias AND that that key's public JWK matches trustAnchor() - so both
             // succeeding proves both are signed by the identical trustAnchor()-pinned key, without
             // depending on whether the two encoders' JOSE headers happen to spell "kid" the same way
-            // (Ts03WalletAttestationEncoder uses the key's `keyId`; LocalWsca.attestKeys uses its
-            // `keyRef` - both resolve to the same underlying Wscd-cached key, but are not always the
-            // identical string).
+            // (Ts03WalletAttestationEncoder and the provider collaborator may spell the key
+            // identifier differently, but both resolve the same underlying Wscd-cached key.)
             assertTrue(verifySignature(setup, decodedKa), "KA signature must verify against trustAnchor()'s key")
             assertTrue(verifySignature(setup, decodedWia), "WIA signature must verify against trustAnchor()'s key")
+        }
+
+    @Test
+    fun issueKeyAttestationFirstUsesTheProviderOwnedKeyBeforeIssuingWia() =
+        runTest {
+            val setup = newProvider()
+            val provider = setup.provider
+            provider.provisionUnit(UnitProvisioningRequest(profileId = "henry", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
+                .let { assertTrue(it.isOk, "provisionUnit failed") }
+
+            val holderKey =
+                setup.wsca
+                    .createCredentialKey("wu-henry", SecureComponentUsage.WALLET_CREDENTIAL_PROOF, SignatureAlgorithm.ECDSA_SHA256)
+                    .let {
+                        assertTrue(it.isOk, "createCredentialKey failed")
+                        it.value
+                    }
+
+            val kaResult =
+                provider.issueKeyAttestation(
+                    KeyAttestationIssueRequest(
+                        walletUnitId = "wu-henry",
+                        walletAccountId = "wa-henry",
+                        operationBinding = "test:ka:henry",
+                        profile = WalletUnitAttestationProfile.TS03_JWT,
+                        attestedKeys = listOf(holderKey),
+                        audience = "https://issuer.example.com",
+                        nonce = "nonce-henry",
+                    ),
+                )
+            assertTrue(kaResult.isOk, "KA-first issueKeyAttestation failed: ${if (kaResult.isErr) kaResult.error else ""}")
+
+            val wiaResult =
+                provider.issueInstanceAttestation(
+                    WalletInstanceAttestationIssueRequest(
+                        walletUnitId = "wu-henry",
+                        walletAccountId = "wa-henry",
+                        operationBinding = "test:wia:henry",
+                        profile = WalletUnitAttestationProfile.TS03_JWT,
+                        walletSolution = WalletSolutionRef(name = "Test Wallet Solution", version = "1.0.0"),
+                        audience = "https://issuer.example.com",
+                        expiresAt = Clock.System.now() + 5.minutes,
+                    ),
+                )
+            assertTrue(wiaResult.isOk, "KA-first issueInstanceAttestation failed: ${if (wiaResult.isErr) wiaResult.error else ""}")
+
+            assertTrue(verifySignature(setup, decodeCompactJwt(kaResult.value.artifact.material.value)), "KA-first KA signature must verify against provider key")
+            assertTrue(verifySignature(setup, decodeCompactJwt(wiaResult.value.artifact.material.value)), "KA-first WIA signature must verify against provider key")
+        }
+
+    @Test
+    fun issueKeyAttestationFailsClosedWhenProviderAliasBelongsToAnotherWalletUnit() =
+        runTest {
+            val setup = newProvider()
+            val provider = setup.provider
+            provider.provisionUnit(UnitProvisioningRequest(profileId = "ivan", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
+                .let { assertTrue(it.isOk, "provisionUnit failed") }
+            val providerAlias = "wallet-units/${setup.providerConfig.providerId}/provider/es256"
+            val collision =
+                setup.wsca.ensureKey(
+                    walletUnitId = "foreign-provider-owner",
+                    usage = SecureComponentUsage.WALLET_ATTESTATION,
+                    algorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    keyAlias = providerAlias,
+                )
+            assertTrue(collision.isOk, "foreign alias collision setup failed")
+            assertEquals("foreign-provider-owner", collision.value.walletUnitId)
+
+            val holderKey =
+                setup.wsca
+                    .createCredentialKey("wu-ivan", SecureComponentUsage.WALLET_CREDENTIAL_PROOF, SignatureAlgorithm.ECDSA_SHA256)
+                    .let {
+                        assertTrue(it.isOk, "createCredentialKey failed")
+                        it.value
+                    }
+            val result =
+                provider.issueKeyAttestation(
+                    KeyAttestationIssueRequest(
+                        walletUnitId = "wu-ivan",
+                        walletAccountId = "wa-ivan",
+                        operationBinding = "test:ka:ivan-alias-collision",
+                        profile = WalletUnitAttestationProfile.TS03_JWT,
+                        attestedKeys = listOf(holderKey),
+                        audience = "https://issuer.example.com",
+                        nonce = "nonce-ivan-alias-collision",
+                    ),
+                )
+
+            assertTrue(result.isErr, "provider must fail closed when its alias resolves to another owner")
+            assertEquals("WALLET_PROVIDER_SIGNING_KEY_OWNER_MISMATCH", result.error.code)
         }
 
     @Test
@@ -333,7 +424,7 @@ class LocalWalletProviderTest {
     fun unitStatusAndRevokeUnitRoundTrip() =
         runTest {
             val provider = newProvider().provider
-            provider.provisionUnit(UnitProvisioningRequest(profileId = "grace", wscdProfile = WscdProfile.Software))
+            provider.provisionUnit(UnitProvisioningRequest(profileId = "grace", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
                 .let { assertTrue(it.isOk, "provisionUnit failed") }
             assertEquals(WalletUnitStatus.ACTIVE, provider.unitStatus("wu-grace").let { assertTrue(it.isOk); it.value })
 
@@ -362,7 +453,7 @@ class LocalWalletProviderTest {
 
             // Revocation is terminal: re-provisioning the same profileId must fail closed, never
             // resurrect the unit to ACTIVE or wipe the recorded revocation reason.
-            val reprovision = provider.provisionUnit(UnitProvisioningRequest(profileId = "grace", wscdProfile = WscdProfile.Software))
+            val reprovision = provider.provisionUnit(UnitProvisioningRequest(profileId = "grace", wscdProfile = WscdProfile.Software, providerKind = WalletProviderKind.LOCAL))
             assertTrue(reprovision.isErr, "provisioning a revoked unit id must fail closed")
             assertEquals("WALLET_PROVIDER_UNIT_REVOKED", reprovision.error.code)
             assertEquals(WalletUnitStatus.REVOKED, provider.unitStatus("wu-grace").let { assertTrue(it.isOk); it.value })
@@ -436,6 +527,7 @@ class LocalWalletProviderTest {
                     )
                 },
                 LocalWalletProviderAttestationSignerResolver(),
+                defaultSecureRandom(),
             )
         val providerConfig =
             object : LocalWalletProviderConfig {
@@ -447,6 +539,7 @@ class LocalWalletProviderTest {
         val provider =
             LocalWalletProvider(
                 wsca = wsca,
+                wscd = softwareWscd,
                 config = providerConfig,
                 unitStore = InMemoryWalletUnitRecordStore(),
                 partyDirectory = ProvisioningPartyDirectory(),

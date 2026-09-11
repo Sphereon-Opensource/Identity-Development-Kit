@@ -16,6 +16,7 @@ data class Oid4vpPresentationSecurityContext(
     val walletAccountId: String? = null,
     val activationDecisionId: String? = null,
     val operationType: String? = null,
+    val operationBinding: String? = null,
     val operationHash: String? = null,
     val nonce: String? = null,
 )
@@ -43,6 +44,7 @@ object Oid4vpPresentationSecurityAttributes {
     const val WALLET_ACCOUNT_ID: String = WalletSecurityContextAttributes.WALLET_ACCOUNT_ID
     const val ACTIVATION_DECISION_ID: String = WalletSecurityContextAttributes.ACTIVATION_DECISION_ID
     const val OPERATION_TYPE: String = WalletSecurityContextAttributes.OPERATION_TYPE
+    const val OPERATION_BINDING: String = WalletSecurityContextAttributes.OPERATION_BINDING
     const val OPERATION_HASH: String = WalletSecurityContextAttributes.OPERATION_HASH
     const val NONCE: String = WalletSecurityContextAttributes.NONCE
 }

@@ -18,7 +18,6 @@ package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.HttpAdapter
-import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
 import com.sphereon.openid.oid4vc.common.QrCodeOptions
 import com.sphereon.openid.oid4vp.dcql.DcqlClaimQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
@@ -64,19 +63,17 @@ class WalletPresentationHttpE2ETest {
         }
 
     // =========================================================================
-    // Helper: get dispatcher and adapters from DI graph
+    // Helper: get adapters from DI graph
     // =========================================================================
 
-    private fun dispatcher(): HttpAdapterDispatcher = (ctx.session.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
-
     private fun verifierAdapter(): Oid4vpVerifierHttpAdapter {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
+        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters.values.map { it.value }
         return adapters.filterIsInstance<Oid4vpVerifierHttpAdapter>().firstOrNull()
             ?: error("Oid4vpVerifierHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
     }
 
     private fun universalAdapter(): UniversalOid4vpHttpAdapter {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
+        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters.values.map { it.value }
         return adapters.filterIsInstance<UniversalOid4vpHttpAdapter>().firstOrNull()
             ?: error("UniversalOid4vpHttpAdapter not found in DI graph. Found: ${adapters.map { it::class.simpleName }}")
     }
@@ -128,7 +125,7 @@ class WalletPresentationHttpE2ETest {
                 body = json.encodeToString(CreateAuthorizationRequestInput.serializer(), input),
             )
 
-        val response = dispatcher().dispatch(request)
+        val response = ctx.dispatchInProcessHttp(request)
         assertEquals(201, response.statusCode, "Expected 201 Created for authorization request. Body: ${response.body}")
         assertNotNull(response.body, "Response body should not be null")
         return json.decodeFromString(CreateAuthorizationRequestOutput.serializer(), response.body!!)
@@ -140,7 +137,7 @@ class WalletPresentationHttpE2ETest {
 
     @Test
     fun oid4vpAdaptersResolveFromDi() {
-        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters
+        val adapters = (ctx.session.graph as HttpAdapterTestGraph).httpAdapters.values.map { it.value }
         assertTrue(adapters.isNotEmpty(), "HTTP adapters set should not be empty")
 
         val verifierAdapters = adapters.filterIsInstance<Oid4vpVerifierHttpAdapter>()
@@ -172,7 +169,7 @@ class WalletPresentationHttpE2ETest {
                     path = "/oid4vp/request-uri/$correlationId",
                     headers = mapOf("Accept" to "application/oauth-authz-req+jwt, application/json"),
                 )
-            val fetchResponse = dispatcher().dispatch(fetchRequest)
+            val fetchResponse = ctx.dispatchInProcessHttp(fetchRequest)
 
             assertEquals(200, fetchResponse.statusCode, "Wallet should be able to fetch request object. Body: ${fetchResponse.body}")
             assertNotNull(fetchResponse.body, "Response body should not be null")
@@ -208,7 +205,7 @@ class WalletPresentationHttpE2ETest {
                     headers = mapOf("Content-Type" to "application/json"),
                     body = """{"wallet_metadata": "{\"authorization_endpoint\": \"openid4vp:\"}", "wallet_nonce": "test-nonce-123"}""",
                 )
-            val postResponse = dispatcher().dispatch(postRequest)
+            val postResponse = ctx.dispatchInProcessHttp(postRequest)
 
             assertEquals(200, postResponse.statusCode, "POST request-uri should return 200. Body: ${postResponse.body}")
             assertNotNull(postResponse.body, "Response body should not be null")
@@ -231,7 +228,7 @@ class WalletPresentationHttpE2ETest {
                     path = "/oid4vp/request-uri/nonexistent-correlation-id",
                     headers = mapOf("Accept" to "application/json"),
                 )
-            val fetchResponse = dispatcher().dispatch(fetchRequest)
+            val fetchResponse = ctx.dispatchInProcessHttp(fetchRequest)
 
             assertEquals(404, fetchResponse.statusCode, "Non-existent request should return 404. Body: ${fetchResponse.body}")
         }
@@ -261,7 +258,7 @@ class WalletPresentationHttpE2ETest {
                     body = json.encodeToString(CreateAuthorizationRequestInput.serializer(), input),
                 )
 
-            val response = dispatcher().dispatch(request)
+            val response = ctx.dispatchInProcessHttp(request)
 
             assertEquals(201, response.statusCode, "Backend create should return 201. Body: ${response.body}")
             assertNotNull(response.body, "Response body should not be null")
@@ -295,7 +292,7 @@ class WalletPresentationHttpE2ETest {
                     method = "GET",
                     path = "/oid4vp/backend/auth/requests/$correlationId",
                 )
-            val statusResponse = dispatcher().dispatch(statusRequest)
+            val statusResponse = ctx.dispatchInProcessHttp(statusRequest)
 
             assertEquals(200, statusResponse.statusCode, "Status check should return 200. Body: ${statusResponse.body}")
             assertNotNull(statusResponse.body, "Response body should not be null")
@@ -330,7 +327,7 @@ class WalletPresentationHttpE2ETest {
                     method = "GET",
                     path = "/oid4vp/request-uri/$correlationId",
                 )
-            val fetchResponse = dispatcher().dispatch(fetchRequest)
+            val fetchResponse = ctx.dispatchInProcessHttp(fetchRequest)
             assertEquals(200, fetchResponse.statusCode, "Request fetch should return 200. Body: ${fetchResponse.body}")
 
             // Step 3: Wallet submits VP token via direct_post
@@ -344,7 +341,7 @@ class WalletPresentationHttpE2ETest {
                     headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
                     bodySupplier = { directPostBody },
                 )
-            val directPostResponse = dispatcher().dispatch(directPostRequest)
+            val directPostResponse = ctx.dispatchInProcessHttp(directPostRequest)
 
             // With a fake VP token, the verifier should attempt to handle the response.
             // It may return 200 (success with redirect_uri) or a structured error (400/500)
@@ -376,7 +373,7 @@ class WalletPresentationHttpE2ETest {
                     headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
                     bodySupplier = { directPostBody },
                 )
-            val directPostResponse = dispatcher().dispatch(directPostRequest)
+            val directPostResponse = ctx.dispatchInProcessHttp(directPostRequest)
 
             assertEquals(
                 400,
@@ -406,7 +403,7 @@ class WalletPresentationHttpE2ETest {
                     headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
                     bodySupplier = { "" },
                 )
-            val directPostResponse = dispatcher().dispatch(directPostRequest)
+            val directPostResponse = ctx.dispatchInProcessHttp(directPostRequest)
 
             assertEquals(
                 400,
@@ -436,7 +433,7 @@ class WalletPresentationHttpE2ETest {
                     method = "DELETE",
                     path = "/oid4vp/backend/auth/requests/$correlationId",
                 )
-            val deleteResponse = dispatcher().dispatch(deleteRequest)
+            val deleteResponse = ctx.dispatchInProcessHttp(deleteRequest)
 
             assertEquals(204, deleteResponse.statusCode, "Delete should return 204. Body: ${deleteResponse.body}")
 
@@ -446,7 +443,7 @@ class WalletPresentationHttpE2ETest {
                     method = "GET",
                     path = "/oid4vp/backend/auth/requests/$correlationId",
                 )
-            val statusResponse = dispatcher().dispatch(statusRequest)
+            val statusResponse = ctx.dispatchInProcessHttp(statusRequest)
 
             assertEquals(404, statusResponse.statusCode, "Deleted session should return 404. Body: ${statusResponse.body}")
         }
@@ -463,7 +460,7 @@ class WalletPresentationHttpE2ETest {
                     method = "GET",
                     path = "/oid4vp/backend/auth/requests/non-existent-correlation-id",
                 )
-            val statusResponse = dispatcher().dispatch(statusRequest)
+            val statusResponse = ctx.dispatchInProcessHttp(statusRequest)
 
             assertEquals(404, statusResponse.statusCode, "Non-existent session status should return 404. Body: ${statusResponse.body}")
         }
@@ -489,7 +486,7 @@ class WalletPresentationHttpE2ETest {
                     body = json.encodeToString(CreateAuthorizationRequestInput.serializer(), input),
                 )
 
-            val response = dispatcher().dispatch(request)
+            val response = ctx.dispatchInProcessHttp(request)
 
             assertEquals(400, response.statusCode, "Missing query should return 400. Body: ${response.body}")
         }
@@ -512,7 +509,7 @@ class WalletPresentationHttpE2ETest {
                     method = "GET",
                     path = "/oid4vp/does-not-exist/something",
                 )
-            val response = adapter.handleRequest(unknownRequest)
+            val response = ctx.dispatchInProcessHttp(unknownRequest)
 
             assertTrue(
                 response.statusCode in listOf(400, 404, 500),
@@ -536,7 +533,7 @@ class WalletPresentationHttpE2ETest {
                     method = "GET",
                     path = "/oid4vp/request-uri/$correlationId",
                 )
-            val fetchResponse = dispatcher().dispatch(fetchRequest)
+            val fetchResponse = ctx.dispatchInProcessHttp(fetchRequest)
             assertEquals(200, fetchResponse.statusCode, "Request fetch should succeed. Body: ${fetchResponse.body}")
 
             // Check status - should have been updated
@@ -545,7 +542,7 @@ class WalletPresentationHttpE2ETest {
                     method = "GET",
                     path = "/oid4vp/backend/auth/requests/$correlationId",
                 )
-            val statusResponse = dispatcher().dispatch(statusRequest)
+            val statusResponse = ctx.dispatchInProcessHttp(statusRequest)
             assertEquals(200, statusResponse.statusCode, "Status check should succeed. Body: ${statusResponse.body}")
 
             val statusOutput = json.decodeFromString(GetAuthorizationRequestStatusOutput.serializer(), statusResponse.body!!)
@@ -574,7 +571,7 @@ class WalletPresentationHttpE2ETest {
                     headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
                     bodySupplier = { directPostBody },
                 )
-            val directPostResponse = dispatcher().dispatch(directPostRequest)
+            val directPostResponse = ctx.dispatchInProcessHttp(directPostRequest)
 
             assertEquals(
                 404,

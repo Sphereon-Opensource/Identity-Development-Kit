@@ -14,7 +14,7 @@ kiwa = "0.1.0-SNAPSHOT"
 
 sphereon-plugin = "0.25.0-SNAPSHOT"
 app-platform = "0.0.15SPH-SNAPSHOT"
-kotlin = "2.3.21"
+kotlin = "2.4.20-RC"
 sphereon-idk = "0.25.0-SNAPSHOT"
 spring-boot = "3.5.13"
 spring-dependency-management = "1.1.7"

@@ -102,7 +102,27 @@ data class BinaryError(
             }
 
             "INVALID_STATE" -> {
-                IdkError.INVALID_STATE(message = message)
+                // `INVALID_STATE` is one wire code with two legitimate statuses: a state
+                // CONFLICT (409) and an unprocessable-but-well-formed request (422, e.g. the
+                // workflow-definition lifecycle errors). The factory hardcodes CONFLICT, so an
+                // explicitly serialized category wins here — otherwise a 422 raised on the
+                // server would come back 409 on the far side of the binary transport. A legacy
+                // payload carries no category and keeps the historical CONFLICT.
+                val invalidState = IdkError.INVALID_STATE(message = message)
+                val explicit = category?.let { name -> ErrorCategory.entries.firstOrNull { it.name == name } }
+                if (explicit == null || explicit == invalidState.category) {
+                    invalidState
+                } else {
+                    IdkError(
+                        code = invalidState.code,
+                        message = invalidState.message,
+                        severity = invalidState.severity,
+                        category = explicit,
+                        causes = invalidState.causes,
+                        meta = details,
+                        exception = invalidState.exception,
+                    )
+                }
             }
 
             "SERVICE_UNAVAILABLE" -> {
@@ -178,6 +198,7 @@ data class BinaryError(
         private const val HTTP_NOT_FOUND = 404
         private const val HTTP_CONFLICT = 409
         private const val HTTP_PRECONDITION_FAILED = 412
+        private const val HTTP_UNPROCESSABLE_ENTITY = 422
         private const val HTTP_TOO_MANY_REQUESTS = 429
         private const val HTTP_INTERNAL_SERVER_ERROR = 500
         private const val HTTP_SERVICE_UNAVAILABLE = 503
@@ -326,6 +347,10 @@ data class BinaryError(
                 "NOT_FOUND" -> HTTP_NOT_FOUND
                 "CONFLICT" -> HTTP_CONFLICT
                 "PRECONDITION_FAILED" -> HTTP_PRECONDITION_FAILED
+                // Kept in step with DefaultRestErrorRenderer.categoryToHttpStatus, which has
+                // rendered UNPROCESSABLE_ENTITY as 422 all along — its absence here silently
+                // demoted every 422 crossing the binary transport to the null/default status.
+                "UNPROCESSABLE_ENTITY" -> HTTP_UNPROCESSABLE_ENTITY
                 "RATE_LIMITED" -> HTTP_TOO_MANY_REQUESTS
                 "UNAVAILABLE" -> HTTP_SERVICE_UNAVAILABLE
                 "INTERNAL" -> HTTP_INTERNAL_SERVER_ERROR

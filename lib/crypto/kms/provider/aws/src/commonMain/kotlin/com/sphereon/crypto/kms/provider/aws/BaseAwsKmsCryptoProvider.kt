@@ -83,6 +83,11 @@ abstract class BaseAwsKmsCryptoProvider(
                         supported = true,
                     ),
                     OperationCapability(
+                        operation = KmsProviderOperation.REGISTER_KEY_REFERENCE,
+                        supported = true,
+                        notes = "Inspects an existing AWS KMS key and registers only its public reference",
+                    ),
+                    OperationCapability(
                         operation = KmsProviderOperation.EXPORT_KEY,
                         supported = false,
                         notes = "AWS KMS does not support private key export",

@@ -28,6 +28,7 @@ kotlin {
                 implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCryptoCorePublic)
                 implementation(projects.libCryptoKmsRestApi)
+                implementation(projects.libCryptoCertificatePersistenceApi)
 
                 // Kotlin
                 api(sphereonlib.org.jetbrains.kotlinx.datetime)
@@ -69,6 +70,7 @@ kotlin {
                 implementation(projects.libCryptoKmsProviderRest)
                 implementation(projects.libCryptoKeyPersistenceApi)
                 implementation(projects.libCryptoKeyPersistenceImpl)
+                implementation(projects.libCryptoCertificatePersistenceSqlite)
                 implementation(projects.libDataLinkHttpClientImpl)
             }
         }
@@ -76,6 +78,8 @@ kotlin {
             dependencies {
                 implementation(projects.libDataLinkHttpClientImpl)
                 implementation(projects.libCryptoKmsProviderSoftware)
+                implementation(sphereonlib.org.bouncycastle.bcprov.jdk18on)
+                implementation(sphereonlib.org.bouncycastle.bcpkix.jdk18on)
                 // Ktor testing
                 implementation(projects.ktorServerKotlinInject)
                 implementation(sphereonlib.io.ktor.server.core)

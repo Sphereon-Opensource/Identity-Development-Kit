@@ -31,6 +31,7 @@ interface ListDidServicesEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listDidServices",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("DidServices"),
                 summary = "List services on a DID",
             )
@@ -49,6 +50,7 @@ interface AddDidServiceEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addDidService",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("DidServices"),
                 summary = "Add a service to a DID",
             )
@@ -66,6 +68,7 @@ interface GetDidServiceEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getDidService",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("DidServices"),
                 summary = "Get a service by id",
             )
@@ -84,6 +87,7 @@ interface UpdateDidServiceEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "updateDidService",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("DidServices"),
                 summary = "Update a service",
             )
@@ -100,6 +104,7 @@ interface RemoveDidServiceEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}/services/{serviceId}",
                 operationId = "removeDidService",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("DidServices"),
                 summary = "Remove a service from a DID",
             )

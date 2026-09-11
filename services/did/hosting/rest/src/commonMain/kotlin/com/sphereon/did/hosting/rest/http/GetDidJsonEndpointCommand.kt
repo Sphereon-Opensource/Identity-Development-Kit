@@ -42,6 +42,7 @@ interface GetDidJsonEndpointCommand : HttpEndpointCommand {
                 pathPatterns = DidHostingApiConstants.DID_JSON_PATH_PATTERNS,
                 produces = setOf(MediaType.Custom(DidHostingApiConstants.DID_JSON_MEDIA_TYPE)),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "getDidDocument",
                 tags = setOf(Tags.DID_HOSTING),
                 summary = "Resolve the hosted DID document (did.json) for this host and path",

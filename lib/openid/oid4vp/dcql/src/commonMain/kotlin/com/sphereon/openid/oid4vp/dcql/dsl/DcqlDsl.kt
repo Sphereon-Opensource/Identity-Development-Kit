@@ -58,8 +58,6 @@ object DcqlFormats {
     /** JWT VP format */
     const val JWT_VP = "jwt_vp"
 
-    /** LDP VP format */
-    const val LDP_VP = "ldp_vp"
 }
 
 /**

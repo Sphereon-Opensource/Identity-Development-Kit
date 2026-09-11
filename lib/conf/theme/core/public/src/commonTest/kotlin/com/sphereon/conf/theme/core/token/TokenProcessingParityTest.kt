@@ -181,7 +181,7 @@ class TokenProcessingParityTest {
     @Test
     fun systemDefaultsHighContrastTokenCount() {
         val lightTokens = TokenFlattener.merge(listOf(SystemDefaults.baseline))
-        val highContrastTokens = TokenFlattener.merge(listOf(SystemDefaults.baselineHighContrast))
+        val highContrastTokens = TokenFlattener.merge(listOf(SystemDefaults.baselineHighContrastLight))
         assertEquals(
             lightTokens.size,
             highContrastTokens.size,
@@ -248,7 +248,7 @@ class TokenProcessingParityTest {
     fun systemDefaultsMotionTokensPresentInAllVariants() {
         val light = TokenFlattener.merge(listOf(SystemDefaults.baseline))
         val dark = TokenFlattener.merge(listOf(SystemDefaults.baselineDark))
-        val highContrast = TokenFlattener.merge(listOf(SystemDefaults.baselineHighContrast))
+        val highContrast = TokenFlattener.merge(listOf(SystemDefaults.baselineHighContrastLight))
         // All variants should have identical motion duration values
         assertEquals(light[TokenKeyConstants.MOTION_DURATION_MEDIUM2], dark[TokenKeyConstants.MOTION_DURATION_MEDIUM2])
         assertEquals(light[TokenKeyConstants.MOTION_DURATION_MEDIUM2], highContrast[TokenKeyConstants.MOTION_DURATION_MEDIUM2])
@@ -458,7 +458,7 @@ class TokenProcessingParityTest {
     fun systemDefaultsNewTokensPresentInAllVariants() {
         val light = TokenFlattener.merge(listOf(SystemDefaults.baseline))
         val dark = TokenFlattener.merge(listOf(SystemDefaults.baselineDark))
-        val hc = TokenFlattener.merge(listOf(SystemDefaults.baselineHighContrast))
+        val hc = TokenFlattener.merge(listOf(SystemDefaults.baselineHighContrastLight))
         // All should have spacing
         assertTrue(dark.containsKey(TokenKeyConstants.SPACING_4))
         assertTrue(hc.containsKey(TokenKeyConstants.SPACING_4))
@@ -519,6 +519,58 @@ class TokenProcessingParityTest {
         assertTrue(
             resolved[TokenKeyConstants.SHADOW_ELEVATION_MD]!!.contains("rgba"),
             "Light shadow.elevation.md should contain rgba values",
+        )
+    }
+
+    private fun colorKeys(definition: ThemeDefinition): Set<String> =
+        TokenFlattener
+            .merge(listOf(definition))
+            .keys
+            .filter { it.startsWith("color.") }
+            .toSet()
+
+    @Test
+    fun lightAndDarkExposeTheSameColorKeys() {
+        // A color key present in one variant and absent from the other resolves to an
+        // unset value in the variant that lacks it, so the consuming declaration is
+        // silently dropped. Products then supply the key themselves, which hides the
+        // gap instead of closing it. This guard fails on divergence either way.
+        val light = colorKeys(SystemDefaults.baseline)
+        val dark = colorKeys(SystemDefaults.baselineDark)
+        val highContrast = colorKeys(SystemDefaults.baselineHighContrastLight)
+        assertEquals(emptySet(), light - dark, "Color keys defined for light but not dark")
+        assertEquals(emptySet(), dark - light, "Color keys defined for dark but not light")
+        assertEquals(emptySet(), light - highContrast, "Color keys defined for light but not high contrast")
+        assertEquals(emptySet(), highContrast - light, "Color keys defined for high contrast but not light")
+    }
+
+    @Test
+    fun brandGradientUsesHalfStepsInLightAndFullStepsInDark() {
+        val light = TokenReferenceResolver.resolve(TokenFlattener.merge(listOf(SystemDefaults.baseline)))
+        val dark = TokenReferenceResolver.resolve(TokenFlattener.merge(listOf(SystemDefaults.baselineDark)))
+        assertEquals(
+            "linear-gradient(180deg, #854EE9 0%, #4F16B7 100%)",
+            light[TokenKeyConstants.COLOR_GRADIENT_BRAND],
+        )
+        assertEquals(
+            "linear-gradient(180deg, #7C40E8 0%, #4714A4 100%)",
+            dark[TokenKeyConstants.COLOR_GRADIENT_BRAND],
+        )
+    }
+
+    @Test
+    fun primaryButtonBackgroundIsTheBrandGradient() {
+        val light = TokenFlattener.merge(listOf(SystemDefaults.baseline))
+        assertEquals("{color.gradient.brand}", light[TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND])
+        assertEquals("{color.gradient.brandHover}", light[TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_HOVER])
+        val resolved = TokenReferenceResolver.resolve(light)
+        assertTrue(
+            resolved[TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND]!!.startsWith("linear-gradient("),
+            "The primary button background should resolve to the brand gradient",
+        )
+        assertTrue(
+            resolved[TokenKeyConstants.COMP_BUTTON_PRIMARY_BACKGROUND_HOVER]!!.startsWith("linear-gradient("),
+            "The primary button hover background should resolve to the hover gradient",
         )
     }
 

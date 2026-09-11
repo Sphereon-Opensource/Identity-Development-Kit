@@ -34,7 +34,7 @@ import kotlin.test.assertTrue
  * `OAuth2AttestationHttpAdapter`); the test pins the invariant at build time.
  *
  * The test boots the same Metro graph the harness drives ([OidfOpTestAppGraph]) so any future
- * adapter contributed via `@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())`
+ * adapter contributed into the keyed `Map<String, Lazy<HttpAdapter>>`
  * surfaces here regardless of which module owns it.
  */
 class OAuth2HttpAdapterParityTest {
@@ -47,7 +47,7 @@ class OAuth2HttpAdapterParityTest {
                 .sessionContextManager
                 .createOrGetFromId("http-adapter-parity-test", principalType = com.sphereon.di.context.PrincipalType.USER)
                 .graph as HttpAdapterParitySessionGraph
-        val adapterIds = sessionGraph.httpAdapters.map { it.id }.toSet()
+        val adapterIds = sessionGraph.httpAdapters.keys
         val descriptorIds = graph.httpAdapterDescriptorProviders.map { it.id }.toSet()
 
         assertTrue(adapterIds.isNotEmpty(), "no HttpAdapters contributed to the test graph")
@@ -77,11 +77,11 @@ class OAuth2HttpAdapterParityTest {
 }
 
 /**
- * SessionScope accessor for the contributed [HttpAdapter] multibinding. Adapters cannot live at
+ * SessionScope accessor for the keyed, lazy [HttpAdapter] multibinding. Adapters cannot live at
  * AppScope (they read per-tenant config + per-session state), so the parity check pulls them out
  * of a freshly-created session graph and then compares to the AppScope descriptor set.
  */
 @ContributesTo(SessionScope::class)
 interface HttpAdapterParitySessionGraph {
-    val httpAdapters: Set<HttpAdapter>
+    val httpAdapters: Map<String, Lazy<HttpAdapter>>
 }

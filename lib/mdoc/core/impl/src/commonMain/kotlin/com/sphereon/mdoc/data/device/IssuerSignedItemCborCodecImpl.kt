@@ -115,10 +115,10 @@ private fun decodeIssuerSignedItem(structure: CborMap<StringLabel, CborItem<*>>)
     IssuerSignedItem(
         digestID =
             DigestID(
-                IssuerSignedItem.DIGEST_ID
-                    .required<CborUInt>(structure)
-                    .value
-                    .toUInt(),
+                toUIntExact(
+                    IssuerSignedItem.DIGEST_ID.required<CborUInt>(structure).value,
+                    "IssuerSignedItem.digestID",
+                ),
             ),
         random = RandomValue.Decoder.fromCborItem(IssuerSignedItem.RANDOM.required(structure)),
         elementIdentifier = DataElementIdentifier(IssuerSignedItem.ELEMENT_IDENTIFIER.required<CborString>(structure).value),
@@ -145,4 +145,12 @@ private fun requireStringLabelMap(
             }.toMutableMap()
 
     return CborMap(normalizedEntries, item.indefiniteLength)
+}
+
+private fun toUIntExact(
+    value: Long,
+    field: String,
+): UInt {
+    require(value in 0..UInt.MAX_VALUE.toLong()) { "$field is outside the UInt range" }
+    return value.toUInt()
 }

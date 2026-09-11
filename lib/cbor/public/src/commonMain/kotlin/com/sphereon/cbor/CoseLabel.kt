@@ -77,8 +77,11 @@ sealed class CoseLabel<Type>(
         @JvmStatic
         fun fromCborItem(cborItem: CborItem<*>): CoseLabel<out Comparable<*>> =
             when (cborItem) {
-                is CborUInt -> NumberLabel(cborItem.value.toInt())
-                is CborNInt -> NumberLabel(-cborItem.value.toInt())
+                // Keep the full CBOR integer width here.  Narrowing to Int made a
+                // perfectly valid large unsigned label (for example 0x1_0000_0000)
+                // wrap to zero before mdoc and COSE decoders could validate its range.
+                is CborUInt -> NumberLabel(cborItem.value)
+                is CborNInt -> NumberLabel(-cborItem.value)
                 is CborString -> StringLabel(cborItem.value)
                 is CoseLabel<*> -> cborItem as CoseLabel<out Comparable<*>>
                 else -> error("Cannot create a label from cbor item with type ${cborItem.cddl}")

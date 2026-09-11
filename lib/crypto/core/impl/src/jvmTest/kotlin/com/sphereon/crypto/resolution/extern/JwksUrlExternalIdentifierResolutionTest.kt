@@ -116,6 +116,13 @@ class JwksUrlExternalIdentifierResolutionTest {
         }
 
     @Test
+    fun jwksUrlServiceShouldRejectHttpUrlForRemoteHost() =
+        runTest {
+            val supported = jwksUrlService.isSupportedIdentifier("http://example.com/jwks")
+            assertFalse(supported, "Production JWKS URLs must use HTTPS")
+        }
+
+    @Test
     fun jwksUrlServiceShouldNotSupportNonUrlString() =
         runTest {
             val supported = jwksUrlService.isSupportedIdentifier("some-string")
@@ -148,6 +155,77 @@ class JwksUrlExternalIdentifierResolutionTest {
         runTest {
             val supported = jwksUrlService.isSupportedIdentifier("not-a-valid-url")
             assertFalse(supported, "Should not support malformed URL")
+        }
+
+    @Test
+    fun jwksUrlServiceShouldSupportLocalComposeServiceUrls() =
+        runTest {
+            assertTrue(
+                jwksUrlService.isSupportedIdentifier("http://enterprise-platform:18080/.well-known/jwks.json"),
+            )
+            assertTrue(
+                jwksUrlService.isSupportedIdentifier("http://enterprise-tenant-as:18083/.well-known/jwks.json"),
+            )
+        }
+
+    @Test
+    fun jwksUrlServiceShouldSupportKubernetesInClusterHttpUrls() =
+        runTest {
+            assertTrue(
+                jwksUrlService.isSupportedIdentifier(
+                    "http://edk-sih-edk-enterprise-platform:8080/.well-known/jwks.json",
+                ),
+                "Helm serving Service short names must be fetchable over HTTP in-cluster",
+            )
+            assertTrue(
+                jwksUrlService.isSupportedIdentifier(
+                    "http://edk-sih-edk-enterprise-platform-identity:8080/.well-known/jwks.json",
+                ),
+                "Helm identity Service short names must be fetchable over HTTP before kubelet /ready",
+            )
+            assertTrue(
+                jwksUrlService.isSupportedIdentifier(
+                    "http://edk-sih-edk-enterprise-platform.edk-sih-20260828r4.svc.cluster.local:8080/.well-known/jwks.json",
+                ),
+                "Kubernetes cluster-local FQDNs must be fetchable over HTTP in-cluster",
+            )
+            assertFalse(
+                jwksUrlService.isSupportedIdentifier(
+                    "http://platform.helm-e2e.nk.sphereon.com/.well-known/jwks.json",
+                ),
+                "Public gateway JWKS must stay HTTPS-only",
+            )
+        }
+
+    @Test
+    fun jwksUrlServiceShouldRejectHttpSsrfAndNonClusterHosts() =
+        runTest {
+            assertFalse(
+                jwksUrlService.isSupportedIdentifier(
+                    "http://metadata.google.internal/.well-known/jwks.json",
+                ),
+                "HTTP JWKS must not follow cloud metadata .internal hosts",
+            )
+            assertFalse(
+                jwksUrlService.isSupportedIdentifier("http://foo.local/.well-known/jwks.json"),
+                "HTTP JWKS must not treat multicast DNS .local as in-cluster",
+            )
+            assertFalse(
+                jwksUrlService.isSupportedIdentifier("http://10.0.0.1/.well-known/jwks.json"),
+                "HTTP JWKS must not allow RFC1918 literals",
+            )
+            assertFalse(
+                jwksUrlService.isSupportedIdentifier("http://192.168.1.1/.well-known/jwks.json"),
+                "HTTP JWKS must not allow RFC1918 literals",
+            )
+            assertFalse(
+                jwksUrlService.isSupportedIdentifier("http://172.16.0.1/.well-known/jwks.json"),
+                "HTTP JWKS must not allow RFC1918 literals",
+            )
+            assertFalse(
+                jwksUrlService.isSupportedIdentifier("http://169.254.169.254/.well-known/jwks.json"),
+                "HTTP JWKS must not allow link-local metadata literals",
+            )
         }
 
     // =========== Opts Support Tests ===========

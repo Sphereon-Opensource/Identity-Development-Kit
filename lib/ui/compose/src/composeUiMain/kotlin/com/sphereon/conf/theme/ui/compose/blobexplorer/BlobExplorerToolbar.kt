@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -32,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.parseDp
+import com.sphereon.conf.theme.ui.compose.tokenFill
+import com.sphereon.conf.theme.ui.compose.tokenGradient
 import com.sphereon.conf.theme.ui.compose.tokens.LocalBlobExplorerTokens
 import com.sphereon.conf.theme.ui.compose.tokens.LocalButtonTokens
 
@@ -48,7 +51,9 @@ fun BlobExplorerToolbar(
     val tokens = LocalBlobExplorerTokens.current
     val buttonTokens = LocalButtonTokens.current
     val bg = parseColor(tokens.toolbarBackground)
-    val primaryBg = parseColor(buttonTokens.primaryBackground)
+    // The primary background token may hold the brand gradient, so resolve it as a fill rather
+    // than a colour: parseColor alone would render nothing.
+    val primaryFill = tokenFill(buttonTokens.primaryBackground, MaterialTheme.colorScheme.primary)
     val primaryFg = parseColor(buttonTokens.primaryForeground)
     val buttonRadius = parseDp(buttonTokens.primaryRadius, 12.dp)
 
@@ -70,9 +75,10 @@ fun BlobExplorerToolbar(
         if (!config.readOnly && state.capabilities.supportsUpload && onUploadClick != null) {
             Button(
                 onClick = onUploadClick,
+                modifier = Modifier.tokenGradient(primaryFill, RoundedCornerShape(buttonRadius)),
                 colors =
                     ButtonDefaults.buttonColors(
-                        containerColor = primaryBg,
+                        containerColor = primaryFill.containerColor,
                         contentColor = primaryFg,
                     ),
                 shape = RoundedCornerShape(buttonRadius),

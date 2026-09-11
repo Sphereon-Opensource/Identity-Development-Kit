@@ -42,6 +42,9 @@ import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRoute
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRoutePlanner
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRouteRequest
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession
@@ -84,6 +87,7 @@ class StandardAuthorizeRequestCommandImpl(
     private val pendingAuthorizationSessionStore: PendingAuthorizationSessionStore,
     private val loginSessionStore: OidcLoginSessionStore,
     private val loginSessionIdProvider: OidcLoginSessionIdProvider,
+    private val authenticationRoutePlanner: AuthenticationRoutePlanner,
     private val verifyRequestObjectCommand: VerifyRequestObjectCommand,
     private val clock: Clock,
 ) : TypedServiceCommandAdapter<HandleAuthorizeRequestArgs, AuthorizationRequestOutcome, IdkError>(
@@ -328,7 +332,9 @@ class StandardAuthorizeRequestCommandImpl(
         // session-eval signals (prompt / max_age / id_token_hint) live on the resolved
         // [verified.request] instead.
         val sessionEvalRequest = verified.request
-        when (val evaluation = evaluateSession(sessionEvalRequest)) {
+        val providerParam = queryParameters["provider"]
+        var forceReauth = false
+        when (val evaluation = evaluateSession(sessionEvalRequest, explicitProviderSelected = providerParam != null)) {
             is SessionEvaluation.IssueCode -> {
                 return issueCodeFromActiveSession(session, evaluation.session, applied.baseUrlOverride)
             }
@@ -346,33 +352,55 @@ class StandardAuthorizeRequestCommandImpl(
             }
 
             is SessionEvaluation.RedirectToLogin -> {
-                // Persist the pending session so the login renderer can resume it after
-                // authentication, then surface a NeedsLogin outcome the HTTP layer renders as
-                // a 302 to the first-party login surface (Group J).
-                val storeResult = pendingAuthorizationSessionStore.create(session)
-                if (storeResult.isErr) {
-                    return Ok(
-                        AuthorizationRequestOutcome.PostRedirectError(
-                            error = "server_error",
-                            errorDescription = storeResult.error.message.defaultMessage,
-                            redirectUri = session.redirectUri,
-                            state = session.state,
-                            responseMode = session.responseMode,
-                        ),
-                    )
-                }
-                val loginUrl = buildLoginUrl(applied.returnUrl, session.sessionId, evaluation.forceReauth, applied.loginHint)
-                return Ok(
-                    AuthorizationRequestOutcome.NeedsLogin(
-                        loginUrl = loginUrl,
-                        forceReauth = evaluation.forceReauth,
-                    ),
-                )
+                // A rejected session forces fresh authentication, but the durable hosted-AS
+                // policy still decides whether that means local login or an exact upstream.
+                forceReauth = evaluation.forceReauth
             }
 
             SessionEvaluation.ProceedToFederation -> {
                 // No OIDC session signals apply; fall through to the federation IdP path.
             }
+        }
+
+        val routeResult =
+            authenticationRoutePlanner.decide(
+                AuthenticationRouteRequest(
+                    downstreamSessionId = session.sessionId,
+                    clientId = session.clientId,
+                    requestedBindingId = providerParam,
+                    requestedAcrValues = session.acrValues.orEmpty(),
+                    loginHint = applied.loginHint,
+                ),
+            )
+        if (routeResult.isErr) {
+            return Ok(
+                AuthorizationRequestOutcome.PostRedirectError(
+                    error = "server_error",
+                    errorDescription = routeResult.error.message.defaultMessage,
+                    redirectUri = session.redirectUri,
+                    state = session.state,
+                    responseMode = session.responseMode,
+                ),
+            )
+        }
+        val route = routeResult.value
+        val routedSession = session.copy(authenticationRoute = route)
+        val storeResult = pendingAuthorizationSessionStore.create(routedSession)
+        if (storeResult.isErr) {
+            return Ok(
+                AuthorizationRequestOutcome.PostRedirectError(
+                    error = "server_error",
+                    errorDescription = storeResult.error.message.defaultMessage,
+                    redirectUri = session.redirectUri,
+                    state = session.state,
+                    responseMode = session.responseMode,
+                ),
+            )
+        }
+
+        if (route.route != AuthenticationRoute.UPSTREAM_REDIRECT) {
+            val loginUrl = buildLoginUrl(applied.returnUrl, session.sessionId, forceReauth, applied.loginHint)
+            return Ok(AuthorizationRequestOutcome.NeedsLogin(loginUrl = loginUrl, forceReauth = forceReauth))
         }
 
         // Build the auth-provider hint and initiate authentication. The HTTP layer hands us the
@@ -391,13 +419,7 @@ class StandardAuthorizeRequestCommandImpl(
         val returnUrl = "$returnUrlBase?session_id=${session.sessionId}"
 
         val loginHint = applied.loginHint
-        val providerParam = queryParameters["provider"]
-        val hint =
-            if (loginHint != null || providerParam != null) {
-                AuthenticationHint(loginHint = loginHint, providerId = providerParam)
-            } else {
-                null
-            }
+        val hint = AuthenticationHint(loginHint = loginHint, providerId = route.selectedBindingId)
 
         val authResult =
             userAuthProvider.initiateAuthentication(
@@ -426,19 +448,6 @@ class StandardAuthorizeRequestCommandImpl(
             )
         }
 
-        val storeResult = pendingAuthorizationSessionStore.create(session)
-        if (storeResult.isErr) {
-            return Ok(
-                AuthorizationRequestOutcome.PostRedirectError(
-                    error = "server_error",
-                    errorDescription = storeResult.error.message.defaultMessage,
-                    redirectUri = session.redirectUri,
-                    state = session.state,
-                    responseMode = session.responseMode,
-                ),
-            )
-        }
-
         return Ok(AuthorizationRequestOutcome.AuthInitiated(authProviderRedirectUrl = authResult.value))
     }
 
@@ -448,7 +457,10 @@ class StandardAuthorizeRequestCommandImpl(
      * lookup runs once here and the result feeds both the in-line code-issuance branch and the
      * NeedsLogin branch downstream.
      */
-    private suspend fun evaluateSession(parsed: com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData): SessionEvaluation {
+    private suspend fun evaluateSession(
+        parsed: com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData,
+        explicitProviderSelected: Boolean,
+    ): SessionEvaluation {
         val sessionId = loginSessionIdProvider.currentLoginSessionId()
         val activeSession =
             sessionId
@@ -457,12 +469,21 @@ class StandardAuthorizeRequestCommandImpl(
         val now = clock.now()
 
         if (activeSession == null) {
+            val loginConfig = serversConfigProvider.serverConfig.login
             return when {
                 Prompt.NONE in parsed.prompt -> {
                     SessionEvaluation.FailLoginRequired("prompt=none with no active login session")
                 }
 
-                supportsRedirectAuthentication() -> {
+                explicitProviderSelected -> {
+                    SessionEvaluation.ProceedToFederation
+                }
+
+                loginConfig.requiresChooser() -> {
+                    SessionEvaluation.RedirectToLogin(forceReauth = false)
+                }
+
+                loginConfig.showFederation && supportsRedirectAuthentication() -> {
                     // Federated IdP is wired in; let the deployment's chosen redirect-based UX
                     // ([UserAuthenticationProvider.initiateAuthentication]) drive the login.
                     SessionEvaluation.ProceedToFederation

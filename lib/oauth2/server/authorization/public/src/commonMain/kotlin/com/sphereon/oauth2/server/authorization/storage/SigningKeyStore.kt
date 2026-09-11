@@ -28,8 +28,9 @@ import kotlin.time.Instant
  * Replaces the single-key-by-alias seam that the early IDK shipped: the AS now tracks one or
  * more keys per tenant in a state machine ([OAuth2SigningKeyState]: `ACTIVE` / `LEGACY` /
  * `DISABLED`) so a key rotation can introduce a new signer without invalidating in-flight
- * tokens. JWKS publishes both `ACTIVE` and `LEGACY` keys; new signatures use the highest-
- * priority `ACTIVE` key; verification by `kid` succeeds against any non-disabled entry.
+ * tokens. A tenant may have one active signer per algorithm. JWKS publishes both `ACTIVE` and
+ * `LEGACY` keys; signatures without an algorithm preference use the highest-priority `ACTIVE`
+ * key; verification by `kid` succeeds against any non-disabled entry.
  *
  * **The store itself never holds private key bytes.** Each [OAuth2SigningKey] carries a
  * [com.sphereon.crypto.core.KeyInfo] reference (`kid`, `alias`, `providerId`, algorithm
@@ -45,6 +46,16 @@ import kotlin.time.Instant
  * in EDK (`vdx/edk/lib/oauth2/server/authorization/store-postgres/`) for production.
  */
 interface SigningKeyStore {
+    /**
+     * Monotonic revision of the authoritative signing-key collection for [tenantId].
+     *
+     * Implementations MUST advance this value atomically with every insert, update, or delete
+     * that can change signing-key selection or publication. Persistent implementations must keep
+     * the revision in the same database as the key collection so every replica observes the same
+     * value and out-of-band database mutations cannot leave an AppScope snapshot valid forever.
+     */
+    suspend fun contentRevision(tenantId: String): IdkResult<Long, SigningKeyStoreError>
+
     /**
      * Returns the highest-priority `ACTIVE` key for [tenantId], or null when none is
      * registered. The AS sign paths (access token, id token, JARM, signed metadata, logout
@@ -88,7 +99,9 @@ interface SigningKeyStore {
 
     /**
      * Atomic rotation: insert [newActive] as the highest-priority `ACTIVE` key for its
-     * tenant, and demote any currently-`ACTIVE` keys to `LEGACY`. Returns the rotated keys
+     * tenant and algorithm, and demote currently-`ACTIVE` keys for that same algorithm to
+     * `LEGACY`. Active keys for other algorithms remain available so clients can select any
+     * signing algorithm the server advertises. Returns the rotated keys
      * (the new active and the demoted previous-active(s)) so the caller can audit the
      * transition.
      *
@@ -204,7 +217,8 @@ data class OAuth2SigningKey(
 enum class OAuth2SigningKeyState {
     /**
      * Eligible to sign new tokens AND to verify existing tokens. Published in JWKS. The
-     * highest-priority ACTIVE key for a tenant is the current signer.
+     * highest-priority ACTIVE key for a tenant is its default signer, while algorithm-aware
+     * paths select the highest-priority ACTIVE key for the requested algorithm.
      */
     ACTIVE,
 

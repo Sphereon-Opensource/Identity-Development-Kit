@@ -25,7 +25,6 @@ kotlin {
     androidLibrary {
         namespace = "com.sphereon.data.link.ble"
         compileSdk = 35
-        minSdk = 27
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }

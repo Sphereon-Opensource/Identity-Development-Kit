@@ -304,6 +304,14 @@ data class GenericHttpResponse(
      * For binary responses, construct with explicit [GenericHttpBody.Bytes].
      */
     val bodyContent: GenericHttpBody = body?.let { GenericHttpBody.Text(it) } ?: GenericHttpBody.Empty,
+    /**
+     * Response fields that must remain separate field lines at the transport boundary.
+     *
+     * Values here take precedence over a case-insensitively matching entry in [headers].
+     * This is required for fields such as `Set-Cookie`, which cannot be comma-folded without
+     * changing browser semantics. Empty by default to preserve all existing constructors.
+     */
+    val multiValueHeaders: Map<String, List<String>> = emptyMap(),
 ) {
     /**
      * Response body as ByteArray.
@@ -316,7 +324,11 @@ data class GenericHttpResponse(
      * Content-Type header value, if present.
      */
     val contentType: String?
-        get() = headers["Content-Type"] ?: headers["content-type"]
+        get() =
+            headers["Content-Type"] ?: headers["content-type"] ?: multiValueHeaders.entries
+                .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
+                ?.value
+                ?.firstOrNull()
 
     companion object {
         /**
@@ -351,6 +363,24 @@ data class GenericHttpResponse(
                 headers = headers,
                 body = null,
                 bodyContent = GenericHttpBody.ofBytes(body),
+            )
+
+        /**
+         * Creates a response whose body is written incrementally from a text chunk flow
+         * (e.g. Server-Sent Events). [body] stays null so transports never buffer via the
+         * String accessor.
+         */
+        @JvmStatic
+        fun withTextStreamBody(
+            statusCode: Int,
+            flow: kotlinx.coroutines.flow.Flow<String>,
+            headers: Map<String, String> = emptyMap(),
+        ): GenericHttpResponse =
+            GenericHttpResponse(
+                statusCode = statusCode,
+                headers = headers,
+                body = null,
+                bodyContent = GenericHttpBody.ofTextStream(flow),
             )
     }
 }

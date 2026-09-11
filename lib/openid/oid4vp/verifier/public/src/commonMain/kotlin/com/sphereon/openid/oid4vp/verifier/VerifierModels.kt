@@ -17,11 +17,20 @@
 package com.sphereon.openid.oid4vp.verifier
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.cose.CoseKey
+import com.sphereon.crypto.dataintegrity.resolution.VerificationMethodResolutionPolicy
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.mdoc.data.device.DocumentResponseEncryptionProvider
+import com.sphereon.mdoc.data.device.EncryptionParameters
+import com.sphereon.mdoc.data.device.ZkProofProvider
+import com.sphereon.mdoc.data.device.ZkRequest
 import com.sphereon.oauth2.common.jarm.JarmMode
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vc.common.CredentialFormat
+import com.sphereon.openid.oid4vc.common.PresentationFormat
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.common.VpToken
@@ -69,6 +78,18 @@ data class CreateAuthorizationRequestArgs(
     val clientId: String,
     val responseUri: String? = null,
     val redirectUri: String? = null,
+    /**
+     * Where the wallet sends the user after it has POSTed a `direct_post` / `direct_post.jwt`
+     * response — the OID4VP §7.2 `redirect_uri` the verifier returns *in the response body*, with
+     * the `response_code` appended.
+     *
+     * Deliberately separate from [redirectUri]: that one is the OAuth2 request parameter for the
+     * fragment/query response modes and is omitted from the request object for direct_post (the
+     * spec makes `redirect_uri` and `response_uri` mutually exclusive). This value never reaches
+     * the wallet in the authorization request; it is pinned on the session and read back when the
+     * response arrives.
+     */
+    val directPostResponseRedirectUri: String? = null,
     val responseMode: ResponseMode = ResponseMode.DIRECT_POST,
     val nonce: String,
     val state: String? = null,
@@ -121,6 +142,12 @@ data class CreateAuthorizationRequestArgs(
      */
     val verifierId: String? = null,
     /**
+     * Lifetime of the authorization session in seconds. Null takes
+     * [com.sphereon.openid.oid4vp.verifier.store.AuthorizationSessionStore.DEFAULT_TTL_SECONDS].
+     * Applied when the session is first stored, so `expiresAt` and the store TTL agree.
+     */
+    val ttlSeconds: Long? = null,
+    /**
      * Optional identifier of the verification template this request was created from (see
      * `createAuthorizationRequestFromVerificationTemplate`). Threaded onto the resulting
      * [com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession] so EDK can resolve
@@ -141,6 +168,9 @@ data class CreateAuthorizationRequestArgs(
      * set of `CredentialStatusVerifier` implementations is on the verifier's classpath.
      */
     val credentialStatusPolicies: Map<String, CredentialStatusPolicy>? = null,
+    /** Selects atomic durable creation; the original request must match on replay. */
+    val operationFingerprint: String? = null,
+    val templateRevision: String? = null,
 )
 
 /**
@@ -251,6 +281,36 @@ data class ValidateAuthorizationResponseArgs(
      * trust-domain defaults still apply without every caller having to resend it.
      */
     val templateId: String? = null,
+    /**
+     * Trusted authentication material resolved from verifier configuration. Entries are selected
+     * by exact controller, allowing one presentation to contain credentials from multiple
+     * issuers and a holder source. They are deliberately
+     * separate from [CredentialIssuerRef], which is extracted from the untrusted credential. The
+     * verifier command passes this admitted source to the canonical JWS verifier; it never builds
+     * one from `jwk`, `jku`, `x5c`, or `kid` values in the presented JWT.
+     */
+    val trustedAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
+    /** Verifier-owned exact-reference Data Integrity trust policy for non-DID methods. */
+    @kotlinx.serialization.Transient
+    val verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy = VerificationMethodResolutionPolicy.empty(),
+    /**
+     * mDoc second-edition encrypted-response context. The key and providers are verifier-owned
+     * session state and are intentionally excluded from serialization/JS compatibility surfaces.
+     * Missing context remains a fail-closed verification error for encrypted responses.
+     */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseDecryptionKey: CoseKey? = null,
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseEncryptionParameters: Map<UInt, EncryptionParameters> = emptyMap(),
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseEncryptionProviders: List<DocumentResponseEncryptionProvider> = emptyList(),
+    /** ISO/IEC TS 18013-7 Annex B mdoc-generated nonce, or null for regular OID4VP/DCQL. */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val iso18013MdocGeneratedNonce: String? = null,
 )
 
 /**
@@ -282,11 +342,13 @@ data class ValidationResult(
 @JsExportCompat
 data class MatchedCredential(
     val credentialQueryId: String,
-    val format: String,
+    val credentialFormat: CredentialFormat,
+    val presentationFormat: PresentationFormat? = null,
     val presentation: String,
     val disclosedClaims: Map<String, Any?> = emptyMap(),
     val issuer: CredentialIssuerRef? = null,
     val trust: CredentialTrustValidation? = null,
+    val verificationEvidence: VerifiedCredentialEvidence? = null,
 )
 
 /**
@@ -304,10 +366,15 @@ data class MatchedCredential(
 @JsExportCompat
 data class VerifyHolderBindingArgs(
     val presentation: String,
-    val format: String,
+    /** Credential format when the wire value is a direct credential presentation (SD-JWT/mdoc). */
+    val credentialFormat: CredentialFormat? = null,
+    /** Presentation format when the wire value is a VCDM VP. */
+    val presentationFormat: PresentationFormat? = null,
     val expectedNonce: String,
     val expectedAudience: String,
     val requireCryptographicHolderBinding: Boolean = true,
+    /** Verifier-admitted exact-controller sources for VP holder authentication. */
+    val trustedAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
     /**
      * mDoc-only: the verifier's OID4VP `client_id` (after §5.9.3 prefixing). Used with
      * [responseUri] and [verifierEncryptionJwkThumbprint] to reconstruct the
@@ -319,12 +386,53 @@ data class VerifyHolderBindingArgs(
      */
     val responseUri: String? = null,
     /**
+     * mDoc-only: exact document type admitted by the verifier's persisted DCQL
+     * `meta.doctype_value`. The response cannot replace this verifier-owned value.
+     */
+    val expectedMdocDocumentType: String? = null,
+    /**
      * mDoc-only: raw 32-byte SHA-256 thumbprint (RFC 7638) of the verifier's encryption-
      * key JWK. Required for encrypted response modes (`direct_post.jwt`, `dc_api.jwt`);
      * null for plain modes per OID4VP 1.0 final §B.2.6.2.
      */
     val verifierEncryptionJwkThumbprint: ByteArray? = null,
-)
+    /**
+     * mDoc second-edition ZKP requests expected for this presentation. This is intentionally
+     * supplied by the verifier's request/session state; a ZkDocument never self-authorizes a
+     * proof system merely by naming one on the response.
+     */
+    val mdocZkRequests: List<ZkRequest> = emptyList(),
+    /**
+     * Concrete ZKP backends admitted by this verifier session. The default is empty so an
+     * unexpected ZkDocument fails closed instead of being treated as a clear document.
+     */
+    @property:JsExportIgnoreCompat
+    val mdocZkProofProviders: List<ZkProofProvider> = emptyList(),
+    /**
+     * Verifier-owned private key for second-edition encrypted DeviceResponse envelopes. This is
+     * session context, never a credential claim or serialized request value.
+     */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseDecryptionKey: CoseKey? = null,
+    /** Encryption parameters keyed by the response envelope's docRequestID. */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseEncryptionParameters: Map<UInt, EncryptionParameters> = emptyMap(),
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseEncryptionProviders: List<DocumentResponseEncryptionProvider> = emptyList(),
+    /** ISO/IEC TS 18013-7 Annex B mdoc-generated nonce, or null for regular OID4VP/DCQL. */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val iso18013MdocGeneratedNonce: String? = null,
+) {
+    init {
+        require((credentialFormat == null) xor (presentationFormat == null)) {
+            "Exactly one of credentialFormat or presentationFormat must be supplied"
+        }
+    }
+}
 
 /**
  * Result of verifying holder binding.
@@ -522,6 +630,29 @@ data class HandleDirectPostResponseArgs(
      * Required for `direct_post.jwt`; null for plain `direct_post`.
      */
     val verifierEncryptionJwkThumbprint: ByteArray? = null,
+    /**
+     * Verifier-admitted holder and credential-issuer authentication sources.
+     * These are selected from trusted verifier configuration and must never be
+     * synthesized from key material in the submitted token.
+     */
+    val trustedAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
+    /** Exact-reference trust policy for non-DID Data Integrity verification methods. */
+    @kotlinx.serialization.Transient
+    val verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy = VerificationMethodResolutionPolicy.empty(),
+    /** Verifier-owned mDoc encrypted-response context forwarded to response validation. */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseDecryptionKey: CoseKey? = null,
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseEncryptionParameters: Map<UInt, EncryptionParameters> = emptyMap(),
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val mdocDocumentResponseEncryptionProviders: List<DocumentResponseEncryptionProvider> = emptyList(),
+    /** ISO/IEC TS 18013-7 Annex B mdoc-generated nonce, or null for regular OID4VP/DCQL. */
+    @kotlinx.serialization.Transient
+    @JsExportIgnoreCompat
+    val iso18013MdocGeneratedNonce: String? = null,
 )
 
 /**

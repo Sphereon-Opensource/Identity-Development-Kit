@@ -24,7 +24,7 @@ import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.jsonld.JsonLdError
 import com.sphereon.jsonld.LinkedDataDocument
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 
 /**
  * Resolves the expected SHA-256 pin for an IRI, or `null` when no pin is
@@ -77,9 +77,15 @@ class IntegrityPinningLinkedDataDocumentLoader(
         val downstream = next.loadDocument(iri)
         if (downstream.isErr) return downstream
 
-        val expected = pins.pinFor(iri) ?: return downstream
         val doc = downstream.value
-        val content = doc.content as? JsonObject ?: return downstream
+        // A non-JSON response may resolve through a JSON-LD alternate. Pin
+        // the actual document URL as well as the requested alias so the
+        // alternate body cannot bypass a configured integrity pin.
+        val expected: String = (
+            pins.pinFor(doc.documentUrl)
+                ?: if (doc.documentUrl != iri) pins.pinFor(iri) else null
+        ) ?: return downstream
+        val content: JsonElement = doc.content
 
         val canonical = Jcs.canonicalize(content)
         val actualHex = hash(canonical, DigestAlg.SHA256).encodeToHex()
@@ -89,7 +95,7 @@ class IntegrityPinningLinkedDataDocumentLoader(
         } else {
             Err(
                 JsonLdError.IntegrityPinMismatch(
-                    iri = iri,
+                    iri = doc.documentUrl,
                     expectedSha256 = expected.lowercase(),
                     actualSha256 = actualHex,
                 ),

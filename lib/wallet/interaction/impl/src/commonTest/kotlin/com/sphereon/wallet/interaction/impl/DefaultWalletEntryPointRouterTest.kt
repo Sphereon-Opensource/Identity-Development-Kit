@@ -189,7 +189,7 @@ private class RecordingWalletInteractionClient : WalletInteractionClient {
         throw AssertionError("start should not be invoked for invalid entry point input")
     }
 
-    override suspend fun resume(sessionId: WalletInteractionSessionId): WalletInteractionSession = throw UnsupportedOperationException()
+    override suspend fun load(sessionId: WalletInteractionSessionId): WalletInteractionSession = throw UnsupportedOperationException()
 
     override suspend fun dispatch(
         sessionId: WalletInteractionSessionId,

@@ -25,7 +25,7 @@ import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.server.authorization.config.FederationMetadataResolver
 import com.sphereon.oauth2.server.authorization.config.FederationProviderConfig
 import com.sphereon.oauth2.server.authorization.config.ResolvedFederationProvider
-import com.sphereon.oauth2.server.authorization.provider.FederationProviderRegistry
+import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -42,7 +42,7 @@ import dev.zacsweers.metro.binding
 @ContributesBinding(SessionScope::class, binding = binding<FederationMetadataResolver>())
 class DirectFederationMetadataResolver(
     private val oauth2Client: OAuth2Client,
-    private val providerRegistry: FederationProviderRegistry,
+    private val providerResolver: FederationProviderRuntimeResolver,
 ) : FederationMetadataResolver {
     override suspend fun resolve(providerConfig: FederationProviderConfig): IdkResult<AuthorizationServerMetadata, IdkError> {
         if (!providerConfig.discoveryEnabled) {
@@ -56,7 +56,7 @@ class DirectFederationMetadataResolver(
     }
 
     override suspend fun findByIssuer(issuer: String): ResolvedFederationProvider? {
-        val config = providerRegistry.enabled().firstOrNull { it.issuerUrl == issuer } ?: return null
+        val config = providerResolver.listEnabled().getOrElse { return null }.firstOrNull { it.issuerUrl == issuer } ?: return null
         val metadata = resolve(config).getOrElse { return null }
         return ResolvedFederationProvider(config, metadata)
     }

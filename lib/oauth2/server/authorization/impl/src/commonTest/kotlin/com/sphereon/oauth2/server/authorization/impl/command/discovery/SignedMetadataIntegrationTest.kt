@@ -184,7 +184,7 @@ class SignedMetadataIntegrationTest {
             configProvider = provider,
             signingIdentifierResolver = fixedSigningIdentifierResolver(signingKeyAlias?.let { ManagedOptsAlias(identifier = it) }),
             identifierService = ctx.identifierService,
-            grantHandlers = emptySet(),
+            grantHandlers = emptyMap(),
             kmsProviderRegistry = ctx.kmsProviderRegistry,
             buildSignedMetadata = signCommand,
         )

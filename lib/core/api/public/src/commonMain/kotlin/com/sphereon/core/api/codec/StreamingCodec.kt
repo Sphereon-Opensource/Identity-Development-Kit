@@ -23,6 +23,7 @@ import com.sphereon.core.api.binary.StreamingBody
 import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 
 /**
  * A streaming-capable codec for encoding/decoding binary and text content.
@@ -75,6 +76,17 @@ interface StreamingCodec {
      * @return The encoded body or an error
      */
     fun <T : Any> encode(value: T): IdkResult<StreamingBody, IdkError>
+
+    /**
+     * Encodes a value when the command transport still has its declared type.
+     *
+     * The default preserves the original class-only behavior for codecs that do
+     * not need generic type information. Codecs with compile-time serializer
+     * registries can override this to select an exact serializer for erased
+     * runtime values such as `Page<T>`.
+     */
+    @JsExportIgnoreCompat
+    fun <T : Any> encode(value: T, typeToken: TypeToken<T>): IdkResult<StreamingBody, IdkError> = encode(value)
 
     /**
      * Decodes a StreamingBody to an object of the specified type.

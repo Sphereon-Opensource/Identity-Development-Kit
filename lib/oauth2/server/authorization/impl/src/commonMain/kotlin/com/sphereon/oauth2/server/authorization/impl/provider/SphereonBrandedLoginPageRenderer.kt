@@ -177,7 +177,6 @@ class SphereonBrandedLoginPageRenderer : LoginPageRenderer {
         ctx: LoginPageContext,
         msg: Map<String, String>,
     ): String {
-        if (ctx.federationOptions.isEmpty()) return ""
         val basePath = ctx.formActionBase.ifBlank { ctx.returnUrl.substringBefore("/authorize/callback") }
         val dividerLabel = escapeHtml(msg["loginFederationDivider"] ?: "Or continue with")
         val buttonPrefix = escapeHtml(msg["loginFederationButtonPrefix"] ?: "Continue with")
@@ -188,16 +187,37 @@ class SphereonBrandedLoginPageRenderer : LoginPageRenderer {
                 """
                 <form class="form-sections form-federation" method="get" action="${escapeHtml("$basePath$FEDERATION_ACTION")}">
                   <input type="hidden" name="provider" value="$safeId">
+                  <input type="hidden" name="session_id" value="${escapeHtml(ctx.sessionId)}">
+                  <input type="hidden" name="return_url" value="${escapeHtml(ctx.returnUrl)}">
                   <button type="submit" class="secondary-button federation-button" data-provider="$safeId">$buttonPrefix $safeName</button>
                 </form>
                 """.trimIndent()
             }
-        return """
-            <div class="federation-divider"><span>$dividerLabel</span></div>
-            <div class="federation-list">
-            $buttons
-            </div>
-            """.trimIndent()
+        val federation =
+            if (buttons.isBlank()) {
+                ""
+            } else {
+                """
+                <div class="federation-divider"><span>$dividerLabel</span></div>
+                <div class="federation-list">
+                $buttons
+                </div>
+                """.trimIndent()
+            }
+        val walletAction = ctx.walletAuthorizationUrl?.takeIf(String::isNotBlank)
+        val wallet =
+            if (!ctx.showWallet || walletAction == null) {
+                ""
+            } else {
+                """
+                <form class="form-sections form-wallet" method="get" action="${escapeHtml(walletAction)}">
+                  <input type="hidden" name="oauth_session_id" value="${escapeHtml(ctx.sessionId)}">
+                  <input type="hidden" name="return_url" value="${escapeHtml(ctx.returnUrl)}">
+                  <button type="submit" class="secondary-button wallet-button">${escapeHtml(msg["loginWalletButton"] ?: "Continue with wallet")}</button>
+                </form>
+                """.trimIndent()
+            }
+        return federation + wallet
     }
 
     private fun parseProperties(text: String): Map<String, String> {

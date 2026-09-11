@@ -13,6 +13,7 @@ import com.sphereon.data.store.kv.KvStoreConfigBase
 import com.sphereon.data.store.kv.KvStoreScopeBinding
 import com.sphereon.data.store.kv.impl.KvStoreManager
 import com.sphereon.data.store.kv.impl.KvStoreService
+import com.sphereon.openid.oid4vci.issuer.impl.testAuthorizationSnapshot
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -41,13 +42,14 @@ class KvCredentialRequestIdentityStoreTest {
             val start = CompletableDeferred<Unit>()
             val results =
                 coroutineScope {
-                    listOf("issuer-instance-race-alpha", "issuer-instance-race-beta")
+                    listOf("00000000-0000-4000-8000-000000000021", "00000000-0000-4000-8000-000000000022")
                         .map { instanceId ->
                             async {
                                 start.await()
                                 store.resolveOrCreate(
                                     protocolSessionId = "protocol-session-first-writer-race",
                                     instanceId = instanceId,
+                                    authorizationPolicySnapshot = testAuthorizationSnapshot(instanceId),
                                     ttlSeconds = 300,
                                 )
                             }
@@ -63,6 +65,7 @@ class KvCredentialRequestIdentityStoreTest {
                     .resolveOrCreate(
                         protocolSessionId = winner.protocolSessionId,
                         instanceId = winner.instanceId,
+                        authorizationPolicySnapshot = winner.authorizationPolicySnapshot,
                         ttlSeconds = 300,
                     ).getOrThrow()
             assertEquals(winner, replay)
@@ -76,19 +79,42 @@ class KvCredentialRequestIdentityStoreTest {
                 store
                     .resolveOrCreate(
                         protocolSessionId = "protocol-session-idempotent-retry",
-                        instanceId = "issuer-instance-idempotent-retry",
+                        instanceId = "00000000-0000-4000-8000-000000000023",
+                        authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000023"),
                         ttlSeconds = 300,
                     ).getOrThrow()
             val retry =
                 store
                     .resolveOrCreate(
                         protocolSessionId = "protocol-session-idempotent-retry",
-                        instanceId = "issuer-instance-idempotent-retry",
+                        instanceId = "00000000-0000-4000-8000-000000000023",
+                        authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000023"),
                         ttlSeconds = 300,
                     ).getOrThrow()
 
             assertEquals(first, retry)
-            assertEquals("issuer-instance-idempotent-retry", retry.instanceId)
+            assertEquals("00000000-0000-4000-8000-000000000023", retry.instanceId)
+        }
+
+    @Test
+    fun storedWalletInitiatedIdentityRetainsExactAuthorizationSnapshotAfterAmbientChange() =
+        runTest {
+            val store = createStore()
+            val selected = "00000000-0000-4000-8000-000000000029"
+            val snapshot = testAuthorizationSnapshot(selected).copy(
+                profileRevision = 17,
+                authorizationServerRevision = 19,
+                bindingRevision = 23,
+            )
+            store.resolveOrCreate("protocol-session-stable-snapshot", selected, snapshot, 300).getOrThrow()
+
+            val ambientIssuer = "00000000-0000-4000-8000-000000000030"
+            val retained = store.get("protocol-session-stable-snapshot").getOrThrow()!!
+            assertEquals(selected, retained.instanceId)
+            assertTrue(retained.instanceId != ambientIssuer)
+            assertEquals(17, retained.authorizationPolicySnapshot.profileRevision)
+            assertEquals(19, retained.authorizationPolicySnapshot.authorizationServerRevision)
+            assertEquals(23, retained.authorizationPolicySnapshot.bindingRevision)
         }
 
     @Test
@@ -98,14 +124,16 @@ class KvCredentialRequestIdentityStoreTest {
             store
                 .resolveOrCreate(
                     protocolSessionId = "protocol-session-conflicting-retry",
-                    instanceId = "issuer-instance-original-binding",
+                    instanceId = "00000000-0000-4000-8000-000000000024",
+                    authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000024"),
                     ttlSeconds = 300,
                 ).getOrThrow()
 
             val conflict =
                 store.resolveOrCreate(
                     protocolSessionId = "protocol-session-conflicting-retry",
-                    instanceId = "issuer-instance-conflicting-retry",
+                    instanceId = "00000000-0000-4000-8000-000000000025",
+                    authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000025"),
                     ttlSeconds = 300,
                 )
 
@@ -120,7 +148,8 @@ class KvCredentialRequestIdentityStoreTest {
                 createStore(NonVersioningKvStoreManager())
                     .resolveOrCreate(
                         protocolSessionId = "protocol-session-versioning-required",
-                        instanceId = "issuer-instance-versioning-required",
+                        instanceId = "00000000-0000-4000-8000-000000000026",
+                        authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000026"),
                         ttlSeconds = 300,
                     )
 
@@ -145,7 +174,8 @@ class KvCredentialRequestIdentityStoreTest {
                 assertFailsWith<IllegalArgumentException> {
                     store.resolveOrCreate(
                         protocolSessionId = "protocol-session-invalid-configured-scope",
-                        instanceId = "issuer-instance-invalid-configured-scope",
+                        instanceId = "00000000-0000-4000-8000-000000000027",
+                        authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000027"),
                         ttlSeconds = 300,
                     )
                 }
@@ -166,7 +196,8 @@ class KvCredentialRequestIdentityStoreTest {
                 kvStoreService = TestKvStoreService(configuredStore),
             ).resolveOrCreate(
                 protocolSessionId = "protocol-session-configured-tenant-store",
-                instanceId = "issuer-instance-configured-tenant-store",
+                instanceId = "00000000-0000-4000-8000-000000000028",
+                authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000028"),
                 ttlSeconds = 300,
             ).getOrThrow()
 

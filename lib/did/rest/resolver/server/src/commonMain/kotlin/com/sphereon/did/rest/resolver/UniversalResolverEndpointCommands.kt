@@ -35,6 +35,8 @@ import com.sphereon.did.resolver.DidResolutionOptions
 import com.sphereon.did.resolver.DidResolverRegistry
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import kotlinx.serialization.json.Json
@@ -67,6 +69,7 @@ interface ResolveDidEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{identifier}",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "resolve",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("universal-resolver"),
                 summary = "Resolve a DID to its DID Document",
             )
@@ -85,7 +88,8 @@ interface ResolveDidEndpointCommand : HttpEndpointCommand {
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<ResolveDidEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(ResolveDidEndpointCommand.COMMAND_ID)
 class ResolveDidEndpointCommandImpl(
     execution: SessionExecution,
     private val resolverRegistry: DidResolverRegistry,
@@ -162,6 +166,7 @@ interface GetResolverMethodsEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/methods",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getMethods",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("universal-resolver"),
                 summary = "Get list of supported DID methods",
             )
@@ -177,7 +182,8 @@ interface GetResolverMethodsEndpointCommand : HttpEndpointCommand {
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetResolverMethodsEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetResolverMethodsEndpointCommand.COMMAND_ID)
 class GetResolverMethodsEndpointCommandImpl(
     execution: SessionExecution,
     private val resolverRegistry: DidResolverRegistry,
@@ -217,6 +223,7 @@ interface GetResolverPropertiesEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/properties",
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "getProperties",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("universal-resolver"),
                 summary = "Get resolver properties and capabilities",
             )
@@ -232,7 +239,8 @@ interface GetResolverPropertiesEndpointCommand : HttpEndpointCommand {
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetResolverPropertiesEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetResolverPropertiesEndpointCommand.COMMAND_ID)
 class GetResolverPropertiesEndpointCommandImpl(
     execution: SessionExecution,
     private val resolverRegistry: DidResolverRegistry,

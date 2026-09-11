@@ -6,10 +6,11 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
-import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
 import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.statuslist.StatusListContentTypes
 import com.sphereon.statuslist.StatusListHostingMode
@@ -22,11 +23,15 @@ import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.command.GetStatusListCommand
 import com.sphereon.statuslist.command.GetStatusListTokenCommand
 import com.sphereon.statuslist.hosting.rest.command.GetStatusListTokenByCorrelationIdEndpointCommandImpl
+import com.sphereon.statuslist.hosting.rest.test.createTestAppConfigService
 import com.sphereon.statuslist.hosting.rest.test.createTestSessionExecution
+import dev.zacsweers.metro.Provider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 /**
  * Real-chain tests for the public status-list hosting endpoints: a [CommandBackedHttpAdapter] mounted
@@ -41,6 +46,7 @@ class StatusListHostingHttpAdapterTest {
     private inner class Fixture(
         ttlSeconds: Long?,
         hostingMode: StatusListHostingMode = StatusListHostingMode.HOSTED,
+        hostingConfig: StatusListHostingConfig = StatusListHostingConfig(),
     ) {
         val execution: SessionExecution = createTestSessionExecution()
         val metadataStub = StubGetStatusList(execution, hostingMode)
@@ -53,7 +59,7 @@ class StatusListHostingHttpAdapterTest {
                     ttlSeconds = ttlSeconds,
                 ),
             )
-        val adapter: HttpAdapter =
+        val adapter =
             TestAdapter(
                 execution = execution,
                 endpoints =
@@ -62,7 +68,7 @@ class StatusListHostingHttpAdapterTest {
                             execution,
                             metadataStub,
                             tokenStub,
-                            StatusListHostingConfig(),
+                            hostingConfig,
                         ),
                     ),
             )
@@ -75,7 +81,7 @@ class StatusListHostingHttpAdapterTest {
         runTest {
             val f = Fixture(ttlSeconds = 3600)
             val response =
-                f.adapter.handleRequest(
+                f.adapter.dispatch(
                     GenericHttpRequest.withTextBody(method = "GET", path = base("/sl-7"), body = null),
                 )
             assertEquals(200, response.statusCode)
@@ -93,7 +99,7 @@ class StatusListHostingHttpAdapterTest {
         runTest {
             val f = Fixture(ttlSeconds = null)
             val response =
-                f.adapter.handleRequest(
+                f.adapter.dispatch(
                     GenericHttpRequest.withTextBody(method = "GET", path = base("/corr-9"), body = null),
                 )
             assertEquals(200, response.statusCode)
@@ -106,7 +112,7 @@ class StatusListHostingHttpAdapterTest {
         runTest {
             val f = Fixture(ttlSeconds = null, hostingMode = StatusListHostingMode.EXPORT)
             val response =
-                f.adapter.handleRequest(
+                f.adapter.dispatch(
                     GenericHttpRequest.withTextBody(method = "GET", path = base("/export-only"), body = null),
                 )
             assertEquals(404, response.statusCode)
@@ -122,12 +128,56 @@ class StatusListHostingHttpAdapterTest {
         runTest {
             val f = Fixture(ttlSeconds = null)
             val response =
-                f.adapter.handleRequest(
+                f.adapter.dispatch(
                     GenericHttpRequest.withTextBody(method = "GET", path = base("/sl-1"), body = null),
                 )
             val cacheControl = assertNotNull(response.headers["Cache-Control"])
             assertEquals("public, max-age=${StatusListHostingApiConstants.DEFAULT_CACHE_MAX_AGE_SECONDS}", cacheControl)
         }
+
+    @Test
+    fun configuredZeroHostingMaxAgeOverridesPositiveSignedTokenTtl() =
+        runTest {
+            val appConfig =
+                createTestAppConfigService(
+                    mapOf(StatusListHostingConfig.CACHE_MAX_AGE_SECONDS_KEY to "0"),
+                )
+            val f =
+                Fixture(
+                    ttlSeconds = 3600,
+                    hostingConfig = StatusListHostingConfig(Provider { appConfig }),
+                )
+
+            val response =
+                f.adapter.dispatch(
+                    GenericHttpRequest.withTextBody(method = "GET", path = base("/fresh-status"), body = null),
+                )
+
+            assertEquals(200, response.statusCode)
+            assertEquals(signedToken, response.bodyBytes?.decodeToString())
+            assertEquals(StatusListContentTypes.STATUSLIST_JWT, response.contentType)
+            assertEquals("public, max-age=0", response.headers["Cache-Control"])
+        }
+
+    @Test
+    fun missingHostingMaxAgeLeavesTokenTtlPolicyInControl() {
+        assertNull(StatusListHostingConfig().cacheMaxAgeSeconds)
+    }
+
+    @Test
+    fun malformedOrNegativeHostingMaxAgeFailsClosed() {
+        listOf("not-a-number", "-1", "", "   ").forEach { configured ->
+            val appConfig =
+                createTestAppConfigService(
+                    mapOf(StatusListHostingConfig.CACHE_MAX_AGE_SECONDS_KEY to configured),
+                )
+            val config = StatusListHostingConfig(Provider { appConfig })
+
+            assertFailsWith<IllegalArgumentException>("configuration '$configured' must fail closed") {
+                config.cacheMaxAgeSeconds
+            }
+        }
+    }
 
     private inner class StubGetStatusList(
         execution: SessionExecution,
@@ -195,14 +245,42 @@ class StatusListHostingHttpAdapterTest {
         execution: SessionExecution,
         private val endpoints: List<HttpEndpointCommand>,
     ) : CommandBackedHttpAdapter(
-            id = "statuslist-hosting-test",
+            id = "test.statuslist.hosting",
             execution = execution,
+            endpointCommandRegistry = TestEndpointCommandRegistry(endpoints),
             mount =
                 HttpAdapterMount(
                     serverPrefix = "",
                     adapterBasePath = StatusListHostingApiConstants.BASE_PATH,
                 ),
         ) {
-        override val endpointCommands: List<HttpEndpointCommand> = endpoints
+        suspend fun dispatch(request: GenericHttpRequest) =
+            endpoints.single().let { endpoint ->
+                handleResolvedRequest(
+                    request,
+                    HttpAdapterRouteMatch(
+                        adapterId = id,
+                        method = request.method,
+                        originalPath = request.path,
+                        normalizedPath = request.path,
+                        matchedPathPattern =
+                            StatusListHostingApiConstants.BASE_PATH.trimEnd('/') +
+                                "/" +
+                                endpoint.endpoint.pathPattern.trimStart('/'),
+                        handlerCommandId = endpoint.id,
+                        tenantIdFromPath = null,
+                    ),
+                )
+            }
+    }
+
+    private class TestEndpointCommandRegistry(
+        endpoints: List<HttpEndpointCommand>,
+    ) : HttpEndpointCommandRegistry {
+        private val endpointsById = endpoints.associateBy { it.id }
+
+        override fun get(handlerCommandId: String): HttpEndpointCommand? = endpointsById[handlerCommandId]
+
+        override fun listHandlerCommandIds(): Set<String> = endpointsById.keys
     }
 }

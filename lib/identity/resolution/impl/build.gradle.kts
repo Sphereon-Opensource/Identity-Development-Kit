@@ -25,6 +25,7 @@ kotlin {
                 // Public API
                 api(projects.libIdentityResolutionPublic)
                 api(projects.libIdentityMatchingPublic)
+                implementation(projects.libCatalogPublic)
 
                 // KMS for MAC commands
                 api(projects.libCryptoCorePublic)

@@ -34,6 +34,7 @@ import com.sphereon.core.api.encodeTo
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyDTOType
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.KeyTypeMapping
@@ -261,7 +262,10 @@ CoseKeyJson
          * @return the AlgorithmMapping corresponding to the current algorithm if it exists,
          *         or null if the algorithm is not defined.
          */
-        override fun getSignatureAlgorithm(): SignatureAlgorithm? = alg?.let { SignatureAlgorithm.fromCose(it) }
+        override fun getSignatureAlgorithm(): SignatureAlgorithm? = alg?.let {
+            // COSE -8 is the EdDSA family identifier; the OKP curve disambiguates Ed25519/Ed448.
+            SignatureAlgorithm.tryFromCoseForKey(it, KeyInfo(key = this)).getOrNull()
+        }
 
         /**
          * Retrieves the Key Type Mapping for the given Key Type (kty).
@@ -1112,7 +1116,12 @@ CoseKey
          * @return An instance of AlgorithmMapping if the algorithm value is successfully mapped;
          *         otherwise, returns null.
          */
-        override fun getSignatureAlgorithm(): SignatureAlgorithm? = alg?.let { CoseAlgorithm.fromValue(it.value.toInt())?.let { coseAlg -> SignatureAlgorithm.fromCose(coseAlg) } }
+        override fun getSignatureAlgorithm(): SignatureAlgorithm? = alg?.let {
+            CoseAlgorithm.fromValue(it.value.toInt())?.let { coseAlg ->
+                // COSE -8 is the EdDSA family identifier; the OKP curve disambiguates Ed25519/Ed448.
+                SignatureAlgorithm.tryFromCoseForKey(coseAlg, KeyInfo(key = this)).getOrNull()
+            }
+        }
 
         /**
          * Retrieves the KeyTypeMapping corresponding to the current key type.

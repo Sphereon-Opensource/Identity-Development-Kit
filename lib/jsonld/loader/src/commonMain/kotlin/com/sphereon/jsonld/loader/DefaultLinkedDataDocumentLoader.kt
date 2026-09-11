@@ -25,6 +25,7 @@ import com.sphereon.jsonld.JsonLdError
 import com.sphereon.jsonld.LinkedDataDocument
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
+import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -34,21 +35,25 @@ import kotlin.time.Duration.Companion.hours
 /**
  * The IDK default chain:
  *
- *     BuiltIn  →  Cached  →  IntegrityPinning  →  Http
+ *     BuiltIn  →  Allowlist  →  IntegrityPinning  →  Cached  →  Http
  *
  * - **BuiltIn** short-circuits for canonical W3C and UNTP `@context`
  *   documents that are bundled at build time (no network, no cache).
- * - **Cached** stores fetched bodies in an app-scoped [CacheService] cache
+ * - **Cached** stores fetched remote documents in an app-scoped [CacheService] cache
  *   (`namespace = "jsonld.context"`) with a 1-hour default TTL. Cache scope
  *   is app, not tenant: canonical contexts are global.
  * - **IntegrityPinning** verifies a configured SHA-256 pin (over the JCS-
- *   canonicalized content) on documents arriving from the network. The
+ *   canonicalized content) on every non-built-in document, including cache
+ *   hits. The
  *   default-bound [IntegrityPinResolver] is [NoOpIntegrityPinResolver],
  *   which pins nothing; an EDK or VDX layer can replace it via Metro's
  *   `replaces` semantics to introduce tenant-configured pinning.
- * - **Http** is the network terminator using the IDK
- *   [HttpClientFactory] with `enableHttpCache = true` and content
- *   negotiation enabled.
+ * - **Http** is the lazy network terminator using the IDK
+ *   [HttpClientFactory] with `enableHttpCache = true`, content negotiation
+ *   enabled, and automatic redirects disabled. It is constructed only after
+ *   all bundled, allowlist, integrity, and cache short-circuits have missed;
+ *   unsupported platform construction is returned as a typed
+ *   [JsonLdError.LoadingDocumentFailed].
  *
  * Bound at [SessionScope] so tenant-aware [IntegrityPinResolver]
  * implementations see the right tenant via `SessionExecution`. The
@@ -63,31 +68,41 @@ class DefaultLinkedDataDocumentLoader(
     cacheService: CacheService,
     builtInRegistry: BuiltInContextRegistry,
     pinResolver: IntegrityPinResolver,
+    loadingPolicy: JsonLdDocumentLoadingPolicy,
 ) : LinkedDataDocumentLoader {
     private val chain: LinkedDataDocumentLoader =
         BuiltInContextLinkedDataDocumentLoader(
-            registry = builtInRegistry,
-            next =
-                CachedLinkedDataDocumentLoader(
-                    next =
-                        IntegrityPinningLinkedDataDocumentLoader(
+                registry = builtInRegistry,
+                next =
+                        AllowlistedLinkedDataDocumentLoader(
                             next =
-                                HttpLinkedDataDocumentLoader(
-                                    httpClient =
-                                        httpClientFactory.createClient(
-                                            HttpClientOptions.createDefault().copy(enableHttpCache = true),
+                                IntegrityPinningLinkedDataDocumentLoader(
+                                    next =
+                                        CachedLinkedDataDocumentLoader(
+                                            next =
+                                                HttpLinkedDataDocumentLoader(
+                                                    httpClientFactory = httpClientFactory,
+                                                    options = HttpClientOptions.createDefault().copy(
+                                                        enableHttpCache = true,
+                                                        // Redirects are followed by the loader itself so each hop can be
+                                                        // checked against the tenant's document-loading policy before any
+                                                        // request is sent to the next authority.
+                                                        followRedirects = false,
+                                                    ),
+                                                    policy = loadingPolicy,
+                                                ),
+                                            cache =
+                                                cacheService.getCache(
+                                                    CacheRequirements(
+                                                        namespace = JSONLD_CONTEXT_CACHE_NAMESPACE,
+                                                        ttlConfig = CacheTtlConfig(app = 1.hours),
+                                                    ),
+                                                ),
                                         ),
+                                    pins = pinResolver,
                                 ),
-                            pins = pinResolver,
+                            policy = loadingPolicy,
                         ),
-                    cache =
-                        cacheService.getCache(
-                            CacheRequirements(
-                                namespace = JSONLD_CONTEXT_CACHE_NAMESPACE,
-                                ttlConfig = CacheTtlConfig(app = 1.hours),
-                            ),
-                        ),
-                ),
         )
 
     override suspend fun loadDocument(iri: String): IdkResult<LinkedDataDocument, JsonLdError> = chain.loadDocument(iri)
@@ -95,6 +110,23 @@ class DefaultLinkedDataDocumentLoader(
     private companion object {
         const val JSONLD_CONTEXT_CACHE_NAMESPACE = "jsonld.context"
     }
+}
+
+/**
+ * Secure default: only the immutable bundled context set is resolvable.
+ * Deployments that intentionally trust additional contexts must replace this
+ * binding with an explicitly configured policy (and should configure pins for
+ * those documents as well).
+ */
+@Inject
+@SingleIn(AppScope::class)
+@ContributesBinding(scope = AppScope::class, binding = binding<JsonLdDocumentLoadingPolicy>())
+class BuiltInOnlyJsonLdDocumentLoadingPolicy(
+    builtInRegistry: BuiltInContextRegistry,
+) : JsonLdDocumentLoadingPolicy {
+    private val allowed = builtInRegistry.listIris().toSet()
+
+    override suspend fun isAllowed(iri: String): Boolean = iri in allowed
 }
 
 /**

@@ -20,6 +20,7 @@ package com.sphereon.crypto.dataintegrity.cryptosuite
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.dataintegrity.model.DataIntegrityProof
+import com.sphereon.crypto.dataintegrity.resolution.VerificationMethodResolutionPolicy
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -45,6 +46,8 @@ interface DataIntegrityCryptosuiteVerifier : DataIntegrityCryptosuite {
     suspend fun verifyProof(
         unsecuredDocument: JsonObject,
         proof: DataIntegrityProof,
+        verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy =
+            VerificationMethodResolutionPolicy.empty(),
     ): IdkResult<CryptosuiteVerification, IdkError>
 }
 

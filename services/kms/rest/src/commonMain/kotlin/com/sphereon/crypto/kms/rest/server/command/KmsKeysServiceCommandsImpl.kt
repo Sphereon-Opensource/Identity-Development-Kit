@@ -23,9 +23,13 @@ import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
+import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.key.persistence.KeyReferenceResolutionException
 import com.sphereon.crypto.key.persistence.impl.ManagedKeyReferenceRegistrar
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyInput
 import com.sphereon.crypto.kms.rest.api.command.DeleteKeyOutput
@@ -48,11 +52,13 @@ import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toRest
 import com.sphereon.crypto.kms.rest.api.mapper.toSdk
 import com.sphereon.crypto.kms.rest.server.service.KmsRestService
+import com.sphereon.crypto.kms.rest.server.service.ProviderKeyReferenceInspector
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.serialization.json.Json
 import com.sphereon.crypto.kms.rest.api.generated.models.KeyOperations as KeyOperationsRest
 
 // ========== KMS Keys Service Command Implementations ==========
@@ -105,7 +111,19 @@ class GetKeyServiceCommandImpl(
                 )
             }
 
-        return Ok(GetKeyResponse(keyInfo = keyInfo.toRest()))
+        val reference =
+            try {
+                kmsService.getKeyReference(input.aliasOrKid, keyInfo.providerId)
+            } catch (expected: Exception) {
+                return Err(
+                    IdkError.UNKNOWN_ERROR(
+                        message = "Failed to resolve key lifecycle metadata: ${input.aliasOrKid}",
+                        exception = expected,
+                    ),
+                )
+            }
+
+        return Ok(GetKeyResponse(keyInfo = keyInfo.toRest(reference)))
     }
 }
 
@@ -279,17 +297,24 @@ class DeleteKeyServiceCommandImpl(
         val input = applyDuring(args)
 
         try {
-            kmsService.deleteKey(input.aliasOrKid, input.providerId)
+            val deleted = kmsService.deleteKey(input.aliasOrKid, input.providerId)
+            return Ok(DeleteKeyOutput(aliasOrKid = input.aliasOrKid, deleted = deleted))
+        } catch (expected: KeyReferenceResolutionException) {
+            return Err(
+                IdkError.fromString(
+                    code = expected.code,
+                    message = expected.message ?: "Key reference resolution failed: ${input.aliasOrKid}",
+                    exception = expected,
+                ),
+            )
         } catch (expected: Exception) {
             return Err(
-                IdkError.NOT_FOUND_ERROR(
-                    message = "Key not found or could not be deleted: ${input.aliasOrKid}",
-                    throwable = expected,
+                IdkError.UNKNOWN_ERROR(
+                    message = "Key deletion failed: ${input.aliasOrKid}",
+                    exception = expected,
                 ),
             )
         }
-
-        return Ok(DeleteKeyOutput(aliasOrKid = input.aliasOrKid, deleted = true))
     }
 }
 
@@ -306,7 +331,7 @@ class DeleteKeyServiceCommandImpl(
 class RegisterKeyReferenceServiceCommandImpl(
     execution: SessionExecution,
     private val registrar: ManagedKeyReferenceRegistrar,
-    private val kmsService: KmsRestService,
+    private val inspector: ProviderKeyReferenceInspector,
 ) : TypedServiceCommandAdapter<RegisterKeyReferenceInput, RegisterKeyReferenceResponse, IdkError>(
         commandId = RegisterKeyReferenceServiceCommand.COMMAND_ID,
         execution = execution,
@@ -322,28 +347,23 @@ class RegisterKeyReferenceServiceCommandImpl(
     ): IdkResult<RegisterKeyReferenceResponse, IdkError> {
         val input = applyDuring(args)
 
-        // Validate the key exists in the provider before registering a reference
-        val resolvedKey =
-            try {
-                kmsService.getKey(input.alias, input.providerId)
-            } catch (expected: Exception) {
-                return Err(
-                    IdkError.NOT_FOUND_ERROR(
-                        message = "Key '${input.alias}' not found in provider '${input.providerId}': ${expected.message}",
-                        throwable = expected,
-                    ),
-                )
-            }
+        if (input.providerId.isBlank() || input.alias.isBlank() || input.kid?.isBlank() == true) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "providerId, alias, and kid must not be blank"))
+        }
+
+        val resolvedKey = inspector.inspect(input.providerId, input.alias, input.kid).getOrElse { error -> return Err(error) }
+        val publicKeyJwk = resolvedKey.safePublicJwk().getOrElse { error -> return Err(error) }
 
         val result =
             registrar.registerKeyReference(
                 providerId = input.providerId,
                 alias = input.alias,
-                kid = input.kid ?: resolvedKey.kid,
+                kid = resolvedKey.kid ?: resolvedKey.key.getKeyId(false),
                 keyType = resolvedKey.keyType,
                 signatureAlgorithm = resolvedKey.signatureAlgorithm,
                 keyVisibility = resolvedKey.keyVisibility,
                 keyEncoding = resolvedKey.keyEncoding,
+                publicKeyJwk = publicKeyJwk,
             )
 
         val record = result.getOrElse { error -> return Err(error) }
@@ -354,6 +374,45 @@ class RegisterKeyReferenceServiceCommandImpl(
                 alias = record.alias,
                 providerId = record.providerId,
                 kid = record.kid,
+                origin = record.origin,
+                controlMode = record.controlMode,
+            ),
+        )
+    }
+}
+
+internal const val KMS_PUBLIC_JWK_PROJECTION_FAILED = "KMS_PUBLIC_JWK_PROJECTION_FAILED"
+
+internal fun ManagedKeyInfoType<*>.safePublicJwk(): IdkResult<String?, IdkError> {
+    val jwk = key as? Jwk ?: return Ok(null)
+    if (jwk.kty == JwaKeyType.oct) return Ok(null)
+    return try {
+        when (jwk.kty) {
+            JwaKeyType.EC -> {
+                require(jwk.crv != null && !jwk.x.isNullOrBlank() && !jwk.y.isNullOrBlank())
+            }
+            JwaKeyType.RSA -> {
+                require(!jwk.n.isNullOrBlank() && !jwk.e.isNullOrBlank())
+            }
+            JwaKeyType.OKP -> {
+                require(jwk.crv != null && !jwk.x.isNullOrBlank())
+            }
+            JwaKeyType.oct -> return Ok(null)
+        }
+        val publicJwk =
+            jwk.toPublicKey().copy(
+                k = null,
+                x5c = jwk.x5c,
+                x5u = null,
+                x5t = jwk.x5t,
+                x5t_S256 = jwk.x5t_S256,
+            )
+        Ok(Json.encodeToString(Jwk.serializer(), publicJwk))
+    } catch (_: Exception) {
+        Err(
+            IdkError.fromString(
+                code = KMS_PUBLIC_JWK_PROJECTION_FAILED,
+                message = "The provider public key could not be safely projected",
             ),
         )
     }

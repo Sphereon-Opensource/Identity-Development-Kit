@@ -23,10 +23,13 @@ import com.sphereon.crypto.core.CoseCryptoCallbackCoroutines
 import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.DefaultCallbacks
 import com.sphereon.crypto.core.KeyInfoType
+import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.defaultCreateMac0
+import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.VerifySignatureResult
 import com.sphereon.crypto.core.generic.VerifySignatureResultType
@@ -35,12 +38,15 @@ import com.sphereon.crypto.core.interop.toCertificateDto
 import com.sphereon.crypto.core.interop.x509CertificateFromDer
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.core.kms.KmsProvider
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
 import com.sphereon.crypto.core.kms.KeyResolverService
+import com.sphereon.crypto.core.kms.resolveManagedSigningKeySelection
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureArgs
 import com.sphereon.crypto.core.kms.command.CreateRawSignatureCommand
+import com.sphereon.crypto.core.sign.keyCompatibilityFailure
 import com.sphereon.crypto.core.sign.SimpleSignatureService
-import com.sphereon.crypto.core.toKeyReferenceOrNull
-import com.sphereon.crypto.core.toSigningKeyReferenceOrNull
+import com.sphereon.crypto.kms.command.toSigningCommandKeyInfo
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
@@ -177,7 +183,7 @@ class CoseCryptoProviderToCallbackAdapter(
             val result =
                 command.execute(
                     CreateRawSignatureArgs(
-                        keyInfo = keyInfo.toSigningKeyReferenceOrNull() ?: keyInfo.toKeyReferenceOrNull() ?: keyInfo,
+                        keyInfo = keyInfo.toSigningCommandKeyInfo(),
                         input = input.value,
                         requireX5Chain = requireX5Chain == true,
                     ),
@@ -187,7 +193,15 @@ class CoseCryptoProviderToCallbackAdapter(
         keyManagerService?.let {
             return it.createRawSignature(keyInfo, input.value, requireX5Chain == true)
         }
-        return assertedSignatureProvider(alg = alg, kms = keyInfo.providerId).createRawSignature(keyInfo, input.value, requireX5Chain == true)
+        val fallback = assertedSignatureProvider(alg = alg, kms = keyInfo.providerId)
+        if (fallback is KmsProvider) {
+            fallback.requireManagedSigningKeySelection(keyInfo)
+        } else if (keyInfo.key == null && keyInfo.alias != null && keyInfo.kid != null) {
+            throw PKIException(
+                "Cannot prove managed signing key selector: raw signature service does not expose canonical key resolution for alias '${keyInfo.alias}' and requested kid '${keyInfo.kid}'",
+            )
+        }
+        return fallback.createRawSignature(keyInfo, input.value, requireX5Chain == true)
     }
 
     /**
@@ -229,12 +243,17 @@ class CoseCryptoProviderToCallbackAdapter(
         //   2. The key's own alg (when present, e.g. JWK with alg).
         //   3. The COSE_Sign1 protected header alg (RFC 9052 authoritative source).
         val alg =
-            resolvedKeyInfo.signatureAlgorithm
+            input.protectedHeader.alg?.let { protectedAlg ->
+                SignatureAlgorithm.tryFromCoseForKey(protectedAlg, resolvedKeyInfo).getOrElse { throw it.toException() }
+            }
+                ?: resolvedKeyInfo.signatureAlgorithm
                 ?: key.getSignatureAlgorithm()
-                ?: input.protectedHeader.alg?.let { SignatureAlgorithm.fromCose(it) }
                 ?: throw IllegalArgumentException(
                     "No alg was supplied for key (and the COSE_Sign1 protected header carried none).",
                 )
+        resolvedKeyInfo.keyCompatibilityFailure(alg, KeyOperations.VERIFY)?.let { failure ->
+            throw IllegalArgumentException(failure)
+        }
         require(input.payload?.value !== null) { "Null payload supplied to verify signature" }
 
         val recalculatedToBeSignedCbor =
@@ -282,11 +301,92 @@ class CoseCryptoProviderToCallbackAdapter(
      * @return The resolved public key as an instance of Key.
      */
     override suspend fun <KeyType : com.sphereon.crypto.core.KeyType> resolvePublicKey(keyInfo: KeyInfoType<KeyType>): ResolvedKeyInfoType<KeyType> {
+        resolveNamedManagedPublicKey(keyInfo)?.let { return it }
+        resolveManagedPublicKeyThroughKeyStore(keyInfo)?.let { return it }
         // Note: When only a kid is supplied, the first matching provider is used.
         // For multi-provider scenarios, include providerId in keyInfo for deterministic resolution.
         return assertedPublicKeyProvider(keyInfo = keyInfo).resolvePublicKey(
             keyInfo = keyInfo,
         ) // We call this method from the verification, so let's not verify ourselves as well!
+    }
+
+    /**
+     * Resolves a compound managed-key selector through its explicitly named KMS provider.
+     *
+     * KMS providers are not required to implement [KeyResolverService]. The canonical selector
+     * guard therefore runs before the provider's key-store lookup, and the result is deliberately
+     * projected to public COSE material for pre-signing and verification.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private suspend fun <KT : KeyType> resolveNamedManagedPublicKey(keyInfo: KeyInfoType<KT>): ResolvedKeyInfoType<KT>? {
+        if (keyInfo.key != null) return null
+        val alias = keyInfo.alias ?: return null
+        val providerId = keyInfo.providerId ?: return null
+        val provider = localProvider(providerId) ?: return null
+
+        val canonical = provider.resolveManagedSigningKeySelection(keyInfo).toResolvedPublicKeyInfo()
+        val publicCose = CoseJoseKeyMappingService.toResolvedCoseKeyInfo(canonical)
+        return ResolvedKeyInfo(
+            kid = keyInfo.kid ?: publicCose.kid ?: canonical.kid,
+            key = publicCose.key,
+            opts = keyInfo.opts,
+            keyVisibility = KeyVisibility.PUBLIC,
+            signatureAlgorithm = keyInfo.signatureAlgorithm ?: publicCose.signatureAlgorithm,
+            alias = alias,
+            x5c = keyInfo.x5c ?: publicCose.x5c,
+            providerId = providerId,
+            keyType = keyInfo.keyType ?: publicCose.keyType,
+            keyEncoding = keyInfo.keyEncoding ?: publicCose.keyEncoding,
+            noCache = keyInfo.noCache,
+        ) as ResolvedKeyInfoType<KT>
+    }
+
+    /**
+     * The provider behind an id when this process hosts it, otherwise null.
+     *
+     * A key records the provider id of the KMS that minted it, and a service that reaches its KMS
+     * over the command transport hosts neither that provider nor its registry entry. Asking the
+     * local registry for such an id is a question this process cannot answer, so the miss selects
+     * the key-store route below instead of failing the whole resolution.
+     */
+    private suspend fun localProvider(providerId: String): KmsProvider? =
+        try {
+            keyManagerService?.getProviderById(providerId)
+        } catch (_: Exception) {
+            null
+        }
+
+    /**
+     * Resolves a managed alias through the key store rather than a provider instance.
+     *
+     * The key store answers over the KMS command boundary, so the service that owns the key
+     * resolves it under its own provider id and the selector's id travels unchanged. Nothing
+     * local stands in for a provider this process does not host. Only public material comes
+     * back: what a caller needs here is the pre-signing and verification key, never the private
+     * half the owning KMS keeps.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private suspend fun <KT : KeyType> resolveManagedPublicKeyThroughKeyStore(keyInfo: KeyInfoType<KT>): ResolvedKeyInfoType<KT>? {
+        if (keyInfo.key != null) return null
+        val alias = keyInfo.alias?.takeIf { it.isNotBlank() } ?: return null
+        val kms = keyManagerService ?: return null
+
+        val managed = kms.getKey(keyInfo)
+        val canonical = managed.toResolvedPublicKeyInfo()
+        val publicCose = CoseJoseKeyMappingService.toResolvedCoseKeyInfo(canonical)
+        return ResolvedKeyInfo(
+            kid = keyInfo.kid ?: publicCose.kid ?: canonical.kid,
+            key = publicCose.key,
+            opts = keyInfo.opts,
+            keyVisibility = KeyVisibility.PUBLIC,
+            signatureAlgorithm = keyInfo.signatureAlgorithm ?: publicCose.signatureAlgorithm,
+            alias = alias,
+            x5c = keyInfo.x5c ?: publicCose.x5c,
+            providerId = keyInfo.providerId ?: managed.providerId,
+            keyType = keyInfo.keyType ?: publicCose.keyType,
+            keyEncoding = keyInfo.keyEncoding ?: publicCose.keyEncoding,
+            noCache = keyInfo.noCache,
+        ) as ResolvedKeyInfoType<KT>
     }
 }
 

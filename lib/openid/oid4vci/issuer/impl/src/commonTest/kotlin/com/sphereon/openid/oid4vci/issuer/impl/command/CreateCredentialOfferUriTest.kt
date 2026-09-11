@@ -10,6 +10,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.command
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import com.sphereon.openid.oid4vci.issuer.impl.lifecycle.OfferLifecycleInitializer
+import com.sphereon.openid.oid4vci.issuer.impl.testAuthorizationSnapshot
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -36,10 +37,11 @@ class CreateCredentialOfferUriTest {
             val result =
                 command.execute(
                     CreateCredentialOfferArgs(
-                        instanceId = "issuer-instance-protocol-base-path",
+                        instanceId = "00000000-0000-4000-8000-000000000013",
                         issuerId = "https://issuer.example.com",
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000013"),
                     ),
                 )
 
@@ -71,10 +73,11 @@ class CreateCredentialOfferUriTest {
             val result =
                 command.execute(
                     CreateCredentialOfferArgs(
-                        instanceId = "issuer-instance-existing-base-path",
+                        instanceId = "00000000-0000-4000-8000-000000000014",
                         issuerId = "https://issuer.example.com/oid4vci",
                         credentialConfigurationIds = listOf("UniversityDegree"),
                         preAuthorizedCodeGrant = true,
+                        authorizationPolicySnapshot = testAuthorizationSnapshot("00000000-0000-4000-8000-000000000014"),
                     ),
                 )
 

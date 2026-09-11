@@ -280,5 +280,6 @@ private class FailingGenerateKeyManagerService(
         keyOperations: Array<out KeyOperations>?,
         alg: SignatureAlgorithm?,
         keyVisibility: KeyVisibility?,
+        walletUnitId: String?,
     ): IdkResult<GenerateKeyResult, IdkError> = Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "simulated KMS outage for test"))
 }

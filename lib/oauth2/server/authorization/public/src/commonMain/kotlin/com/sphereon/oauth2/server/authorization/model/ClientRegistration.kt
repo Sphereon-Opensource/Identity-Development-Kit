@@ -76,10 +76,17 @@ data class ClientRegistration(
     val defaultAccessTokenAudience: String? = null,
     /**
      * Explicit additional audiences this client may request for a client_credentials access
-     * token. Each request remains single-target; this allowlist does not permit multi-audience
-     * tokens and an empty set authorizes no target beyond [defaultAccessTokenAudience].
+     * token. A request may name several of them at once; every requested audience must be
+     * [defaultAccessTokenAudience] or a member of this set. An empty set authorizes no target
+     * beyond [defaultAccessTokenAudience].
      */
     val allowedAccessTokenAudiences: Set<String> = emptySet(),
+    /**
+     * Roles stamped as the `roles` claim on access tokens this client obtains through the
+     * client_credentials grant. Empty issues service-scoped tokens without a `roles` claim.
+     * Grants that carry a user subject ignore this list.
+     */
+    val principalRoles: List<String> = emptyList(),
     /**
      * Client authentication method
      * RFC 7591 Section 2: token_endpoint_auth_method
@@ -182,6 +189,13 @@ data class ClientRegistration(
      * Ignored when [frontchannelLogoutUri] is `null`.
      */
     val frontchannelLogoutSessionRequired: Boolean = false,
+    /**
+     * OIDC Dynamic Client Registration `id_token_signed_response_alg`.
+     * When set, ID tokens issued to this client use the named JWS algorithm. The server rejects
+     * token creation when that algorithm is not advertised or no matching active private key is
+     * available. A null value uses the authorization server's default active signing key.
+     */
+    val idTokenSignedResponseAlg: String? = null,
     /**
      * JARM `authorization_signed_response_alg` per OIDF JARM spec
      * (https://openid.net/specs/oauth-v2-jarm.html). When non-null, authorization responses for

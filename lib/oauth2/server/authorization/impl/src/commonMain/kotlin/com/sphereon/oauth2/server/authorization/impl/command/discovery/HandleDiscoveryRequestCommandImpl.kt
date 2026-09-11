@@ -24,9 +24,9 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.model.AuthorizationServerMetadata
 import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataArgs
+import com.sphereon.oauth2.server.authorization.command.BuildServerMetadataCommand
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestArgs
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestCommand
-import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -34,14 +34,18 @@ import dev.zacsweers.metro.binding
 
 /**
  * Implementation of [HandleDiscoveryRequestCommand]. Body lifted verbatim from
- * `OAuth2Handlers.handleDiscoveryRequest`: a single delegation to `commands.buildServerMetadata`.
+ * `OAuth2Handlers.handleDiscoveryRequest`: a single delegation to [BuildServerMetadataCommand].
+ *
+ * The exact command is injected directly. Discovery must not construct the broad authorization
+ * server service and every unrelated authorization, token, device, revocation, and user-info
+ * command merely to publish immutable server metadata.
  */
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<HandleDiscoveryRequestCommand>())
 class HandleDiscoveryRequestCommandImpl(
     execution: SessionExecution,
-    private val authorizationServerService: AuthorizationServerService,
+    private val buildServerMetadata: BuildServerMetadataCommand,
 ) : TypedServiceCommandAdapter<HandleDiscoveryRequestArgs, AuthorizationServerMetadata, IdkError>(
         commandId = HandleDiscoveryRequestCommand.COMMAND_ID,
         execution = execution,
@@ -58,7 +62,7 @@ class HandleDiscoveryRequestCommandImpl(
         applyDuring: (HandleDiscoveryRequestArgs) -> HandleDiscoveryRequestArgs,
     ): IdkResult<AuthorizationServerMetadata, IdkError> {
         val applied = applyDuring(args)
-        return authorizationServerService.commands.buildServerMetadata.execute(
+        return buildServerMetadata.execute(
             BuildServerMetadataArgs(
                 serverId = applied.serverId,
                 baseUrlOverride = applied.baseUrlOverride,

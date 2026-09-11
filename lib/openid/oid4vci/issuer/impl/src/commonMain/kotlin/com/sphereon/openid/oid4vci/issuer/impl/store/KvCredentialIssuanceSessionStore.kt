@@ -28,6 +28,7 @@ import com.sphereon.data.store.kv.KvStore
 import com.sphereon.data.store.kv.KvStoreConfigBase
 import com.sphereon.data.store.kv.KvStoreScopeBinding
 import com.sphereon.data.store.kv.impl.KvStoreManager
+import com.sphereon.data.store.kv.impl.KvStoreService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
@@ -46,6 +47,7 @@ import kotlin.time.Duration.Companion.seconds
 @ContributesBinding(SessionScope::class, binding = binding<CredentialIssuanceSessionStore>())
 class KvCredentialIssuanceSessionStore(
     private val kvStoreManager: KvStoreManager,
+    private val kvStoreService: KvStoreService,
     private val execution: SessionExecution,
 ) : CredentialIssuanceSessionStore {
     private val namespace =
@@ -69,11 +71,20 @@ class KvCredentialIssuanceSessionStore(
     private val storeConfig: KvStoreConfigBase =
         InMemoryKvStoreConfig(
             id = "oid4vci.sessions",
-            scopeBinding = KvStoreScopeBinding.APP,
+            scopeBinding = KvStoreScopeBinding.TENANT,
         )
 
     private val kv: KvStore by lazy {
-        kvStoreManager.createFromKvStoreConfig(storeConfig, execution)
+        kvStoreManager.createFromKvStoreConfig(resolveEffectiveStoreConfig(), execution)
+    }
+
+    private fun resolveEffectiveStoreConfig(): KvStoreConfigBase {
+        val configured = runCatching { kvStoreService.getStoreConfig(storeConfig.id) }.getOrNull()
+        val effective = configured ?: storeConfig
+        require(effective.scopeBinding == storeConfig.scopeBinding) {
+            "KV store '${storeConfig.id}' must use scopeBinding=${storeConfig.scopeBinding}, but was ${effective.scopeBinding}"
+        }
+        return effective
     }
 
     override suspend fun create(session: IssuanceSession): IdkResult<IssuanceSession, IdkError> {

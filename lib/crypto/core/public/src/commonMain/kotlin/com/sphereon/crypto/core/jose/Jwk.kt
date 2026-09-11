@@ -29,6 +29,7 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyDTOType
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.cose.CoseKey
@@ -495,7 +496,11 @@ Jwk
         override fun getSignatureAlgorithm(): SignatureAlgorithm? {
             // If alg is explicitly set, use it as the authoritative source.
             // Returns null for encryption-only algorithms (e.g., RSA-OAEP) that have no signature mapping.
-            alg?.let { return SignatureAlgorithm.tryFromJose(it).getOrNull() }
+            alg?.let {
+                // EdDSA is a JOSE family identifier. Resolve it against this key's curve so an
+                // Ed448 key is never silently represented as Ed25519 by list order.
+                return SignatureAlgorithm.tryFromJoseForKey(it, KeyInfo(key = this)).getOrNull()
+            }
 
             // Infer algorithm from key type and parameters
             return when (kty.value) {
@@ -544,7 +549,8 @@ Jwk
                     // Ed25519, Ed448, X25519, X448
                     when (crv?.value) {
                         "Ed25519" -> SignatureAlgorithm.ED25519
-                        else -> null // Ed448 not currently defined
+                        "Ed448" -> SignatureAlgorithm.ED448
+                        else -> null
                     }
                 }
 
@@ -603,7 +609,15 @@ Jwk
 
         override fun getDAsString() = d
 
-        override fun toPublicKey(): Jwk = copy(d = null)
+        override fun toPublicKey(): Jwk =
+            copy(
+                d = null,
+                p = null,
+                q = null,
+                dP = null,
+                dQ = null,
+                qInv = null,
+            )
 
         /**
          * Returns a minimal JWK containing only the required fields for the key type.

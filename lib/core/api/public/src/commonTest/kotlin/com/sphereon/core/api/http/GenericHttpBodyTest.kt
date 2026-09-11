@@ -306,6 +306,34 @@ class GenericHttpBodyTest {
     }
 
     @Test
+    fun textStreamBodyDoesNotMaterializeSynchronously() = kotlinx.coroutines.test.runTest {
+        val body = GenericHttpBody.ofTextStream(
+            kotlinx.coroutines.flow.flowOf("chunk-a", "chunk-b"),
+        )
+        assertTrue(body is GenericHttpBody.TextStream)
+        assertFalse(body.isEmpty)
+        assertNull(body.asTextOrNull())
+        assertNull(body.asBytesOrNull())
+        assertEquals("chunk-achunk-b", (body as GenericHttpBody.TextStream).collectToText())
+    }
+
+    @Test
+    fun genericHttpResponseWithTextStreamBodyKeepsStringAccessorNull() = kotlinx.coroutines.test.runTest {
+        val response = GenericHttpResponse.withTextStreamBody(
+            statusCode = 200,
+            flow = kotlinx.coroutines.flow.flowOf("id: 1\ndata: {}\n\n"),
+            headers = mapOf("Content-Type" to "text/event-stream"),
+        )
+        assertNull(response.body)
+        assertTrue(response.bodyContent is GenericHttpBody.TextStream)
+        assertEquals("text/event-stream", response.contentType)
+        assertEquals(
+            "id: 1\ndata: {}\n\n",
+            (response.bodyContent as GenericHttpBody.TextStream).collectToText(),
+        )
+    }
+
+    @Test
     fun genericHttpResponseContentTypeAccessorWorks() {
         val response =
             GenericHttpResponse(

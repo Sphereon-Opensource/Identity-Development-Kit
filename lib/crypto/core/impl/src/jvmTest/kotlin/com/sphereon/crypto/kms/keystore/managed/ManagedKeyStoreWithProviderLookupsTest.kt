@@ -84,7 +84,19 @@ class ManagedKeyStoreWithProviderLookupsTest {
         override suspend fun getProvider(
             providerId: String?,
             alg: SignatureAlgorithm?,
-        ) = getProviderById(providerId ?: defaultProviderId())
+        ): KmsProvider {
+            if (providerId != null) {
+                val provider = getProviderById(providerId)
+                if (alg != null && alg !in provider.getCapabilities().signatureAlgorithms) {
+                    throw PKIException("KMS provider $providerId does not support signature algorithm $alg")
+                }
+                return provider
+            }
+
+            val defaultProvider = getProviderById(defaultProviderId())
+            if (alg == null || alg in defaultProvider.getCapabilities().signatureAlgorithms) return defaultProvider
+            return getKmsBySignatureAlgorithm(alg)
+        }
 
         override suspend fun getKmsBySignatureAlgorithm(signatureAlgorithm: SignatureAlgorithm) =
             providerMap.values.firstOrNull { it.supportedSignatureAlgorithms().contains(signatureAlgorithm) }

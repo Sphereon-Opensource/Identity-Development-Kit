@@ -93,7 +93,30 @@ sealed interface WalletInteractionScreenProjection {
         val error: WalletInteractionErrorPresentation?,
         val receivedCredentials: List<WalletCredentialReviewPresentation>,
         val completionHandoffRef: WalletSensitiveInputRefPresentation? = null,
+        /**
+         * Safe credential-receive transcript retained for result-route reattachment. It contains no
+         * protocol payload, credential value, token, authorization URL, or secret.
+         */
+        val receiveContext: WalletReceiveTerminalContextPresentation? = null,
     ) : WalletInteractionScreenProjection
+}
+
+/**
+ * The reviewed receive facts a result screen needs when it is attached after the live review
+ * presenter was disposed. This is present only when the interaction had a fully resolved safe
+ * issuer, offer, trust, and encounter transcript before reaching its terminal state.
+ */
+@Serializable
+data class WalletReceiveTerminalContextPresentation(
+    val issuer: WalletPartyPresentation,
+    val trust: WalletTrustPresentation,
+    val encounter: WalletCounterpartyEncounterPresentation,
+    val offer: WalletCredentialOfferPresentation,
+) {
+    init {
+        require(issuer.role == WalletPartyRolePresentation.ISSUER) { "wallet_receive_terminal_context_party_not_issuer" }
+        require(offer.issuer?.partyId == issuer.partyId) { "wallet_receive_terminal_context_offer_issuer_mismatch" }
+    }
 }
 
 /** Safe encounter facts; no Party repository or backend type crosses the presenter boundary. */
@@ -201,9 +224,16 @@ data class WalletCredentialSelectionOptionPresentation(
 )
 
 @Serializable
+enum class WalletFailureDispositionPresentation {
+    TERMINAL,
+    REPEATABLE,
+    RESUMABLE,
+}
+
+@Serializable
 data class WalletInteractionErrorPresentation(
     val code: String,
     val messageKey: String?,
-    val retryable: Boolean,
+    val disposition: WalletFailureDispositionPresentation,
     val arguments: Map<String, String>,
 )

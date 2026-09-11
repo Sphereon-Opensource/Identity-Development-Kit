@@ -37,6 +37,8 @@ data class CredentialIssuerRef(
     val oidfedEntityId: String? = null,
     val kid: String? = null,
     val x5c: List<String> = emptyList(),
+    /** The authenticated ISO 18013 document type when [method] is `x509` for `mso_mdoc`. */
+    val docType: String? = null,
 )
 
 @JsExportCompat

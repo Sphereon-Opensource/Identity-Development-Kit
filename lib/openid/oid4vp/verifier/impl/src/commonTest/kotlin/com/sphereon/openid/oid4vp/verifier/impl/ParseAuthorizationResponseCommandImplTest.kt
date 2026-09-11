@@ -346,7 +346,7 @@ class ParseAuthorizationResponseCommandImplTest {
             // The compact (string) presentation round-trips as its raw content.
             assertEquals(compactSdJwt, parsed.vpToken.getSinglePresentation("compact_query"))
 
-            // The ldp_vp presentation is preserved as a JSON object element (not a string),
+            // The ldp_vc presentation is preserved as a JSON object element (not a string),
             // accessible via the shape-preserving accessor.
             val ldpElement = parsed.vpToken.getSinglePresentationElement("ldp_query")
             assertIs<kotlinx.serialization.json.JsonObject>(ldpElement)

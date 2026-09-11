@@ -34,8 +34,9 @@ import com.sphereon.oauth2.server.authorization.command.federation.HandleReconci
 import com.sphereon.oauth2.server.authorization.command.federation.HandleReconciliationOutcomeCommand
 import com.sphereon.oauth2.server.authorization.config.FederationProviderConfig
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
-import com.sphereon.oauth2.server.authorization.provider.FederationProviderRegistry
+import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
 import com.sphereon.oauth2.server.authorization.storage.FederationSessionStore
+import com.sphereon.oauth2.server.authorization.routing.AuthenticationRoutePlanner
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -51,15 +52,17 @@ import dev.zacsweers.metro.binding
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<HandleFederationCallbackCommand>())
 class HandleFederationCallbackCommandImpl(
-    execution: SessionExecution,
+    private val sessionExecution: SessionExecution,
     private val sessionStore: FederationSessionStore,
-    private val providerRegistry: FederationProviderRegistry,
+    private val providerResolver: FederationProviderRuntimeResolver,
     private val exchangeCodeAndExtractClaimsCommand: ExchangeCodeAndExtractClaimsCommand,
     private val handleFederationOutcomeCommand: HandleFederationOutcomeCommand,
     private val handleReconciliationOutcomeCommand: HandleReconciliationOutcomeCommand,
+    private val authenticationRoutePlanner: AuthenticationRoutePlanner,
+    private val clock: kotlin.time.Clock,
 ) : TypedServiceCommandAdapter<HandleFederationCallbackArgs, FederationCallbackOutcome, AuthenticationError>(
         commandId = HandleFederationCallbackCommand.COMMAND_ID,
-        execution = execution,
+        execution = sessionExecution,
         inputTypeToken = typeToken<HandleFederationCallbackArgs>(),
         outputTypeToken = typeToken<FederationCallbackOutcome>(),
     ),
@@ -73,7 +76,10 @@ class HandleFederationCallbackCommandImpl(
         applyDuring: (HandleFederationCallbackArgs) -> HandleFederationCallbackArgs,
     ): IdkResult<FederationCallbackOutcome, AuthenticationError> {
         val applied = applyDuring(args)
-        val retrieveResult = sessionStore.retrievePendingFederation(applied.state)
+        if (applied.code != null && applied.error != null) {
+            return Err(AuthenticationError.Generic(description = "Federation callback cannot contain both a code and an upstream error"))
+        }
+        val retrieveResult = sessionStore.consumePendingFederation(applied.state)
         val pending =
             (if (retrieveResult.isOk) retrieveResult.value else null)
                 ?: return Err(
@@ -81,20 +87,43 @@ class HandleFederationCallbackCommandImpl(
                         description = "Unknown or expired federation state",
                     ),
                 )
+        if (pending.tenantId != sessionExecution.tenantId) {
+            return Err(AuthenticationError.Generic(description = "Federation callback tenant mismatch"))
+        }
+        if (pending.expiresAt <= clock.now()) {
+            return Err(AuthenticationError.Generic(description = "Federation callback transaction expired"))
+        }
+        if (pending.federationBindingId != pending.authenticationRoute.selectedBindingId || pending.upstreamIssuer != pending.metadata.issuer) {
+            return Err(AuthenticationError.Generic(description = "Federation callback transaction binding mismatch"))
+        }
+        val routeValidation = authenticationRoutePlanner.revalidate(pending.authenticationRoute, pending.federationBindingId)
+        if (routeValidation.isErr) {
+            return Err(AuthenticationError.Generic(description = routeValidation.error.message.defaultMessage))
+        }
 
-        val providerConfig: FederationProviderConfig =
-            resolveProvider(pending.providerId)
-                ?: return Err(
-                    AuthenticationError.Generic(
-                        description = "Provider '${pending.providerId}' no longer available",
-                    ),
-                )
+        applied.error?.let { upstreamError ->
+            val mapped = upstreamError.takeIf { it in UPSTREAM_ERROR_ALLOWLIST } ?: "server_error"
+            return com.sphereon.core.api.Ok(
+                FederationCallbackOutcome.upstreamError(
+                    sessionId = pending.sessionId,
+                    error = mapped,
+                    errorDescription = applied.errorDescription?.take(512),
+                ),
+            )
+        }
+        val authorizationCode = applied.code
+            ?: return Err(AuthenticationError.Generic(description = "Federation callback did not contain a code or upstream error"))
+
+        val providerConfig: FederationProviderConfig = providerResolver.resolve(pending.providerId).getOrElse { return Err(it) }
+        if (providerConfig.issuerUrl != pending.upstreamIssuer || providerConfig.id != pending.federationBindingId) {
+            return Err(AuthenticationError.Generic(description = "Resolved provider does not match the pinned federation transaction"))
+        }
 
         val exchange =
             exchangeCodeAndExtractClaimsCommand
                 .execute(
                     ExchangeCodeAndExtractClaimsArgs(
-                        code = applied.code,
+                        code = authorizationCode,
                         pending = pending,
                         providerConfig = providerConfig,
                     ),
@@ -125,8 +154,7 @@ class HandleFederationCallbackCommandImpl(
         }
     }
 
-    private fun resolveProvider(providerId: String?): FederationProviderConfig? {
-        val id = providerId ?: providerRegistry.defaultProviderId() ?: return null
-        return providerRegistry.findById(id)?.takeIf { it.enabled }
+    private companion object {
+        val UPSTREAM_ERROR_ALLOWLIST = setOf("access_denied", "login_required", "interaction_required", "temporarily_unavailable", "server_error")
     }
 }

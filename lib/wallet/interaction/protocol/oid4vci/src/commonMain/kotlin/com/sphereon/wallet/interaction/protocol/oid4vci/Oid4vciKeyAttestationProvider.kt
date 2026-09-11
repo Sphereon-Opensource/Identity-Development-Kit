@@ -55,8 +55,12 @@ data class Oid4vciKeyAttestationRequest(
  * is exported to the interaction engine.
  */
 class SecureComponentOid4vciKeyAttestationProvider(
-    private val wsca: Wsca,
+    private val wscaProvider: () -> Wsca,
 ) : Oid4vciKeyAttestationProvider {
+    constructor(wsca: Wsca) : this({ wsca })
+
+    private val wsca: Wsca by lazy { wscaProvider() }
+
     override suspend fun attest(request: Oid4vciKeyAttestationRequest): IdkResult<String, IdkError> {
         val algorithm =
             request.signingAlgorithm.toSignatureAlgorithmOrNull()

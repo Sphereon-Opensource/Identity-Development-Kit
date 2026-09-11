@@ -47,6 +47,7 @@ kotlin {
             dependencies {
                 implementation(sphereonlib.co.touchlab.skie.configuration.annotations)
                 api(projects.libOpenidOid4vciCommonPublic)
+                implementation(projects.libOpenidOid4vciIssuerPublic)
 
                 // Konform for validation
                 api(sphereonlib.io.konform.konform)

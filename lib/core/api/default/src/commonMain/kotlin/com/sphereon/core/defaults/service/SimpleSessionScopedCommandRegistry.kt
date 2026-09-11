@@ -34,9 +34,8 @@ import dev.zacsweers.metro.binding
  * lazily instantiates them on first access. In IDK standalone mode (no EDK/VDX),
  * all commands are LOCAL so no config-based routing is needed.
  *
- * VDX replaces this with `DefaultSessionScopedCommandRegistry` which adds
- * config-aware LOCAL/SERVER selection via [RoutingCommandDelegate] and
- * app-registry fallback.
+ * The VDX registry adds config-aware LOCAL/SERVER selection over the same keyed lazy command
+ * maps plus app-registry fallback.
  */
 @Inject
 @SingleIn(SessionScope::class)

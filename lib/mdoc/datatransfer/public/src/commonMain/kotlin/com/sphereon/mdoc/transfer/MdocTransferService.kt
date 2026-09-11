@@ -118,12 +118,14 @@ class NfcEngagementMethod : MdocEngagementMethod {
  * Per ISO 18013-7 B.3.1.3.2, OID4VP uses the `mdoc-openid4vp://` URI scheme for wallet invocation.
  * The URI format is:
  * ```
- * mdoc-openid4vp://?client_id=example.com&request_uri=https://example.com/request&response_uri=...&nonce=...
+ * mdoc-openid4vp://?client_id=example.com&request_uri=https://example.com/request
  * ```
  *
  * This differs from other engagement methods in that:
  * - It doesn't use CBOR-encoded device/reader engagement
- * - Parameters are passed via query parameters instead of base64url-encoded payload
+ * - The invocation carries only the wallet-routing parameters; the signed request object
+ *   fetched from `request_uri` carries `response_uri`, `nonce`, and the restricted inline
+ *   Presentation Definition
  * - Protocol uses OAuth 2.0 / OpenID4VP flows with JWT instead of CBOR
  *
  * @param authorizationRequestUri The full `mdoc-openid4vp://` URI from the verifier's QR code or deep link

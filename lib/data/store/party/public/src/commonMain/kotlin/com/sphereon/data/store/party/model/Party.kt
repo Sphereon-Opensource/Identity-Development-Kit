@@ -49,7 +49,7 @@ data class Party
         /** The type of party */
         @SerialName("partyType")
         val partyType: PartyType,
-        /** Origin of the party (external/managed) */
+        /** Origin of the party record and who owns its lifecycle. */
         val origin: PartyOrigin,
         /**
          * User-friendly display name (editable by user). Non-null: abstract

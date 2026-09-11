@@ -24,13 +24,15 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.HttpJson
+import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandAdapter
 import com.sphereon.core.api.http.command.requirePathParam
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.auth.http.InitiateOid4vpIdvCommand
 import com.sphereon.openid.oid4vp.auth.http.model.IdvInitiateResponse
 import com.sphereon.openid.oid4vp.auth.orchestration.ReconciliationOrchestratorApi
-import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -47,7 +49,8 @@ import kotlinx.serialization.json.contentOrNull
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<InitiateOid4vpIdvCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(InitiateOid4vpIdvCommand.COMMAND_ID)
 class InitiateOid4vpIdvCommandImpl(
     execution: SessionExecution,
     private val orchestrator: ReconciliationOrchestratorApi,

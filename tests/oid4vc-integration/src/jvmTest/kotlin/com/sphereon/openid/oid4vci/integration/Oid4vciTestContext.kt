@@ -17,6 +17,7 @@ import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKey
 import com.sphereon.oauth2.server.authorization.storage.OAuth2SigningKeyState
 import com.sphereon.oauth2.server.authorization.storage.SigningKeyStore
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
+import com.sphereon.openid.oid4vci.issuer.config.MutableOid4vciIssuerInstanceIdProvider
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import kotlin.time.Clock
@@ -24,6 +25,7 @@ import kotlin.time.Clock
 const val OID4VCI_TEST_ISSUER_URL = "https://issuer.example.com"
 const val OID4VCI_TEST_AS_SIGNING_KEY_ALIAS = "oauth2-server-signing"
 const val OID4VCI_TEST_TENANT_ID = "default"
+const val OID4VCI_TEST_ISSUER_INSTANCE_ID = "00000000-0000-4000-8000-000000000001"
 
 class Oid4vciTestContext(
     testInstance: Any,
@@ -77,6 +79,9 @@ class Oid4vciTestContext(
 
     init {
         (session.graph as Oid4vciTenantOverrideSessionGraph).mutableResolvedTenantIdProvider.setCurrentTenantId(OID4VCI_TEST_TENANT_ID)
+        (session.graph as Oid4vciIssuerInstanceOverrideSessionGraph)
+            .mutableOid4vciIssuerInstanceIdProvider
+            .setCurrentInstanceId(OID4VCI_TEST_ISSUER_INSTANCE_ID)
 
         // Register software KMS provider for crypto operations in tests
         val config = SoftwareKmsProviderConfig(id = "oid4vci-test-kms")
@@ -125,6 +130,20 @@ class Oid4vciTestContext(
         check(register.isOk) { "Failed to register AS signing key: ${if (register.isErr) register.error else "<unknown>"}" }
         return alias
     }
+
+    suspend fun registerIssuerSigningKey(
+        keyName: String,
+        issuerInstanceId: String = OID4VCI_TEST_ISSUER_INSTANCE_ID,
+        tenantId: String = OID4VCI_TEST_TENANT_ID,
+    ) {
+        (app as Oid4vciTestIssuerKeyNameRegistryGraph)
+            .oid4vciTestIssuerKeyNameRegistry
+            .register(
+                tenantId = tenantId,
+                issuerInstanceId = issuerInstanceId,
+                keyName = keyName,
+            )
+    }
 }
 
 /**
@@ -136,7 +155,18 @@ interface Oid4vciSigningKeyStoreGraph {
     val signingKeyStore: SigningKeyStore
 }
 
+/** Exposes the explicit E2E key-name authority so fixtures can register keys they generated. */
+@ContributesTo(AppScope::class)
+interface Oid4vciTestIssuerKeyNameRegistryGraph {
+    val oid4vciTestIssuerKeyNameRegistry: Oid4vciTestIssuerKeyNameRegistry
+}
+
 @ContributesTo(SessionScope::class)
 interface Oid4vciTenantOverrideSessionGraph {
     val mutableResolvedTenantIdProvider: MutableResolvedTenantIdProvider
+}
+
+@ContributesTo(SessionScope::class)
+interface Oid4vciIssuerInstanceOverrideSessionGraph {
+    val mutableOid4vciIssuerInstanceIdProvider: MutableOid4vciIssuerInstanceIdProvider
 }

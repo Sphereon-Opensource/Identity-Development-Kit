@@ -19,10 +19,15 @@ package com.sphereon.did.rest.resolver
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
-import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.describe.HttpAdapterMount
+import com.sphereon.core.api.http.describe.HttpAdapterDescriptorProvider
+import com.sphereon.core.api.http.describe.StaticPublicApiDescriptor
 import com.sphereon.di.session.SessionScope
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -44,10 +49,8 @@ import dev.zacsweers.metro.binding
  *
  * ## DI Pattern
  *
- * This adapter follows the command-backed pattern where:
- * - Each endpoint is a standalone injectable [HttpEndpointCommand]
- * - Commands are **injected** via constructor (not instantiated)
- * - The adapter aggregates endpoint commands and routes requests to them
+ * This adapter follows the command-backed pattern where each endpoint is a standalone lazy
+ * command resolved only after AppScope route selection.
  *
  * ## Usage
  *
@@ -62,16 +65,15 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(UniversalResolverHttpAdapter.ID)
 class UniversalResolverHttpAdapter(
     execution: SessionExecution,
-    // Commands are INJECTED, not instantiated
-    private val resolveDidCommand: ResolveDidEndpointCommand,
-    private val getMethodsCommand: GetResolverMethodsEndpointCommand,
-    private val getPropertiesCommand: GetResolverPropertiesEndpointCommand,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
 ) : CommandBackedHttpAdapter(
         id = ID,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount =
             HttpAdapterMount(
                 serverPrefix = "",
@@ -83,18 +85,6 @@ class UniversalResolverHttpAdapter(
     }
 
     /**
-     * Endpoint commands for this adapter.
-     *
-     * Commands are injected via constructor following the standard IDK DI pattern.
-     */
-    override val endpointCommands: List<HttpEndpointCommand> =
-        listOf(
-            resolveDidCommand,
-            getMethodsCommand,
-            getPropertiesCommand,
-        )
-
-    /**
      * Contributes this adapter as a property to the SessionGraph.
      */
     @ContributesTo(SessionScope::class)
@@ -102,3 +92,18 @@ class UniversalResolverHttpAdapter(
         val universalResolverHttpAdapter: UniversalResolverHttpAdapter
     }
 }
+
+@Inject
+@SingleIn(AppScope::class)
+@ContributesIntoSet(AppScope::class, binding = binding<HttpAdapterDescriptorProvider>())
+class UniversalResolverHttpAdapterDescriptorProvider :
+    StaticPublicApiDescriptor(
+        adapterId = UniversalResolverHttpAdapter.ID,
+        mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/1.0"),
+        endpoints =
+            listOf(
+                ResolveDidEndpointCommand.ENDPOINT,
+                GetResolverMethodsEndpointCommand.ENDPOINT,
+                GetResolverPropertiesEndpointCommand.ENDPOINT,
+            ),
+    )

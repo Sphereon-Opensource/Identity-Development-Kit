@@ -18,6 +18,8 @@ package com.sphereon.trust.etsi.signature.jades
 
 import com.sphereon.core.api.Encoding
 import com.sphereon.core.api.encodeTo
+import com.sphereon.core.api.decodeFrom
+import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import com.sphereon.trust.etsi.testutil.EtsiTestContext
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -25,6 +27,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
@@ -96,17 +99,47 @@ class JAdESLoteInteropTest {
         return "$protectedB64.$payloadB64.$signatureB64"
     }
 
+    private fun signerCertificateFromProtectedHeader(lote: JsonObject): ByteArray {
+        val protectedB64 = lote.getValue("signature").jsonObject.getValue("protected").jsonPrimitive.content
+        val protectedHeader = Json.parseToJsonElement(protectedB64.decodeFrom(Encoding.BASE64URL).decodeToString()).jsonObject
+        return protectedHeader.getValue("x5c").jsonArray.first().jsonPrimitive.content.decodeFrom(Encoding.BASE64)
+    }
+
     @Test
     fun verifiesRealLotESignature() =
+        runTest {
+            val lote = loadLote()
+            val compactJws = reconstructCompactJws(lote)
+            val signerCertificate = signerCertificateFromProtectedHeader(lote)
+
+            val result =
+                validator.validate(
+                    compactJws.encodeToByteArray(),
+                    options = JAdESValidationOptions(
+                        requireEtsiHeaders = true,
+                        trustedCertificates = listOf(signerCertificate),
+                    ),
+                )
+
+            assertTrue(result.signatureValid, "JAdES signature must verify. Errors: ${result.errors}")
+            assertTrue(result.valid, "Overall validation must pass. Errors: ${result.errors}")
+            assertTrue(result.certificateChain?.isNotEmpty() == true, "Signing certificate chain must be extracted")
+        }
+
+    @Test
+    fun rejectsRealLotESignatureWithoutConfiguredSignerRoot() =
         runTest {
             val lote = loadLote()
             val compactJws = reconstructCompactJws(lote)
 
             val result = validator.validate(compactJws.encodeToByteArray())
 
-            assertTrue(result.signatureValid, "JAdES signature must verify. Errors: ${result.errors}")
-            assertTrue(result.valid, "Overall validation must pass. Errors: ${result.errors}")
-            assertTrue(result.certificateChain?.isNotEmpty() == true, "Signing certificate chain must be extracted")
+            assertTrue(result.signatureValid, "The real JAdES signature must remain cryptographically valid")
+            assertFalse(result.valid, "Validation must fail closed without configured signer roots")
+            assertTrue(
+                result.reasonCodes.contains(TrustDiagnosticReasonCodes.SIGNER_ROOT_NOT_CONFIGURED),
+                "Missing signer roots must be diagnosed explicitly: ${result.reasonCodes}",
+            )
         }
 
     @Test

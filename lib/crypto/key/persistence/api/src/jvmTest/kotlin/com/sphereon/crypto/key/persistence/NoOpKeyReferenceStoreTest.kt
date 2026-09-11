@@ -17,7 +17,11 @@
 
 package com.sphereon.crypto.key.persistence
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.model.Origin
+import com.sphereon.crypto.core.ManagedKeyReferenceFilter
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -44,6 +48,7 @@ class NoOpKeyReferenceStoreTest {
     @Test
     fun isAvailableReturnsFalse() {
         assertFalse(store.isAvailable)
+        assertEquals(KeyReferenceHistoryCapability.UNSUPPORTED, store.ownershipHistoryCapability)
     }
 
     @Test
@@ -89,6 +94,39 @@ class NoOpKeyReferenceStoreTest {
         }
 
     @Test
+    fun includeDeletedLookupsReportUnsupportedHistory() =
+        runTest {
+            val byAlias = store.findLatestByAliasIncludingDeleted("tenant", "alias")
+            val byKid = store.findLatestByKidIncludingDeleted("tenant", "kid")
+            val allByAlias = store.findAllByAliasIncludingDeleted("tenant", "alias")
+            val allByKid = store.findAllByKidIncludingDeleted("tenant", "kid")
+            assertTrue(byAlias.isErr)
+            assertTrue(byKid.isErr)
+            assertTrue(allByAlias.isErr)
+            assertTrue(allByKid.isErr)
+            assertEquals(KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED, byAlias.error.code)
+            assertEquals(KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED, byKid.error.code)
+            assertEquals(KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED, allByAlias.error.code)
+            assertEquals(KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED, allByKid.error.code)
+        }
+
+    @Test
+    fun legacySourceCompatibleStoreDefaultsToUnsupportedHistory() =
+        runTest {
+            val legacyStore = LegacySourceCompatibleKeyReferenceStore()
+
+            assertEquals(KeyReferenceHistoryCapability.UNSUPPORTED, legacyStore.ownershipHistoryCapability)
+            assertEquals(
+                KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
+                legacyStore.findAllByAliasIncludingDeleted("tenant", "alias").error.code,
+            )
+            assertEquals(
+                KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
+                legacyStore.findAllByKidIncludingDeleted("tenant", "kid").error.code,
+            )
+        }
+
+    @Test
     fun findAllReturnsEmptyList() =
         runTest {
             val result = store.findAll("tenant")
@@ -119,4 +157,48 @@ class NoOpKeyReferenceStoreTest {
             assertTrue(result.isOk)
             assertFalse(result.value)
         }
+
+    /** Implements only the pre-durable-history contract to prove additive source compatibility. */
+    private class LegacySourceCompatibleKeyReferenceStore : KeyReferenceStore {
+        override suspend fun save(record: KeyReferenceRecord): IdkResult<KeyReferenceRecord, IdkError> = Ok(record)
+
+        override suspend fun upsert(record: KeyReferenceRecord): IdkResult<KeyReferenceRecord, IdkError> = Ok(record)
+
+        override suspend fun findById(tenantId: String, id: String): IdkResult<KeyReferenceRecord?, IdkError> = Ok(null)
+
+        override suspend fun findByKid(
+            tenantId: String,
+            kid: String,
+            providerId: String?,
+        ): IdkResult<KeyReferenceRecord?, IdkError> = Ok(null)
+
+        override suspend fun findByAlias(
+            tenantId: String,
+            alias: String,
+            providerId: String?,
+        ): IdkResult<KeyReferenceRecord?, IdkError> = Ok(null)
+
+        override suspend fun findAll(
+            tenantId: String,
+            filter: ManagedKeyReferenceFilter?,
+        ): IdkResult<List<KeyReferenceRecord>, IdkError> = Ok(emptyList())
+
+        override suspend fun delete(
+            tenantId: String,
+            alias: String,
+            providerId: String,
+        ): IdkResult<Boolean, IdkError> = Ok(false)
+
+        override suspend fun deleteByKid(
+            tenantId: String,
+            kid: String,
+            providerId: String?,
+        ): IdkResult<Boolean, IdkError> = Ok(false)
+
+        override suspend fun exists(
+            tenantId: String,
+            alias: String,
+            providerId: String,
+        ): IdkResult<Boolean, IdkError> = Ok(false)
+    }
 }

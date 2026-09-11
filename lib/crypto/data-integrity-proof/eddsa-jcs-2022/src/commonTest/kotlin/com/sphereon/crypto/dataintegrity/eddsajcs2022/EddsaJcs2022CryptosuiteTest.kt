@@ -10,8 +10,13 @@
 
 package com.sphereon.crypto.dataintegrity.eddsajcs2022
 
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.JwaCurve
+import com.sphereon.crypto.core.jose.JwaKeyType
+import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.dataintegrity.model.DataIntegrityProof
 import com.sphereon.crypto.dataintegrity.model.ProofPurpose
+import com.sphereon.crypto.dataintegrity.model.ProofOptions
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlin.test.Test
@@ -85,6 +90,52 @@ class EddsaJcs2022CryptosuiteTest {
     }
 
     @Test
+    fun hashDataDiffersWhenProofExtensionChanges() {
+        val proofA = sampleProof
+        val proofB =
+            sampleProof.copy(
+                additionalProofProperties = buildJsonObject { put("suiteParameter", JsonPrimitive("one")) },
+            )
+
+        val a = EddsaJcs2022Cryptosuite.hashData(sampleDoc, proofA)
+        val b = EddsaJcs2022Cryptosuite.hashData(sampleDoc, proofB)
+
+        assertNotEquals(a.toList(), b.toList(), "proof extensions are part of the canonical proof configuration")
+    }
+
+    @Test
+    fun creatorProofConfigCopiesOptionsExtensionsBeforeHashing() {
+        val proofWithExtension =
+            proofOptions(
+                additionalProofProperties =
+                    buildJsonObject {
+                        put("suiteParameter", JsonPrimitive("one"))
+                    },
+            ).toEddsaJcs2022ProofConfig()
+        val proofWithoutExtension =
+            proofWithExtension.copy(additionalProofProperties = kotlinx.serialization.json.JsonObject(emptyMap()))
+
+        assertEquals(JsonPrimitive("one"), proofWithExtension.additionalProofProperties["suiteParameter"])
+        assertNotEquals(
+            EddsaJcs2022Cryptosuite.hashData(sampleDoc, proofWithoutExtension).toList(),
+            EddsaJcs2022Cryptosuite.hashData(sampleDoc, proofWithExtension).toList(),
+            "creator extensions must be present in the proof config before hashing",
+        )
+    }
+
+    @Test
+    fun creatorProofConfigRejectsExtensionsThatShadowTypedProperties() {
+        assertFailsWith<IllegalArgumentException> {
+            proofOptions(
+                additionalProofProperties =
+                    buildJsonObject {
+                        put("proofValue", JsonPrimitive("attacker-controlled"))
+                    },
+            ).toEddsaJcs2022ProofConfig()
+        }
+    }
+
+    @Test
     fun proofValueIsExcludedFromHashInput() {
         // Per spec the proof input to hashing is the proof config WITHOUT proofValue —
         // changing proofValue must NOT change hashData (otherwise verification would
@@ -123,4 +174,37 @@ class EddsaJcs2022CryptosuiteTest {
             EddsaJcs2022Cryptosuite.decodeProofValue("")
         }
     }
+
+    @Test
+    fun proofValueAndVerificationKeyMustHaveEd25519SuiteShape() {
+        val valid = Jwk(kty = JwaKeyType.OKP, crv = JwaCurve.Ed25519, alg = JwaAlgorithm.EdDSA, x = "AQ")
+        EddsaJcs2022Cryptosuite.requireEd25519Key(valid)
+
+        assertFailsWith<IllegalArgumentException> {
+            EddsaJcs2022Cryptosuite.encodeProofValue(ByteArray(63))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            EddsaJcs2022Cryptosuite.decodeProofValue(EddsaJcs2022Cryptosuite.encodeProofValue(ByteArray(64)) + "1")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            EddsaJcs2022Cryptosuite.requireEd25519Key(
+                Jwk(kty = JwaKeyType.EC, crv = JwaCurve.P_256, alg = JwaAlgorithm.ES256, x = "AQ", y = "AQ"),
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            EddsaJcs2022Cryptosuite.requireEd25519Key(
+                Jwk(kty = JwaKeyType.OKP, crv = JwaCurve.X25519, x = "AQ"),
+            )
+        }
+    }
+
+    private fun proofOptions(additionalProofProperties: kotlinx.serialization.json.JsonObject) =
+        ProofOptions(
+            cryptosuite = EddsaJcs2022Cryptosuite.ID,
+            verificationMethod = sampleProof.verificationMethod,
+            proofPurpose = sampleProof.proofPurpose,
+            signingKeyRef = "test-key",
+            created = sampleProof.created,
+            additionalProofProperties = additionalProofProperties,
+        )
 }

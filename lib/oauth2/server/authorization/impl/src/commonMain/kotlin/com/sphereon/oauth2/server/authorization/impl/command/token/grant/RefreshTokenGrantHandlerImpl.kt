@@ -27,19 +27,27 @@ import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEmitter
 import com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEventType
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateIdTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateIdTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
+import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseCommand
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyRefreshTokenGrantCommandImpl
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
-import dev.zacsweers.metro.ContributesIntoSet
+import com.sphereon.oauth2.server.authorization.model.FederationTokenMetadata
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.binding
 
 /**
@@ -53,12 +61,18 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<GrantHandler>())
+@ContributesIntoMap(SessionScope::class, binding = binding<GrantHandler>())
+@StringKey(GrantHandlerKeys.REFRESH_TOKEN)
 class RefreshTokenGrantHandlerImpl(
     private val tokenStorage: TokenStorage,
     private val auditEmitter: OAuth2AuditEmitter,
+    private val verifyRefreshTokenGrant: VerifyRefreshTokenGrantCommand,
+    private val createAccessToken: CreateAccessTokenCommand,
+    private val createRefreshToken: Lazy<CreateRefreshTokenCommand>,
+    private val createIdToken: Lazy<CreateIdTokenCommand>,
+    private val createTokenResponse: CreateTokenResponseCommand,
 ) : GrantHandler {
-    override val grantType: String = GrantType.REFRESH_TOKEN.value
+    override val grantType: String = GrantHandlerKeys.REFRESH_TOKEN
 
     override fun supports(params: GrantParameters): Boolean = params is GrantParameters.RefreshToken
 
@@ -69,7 +83,6 @@ class RefreshTokenGrantHandlerImpl(
         val rtParams = params as GrantParameters.RefreshToken
         val tokenRequest = context.tokenRequest
         val applied = context.applied
-        val commands = context.commands
         val proofJkt = context.proofJkt
         val certThumbprint = context.certThumbprintS256
         val serverConfig = context.serverConfig
@@ -86,7 +99,7 @@ class RefreshTokenGrantHandlerImpl(
         val rotateRefreshToken = serverConfig.refreshTokenRotation
 
         val verifyResult =
-            commands.verifyRefreshTokenGrant
+            verifyRefreshTokenGrant
                 .execute(
                     VerifyRefreshTokenGrantArgs(
                         refreshToken = rtParams.refreshToken,
@@ -117,6 +130,7 @@ class RefreshTokenGrantHandlerImpl(
             if (isReuseDetection) {
                 auditEmitter.emit(
                     type = OAuth2AuditEventType.REFRESH_TOKEN_REUSE_DETECTED,
+                    tenantId = context.tenantId,
                     clientId = tokenRequest.clientId,
                     metadata = mapOf("grant_type" to GrantType.REFRESH_TOKEN.value),
                     errorCode = error.code,
@@ -163,16 +177,24 @@ class RefreshTokenGrantHandlerImpl(
         // so identifiers cannot accidentally outlive or drift away from the access token that
         // carries them.
         val refreshedAuthorizationDetails =
-            buildRefreshedCredentialAuthorizationDetails(verified.credentialConfigurationIds)
+            buildRefreshedCredentialAuthorizationDetails(
+                credentialConfigurationIds = verified.credentialConfigurationIds,
+                issuanceSessionId = verified.oid4vciIssuerState,
+            )
+        val federationClaims = verified.federationClaims?.let {
+            FederationTokenMetadata.decode(it)
+                ?: return Err(IdkError.INVALID_STATE(message = "Stored refresh-token federation metadata is invalid"))
+        }
         val refreshedAccessTokenClaims =
             buildMap<String, Any> {
+                federationClaims?.let { put(FederationTokenMetadata.KEY, it) }
                 refreshedAuthorizationDetails?.let { put("authorization_details", it) }
                 verified.oid4vciIssuerState?.let { put(INTERNAL_OID4VCI_ISSUER_STATE_CLAIM, it) }
             }
 
         // Create new access token
         val accessToken =
-            commands.createAccessToken
+            createAccessToken
                 .execute(
                     CreateAccessTokenArgs(
                         subject = verified.subject,
@@ -196,7 +218,7 @@ class RefreshTokenGrantHandlerImpl(
                     // requests race, storage keeps the first successor and both responses use
                     // that authoritative value rather than branching the refresh-token chain.
                     val candidate =
-                        commands.createRefreshToken
+                        createRefreshToken.value
                             .execute(
                                 CreateRefreshTokenArgs(
                                     subject = verified.subject,
@@ -213,6 +235,7 @@ class RefreshTokenGrantHandlerImpl(
                                     amr = verified.amr,
                                     nonce = verified.nonce,
                                     loginSessionId = verified.loginSessionId,
+                                    federationClaims = federationClaims?.toString(),
                                 ),
                             ).getOrElse { error -> return Err(error) }
                             .value
@@ -240,7 +263,7 @@ class RefreshTokenGrantHandlerImpl(
         val refreshOidcEnabled = serverConfig.oidc.isEnabled
         val refreshedIdToken =
             if (refreshOidcEnabled && "openid" in refreshGrantedScopes) {
-                commands.createIdToken
+                createIdToken.value
                     .execute(
                         CreateIdTokenArgs(
                             subject = verified.subject,
@@ -259,7 +282,7 @@ class RefreshTokenGrantHandlerImpl(
                 null
             }
 
-        return commands.createTokenResponse.execute(
+        return createTokenResponse.execute(
             CreateTokenResponseArgs(
                 accessToken = accessToken.value,
                 tokenType = tokenTypeFor(refreshBoundJkt),
@@ -277,5 +300,11 @@ class RefreshTokenGrantHandlerImpl(
 }
 
 /** Rebuilds token-response authorization details so refresh never reuses prior access-token handles. */
-internal fun buildRefreshedCredentialAuthorizationDetails(credentialConfigurationIds: List<String>) =
-    buildAuthorizationCodeCredentialAuthorizationDetails(credentialConfigurationIds)
+internal fun buildRefreshedCredentialAuthorizationDetails(
+    credentialConfigurationIds: List<String>,
+    issuanceSessionId: String? = null,
+) =
+    buildAuthorizationCodeCredentialAuthorizationDetails(
+        credentialConfigurationIds = credentialConfigurationIds,
+        issuanceSessionId = issuanceSessionId,
+    )

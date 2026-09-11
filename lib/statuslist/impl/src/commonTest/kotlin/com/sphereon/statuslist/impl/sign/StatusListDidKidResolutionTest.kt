@@ -12,6 +12,7 @@ import com.sphereon.did.models.DidDocument
 import com.sphereon.did.models.VerificationMethod
 import com.sphereon.did.models.VerificationMethodOrReference
 import com.sphereon.did.resolver.DidResolutionResult
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -42,6 +43,51 @@ class StatusListDidKidResolutionTest {
     }
 
     @Test
+    fun reportsAssertionAndExactKeyMatchCountsWithoutExposingKeyMaterial() {
+        val actual = verificationMethod("$did#issuer-assertion", signingKey)
+        val other = verificationMethod("$did#other", signingKey.copy(x = "other-x", y = "other-y"))
+        val result =
+            matchStatusListAssertionMethod(
+                resolution(
+                    methods = listOf(actual, other),
+                    assertionIds = listOf(actual.id, other.id),
+                ),
+                signingKey,
+                requiredId = "$did#missing",
+            )
+
+        assertNull(result.id)
+        assertEquals(2, result.assertionMethodCount)
+        assertEquals(1, result.keyMatchCount)
+    }
+
+    @Test
+    fun matchesTheHostedDidJsonWireShapeReturnedByTenantDidBootstrap() {
+        val document =
+            Json.decodeFromString<DidDocument>(
+                """{
+                  "id":"$did",
+                  "verificationMethod":[{
+                    "id":"$did#issuer-assertion",
+                    "type":"JsonWebKey2020",
+                    "controller":"$did",
+                    "publicKeyJwk":{
+                      "alg":"ES256","crv":"P-256","kty":"EC",
+                      "x":"issuer-x","y":"issuer-y","x5c":["public-certificate"]
+                    }
+                  }],
+                  "assertionMethod":["$did#issuer-assertion"]
+                }""",
+            )
+        val resolution = DidResolutionResult.success(document)
+
+        assertEquals(
+            "$did#issuer-assertion",
+            findStatusListAssertionMethodId(resolution, signingKey, requiredId = "$did#issuer-assertion"),
+        )
+    }
+
+    @Test
     fun hostedStatusListDidWebAuthorityRetainsANonDefaultPort() {
         assertEquals(
             "tenant.example:25443",
@@ -61,11 +107,16 @@ class StatusListDidKidResolutionTest {
     private fun resolution(
         method: VerificationMethod,
         assertionIds: List<String>,
+    ): DidResolutionResult = resolution(listOf(method), assertionIds)
+
+    private fun resolution(
+        methods: List<VerificationMethod>,
+        assertionIds: List<String>,
     ): DidResolutionResult =
         DidResolutionResult.success(
             DidDocument(
                 id = did,
-                verificationMethod = listOf(method),
+                verificationMethod = methods,
                 assertionMethod = assertionIds.map { VerificationMethodOrReference.fromReference(it) },
             ),
         )

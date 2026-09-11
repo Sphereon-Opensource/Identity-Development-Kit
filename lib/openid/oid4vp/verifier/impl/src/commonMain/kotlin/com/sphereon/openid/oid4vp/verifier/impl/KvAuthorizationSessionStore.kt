@@ -22,12 +22,15 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.encodeToHex
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.http.callback.CallbackSigningAlgorithm
 import com.sphereon.core.api.log.AppLogManager
 import com.sphereon.core.events.SessionEventService
 import com.sphereon.data.store.kv.InMemoryKvStoreConfig
 import com.sphereon.data.store.kv.KotlinxSerializationJsonKvCodec
 import com.sphereon.data.store.kv.KvNamespace
 import com.sphereon.data.store.kv.KvStore
+import com.sphereon.data.store.kv.KvStoreVersioning
+import com.sphereon.data.store.kv.KvVersionAppendResult
 import com.sphereon.data.store.kv.KvStoreConfigBase
 import com.sphereon.data.store.kv.KvStoreScopeBinding
 import com.sphereon.data.store.kv.impl.KvStoreManager
@@ -74,8 +77,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.milliseconds
 
-private const val MILLIS_PER_SECOND = 1000
 private const val RANDOM_BYTES_SIZE = 16
 
 /**
@@ -146,12 +149,26 @@ class KvAuthorizationSessionStore(
          * Empty means "all transitions".
          */
         val statuses: List<String> = emptyList(),
+        val secretRef: String? = null,
+        val signing: String? = null,
     ) {
         fun toPublic(): AuthorizationSessionCallbackConfig =
             AuthorizationSessionCallbackConfig(
                 url = url,
                 statuses = statuses.mapNotNull { name -> AuthorizationSessionStatus.entries.firstOrNull { it.name == name } },
+                secretRef = secretRef,
+                signing = signing?.let { name -> CallbackSigningAlgorithm.entries.firstOrNull { it.name == name } },
             )
+
+        companion object {
+            fun fromPublic(config: AuthorizationSessionCallbackConfig): AuthorizationSessionCallbackEntry =
+                AuthorizationSessionCallbackEntry(
+                    url = config.url,
+                    statuses = config.statuses.map(AuthorizationSessionStatus::name),
+                    secretRef = config.secretRef,
+                    signing = config.signing?.name,
+                )
+        }
     }
 
     @Serializable
@@ -188,16 +205,19 @@ class KvAuthorizationSessionStore(
     @Serializable
     internal data class MatchedCredentialEntry(
         val credentialQueryId: String,
-        val format: String,
+        val credentialFormat: String,
+        val presentationFormat: String? = null,
         val presentation: String,
         val disclosedClaims: Map<String, JsonElement> = emptyMap(),
         val issuer: CredentialIssuerRef? = null,
         val trust: CredentialTrustValidation? = null,
+        val verificationEvidence: com.sphereon.openid.oid4vp.verifier.VerifiedCredentialEvidence? = null,
     ) {
         fun toPublic(): MatchedCredential =
             MatchedCredential(
                 credentialQueryId = credentialQueryId,
-                format = format,
+                credentialFormat = requireNotNull(com.sphereon.openid.oid4vc.common.CredentialFormat.fromValue(credentialFormat)),
+                presentationFormat = presentationFormat?.let { requireNotNull(com.sphereon.openid.oid4vc.common.PresentationFormat.fromValue(it)) },
                 presentation = presentation,
                 disclosedClaims =
                     disclosedClaims.mapValues { (_, element) ->
@@ -209,16 +229,19 @@ class KvAuthorizationSessionStore(
                     },
                 issuer = issuer,
                 trust = trust,
+                verificationEvidence = verificationEvidence,
             )
 
         companion object {
             fun fromPublic(matched: MatchedCredential): MatchedCredentialEntry =
                 MatchedCredentialEntry(
                     credentialQueryId = matched.credentialQueryId,
-                    format = matched.format,
+                    credentialFormat = matched.credentialFormat.value,
+                    presentationFormat = matched.presentationFormat?.value,
                     presentation = matched.presentation,
                     issuer = matched.issuer,
                     trust = matched.trust,
+                    verificationEvidence = matched.verificationEvidence,
                     disclosedClaims =
                         matched.disclosedClaims.mapValues { (_, value) ->
                             when (value) {
@@ -265,6 +288,8 @@ class KvAuthorizationSessionStore(
         val parsedResponse: ParsedAuthorizationResponseEntry? = null,
         val validationResult: ValidationResultEntry? = null,
         val callback: AuthorizationSessionCallbackEntry? = null,
+        // OID4VP §7.2 post-completion destination. Stored beside the request rather than inside
+        // it: the request object cannot carry `redirect_uri` for the direct_post modes.
         val directPostResponseRedirectUri: String? = null,
         val boundInvitationToken: String? = null,
         val postPresentationHookAllowList: List<String>? = null,
@@ -272,6 +297,8 @@ class KvAuthorizationSessionStore(
         val createdAt: Long,
         val updatedAt: Long,
         val expiresAt: Long,
+        val claimFingerprint: String? = null,
+        val templateRevision: String? = null,
     ) {
         fun toPublic(json: Json): AuthorizationSession {
             val authorizationRequest =
@@ -295,6 +322,7 @@ class KvAuthorizationSessionStore(
                 dcqlQueryVersion = dcqlQueryVersion,
                 verifierId = verifierId,
                 templateId = templateId,
+                templateRevision = templateRevision,
                 authorizationRequest = authorizationRequest,
                 status = statusEnum,
                 error = error?.toPublic(),
@@ -325,14 +353,23 @@ class KvAuthorizationSessionStore(
             }
         val now = clock.now().toEpochMilliseconds()
         val effectiveCorrelationId = correlationId ?: generateSecureId()
+        if (isClaimed(effectiveCorrelationId)) return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Reserved claimed-session correlation namespace"))
+        val expiresAt = authorizationSessionExpiresAt(now, ttlSeconds).getOrElse { return Err(it) }
+        val alreadyExists = kv.exists(namespace, effectiveCorrelationId).getOrElse { return Err(it) }
+        if (alreadyExists) {
+            return Err(
+                IdkError.ALREADY_EXISTS_ERROR(
+                    resource = "oid4vp authorization session:$effectiveCorrelationId",
+                    message = "Authorization session already exists: $effectiveCorrelationId",
+                ),
+            )
+        }
 
         val dcqlQuery = resolveDcqlQuery(args).getOrElse { return Err(it) }
 
         val authorizationRequestJson = buildAuthorizationRequestJson(args, dcqlQuery).getOrElse { return Err(it) }
 
         val sessionId = generateSecureId()
-        val expiresAt = now + (ttlSeconds * MILLIS_PER_SECOND)
-
         val entry =
             AuthorizationSessionEntry(
                 instanceId = instanceId,
@@ -346,13 +383,7 @@ class KvAuthorizationSessionStore(
                 error = null,
                 parsedResponse = null,
                 validationResult = null,
-                callback =
-                    args.callback?.let {
-                        AuthorizationSessionCallbackEntry(
-                            url = it.url,
-                            statuses = it.statuses.map(AuthorizationSessionStatus::name),
-                        )
-                    },
+                callback = args.callback?.let(AuthorizationSessionCallbackEntry::fromPublic),
                 createdAt = now,
                 updatedAt = now,
                 expiresAt = expiresAt,
@@ -442,7 +473,7 @@ class KvAuthorizationSessionStore(
     ): IdkResult<AuthorizationSession?, IdkError> {
         val now = clock.now().toEpochMilliseconds()
         val existing =
-            kv.get(namespace, correlationId).getOrElse { e ->
+            readEntry(correlationId).getOrElse { e ->
                 return Err(
                     IdkError.fromString(
                         message = "Failed to read authorization session: ${e.message}",
@@ -479,7 +510,22 @@ class KvAuthorizationSessionStore(
         ttlSeconds: Long,
     ): IdkResult<StoreMetadata, IdkError> {
         val now = clock.now().toEpochMilliseconds()
-        val expiresAt = now + (ttlSeconds * MILLIS_PER_SECOND)
+        val expiresAt = authorizationSessionExpiresAt(now, ttlSeconds).getOrElse { return Err(it) }
+
+        if (isClaimed(key)) return updateClaimedSnapshot(key, value)
+
+        val entry = toEntry(value, now, expiresAt)
+        return kv
+            .put(namespace, key, entry, ttlSeconds.seconds)
+            .map { putResult ->
+                dispatchIfConfigured(entry.toPublic(json))
+                StoreMetadata(createdAt = putResult.metadata.createdAtEpochMillis, expiresAt = putResult.metadata.expiresAtEpochMillis)
+            }.mapError { e ->
+                IdkError.fromString(message = "Failed to put authorization session: ${e.message}", exception = IllegalStateException(e.toString()), code = "OID4VP_AUTH_SESSION_STORE_ERROR")
+            }
+    }
+
+    private fun toEntry(value: AuthorizationSession, now: Long, expiresAt: Long): AuthorizationSessionEntry {
 
         val authorizationRequestJson =
             json
@@ -500,6 +546,7 @@ class KvAuthorizationSessionStore(
                 dcqlQueryVersion = value.dcqlQueryVersion,
                 verifierId = value.verifierId,
                 templateId = value.templateId,
+                templateRevision = value.templateRevision,
                 authorizationRequestJson = authorizationRequestJson,
                 status = value.status.name,
                 error = value.error?.let { AuthorizationSessionErrorEntry(code = it.code, message = it.message) },
@@ -520,7 +567,7 @@ class KvAuthorizationSessionStore(
                             errors = it.errors,
                         )
                     },
-                callback = value.callback?.let { AuthorizationSessionCallbackEntry(url = it.url, statuses = it.statuses.map(AuthorizationSessionStatus::name)) },
+                callback = value.callback?.let(AuthorizationSessionCallbackEntry::fromPublic),
                 directPostResponseRedirectUri = value.directPostResponseRedirectUri,
                 boundInvitationToken = value.boundInvitationToken,
                 postPresentationHookAllowList = value.postPresentationHookAllowList,
@@ -530,18 +577,11 @@ class KvAuthorizationSessionStore(
                 expiresAt = expiresAt,
             )
 
-        return kv
-            .put(namespace, key, entry, ttlSeconds.seconds)
-            .map { putResult ->
-                dispatchIfConfigured(entry.toPublic(json))
-                StoreMetadata(createdAt = putResult.metadata.createdAtEpochMillis, expiresAt = putResult.metadata.expiresAtEpochMillis)
-            }.mapError { e ->
-                IdkError.fromString(message = "Failed to put authorization session: ${e.message}", exception = IllegalStateException(e.toString()), code = "OID4VP_AUTH_SESSION_STORE_ERROR")
-            }
+        return entry
     }
 
     override suspend fun get(key: String): IdkResult<AuthorizationSession?, IdkError> =
-        kv.get(namespace, key).map { it?.toPublic(json) }.mapError { e ->
+        readEntry(key).map { it?.toPublic(json) }.mapError { e ->
             IdkError.fromString(
                 message = "Failed to read authorization session: ${e.message}",
                 exception = IllegalStateException(e.toString()),
@@ -549,8 +589,11 @@ class KvAuthorizationSessionStore(
             )
         }
 
-    override suspend fun getEntry(key: String): IdkResult<com.sphereon.openid.oid4vp.common.store.StoredEntry<AuthorizationSession>?, IdkError> =
-        kv
+    override suspend fun getEntry(key: String): IdkResult<com.sphereon.openid.oid4vp.common.store.StoredEntry<AuthorizationSession>?, IdkError> {
+        if (isClaimed(key)) return readEntry(key).map { entry -> entry?.let {
+            com.sphereon.openid.oid4vp.common.store.StoredEntry(it.toPublic(json), it.createdAt, it.expiresAt)
+        } }
+        return kv
             .getEntry(namespace, key)
             .map { entry ->
                 entry?.let {
@@ -567,24 +610,29 @@ class KvAuthorizationSessionStore(
                     code = "OID4VP_AUTH_SESSION_STORE_ERROR",
                 )
             }
+    }
 
     override suspend fun delete(key: String): IdkResult<Boolean, IdkError> =
-        kv.delete(namespace, key).mapError { e ->
+        if (isClaimed(key)) Err(IdkError.INVALID_STATE(message = "Claimed verification history cannot be deleted through mutable session API"))
+        else kv.delete(namespace, key).mapError { e ->
             IdkError.fromString(message = "Failed to delete authorization session: ${e.message}", exception = IllegalStateException(e.toString()), code = "OID4VP_AUTH_SESSION_STORE_ERROR")
         }
 
     override suspend fun exists(key: String): IdkResult<Boolean, IdkError> =
-        kv.exists(namespace, key).mapError { e ->
+        readEntry(key).map { it != null }.mapError { e ->
             IdkError.fromString(message = "Failed to check authorization session existence: ${e.message}", exception = IllegalStateException(e.toString()), code = "OID4VP_AUTH_SESSION_STORE_ERROR")
         }
 
     override suspend fun touch(
         key: String,
         ttlSeconds: Long,
-    ): IdkResult<Boolean, IdkError> =
-        kv.touch(namespace, key, ttlSeconds.seconds).mapError { e ->
+    ): IdkResult<Boolean, IdkError> {
+        if (isClaimed(key)) return Err(IdkError.INVALID_STATE(message = "Claimed verification expiry is immutable"))
+        authorizationSessionExpiresAt(clock.now().toEpochMilliseconds(), ttlSeconds).getOrElse { return Err(it) }
+        return kv.touch(namespace, key, ttlSeconds.seconds).mapError { e ->
             IdkError.fromString(message = "Failed to touch authorization session: ${e.message}", exception = IllegalStateException(e.toString()), code = "OID4VP_AUTH_SESSION_STORE_ERROR")
         }
+    }
 
     override suspend fun cleanupExpired(): IdkResult<Int, IdkError> =
         kv.cleanupExpired(namespace).mapError { e ->
@@ -647,14 +695,85 @@ class KvAuthorizationSessionStore(
         )
     }
 
+    private fun isClaimed(key: String) = key.startsWith(AuthorizationSessionStore.CLAIMED_CORRELATION_PREFIX)
+
+    private fun durableVersioning(): IdkResult<KvStoreVersioning, IdkError> {
+        val config = resolveEffectiveStoreConfig()
+        if (!config.enabled || config.backendId == com.sphereon.data.store.kv.KvStoreBackends.MEMORY) return Err(
+            IdkError.INVALID_STATE(message = "Claimed verification requires a configured persistent tenant session store"),
+        )
+        return (kv as? KvStoreVersioning)?.let { Ok(it) }
+            ?: Err(IdkError.INVALID_STATE(message = "Claimed verification requires atomic KV versioning"))
+    }
+
+    private suspend fun readEntry(key: String): IdkResult<AuthorizationSessionEntry?, IdkError> {
+        if (!isClaimed(key)) return kv.get(namespace, key)
+        val store = durableVersioning().getOrElse { return Err(it) }
+        return store.getHead(namespace, key).map { it?.value }
+    }
+
+    override suspend fun createClaimedSession(
+        session: AuthorizationSession,
+        fingerprint: String,
+        ttlSeconds: Long,
+    ): IdkResult<AuthorizationSession, IdkError> {
+        if (!isClaimed(session.correlationId) || fingerprint.isBlank() ||
+            session.status != AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED ||
+            session.validationResult != null || session.parsedResponse != null
+        ) return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Invalid claimed verification request"))
+        val store = durableVersioning().getOrElse { return Err(it) }
+        val now = clock.now().toEpochMilliseconds()
+        val expires = authorizationSessionExpiresAt(now, ttlSeconds).getOrElse { return Err(it) }
+        val entry = toEntry(session, now, expires).copy(claimFingerprint = fingerprint)
+        return when (val result = store.append(namespace, session.correlationId, null, entry, ttlSeconds.seconds).getOrElse { return Err(it) }) {
+            is KvVersionAppendResult.Applied -> Ok(result.entry.value.toPublic(json))
+            is KvVersionAppendResult.Conflict -> {
+                val original = result.currentHead?.value
+                if (original == null || original.claimFingerprint != fingerprint || original.instanceId != entry.instanceId ||
+                    original.dcqlQuery != entry.dcqlQuery || original.dcqlQueryId != entry.dcqlQueryId ||
+                    original.dcqlQueryVersion != entry.dcqlQueryVersion || original.templateId != entry.templateId || original.templateRevision != entry.templateRevision ||
+                    original.credentialStatusPolicies != entry.credentialStatusPolicies ||
+                    original.authorizationRequestJson.filterKeys { it != "nonce" } != entry.authorizationRequestJson.filterKeys { it != "nonce" }
+                ) Err(IdkError.INVALID_STATE(message = "Claimed verification operation conflicts with its original request"))
+                else if (original.expiresAt <= now) Err(IdkError.INVALID_STATE(message = "Claimed verification operation has expired"))
+                else Ok(original.toPublic(json))
+            }
+        }
+    }
+
+    /** Whole-session configuration writes may not overwrite a concurrent response or alter request pins. */
+    private suspend fun updateClaimedSnapshot(key: String, value: AuthorizationSession): IdkResult<StoreMetadata, IdkError> {
+        val store = durableVersioning().getOrElse { return Err(it) }
+        val head = store.getHead(namespace, key).getOrElse { return Err(it) }
+            ?: return Err(IdkError.INVALID_STATE(message = "Claimed session must be created atomically"))
+        val existing = head.value
+        val public = existing.toPublic(json)
+        if (public.copy(callback = value.callback, directPostResponseRedirectUri = value.directPostResponseRedirectUri) != value) {
+            return Err(IdkError.INVALID_STATE(message = "Stale or altered claimed authorization session snapshot"))
+        }
+        if (public == value) return Ok(StoreMetadata(existing.createdAt, existing.expiresAt))
+        if (existing.status != AuthorizationSessionStatus.AUTHORIZATION_REQUEST_CREATED.name) return Err(
+            IdkError.INVALID_STATE(message = "Claimed session configuration is immutable after request retrieval"),
+        )
+        val now = clock.now().toEpochMilliseconds()
+        if (now >= existing.expiresAt) return Err(IdkError.INVALID_STATE(message = "Claimed session expired"))
+        val updated = toEntry(value, now, existing.expiresAt).copy(claimFingerprint = existing.claimFingerprint)
+        return when (store.append(namespace, key, head.versionId, updated, (existing.expiresAt - now).milliseconds).getOrElse { return Err(it) }) {
+            is KvVersionAppendResult.Applied -> Ok(StoreMetadata(existing.createdAt, existing.expiresAt))
+            is KvVersionAppendResult.Conflict -> Err(IdkError.INVALID_STATE(message = "Concurrent claimed session update"))
+        }
+    }
+
     private suspend fun update(
         correlationId: String,
         transform: (AuthorizationSessionEntry, nowEpochMillis: Long) -> AuthorizationSessionEntry,
     ): IdkResult<AuthorizationSession, IdkError> {
         val now = clock.now().toEpochMilliseconds()
 
+        val versionStore = if (isClaimed(correlationId)) durableVersioning().getOrElse { return Err(it) } else null
+        val head = versionStore?.getHead(namespace, correlationId)?.getOrElse { return Err(it) }
         val existing =
-            kv.get(namespace, correlationId).getOrElse { e ->
+            (if (versionStore != null) Ok(head?.value) else kv.get(namespace, correlationId)).getOrElse { e ->
                 return Err(
                     IdkError.fromString(
                         message = "Failed to read authorization session: ${e.message}",
@@ -670,7 +789,26 @@ class KvAuthorizationSessionStore(
         }
 
         val updated = transform(existing, now)
-        val ttlSecondsRemaining = ((updated.expiresAt - now).coerceAtLeast(0L) / MILLIS_PER_SECOND).coerceAtLeast(1L)
+        if (versionStore != null) {
+            if (existing.parsedResponse != null && updated.parsedResponse != existing.parsedResponse) {
+                return Err(IdkError.INVALID_STATE(message = "Claimed verification response is immutable once received"))
+            }
+            if (updated.status == AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED.name &&
+                (existing.parsedResponse == null || updated.validationResult?.valid != true)) {
+                return Err(IdkError.INVALID_STATE(message = "Claimed verification requires a received response and successful verifier result"))
+            }
+            if (existing.status in setOf(AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED.name, AuthorizationSessionStatus.ERROR.name)) {
+                if (existing.copy(updatedAt = updated.updatedAt) == updated) return Ok(existing.toPublic(json))
+                return Err(IdkError.INVALID_STATE(message = "Completed claimed verification is immutable"))
+            }
+            val result = versionStore.append(namespace, correlationId, head?.versionId, updated, (existing.expiresAt - now).milliseconds).getOrElse { return Err(it) }
+            if (result is KvVersionAppendResult.Conflict) return Err(IdkError.INVALID_STATE(message = "Concurrent claimed verification update"))
+            val public = updated.toPublic(json)
+            emitStatusTransition(existing.toPublic(json), public)
+            dispatchIfConfigured(public)
+            return Ok(public)
+        }
+        val ttlSecondsRemaining = ((updated.expiresAt - now).coerceAtLeast(0L) / AUTHORIZATION_SESSION_MILLIS_PER_SECOND).coerceAtLeast(1L)
 
         kv.put(namespace, correlationId, updated, ttlSecondsRemaining.seconds).getOrElse { e ->
             return Err(IdkError.fromString(message = "Failed to update authorization session: ${e.message}", exception = IllegalStateException(e.toString()), code = "OID4VP_AUTH_SESSION_STORE_ERROR"))

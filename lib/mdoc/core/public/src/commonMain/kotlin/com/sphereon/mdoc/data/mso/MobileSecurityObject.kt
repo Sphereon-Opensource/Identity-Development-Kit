@@ -18,7 +18,6 @@
 package com.sphereon.mdoc.data.mso
 
 import com.sphereon.cbor.CborByteString
-import com.sphereon.cbor.CborItem
 import com.sphereon.cbor.CborMap
 import com.sphereon.cbor.NumberLabel
 import com.sphereon.cbor.StringLabel
@@ -77,6 +76,7 @@ data class MobileSecurityObject(
     val docType: DocType,
     val validityInfo: ValidityInfo,
     val original: ByteArray?,
+    val status: Status? = null,
 ) {
     fun getKeyInfo() = deviceKeyInfo.toKeyInfo()
 
@@ -109,6 +109,10 @@ data class MobileSecurityObject(
             return false
         }
 
+        if (status != other.status) {
+            return false
+        }
+
         return true
     }
 
@@ -119,13 +123,14 @@ data class MobileSecurityObject(
         result = 31 * result + deviceKeyInfo.hashCode()
         result = 31 * result + docType.hashCode()
         result = 31 * result + validityInfo.hashCode()
+        result = 31 * result + (status?.hashCode() ?: 0)
         return result
     }
 
     override fun toString(): String =
         "MobileSecurityObject(version=$version, digestAlgorithm=$digestAlgorithm, valueDigests=${stringify(
             valueDigests.map { it.value.keys },
-        )}, deviceKeyInfo=$deviceKeyInfo, docType=$docType, validityInfo=$validityInfo, original=${
+        )}, deviceKeyInfo=$deviceKeyInfo, docType=$docType, validityInfo=$validityInfo, status=$status, original=${
             stringify(
                 original,
             )
@@ -149,6 +154,9 @@ data class MobileSecurityObject(
 
         @JvmStatic
         val VALIDITY_INFO = StringLabel("validityInfo")
+
+        @JvmStatic
+        val STATUS = StringLabel("status")
     }
 }
 

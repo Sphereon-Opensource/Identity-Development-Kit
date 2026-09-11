@@ -1,0 +1,4 @@
+-- Durable owner binding for wallet secure-component keys.
+-- Existing rows intentionally remain NULL and are rejected by wallet WSCD rehydration; there is
+-- no safe compatibility default for assigning ownership after the fact.
+ALTER TABLE key_reference ADD COLUMN wallet_unit_id TEXT;

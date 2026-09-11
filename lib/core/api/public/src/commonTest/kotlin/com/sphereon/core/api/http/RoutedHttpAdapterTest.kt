@@ -22,10 +22,11 @@ import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.HttpRoute
 import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.core.api.http.describe.httpRoutes
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
+import com.sphereon.core.api.http.response.errorResponse
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -33,9 +34,19 @@ class RoutedHttpAdapterTest {
     private class TestRoutedAdapter(
         override val id: String = "test-adapter",
         override val mount: HttpAdapterMount = HttpAdapterMount(serverPrefix = "/api", adapterBasePath = "/users"),
-        override val routes: List<HttpRoute> = emptyList(),
+        routes: List<HttpRoute> = emptyList(),
         override val openApiHints: OpenApiHints? = null,
-    ) : RoutedHttpAdapter()
+    ) : RoutedHttpAdapter() {
+        override val routes: List<HttpRoute> =
+            routes.mapIndexed { index, route ->
+                route.copy(
+                    endpoint =
+                        route.endpoint.copy(
+                            handlerCommandId = route.endpoint.handlerCommandId ?: "test.routed.route-$index",
+                        ),
+                )
+            }
+    }
 
     @Test
     fun describeReturnsCorrectId() {
@@ -63,8 +74,8 @@ class RoutedHttpAdapterTest {
         val description = adapter.describe()
 
         assertEquals(2, description.endpoints.size)
-        // The fullPath joins basePath + routePattern, so "/" becomes "/users/"
-        assertEquals("/users/", description.endpoints[0].pathPattern)
+        // A "/" route is the adapter root, so fullPath collapses it to the base path.
+        assertEquals("/users", description.endpoints[0].pathPattern)
         assertEquals("/users/{id}", description.endpoints[1].pathPattern)
     }
 
@@ -78,49 +89,16 @@ class RoutedHttpAdapterTest {
     }
 
     @Test
-    fun canHandleReturnsTrueForMatchingRoute() {
-        val routes =
-            httpRoutes {
-                get("/") { handle { GenericHttpResponse(statusCode = 200) } }
-            }
-        val adapter = TestRoutedAdapter(routes = routes)
-        val request = GenericHttpRequest(method = "GET", path = "/users")
-        assertTrue(adapter.canHandle(request))
-    }
-
-    @Test
-    fun canHandleReturnsFalseForNonMatchingRoute() {
-        val routes =
-            httpRoutes {
-                get("/") { handle { GenericHttpResponse(statusCode = 200) } }
-            }
-        val adapter = TestRoutedAdapter(routes = routes)
-        val request = GenericHttpRequest(method = "POST", path = "/users")
-        assertFalse(adapter.canHandle(request))
-    }
-
-    @Test
-    fun canHandleReturnsFalseForDifferentPath() {
-        val routes =
-            httpRoutes {
-                get("/") { handle { GenericHttpResponse(statusCode = 200) } }
-            }
-        val adapter = TestRoutedAdapter(routes = routes)
-        val request = GenericHttpRequest(method = "GET", path = "/other")
-        assertFalse(adapter.canHandle(request))
-    }
-
-    @Test
-    fun handleRequestReturns404ForNoMatchingRoute() =
+    fun selectedRouteReturns404ForNoMatchingRoute() =
         runTest {
             val adapter = TestRoutedAdapter(routes = emptyList())
             val request = GenericHttpRequest(method = "GET", path = "/users")
-            val response = adapter.handleRequest(request)
+            val response = adapter.handleTestRequest(request)
             assertEquals(404, response.statusCode)
         }
 
     @Test
-    fun handleRequestExecutesMatchingHandler() =
+    fun selectedRouteExecutesMatchingHandler() =
         runTest {
             val routes =
                 httpRoutes {
@@ -128,13 +106,13 @@ class RoutedHttpAdapterTest {
                 }
             val adapter = TestRoutedAdapter(routes = routes)
             val request = GenericHttpRequest(method = "GET", path = "/users")
-            val response = adapter.handleRequest(request)
+            val response = adapter.handleTestRequest(request)
             assertEquals(200, response.statusCode)
             assertEquals("users list", response.body)
         }
 
     @Test
-    fun handleRequestReturnsErrorResponseOnException() =
+    fun selectedRouteReturnsErrorResponseOnException() =
         runTest {
             val routes =
                 httpRoutes {
@@ -142,25 +120,29 @@ class RoutedHttpAdapterTest {
                 }
             val adapter = TestRoutedAdapter(routes = routes)
             val request = GenericHttpRequest(method = "GET", path = "/users")
-            val response = adapter.handleRequest(request)
+            val response = adapter.handleTestRequest(request)
             assertEquals(400, response.statusCode)
         }
 
     @Test
-    fun handleRequestMatchesPathVariables() =
+    fun selectedRouteExtractsPathVariables() =
         runTest {
             val routes =
                 httpRoutes {
                     get("/{id}") {
                         handle { request ->
-                            GenericHttpResponse(statusCode = 200, body = "user: ${request.path}")
+                            GenericHttpResponse(
+                                statusCode = 200,
+                                body = "user: ${request.pathParameters["id"]}",
+                            )
                         }
                     }
                 }
             val adapter = TestRoutedAdapter(routes = routes)
             val request = GenericHttpRequest(method = "GET", path = "/users/123")
-            val response = adapter.handleRequest(request)
+            val response = adapter.handleTestRequest(request)
             assertEquals(200, response.statusCode)
+            assertEquals("user: 123", response.body)
         }
 
     @Test
@@ -176,8 +158,31 @@ class RoutedHttpAdapterTest {
         val adapterWithRoutes1 = TestRoutedAdapter(mount = mountWithSlash, routes = routes)
         val adapterWithRoutes2 = TestRoutedAdapter(mount = mountWithoutSlash, routes = routes)
 
-        // The fullPath joins basePath + routePattern, so "/" becomes "/users/"
-        assertEquals("/users/", adapterWithRoutes1.describe().endpoints[0].pathPattern)
-        assertEquals("/users/", adapterWithRoutes2.describe().endpoints[0].pathPattern)
+        // A "/" route is the adapter root, so fullPath collapses it to the base path.
+        assertEquals("/users", adapterWithRoutes1.describe().endpoints[0].pathPattern)
+        assertEquals("/users", adapterWithRoutes2.describe().endpoints[0].pathPattern)
     }
+}
+
+private suspend fun RoutedHttpAdapter.handleTestRequest(request: GenericHttpRequest): GenericHttpResponse {
+    val matches =
+        describe().endpoints.flatMap { endpoint ->
+            endpoint.pathPatterns
+                .filter { pattern -> request.matches(endpoint.method.name, pattern) }
+                .map { pattern -> endpoint to pattern }
+        }
+    if (matches.isEmpty()) return errorResponse(404, "Not found")
+    val (endpoint, pattern) = matches.single()
+    return handleResolvedRequest(
+        request,
+        HttpAdapterRouteMatch(
+            adapterId = id,
+            method = request.method,
+            originalPath = request.path,
+            normalizedPath = request.path,
+            matchedPathPattern = pattern,
+            handlerCommandId = requireNotNull(endpoint.handlerCommandId),
+            tenantIdFromPath = null,
+        ),
+    )
 }

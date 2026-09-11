@@ -43,9 +43,9 @@ import kotlin.time.Instant
  * The KMP-friendly synchronisation is intentional — multiple session-scoped commands
  * (CreateAccessTokenCommandImpl, GetJwksCommandImpl, RotateSigningKeyCommandImpl) read and
  * write through the same store from concurrent coroutines, and the rotate operation MUST be
- * atomic w.r.t. concurrent reads to avoid the brief "two ACTIVE keys" or "no ACTIVE key"
- * window. JVM `synchronized` is sufficient here; the data set is small (typically 1-3 keys
- * per tenant) so contention is negligible.
+ * atomic w.r.t. concurrent reads to avoid a brief "two ACTIVE keys for one algorithm" or
+ * "no ACTIVE key for that algorithm" window. JVM `synchronized` is sufficient here; the data
+ * set is small (typically 1-3 keys per tenant) so contention is negligible.
  *
  * Persistence: NONE — keys are lost on JVM restart, which is the whole point this is a
  * sprint-1 default. Production deployments use the EDK Postgres impl. Inserting a key here
@@ -64,6 +64,10 @@ class InMemorySigningKeyStore(
      * the read methods.
      */
     private val keysByTenant: MutableMap<String, MutableMap<String, OAuth2SigningKey>> = mutableMapOf()
+    private val revisionsByTenant: MutableMap<String, Long> = mutableMapOf()
+
+    override suspend fun contentRevision(tenantId: String): IdkResult<Long, SigningKeyStoreError> =
+        synchronizedRead { Ok(revisionsByTenant[tenantId] ?: 0L) }
 
     override suspend fun getActive(tenantId: String): IdkResult<OAuth2SigningKey?, SigningKeyStoreError> =
         synchronizedRead {
@@ -100,50 +104,68 @@ class InMemorySigningKeyStore(
             Ok(keysByTenant[tenantId]?.get(kid))
         }
 
-    override suspend fun register(key: OAuth2SigningKey): IdkResult<Unit, SigningKeyStoreError> =
-        synchronizedWrite {
-            val tenantKeys = keysByTenant.getOrPut(key.tenantId) { mutableMapOf() }
-            if (tenantKeys.containsKey(key.kid)) {
-                Err(SigningKeyStoreError.DuplicateKid(tenantId = key.tenantId, kid = key.kid))
-            } else {
-                tenantKeys[key.kid] = key
-                Ok(Unit)
+    override suspend fun register(key: OAuth2SigningKey): IdkResult<Unit, SigningKeyStoreError> {
+        val result =
+            synchronizedWrite {
+                val tenantKeys = keysByTenant.getOrPut(key.tenantId) { mutableMapOf() }
+                if (tenantKeys.containsKey(key.kid)) {
+                    Err(SigningKeyStoreError.DuplicateKid(tenantId = key.tenantId, kid = key.kid))
+                } else {
+                    tenantKeys[key.kid] = key
+                    advanceRevisionLocked(key.tenantId)
+                    Ok(Unit)
+                }
             }
-        }
+        return result
+    }
 
-    override suspend fun rotate(newActive: OAuth2SigningKey): IdkResult<RotationResult, SigningKeyStoreError> =
-        synchronizedWrite {
-            val tenantKeys = keysByTenant.getOrPut(newActive.tenantId) { mutableMapOf() }
-            if (tenantKeys.containsKey(newActive.kid)) {
-                return@synchronizedWrite Err(SigningKeyStoreError.DuplicateKid(tenantId = newActive.tenantId, kid = newActive.kid))
+    override suspend fun rotate(newActive: OAuth2SigningKey): IdkResult<RotationResult, SigningKeyStoreError> {
+        val result =
+            synchronizedWrite {
+                val tenantKeys = keysByTenant.getOrPut(newActive.tenantId) { mutableMapOf() }
+                if (tenantKeys.containsKey(newActive.kid)) {
+                    return@synchronizedWrite Err(SigningKeyStoreError.DuplicateKid(tenantId = newActive.tenantId, kid = newActive.kid))
+                }
+                val demoted =
+                    tenantKeys.values
+                        .filter {
+                            it.state == OAuth2SigningKeyState.ACTIVE &&
+                                it.algorithm == newActive.algorithm
+                        }
+                        .map { it.copy(state = OAuth2SigningKeyState.LEGACY) }
+                demoted.forEach { tenantKeys[it.kid] = it }
+                tenantKeys[newActive.kid] = newActive.copy(state = OAuth2SigningKeyState.ACTIVE)
+                advanceRevisionLocked(newActive.tenantId)
+                Ok(RotationResult(newActive = tenantKeys.getValue(newActive.kid), demotedToLegacy = demoted))
             }
-            // Demote every currently-ACTIVE key for this tenant. Doing the demotion in the
-            // same critical section as the insert preserves the atomicity guarantee
-            // [SigningKeyStore.rotate] documents.
-            val demoted =
-                tenantKeys.values
-                    .filter { it.state == OAuth2SigningKeyState.ACTIVE }
-                    .map { it.copy(state = OAuth2SigningKeyState.LEGACY) }
-            demoted.forEach { tenantKeys[it.kid] = it }
-            tenantKeys[newActive.kid] = newActive.copy(state = OAuth2SigningKeyState.ACTIVE)
-            Ok(RotationResult(newActive = tenantKeys.getValue(newActive.kid), demotedToLegacy = demoted))
-        }
+        return result
+    }
 
     override suspend fun setState(
         tenantId: String,
         kid: String,
         newState: OAuth2SigningKeyState,
-    ): IdkResult<Boolean, SigningKeyStoreError> =
-        synchronizedWrite {
-            val tenantKeys = keysByTenant[tenantId] ?: return@synchronizedWrite Ok(false)
-            val existing = tenantKeys[kid] ?: return@synchronizedWrite Err(SigningKeyStoreError.KeyNotFound(tenantId, kid))
-            if (existing.state == newState) {
-                Ok(false)
-            } else {
-                tenantKeys[kid] = existing.copy(state = newState)
-                Ok(true)
+    ): IdkResult<Boolean, SigningKeyStoreError> {
+        val result =
+            synchronizedWrite {
+                val tenantKeys = keysByTenant[tenantId] ?: return@synchronizedWrite Ok(false)
+                val existing = tenantKeys[kid] ?: return@synchronizedWrite Err(SigningKeyStoreError.KeyNotFound(tenantId, kid))
+                if (existing.state == newState) {
+                    Ok(false)
+                } else {
+                    tenantKeys[kid] = existing.copy(state = newState)
+                    advanceRevisionLocked(tenantId)
+                    Ok(true)
+                }
             }
-        }
+        return result
+    }
+
+    private fun advanceRevisionLocked(tenantId: String) {
+        val current = revisionsByTenant[tenantId] ?: 0L
+        check(current != Long.MAX_VALUE) { "Signing-key content revision exhausted for tenant '$tenantId'" }
+        revisionsByTenant[tenantId] = current + 1L
+    }
 
     /**
      * Comparator for picking the highest-priority ACTIVE key. Higher [OAuth2SigningKey.priority]

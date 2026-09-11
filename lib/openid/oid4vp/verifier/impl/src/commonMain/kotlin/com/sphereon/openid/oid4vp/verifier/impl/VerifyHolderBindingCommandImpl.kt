@@ -27,14 +27,22 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.crypto.jose.jws.JwsCompact
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
+import com.sphereon.crypto.resolution.IdentifierMethodDefaults
 import com.sphereon.di.session.SessionScope
 import com.sphereon.mdoc.data.DeviceAuthValidation
 import com.sphereon.mdoc.data.MdocVerification
 import com.sphereon.mdoc.data.MdocValidations
 import com.sphereon.mdoc.data.device.DeviceResponseCborCodec
+import com.sphereon.mdoc.data.device.DocumentResponseEncryptionProviderResolver
+import com.sphereon.mdoc.data.device.ZkProofProviderResolver
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.openid.oid4vp.common.CredentialFormat
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmClassifier
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmDocumentKind
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmProfiles
+import com.sphereon.openid.oid4vc.common.vcdm.VcdmVersion
 import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.sdjwt.VerifySdJwtArgs
@@ -42,9 +50,12 @@ import com.sphereon.sdjwt.command.VerifySdJwtCommand
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlin.time.Clock
 
 /**
  * Implementation of VerifyHolderBindingCommand for OpenID4VP RP (Verifier).
@@ -85,15 +96,66 @@ class VerifyHolderBindingCommandImpl(
     ): IdkResult<HolderBindingResult, IdkError> {
         val processedArgs = applyDuring(args)
 
-        log.debug("Verifying holder binding for format: ${processedArgs.format}")
+        log.debug("Verifying holder binding for credentialFormat=${processedArgs.credentialFormat}, presentationFormat=${processedArgs.presentationFormat}")
 
         val presentation = processedArgs.presentation
-        val formatString = processedArgs.format
         val expectedNonce = processedArgs.expectedNonce
         val expectedAudience = processedArgs.expectedAudience
+        val credentialFormat = processedArgs.credentialFormat
 
-        // Parse the format using the enum
-        val credentialFormat = CredentialFormat.fromValueLenient(formatString)
+        // Compact JWS inputs are classified from their protected header and payload before
+        // caller-supplied format routing. A three-part JWT-shaped string is not sufficient to
+        // authorize JWT-VP holder binding, and a credential must never be treated as a VP.
+        if (!presentation.contains('~') && presentation.contains('.')) {
+            val classificationResult = VcdmClassifier.classifyCompactJws(presentation)
+            if (classificationResult.isErr) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        causes = listOf(classificationResult.error),
+                        message =
+                            "Compact JWS failed strict VCDM classification: " +
+                                classificationResult.error.message.defaultMessage,
+                    ),
+                )
+            }
+            val classification = classificationResult.value
+            if (classification.document.kind != VcdmDocumentKind.PRESENTATION) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "A VCDM credential is not a holder-bound presentation",
+                    ),
+                )
+            }
+            if (classification.presentationFormat != processedArgs.presentationFormat) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "Declared presentation format ${processedArgs.presentationFormat?.value} does not match " +
+                                "classified VCDM presentation format ${classification.presentationFormat?.value}",
+                    ),
+                )
+            }
+            val profileValidation =
+                when (classification.document.version) {
+                    VcdmVersion.V1_1 -> VcdmProfiles.v1_1.validatePresentation(classification.document.json)
+                    VcdmVersion.V2_0 -> VcdmProfiles.v2_0.validatePresentation(classification.document.json)
+                    else -> null
+                }
+            if (profileValidation == null || !profileValidation.valid) {
+                return Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message = "Compact JWS presentation does not conform to its VCDM profile",
+                    ),
+                )
+            }
+            return verifyJwtVpHolderBinding(
+                presentation = presentation,
+                expectedNonce = expectedNonce,
+                expectedAudience = expectedAudience,
+                trustedAuthentications = processedArgs.trustedAuthentications,
+                classification = classification,
+            )
+        }
 
         return when {
             credentialFormat?.isSdJwt == true -> {
@@ -102,6 +164,7 @@ class VerifyHolderBindingCommandImpl(
                     expectedNonce = expectedNonce,
                     expectedAudience = expectedAudience,
                     requireCryptographicHolderBinding = processedArgs.requireCryptographicHolderBinding,
+                    trustedAuthentications = processedArgs.trustedAuthentications,
                 )
             }
 
@@ -111,18 +174,30 @@ class VerifyHolderBindingCommandImpl(
                     expectedNonce = expectedNonce,
                     clientId = processedArgs.clientId,
                     responseUri = processedArgs.responseUri,
+                    expectedMdocDocumentType = processedArgs.expectedMdocDocumentType,
                     verifierEncryptionJwkThumbprint = processedArgs.verifierEncryptionJwkThumbprint,
+                    expectedZkRequests = processedArgs.mdocZkRequests,
+                    zkProofProviders = processedArgs.mdocZkProofProviders,
+                    documentResponseDecryptionKey = processedArgs.mdocDocumentResponseDecryptionKey,
+                    documentResponseEncryptionParameters = processedArgs.mdocDocumentResponseEncryptionParameters,
+                    documentResponseEncryptionProviders = processedArgs.mdocDocumentResponseEncryptionProviders,
+                    iso18013MdocGeneratedNonce = processedArgs.iso18013MdocGeneratedNonce,
                 )
             }
 
-            credentialFormat?.isJwt == true -> {
-                verifyJwtVpHolderBinding(presentation, expectedNonce, expectedAudience)
+            credentialFormat?.isJwtVc == true -> {
+                Err(
+                    IdkError.ILLEGAL_ARGUMENT_ERROR(
+                        message =
+                            "A compact VCDM presentation is required for JWT holder binding verification",
+                    ),
+                )
             }
 
             else -> {
                 Err(
                     IdkError.ILLEGAL_ARGUMENT_ERROR(
-                        message = "Unsupported credential format for holder binding verification: $formatString",
+                        message = "Unsupported credential format for holder binding verification: ${credentialFormat?.value}",
                     ),
                 )
             }
@@ -144,13 +219,69 @@ class VerifyHolderBindingCommandImpl(
         expectedNonce: String,
         expectedAudience: String,
         requireCryptographicHolderBinding: Boolean,
+        trustedAuthentications: List<TrustedAuthenticationResolution>,
     ): IdkResult<HolderBindingResult, IdkError> {
         log.debug("Verifying SD-JWT holder binding with KB-JWT verification")
+
+        val issuer = sdJwtIssuer(presentation)
+        val matchingSources = trustedAuthentications.filter { it.controller == issuer }
+        if (matchingSources.size > 1) {
+            return holderBindingFailure("multiple configured issuer authentication sources match controller '$issuer'")
+        }
+        val configuredSource = matchingSources.singleOrNull()
+        if (!issuer.isNullOrBlank() && !issuer.startsWith("did:") && configuredSource == null) {
+            return holderBindingFailure("non-DID SD-JWT issuer '$issuer' requires an exact configured authentication source")
+        }
+
+        // The issuer JWT is untrusted until its signature has been verified.  The generic JWS
+        // resolver intentionally supports header-driven jwk/x5c/jku resolution for standalone
+        // JOSE callers, but that is not an issuer trust decision: a presented SD-JWT must not be
+        // able to select its own issuer key.  DID issuers may still resolve through their `kid`
+        // via the configured DID resolver; embedded/remote JOSE key material is never an
+        // alternative trust source.  An x5c chain is accepted only when it exactly matches an
+        // already-admitted verifier X.509 source.
+        val issuerHeader = sdJwtIssuerHeader(presentation)
+            ?: return holderBindingFailure("SD-JWT issuer JWT protected header is malformed")
+        val headerIssuerElement = issuerHeader["iss"]
+        if (headerIssuerElement != null) {
+            val headerIssuer = (headerIssuerElement as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (headerIssuer.isNullOrBlank() || headerIssuer != issuer) {
+                return holderBindingFailure("SD-JWT issuer JWT protected-header iss must agree with the issuer claim")
+            }
+        }
+        val forbiddenIssuerKeyClaim = listOf("jwk", "jku", "x5u").firstOrNull(issuerHeader::containsKey)
+        if (forbiddenIssuerKeyClaim != null) {
+            val keyDescription = if (forbiddenIssuerKeyClaim == "jwk") "embedded jwk" else "'$forbiddenIssuerKeyClaim'"
+            return holderBindingFailure("SD-JWT issuer JWT header $keyDescription cannot be used as a trust anchor")
+        }
+        val x5cElement = issuerHeader["x5c"]
+        if (x5cElement != null &&
+            (x5cElement !is JsonArray || x5cElement.isEmpty() ||
+                x5cElement.any { it !is JsonPrimitive || !it.isString || it.content.isBlank() })
+        ) {
+            return holderBindingFailure("SD-JWT issuer JWT header 'x5c' must be a non-empty array of certificate strings")
+        }
+        val issuerX5c = (x5cElement as? JsonArray).orEmpty()
+        if (issuerX5c.isNotEmpty() && issuerHeader.containsKey("kid")) {
+            return holderBindingFailure("SD-JWT issuer JWT x5c cannot be combined with kid")
+        }
+        if (issuerX5c.isNotEmpty()) {
+            if (configuredSource?.identifier?.method != IdentifierMethodDefaults.X5C) {
+                return holderBindingFailure("SD-JWT issuer JWT x5c requires a configured X.509 issuer authentication source")
+            }
+            val configuredChain = (configuredSource?.identifier?.identifier as? List<*>)?.mapNotNull { it as? String }
+            val presentedChain = issuerX5c.map { (it as JsonPrimitive).content }
+            if (configuredChain == null || presentedChain != configuredChain) {
+                return holderBindingFailure("SD-JWT issuer JWT x5c does not match the configured X.509 issuer chain")
+            }
+        }
 
         // Use the existing SD-JWT verification which handles full KB-JWT verification
         val verifyArgs =
             VerifySdJwtArgs(
                 sdJwt = presentation,
+                identifier = configuredSource?.identifier,
+                trustedJwks = configuredSource?.trustedJwks,
                 expectedAudience = expectedAudience,
                 expectedNonce = expectedNonce,
                 validateDisclosures = true,
@@ -210,6 +341,20 @@ class VerifyHolderBindingCommandImpl(
         )
     }
 
+    /** Extract the issuer from the signed SD-JWT issuer JWT for trust-source selection. */
+    private fun sdJwtIssuer(presentation: String): String? =
+        runCatching {
+            val payloadSegment = presentation.substringBefore('~').split('.').getOrNull(1) ?: return null
+            val payload = json.parseToJsonElement(decodeBase64Url(payloadSegment)).jsonObject
+            (payload["iss"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        }.getOrNull()
+
+    private fun sdJwtIssuerHeader(presentation: String): JsonObject? =
+        runCatching {
+            val headerSegment = presentation.substringBefore('~').split('.').firstOrNull() ?: return null
+            json.parseToJsonElement(decodeBase64Url(headerSegment)).jsonObject
+        }.getOrNull()
+
     /**
      * Extract holder's public key from cnf claim in SD-JWT payload.
      */
@@ -252,7 +397,14 @@ class VerifyHolderBindingCommandImpl(
         expectedNonce: String,
         clientId: String?,
         responseUri: String?,
+        expectedMdocDocumentType: String?,
         verifierEncryptionJwkThumbprint: ByteArray?,
+        expectedZkRequests: List<com.sphereon.mdoc.data.device.ZkRequest>,
+        zkProofProviders: List<com.sphereon.mdoc.data.device.ZkProofProvider>,
+        documentResponseDecryptionKey: com.sphereon.crypto.core.cose.CoseKey?,
+        documentResponseEncryptionParameters: Map<UInt, com.sphereon.mdoc.data.device.EncryptionParameters>,
+        documentResponseEncryptionProviders: List<com.sphereon.mdoc.data.device.DocumentResponseEncryptionProvider>,
+        iso18013MdocGeneratedNonce: String?,
     ): IdkResult<HolderBindingResult, IdkError> {
         log.debug("Verifying mDoc holder binding")
 
@@ -289,22 +441,98 @@ class VerifyHolderBindingCommandImpl(
                     return Ok(mdocFailure("Failed to CBOR-decode DeviceResponse: ${error.message.defaultMessage}"))
                 }.value
 
-        val documents = deviceResponse.documents
-        if (documents.isNullOrEmpty()) {
+        val documents = deviceResponse.documents.orEmpty().toMutableList()
+        val zkDocuments = deviceResponse.zkDocuments.orEmpty().toMutableList()
+        val encryptedDocuments = deviceResponse.encryptedDocuments.orEmpty()
+        if (documents.isEmpty() && zkDocuments.isEmpty() && encryptedDocuments.isEmpty()) {
             return Ok(mdocFailure("DeviceResponse contains no documents to verify."))
         }
 
         val expectedSessionTranscript =
-            SessionTranscript.fromOid4vpClientIdAndResponseUri(
-                clientId = clientId,
-                nonce = expectedNonce,
-                jwkThumbprint = verifierEncryptionJwkThumbprint,
-                responseUri = responseUri,
+            if (iso18013MdocGeneratedNonce != null) {
+                SessionTranscript.fromIso18013Oid4vp(
+                    clientId = clientId,
+                    responseUri = responseUri,
+                    mdocGeneratedNonce = iso18013MdocGeneratedNonce,
+                    nonce = expectedNonce,
+                )
+            } else {
+                SessionTranscript.fromOid4vpClientIdAndResponseUri(
+                    clientId = clientId,
+                    nonce = expectedNonce,
+                    jwkThumbprint = verifierEncryptionJwkThumbprint,
+                    responseUri = responseUri,
+                )
+            }
+
+        if (encryptedDocuments.isNotEmpty()) {
+            val decryptionKey = documentResponseDecryptionKey
+                ?: return Ok(
+                    mdocFailure(
+                        "DeviceResponse contains encryptedDocuments but this verifier session has no " +
+                            "document-response decryption key.",
+                    ),
+                )
+            if (documentResponseEncryptionParameters.isEmpty()) {
+                return Ok(mdocFailure("Encrypted mDoc response parameters are not configured for this verifier session."))
+            }
+            if (documentResponseEncryptionProviders.isEmpty()) {
+                return Ok(mdocFailure("No mDoc document-response decryption provider is configured."))
+            }
+
+            for (encrypted in encryptedDocuments) {
+                val parameters = documentResponseEncryptionParameters[encrypted.docRequestID]
+                    ?: return Ok(
+                        mdocFailure(
+                            "No document-response encryption parameters are configured for docRequestID=" +
+                                encrypted.docRequestID,
+                        ),
+                    )
+                val provider =
+                    DocumentResponseEncryptionProviderResolver
+                        .resolve(parameters, documentResponseEncryptionProviders)
+                        .getOrElse { return Ok(mdocFailure(it.message.defaultMessage)) }
+                val plaintext =
+                    provider
+                        .decrypt(
+                            encrypted = encrypted,
+                            recipientPrivateKey = decryptionKey,
+                            sessionTranscript = expectedSessionTranscript,
+                            parameters = parameters,
+                        ).getOrElse { return Ok(mdocFailure(it.message.defaultMessage)) }
+                val decryptedDocuments = plaintext.documents.orEmpty()
+                val decryptedZkDocuments = plaintext.zkDocuments.orEmpty()
+                if (decryptedDocuments.isEmpty() && decryptedZkDocuments.isEmpty()) {
+                    return Ok(mdocFailure("Encrypted mDoc response envelope contained no documents."))
+                }
+                documents += decryptedDocuments
+                zkDocuments += decryptedZkDocuments
+            }
+        }
+
+        val expectedDocumentType =
+            expectedMdocDocumentType?.takeIf { it.isNotBlank() }
+                ?: return Ok(
+                    mdocFailure(
+                        "mDoc document type validation requires the verifier's persisted DCQL meta.doctype_value.",
+                    ),
+                )
+        val mismatchedDocumentType =
+            documents.asSequence().map { it.docType.toString() }
+                .plus(zkDocuments.asSequence().map { it.documentData.docType.toString() })
+                .firstOrNull { it != expectedDocumentType }
+        if (mismatchedDocumentType != null) {
+            return Ok(
+                mdocFailure(
+                    "mDoc document type mismatch: expected '$expectedDocumentType', got '$mismatchedDocumentType'",
+                ),
             )
+        }
 
         val errors = mutableListOf<String>()
         var allDocsVerified = true
         var allDeviceAuthsValid = true
+        var allZkProofsValid = true
 
         // Certificate trust is intentionally evaluated later by the shared OID4VP
         // credential-trust validator, consistently with SD-JWT and W3C credentials. Empty
@@ -353,9 +581,52 @@ class VerifyHolderBindingCommandImpl(
             }
         }
 
+        // A ZkDocument has no IssuerSigned/DeviceSigned structure on which the normal mdoc
+        // digest and DeviceAuth checks can operate. It must instead be matched to the request
+        // that authorized its system identifier and verified by an explicitly configured backend.
+        zkDocuments.forEach { zkDocument ->
+            val systemId = zkDocument.documentData.zkSystemId
+            val expectedRequest =
+                expectedZkRequests.firstOrNull { request ->
+                    request.systemSpecs.any { spec -> spec.zkSystemId == systemId }
+                }
+            if (expectedRequest == null) {
+                allZkProofsValid = false
+                allDocsVerified = false
+                errors += "${zkDocument.documentData.docType}: ZKP system '$systemId' was not requested"
+                return@forEach
+            }
+
+            val providerResult = ZkProofProviderResolver.resolve(expectedRequest, zkProofProviders)
+            if (providerResult.isErr) {
+                allZkProofsValid = false
+                allDocsVerified = false
+                errors += "${zkDocument.documentData.docType}: ${providerResult.error.message.defaultMessage}"
+                return@forEach
+            }
+            val provider = providerResult.value
+            if (provider == null) {
+                allZkProofsValid = false
+                allDocsVerified = false
+                errors += "${zkDocument.documentData.docType}: no compatible ZKP verifier is configured"
+                return@forEach
+            }
+
+            val verification = provider.verifyProof(expectedRequest, zkDocument, expectedSessionTranscript)
+            if (verification.isErr) {
+                allZkProofsValid = false
+                allDocsVerified = false
+                errors += "${zkDocument.documentData.docType}: ${verification.error.message.defaultMessage}"
+            } else if (!verification.value) {
+                allZkProofsValid = false
+                allDocsVerified = false
+                errors += "${zkDocument.documentData.docType}: ZKP verification failed"
+            }
+        }
+
         // Cryptographic-signature outcome bucket: TRUE iff every issuer-auth signature AND every
         // device-auth signature actually verified.
-        val allSigsValid = !anyIssuerAuthSignatureFailed && allDeviceAuthsValid
+        val allSigsValid = !anyIssuerAuthSignatureFailed && allDeviceAuthsValid && allZkProofsValid
         return Ok(
             HolderBindingResult(
                 verified = allDocsVerified,
@@ -365,8 +636,8 @@ class VerifyHolderBindingCommandImpl(
                 // transcript (the verifier's nonce is mixed into the OpenID4VPHandover). If the
                 // device-auth signature verifies, the holder used the same transcript bytes
                 // — including the same nonce — that we reconstructed.
-                nonceValid = allDeviceAuthsValid,
-                audienceValid = allDeviceAuthsValid,
+                nonceValid = allDeviceAuthsValid && allZkProofsValid,
+                audienceValid = allDeviceAuthsValid && allZkProofsValid,
                 sdHashValid = null, // Not applicable for mDoc
                 errors = errors,
             ),
@@ -388,13 +659,13 @@ class VerifyHolderBindingCommandImpl(
      * Verify holder binding in JWT VP using proof signature.
      *
      * JWT VP (Verifiable Presentation) contains:
-     * - Header with holder's key reference (kid, jwk, or x5c)
+     * - Header with holder's key reference (kid; an x5c chain is accepted only with exact configured X.509 trust)
      * - Payload with nonce and aud claims
      * - Signature from holder's private key
      *
      * Verification steps:
      * 1. Parse JWT and extract header/payload
-     * 2. Verify signature using public key from header
+     * 2. Verify the signature using verifier-admitted identifier or key-set resolution
      * 3. Validate nonce claim matches expected value
      * 4. Validate aud claim matches expected value
      * 5. Validate timing claims (iat, exp) if present
@@ -403,6 +674,8 @@ class VerifyHolderBindingCommandImpl(
         presentation: String,
         expectedNonce: String,
         expectedAudience: String,
+        trustedAuthentications: List<TrustedAuthenticationResolution>,
+        classification: com.sphereon.openid.oid4vc.common.vcdm.VcdmClassification,
     ): IdkResult<HolderBindingResult, IdkError> {
         log.debug("Verifying JWT VP holder binding")
 
@@ -441,15 +714,112 @@ class VerifyHolderBindingCommandImpl(
                 )
             }
 
+        val holder = vcdmHolderController(classification)
+            ?: return holderBindingFailure("VCDM VP holder/controller is required for compact holder binding")
+        val matchingSources = trustedAuthentications.filter { it.controller == holder }
+        if (matchingSources.size > 1) {
+            return holderBindingFailure("multiple configured holder authentication sources match controller '$holder'")
+        }
+        val configuredSource = matchingSources.singleOrNull()
+        val holderIsDid = holder.startsWith("did:")
+        if (!holderIsDid && configuredSource == null) {
+            return holderBindingFailure("non-DID VCDM VP holder '$holder' requires an exact configured authentication source")
+        }
+
+        val headerJson = try {
+            json.parseToJsonElement(decodeBase64Url(jwtParts[0])).jsonObject
+        } catch (e: Exception) {
+            return holderBindingFailure("Failed to decode JWT protected header: ${e.message}")
+        }
+        val typ = (headerJson["typ"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val cty = (headerJson["cty"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        if (headerJson.containsKey("typ") && typ.isNullOrBlank()) {
+            return holderBindingFailure("JWT protected header 'typ' must be a non-empty string")
+        }
+        if (headerJson.containsKey("cty") && cty.isNullOrBlank()) {
+            return holderBindingFailure("JWT protected header 'cty' must be a non-empty string")
+        }
+        if (classification.document.version == VcdmVersion.V1_1 && typ != null && !typ.equals("JWT", ignoreCase = true)) {
+            return holderBindingFailure("VCDM 1.1 JWT VP typ must be JWT when present")
+        }
+        if (classification.document.version == VcdmVersion.V2_0 &&
+            typ != null &&
+            typ !in setOf("vp+jwt", "application/vp+jwt")
+        ) {
+            return holderBindingFailure("VCDM 2.0 JWT VP typ must be vp+jwt or application/vp+jwt when present")
+        }
+        if (classification.document.version == VcdmVersion.V2_0 && cty !in setOf(null, "vp", "application/vp")) {
+            return holderBindingFailure("VCDM 2.0 JWT VP cty must identify a verifiable presentation")
+        }
+        // `iss` is a registered JWT payload claim, but a non-standard protected-header copy
+        // must never be allowed to identify a different holder.  Keep both envelopes bound to
+        // the classified VCDM holder before any key resolution is attempted.
+        val payloadIssuer = payloadJson["iss"]
+        if (payloadIssuer != null) {
+            val issuer = (payloadIssuer as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (issuer.isNullOrBlank() || issuer != holder) {
+                return holderBindingFailure("JWT payload iss must agree with the VCDM VP holder")
+            }
+        }
+        val headerIssuer = headerJson["iss"]
+        if (headerIssuer != null) {
+            val issuer = (headerIssuer as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (issuer.isNullOrBlank() || issuer != holder) {
+                return holderBindingFailure("JWT protected-header iss must agree with the VCDM VP holder")
+            }
+        }
+        val forbiddenEmbeddedKeyClaims = listOf("jwk", "jku", "x5u")
+        val embeddedForbiddenClaim = forbiddenEmbeddedKeyClaims.firstOrNull(headerJson::containsKey)
+        if (embeddedForbiddenClaim != null) {
+            return holderBindingFailure("JWT header '$embeddedForbiddenClaim' cannot be used as a holder trust anchor")
+        }
+        val x5cElement = headerJson["x5c"]
+        if (x5cElement != null &&
+            (x5cElement !is JsonArray || x5cElement.any { it !is JsonPrimitive || !it.isString || it.content.isBlank() })
+        ) {
+            return holderBindingFailure("JWT header 'x5c' must be a non-empty array of certificate strings")
+        }
+        val x5c = (x5cElement as? JsonArray).orEmpty()
+        if (x5c.isNotEmpty() &&
+            (configuredSource == null || configuredSource.identifier?.method != IdentifierMethodDefaults.X5C)
+        ) {
+            return holderBindingFailure("JWT header 'x5c' requires a configured X.509 holder authentication source")
+        }
+        if (x5c.isNotEmpty()) {
+            val presentedChain = x5c.map { (it as JsonPrimitive).content }
+            val configuredChain = (configuredSource?.identifier?.identifier as? List<*>)?.mapNotNull { it as? String }
+            if (configuredChain == null || presentedChain != configuredChain) {
+                return holderBindingFailure("JWT header 'x5c' does not match the configured X.509 holder chain")
+            }
+        }
+        val kid = (headerJson["kid"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        if (headerJson.containsKey("kid") && kid.isNullOrBlank()) {
+            return holderBindingFailure("JWT header 'kid' must be a non-empty string")
+        }
+        if (x5c.isNotEmpty() && kid != null) {
+            return holderBindingFailure("JWT header 'x5c' cannot be combined with kid")
+        }
+        if (holderIsDid && kid != null && !kid.startsWith("$holder#")) {
+            return holderBindingFailure("DID holder JWT 'kid' must be an absolute DID URL for the VP holder")
+        }
+
         // Validate nonce claim
         val nonceValid = validateNonceClaim(payloadJson, expectedNonce, errors)
 
         // Validate audience claim
         val audienceValid = validateAudienceClaim(payloadJson, expectedAudience, errors)
 
+        // Validate JWT NumericDate claims before accepting holder binding. These claims are
+        // security-relevant replay/freshness constraints, not merely informational metadata.
+        val temporalClaimsValid = validateTemporalClaims(payloadJson, errors)
+
         // Verify signature using JWS verification command
         val jws = JwsCompact(presentation)
-        val verifyArgs = VerifyJwsArgs(jws = jws)
+        val verifyArgs = VerifyJwsArgs(
+            jws = jws,
+            identifier = configuredSource?.identifier,
+            trustedJwks = configuredSource?.trustedJwks,
+        )
 
         val verifyResult = verifyJwsCommand.execute(verifyArgs)
 
@@ -458,21 +828,20 @@ class VerifyHolderBindingCommandImpl(
                 errors.add("JWT signature verification failed: ${verifyResult.error.message}")
                 false
             } else {
-                if (!verifyResult.value.isValid) {
-                    errors.add("JWT signature is invalid")
+                if (!verifyResult.value.isValid || verifyResult.value.cryptoVerified != true) {
+                    errors.add("JWT signature is invalid or cryptographic verification was not established")
                 }
-                verifyResult.value.isValid
+                verifyResult.value.isValid && verifyResult.value.cryptoVerified == true && verifyResult.value.trustEstablished
             }
 
-        // Extract holder key from header if present
-        val holderKey = extractHolderKeyFromJwtHeader(jwtParts[0])
-
-        val verified = signatureValid && nonceValid && audienceValid
+        val verified = signatureValid && nonceValid && audienceValid && temporalClaimsValid
 
         return Ok(
             HolderBindingResult(
                 verified = verified,
-                holderKey = holderKey,
+                // Embedded key material is never an authenticated holder key. The exact
+                // configured/canonical source above remains the source of truth.
+                holderKey = null,
                 bindingMethod = BINDING_METHOD_JWT_PROOF,
                 signatureValid = signatureValid,
                 nonceValid = nonceValid,
@@ -483,6 +852,35 @@ class VerifyHolderBindingCommandImpl(
         )
     }
 
+    private fun vcdmHolderController(
+        classification: com.sphereon.openid.oid4vc.common.vcdm.VcdmClassification,
+    ): String? {
+        // VCDM 2.0 makes `holder` optional and permits holder information to come from the
+        // securing mechanism. For a compact JWT VP, the signed `iss` claim identifies that
+        // controller. It is only used to select an already admitted authentication source (or
+        // the existing DID-resolution path); acceptance still requires trusted cryptographic
+        // verification plus the nonce/audience checks below.
+        val element = classification.document.json["holder"]
+            ?: classification.rawPayload["iss"]
+        return when (element) {
+            is JsonPrimitive -> element.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+            is JsonObject -> (element["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+            else -> null
+        }
+    }
+
+    private fun holderBindingFailure(message: String): IdkResult<HolderBindingResult, IdkError> =
+        Ok(
+            HolderBindingResult(
+                verified = false,
+                bindingMethod = BINDING_METHOD_JWT_PROOF,
+                signatureValid = false,
+                nonceValid = false,
+                audienceValid = false,
+                errors = listOf(message),
+            ),
+        )
+
     /**
      * Validate nonce claim in JWT payload.
      */
@@ -491,10 +889,16 @@ class VerifyHolderBindingCommandImpl(
         expectedNonce: String,
         errors: MutableList<String>,
     ): Boolean {
-        val nonce = payload["nonce"]?.jsonPrimitive?.content
+        val nonceElement = payload["nonce"]
+        val nonce = (nonceElement as? JsonPrimitive)?.takeIf { it.isString }?.content
         return when {
-            nonce == null -> {
+            nonceElement == null -> {
                 errors.add("JWT missing required 'nonce' claim")
+                false
+            }
+
+            nonce == null -> {
+                errors.add("JWT 'nonce' claim must be a JSON string")
                 false
             }
 
@@ -524,22 +928,38 @@ class VerifyHolderBindingCommandImpl(
             return false
         }
 
-        // Handle both string and array formats
         val audiences =
-            try {
-                when {
-                    audElement is kotlinx.serialization.json.JsonArray -> {
-                        audElement.map { it.jsonPrimitive.content }
+            when (audElement) {
+                is JsonPrimitive -> {
+                    if (!audElement.isString) {
+                        errors.add("JWT 'aud' claim must be a JSON string or non-empty array of strings")
+                        return false
                     }
-
-                    else -> {
-                        listOf(audElement.jsonPrimitive.content)
-                    }
+                    listOf(audElement.content)
                 }
-            } catch (e: Exception) {
-                errors.add("JWT 'aud' claim has invalid format: ${e.message}")
-                return false
+
+                is JsonArray -> {
+                    if (audElement.isEmpty() || audElement.any { it !is JsonPrimitive || !(it as JsonPrimitive).isString }) {
+                        errors.add("JWT 'aud' claim must be a JSON string or non-empty array of strings")
+                        return false
+                    }
+                    audElement.map { (it as JsonPrimitive).content }
+                }
+
+                else -> {
+                    errors.add("JWT 'aud' claim must be a JSON string or non-empty array of strings")
+                    return false
+                }
             }
+
+        if (audiences.any { it.isBlank() }) {
+            errors.add("JWT 'aud' claim must not contain blank audience values")
+            return false
+        }
+        if (audiences.size != audiences.toSet().size) {
+            errors.add("JWT 'aud' claim must contain unique audience values")
+            return false
+        }
 
         return if (expectedAudience in audiences) {
             true
@@ -549,19 +969,47 @@ class VerifyHolderBindingCommandImpl(
         }
     }
 
-    /**
-     * Extract holder's public key from JWT header.
-     */
-    private fun extractHolderKeyFromJwtHeader(headerBase64: String): String? =
-        try {
-            val headerDecoded = decodeBase64Url(headerBase64)
-            val header = json.parseToJsonElement(headerDecoded).jsonObject
-            // Try jwk first, then fall back to kid
-            header["jwk"]?.jsonObject?.toString()
-        } catch (e: Exception) {
-            log.debug("Could not extract holder key from JWT header: ${e.message}")
-            null
+    private fun validateTemporalClaims(
+        payload: JsonObject,
+        errors: MutableList<String>,
+    ): Boolean {
+        fun numericDate(name: String): Double? {
+            val element = payload[name] ?: return null
+            val primitive = element as? JsonPrimitive
+            if (primitive == null || primitive.isString || primitive.doubleOrNull?.isFinite() != true) {
+                errors.add("JWT '$name' claim must be a finite JSON number")
+                return null
+            }
+            return primitive.doubleOrNull
         }
+
+        val iat = numericDate("iat")
+        val nbf = numericDate("nbf")
+        val exp = numericDate("exp")
+        val malformed =
+            (payload.containsKey("iat") && iat == null) ||
+                (payload.containsKey("nbf") && nbf == null) ||
+                (payload.containsKey("exp") && exp == null)
+        if (malformed) return false
+
+        // RFC 7519 defines these claims independently. In particular, `iat` is the token
+        // issuance time and MAY be later than `nbf` when an already-valid statement is signed.
+        // Enforce each registered claim's own semantics below; do not invent an ordering rule.
+        val now = Clock.System.now().epochSeconds.toDouble()
+        if (iat != null && iat > now) {
+            errors.add("JWT iat claim is in the future")
+            return false
+        }
+        if (nbf != null && nbf > now) {
+            errors.add("JWT nbf claim is in the future")
+            return false
+        }
+        if (exp != null && exp < now) {
+            errors.add("JWT exp claim is expired")
+            return false
+        }
+        return true
+    }
 
     /**
      * Decode base64url string to UTF-8 string.

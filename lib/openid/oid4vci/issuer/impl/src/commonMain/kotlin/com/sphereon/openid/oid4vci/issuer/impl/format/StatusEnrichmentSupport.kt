@@ -21,7 +21,10 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.openid.oid4vci.issuer.format.IssuanceContext
+import com.sphereon.openid.oid4vc.common.CredentialFormat
 import com.sphereon.statuslist.StatusListErrors
+import com.sphereon.statuslist.StatusListSpec
+import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.spi.CredentialStatusEnricher
 import com.sphereon.statuslist.spi.ReservedStatus
 import com.sphereon.statuslist.spi.StatusEnrichmentContext
@@ -43,6 +46,31 @@ internal suspend fun reserveCredentialStatus(
     context: IssuanceContext,
 ): IdkResult<ReservedStatus?, IdkError> {
     val binding = context.statusListBinding ?: return Ok(null)
+    if (binding.mdocProfile != null && context.credentialConfiguration.format != CredentialFormat.MSO_MDOC.value) {
+        return Err(
+            StatusListErrors.mdocProfileUnsupportedForFormat(
+                credentialConfigurationId = context.credentialConfigurationId,
+                format = context.credentialConfiguration.format,
+            ),
+        )
+    }
+    if (context.credentialConfiguration.format == CredentialFormat.MSO_MDOC.value) {
+        val reason =
+            when {
+                binding.spec != StatusListSpec.TOKEN_STATUS_LIST -> "the bound list must use the Token Status List specification"
+                binding.proofFormat != StatusProofFormat.CWT -> "the bound list must use a CWT proof envelope"
+                binding.mdocProfile == null -> "the bound list must declare an ISO 18013-5 mdoc profile"
+                else -> null
+            }
+        if (reason != null) {
+            return Err(
+                IdkError.fromString(
+                    code = "status_configuration_unsupported",
+                    message = "mso_mdoc status configuration is unsupported: $reason",
+                ),
+            )
+        }
+    }
     val active = enricher ?: return Err(StatusListErrors.enricherUnavailable(context.credentialConfigurationId))
     return active.reserve(
         StatusEnrichmentContext(
@@ -54,6 +82,9 @@ internal suspend fun reserveCredentialStatus(
             // Tag the entry with the holder so the issuer can later revoke without tracking the
             // bit index (e.g. RevokeCredentialStatusArgs(EntryRef(entryCorrelationId = <subject>))).
             entryCorrelationId = context.subject,
+            aggregationUri = binding.aggregationUri,
+            mdocProfile = binding.mdocProfile,
+            proofFormat = binding.proofFormat,
         ),
     )
 }

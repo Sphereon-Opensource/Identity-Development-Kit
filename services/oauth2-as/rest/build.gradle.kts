@@ -27,6 +27,8 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                api(projects.libOauth2ServerRest)
+
                 // OAuth2 Authorization Server service logic
                 api(projects.libOauth2ServerAuthorizationPublic)
                 implementation(projects.libOauth2ServerAuthorizationImpl)

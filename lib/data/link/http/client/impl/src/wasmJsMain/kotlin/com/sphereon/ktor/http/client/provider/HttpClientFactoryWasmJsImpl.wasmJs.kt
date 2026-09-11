@@ -15,11 +15,6 @@
  */
 package com.sphereon.ktor.http.client.provider
 
-import com.sphereon.core.api.conf.ConfigLevel
-import com.sphereon.core.api.context.SessionExecution
-import com.sphereon.crypto.core.kms.KeyManagerService
-import com.sphereon.crypto.core.kms.KeyStore
-import com.sphereon.crypto.core.kms.KeyStoreManager
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -33,21 +28,14 @@ import io.ktor.client.plugins.defaultRequest
 @Inject
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
-class HttpClientFactoryWasmJsImpl(
-    private val execution: SessionExecution,
-    val kms: KeyManagerService,
-    private val keyStoreManager: KeyStoreManager,
-) : HttpClientFactory {
-    val keyStores: MutableSet<KeyStore> = mutableSetOf()
+class HttpClientFactoryWasmJsImpl : HttpClientFactory {
 
-    init {
-        keyStores.addAll(keyStoreManager.createFromProperties(execution.conf.conf(ConfigLevel.TENANT)))
-    }
-
-    private val log = execution.log.logManager.withTag("HttpClientFactory")
-
-    override fun createClient(options: HttpClientOptions): HttpClient =
-        HttpClient(Js) {
+    override fun createClient(options: HttpClientOptions): HttpClient {
+        require(isSupportedOptions(options)) { "Provided http client options are not supported on this platform" }
+        require(options.followRedirects) {
+            "Wasm browser HTTP engine cannot construct a client with automatic redirects disabled"
+        }
+        return HttpClient(Js) {
             if (options.enableHttpCache) {
                 install(HttpCache) {
                     options.httpCacheConfig?.invoke(this)
@@ -65,6 +53,10 @@ class HttpClientFactoryWasmJsImpl(
             }
 
             options.additionalConfig?.invoke(this)
+
+            // Keep the caller-selected option last so additionalConfig cannot re-enable
+            // auto-follow when a platform can expose manual redirects.
+            followRedirects = options.followRedirects
         }.also { client ->
             val validationPolicy = options.urlValidation
             if (validationPolicy != null) {
@@ -73,10 +65,11 @@ class HttpClientFactoryWasmJsImpl(
                 }
             }
         }
+    }
 
     override fun getEngineTypesSupported(): List<HttpClientEngineType> = listOf(HttpClientEngineType.JS)
 
     override fun getEngineTypeDefault(): HttpClientEngineType = HttpClientEngineType.JS
 
-    override fun isSupportedOptions(options: HttpClientOptions): Boolean = true
+    override fun isSupportedOptions(options: HttpClientOptions): Boolean = options.followRedirects
 }

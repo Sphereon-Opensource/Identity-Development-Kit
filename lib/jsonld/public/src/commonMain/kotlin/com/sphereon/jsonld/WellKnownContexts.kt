@@ -22,6 +22,9 @@ package com.sphereon.jsonld
  * here to keep call sites consistent and refactorable.
  */
 object WellKnownContexts {
+    /** W3C Verifiable Credentials Data Model 1.1 Recommendation context. */
+    const val VCDM_1_1: String = "https://www.w3.org/2018/credentials/v1"
+
     /** W3C Verifiable Credentials Data Model 2.0 base context. */
     const val VCDM_2_0: String = "https://www.w3.org/ns/credentials/v2"
 

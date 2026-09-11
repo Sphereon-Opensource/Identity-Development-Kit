@@ -29,10 +29,19 @@ internal fun WalletInteractionContext(
     securityGate: WalletSecurityGate = WalletSecurityGate.allow,
     privateSessionStore: WalletInteractionPrivateSessionStore = WalletInteractionPrivateSessionStore.none,
     attributes: Map<String, String> = emptyMap(),
-): CoreWalletInteractionContext = CoreWalletInteractionContext(
-    sessionId, walletUnitId, executionOwner, protocolExecutor, trustResolver, trustPolicy, securityGate,
-    privateSessionStore, Iso18013TestSensitiveInputAuthority, attributes,
-)
+): CoreWalletInteractionContext =
+    CoreWalletInteractionContext(
+        sessionId = sessionId,
+        walletUnitId = walletUnitId,
+        executionOwner = executionOwner,
+        protocolExecutor = protocolExecutor,
+        trustResolver = trustResolver,
+        trustPolicy = trustPolicy,
+        securityGate = securityGate,
+        privateSessionStore = privateSessionStore,
+        sensitiveInputAuthority = Iso18013TestSensitiveInputAuthority,
+        attributes = attributes,
+    )
 
 internal suspend fun CoreWalletInteractionContext.securityGrantAction(grant: WalletSecurityGrant): WalletInteractionAction =
     WalletInteractionAction.approveSecurityChallenge(sensitiveInputAuthority.registerSecurityGrant(sessionId, grant))

@@ -20,18 +20,12 @@ package com.sphereon.openid.oid4vp.auth.impl.http
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
-import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.di.session.SessionScope
-import com.sphereon.openid.oid4vp.auth.http.CompleteOid4vpAuthCommand
-import com.sphereon.openid.oid4vp.auth.http.CompleteReconciliationWithClaimsCommand
-import com.sphereon.openid.oid4vp.auth.http.CreateOid4vpAuthSessionCommand
-import com.sphereon.openid.oid4vp.auth.http.GetOid4vpAuthStatusCommand
-import com.sphereon.openid.oid4vp.auth.http.GetOid4vpIdvStatusCommand
-import com.sphereon.openid.oid4vp.auth.http.InitiateOid4vpIdvCommand
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -50,33 +44,21 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(Oid4vpAuthHttpAdapter.ID)
 class Oid4vpAuthHttpAdapter(
     execution: SessionExecution,
-    private val createSessionCommand: CreateOid4vpAuthSessionCommand,
-    private val getStatusCommand: GetOid4vpAuthStatusCommand,
-    private val completeCommand: CompleteOid4vpAuthCommand,
-    private val initiateIdvCommand: InitiateOid4vpIdvCommand,
-    private val getIdvStatusCommand: GetOid4vpIdvStatusCommand,
-    private val completeReconciliationWithClaimsCommand: CompleteReconciliationWithClaimsCommand,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
 ) : CommandBackedHttpAdapter(
         id = ID,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount =
             HttpAdapterMount(
                 serverPrefix = "",
                 adapterBasePath = "/auth/oid4vp",
             ),
     ) {
-    override val endpointCommands: List<HttpEndpointCommand> =
-        listOf(
-            createSessionCommand,
-            getStatusCommand,
-            completeCommand,
-            initiateIdvCommand,
-            getIdvStatusCommand,
-            completeReconciliationWithClaimsCommand,
-        )
 
     override val openApiHints =
         OpenApiHints(

@@ -54,6 +54,68 @@ class AddProofAlgorithmTest {
         }
 
     @Test
+    fun proofOptionExtensionsAreTopLevelProofProperties() =
+        runTest {
+            val env = makeTestEnvironment()
+            val result =
+                env.addProof.addProofs(
+                    unsecured,
+                    listOf(
+                        option(id = null).copy(
+                            additionalProofProperties =
+                                buildJsonObject {
+                                    put("suiteParameter", JsonPrimitive("suite-value"))
+                                },
+                        ),
+                    ),
+                )
+
+            assertTrue(result.isOk, "addProof should succeed: ${if (result.isErr) result.error else ""}")
+            val proof = result.value["proof"]
+            assertTrue(proof is JsonObject)
+            assertEquals(JsonPrimitive("suite-value"), proof["suiteParameter"])
+            assertTrue("additionalProofProperties" !in proof)
+        }
+
+    @Test
+    fun proofOptionExtensionsCannotShadowTypedProofProperties() =
+        runTest {
+            val env = makeTestEnvironment()
+            var failure: IllegalArgumentException? = null
+            try {
+                env.addProof.addProofs(
+                    unsecured,
+                    listOf(
+                        option(id = null).copy(
+                            additionalProofProperties =
+                                buildJsonObject {
+                                    put("proofValue", JsonPrimitive("attacker-controlled"))
+                                },
+                        ),
+                    ),
+                )
+            } catch (expected: IllegalArgumentException) {
+                failure = expected
+            }
+            assertNotNull(failure)
+        }
+
+    @Test
+    fun domainSetIsPropagatedToGeneratedProof() =
+        runTest {
+            val env = makeTestEnvironment()
+            val result =
+                env.addProof.addProofs(
+                    unsecured,
+                    listOf(option(id = null).copy(domainSet = listOf("urn:second", "urn:first"))),
+                )
+
+            assertTrue(result.isOk, "addProof should succeed: ${if (result.isErr) result.error else ""}")
+            val proof = result.value["proof"] as JsonObject
+            assertEquals(JsonArray(listOf(JsonPrimitive("urn:second"), JsonPrimitive("urn:first"))), proof["domain"])
+        }
+
+    @Test
     fun proofSet() =
         runTest {
             val env =

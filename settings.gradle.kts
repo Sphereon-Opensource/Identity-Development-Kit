@@ -1,14 +1,66 @@
 rootProject.name = "Identity-Development-Kit"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
+val sphereonBuildProfile = (System.getenv("SPHEREON_BUILD_PROFILE")
+    ?: System.getProperty("sphereon.build.profile"))?.trim()?.lowercase()
+val formsBuildProfileProjects = setOf(
+    "lib-cbor-impl",
+    "lib-cbor-public",
+    "lib-core-api-default",
+    "lib-core-api-public",
+    "lib-core-compat-annotations",
+    "lib-core-test",
+    "lib-crypto-core-public",
+    "lib-data-credential-definition-public",
+    "lib-data-store-asset-public",
+    "lib-data-store-blob-public",
+    "lib-data-store-credential-design-public",
+    "lib-data-store-credential-type-binding-public",
+    "lib-data-store-schema-registry-public",
+    "lib-openid-oid4vc-common-public",
+    "lib-openid-oid4vp-dcql",
+)
+
+if (sphereonBuildProfile != null && sphereonBuildProfile != "forms") {
+    throw GradleException("Unsupported sphereon.build.profile: $sphereonBuildProfile")
+}
+
 // Helper function to include a project with its name as the path while pointing to the actual directory
 fun includeProject(name: String, path: String) {
+    if (sphereonBuildProfile == "forms" && name !in formsBuildProfileProjects) return
     include(":$name")
     project(":$name").projectDir = file(path)
 }
 
 pluginManagement {
-    if (file("gradle-build-support/settings.gradle.kts").exists()) {
+    val gbsSourceDirectory = settings.rootDir.resolve("gradle-build-support")
+    val gbsPluginCatalog = gbsSourceDirectory.resolve("versions/gradle-plugin-bom/build/tomlCatalog/sphereonGradlePluginBom.toml")
+    val gbsLibraryCatalog = gbsSourceDirectory.resolve("versions/library-bom/build/tomlCatalog/sphereonLibraryBom.versioned.toml")
+    val gbsSourcePresent = gbsSourceDirectory.isDirectory && gbsSourceDirectory.resolve("settings.gradle.kts").isFile
+    val gbsCatalogsPresent = gbsPluginCatalog.isFile && gbsLibraryCatalog.isFile
+    val gbsOverride = System.getenv("USE_LOCAL_GRADLE_BUILD_SUPPORT")?.let { value ->
+        when {
+            value.equals("true", ignoreCase = true) || value == "1" -> true
+            value.equals("false", ignoreCase = true) || value == "0" -> false
+            else -> null
+        }
+    }
+    if (gbsOverride == true && (!gbsSourcePresent || !gbsCatalogsPresent)) {
+        val missing = buildList {
+            if (!gbsSourcePresent) add("the local gradle-build-support source")
+            if (!gbsPluginCatalog.isFile) add("sphereonGradlePluginBom.toml")
+            if (!gbsLibraryCatalog.isFile) add("sphereonLibraryBom.versioned.toml")
+        }
+        throw GradleException(
+            "USE_LOCAL_GRADLE_BUILD_SUPPORT=true requires ${missing.joinToString()} before local composite mode can be used. " +
+                "Run ./gradlew generateTomlCatalog on POSIX or .\\gradlew.bat generateTomlCatalog on Windows " +
+                "from the gradle-build-support directory."
+        )
+    }
+    val useLocalGradleBuildSupport = gbsOverride ?: (gbsSourcePresent && gbsCatalogsPresent)
+    settings.extra["gbsUseLocalGradleBuildSupport"] = useLocalGradleBuildSupport
+
+    if (useLocalGradleBuildSupport) {
         includeBuild("gradle-build-support/plugins/toml-catalog")
         includeBuild("gradle-build-support")
     }
@@ -72,6 +124,8 @@ pluginManagement {
     }
 }
 
+val useGbsCompositeBuild = settings.extra["gbsUseLocalGradleBuildSupport"] as Boolean
+
 
 // Workaround: Kotlin 2.3.x npm-publish plugin registers assembleWasmJsPackage with a broken
 // mainFile provider. The NpmPublicationPlugin sets a dummy value, but task graph construction
@@ -89,22 +143,6 @@ run {
 // ===========================================
 // Composite Build Configuration for gradle-build-support
 // ===========================================
-
-/**
- * Determines if gradle-build-support composite build should be enabled.
- * Priority:
- * 1. Environment variable USE_LOCAL_GRADLE_BUILD_SUPPORT (explicit control)
- * 2. Auto-detect: enabled if gradle-build-support/ directory exists with settings.gradle.kts
- */
-fun isGradleBuildSupportCompositeBuildEnabled(): Boolean {
-    System.getenv("USE_LOCAL_GRADLE_BUILD_SUPPORT")?.let { value ->
-        if (value.equals("true", ignoreCase = true) || value == "1") return true
-        if (value.equals("false", ignoreCase = true) || value == "0") return false
-    }
-    val gbsDir = file("gradle-build-support")
-    val gbsSettingsFile = file("gradle-build-support/settings.gradle.kts")
-    return gbsDir.exists() && gbsDir.isDirectory && gbsSettingsFile.exists()
-}
 
 /**
  * Parses a settings.gradle.kts file and extracts module info from include() calls.
@@ -130,7 +168,6 @@ fun extractGbsModulesFromSettings(settingsFile: File): List<Pair<String, String>
 }
 
 val gbsVersion: String by settings
-val useGbsCompositeBuild = isGradleBuildSupportCompositeBuildEnabled()
 
 if (useGbsCompositeBuild) {
     val gbsSettingsFile = file("gradle-build-support/settings.gradle.kts")
@@ -181,14 +218,14 @@ dependencyResolutionManagement {
         val libBomToml = gbsTomlDir.resolve("library-bom/build/tomlCatalog/sphereonLibraryBom.versioned.toml")
 
         create("sphereonplug") {
-            if (useGbsCompositeBuild && plugBomToml.exists()) {
+            if (useGbsCompositeBuild) {
                 from(files(plugBomToml))
             } else {
                 from("com.sphereon.gradle:gradle-plugin-bom:$gbsVersion@toml" as String)
             }
         }
         create("sphereonlib") {
-            if (useGbsCompositeBuild && libBomToml.exists()) {
+            if (useGbsCompositeBuild) {
                 from(files(libBomToml))
             } else {
                 from("com.sphereon.gradle:library-bom:$gbsVersion@toml" as String)
@@ -316,10 +353,16 @@ includeProject("lib-crypto-key-persistence-api", "lib/crypto/key/persistence/api
 includeProject("lib-crypto-key-persistence-impl", "lib/crypto/key/persistence/impl")
 includeProject("lib-crypto-key-persistence-sqlite", "lib/crypto/key/persistence/sqlite")
 
+// Crypto certificate persistence (tenant-aware certificate reference store)
+includeProject("lib-crypto-certificate-persistence-api", "lib/crypto/certificate/persistence/api")
+includeProject("lib-crypto-certificate-persistence-sqlite", "lib/crypto/certificate/persistence/sqlite")
+
 // W3C Verifiable Credentials Data Integrity 1.0
 includeProject("lib-crypto-data-integrity-proof-public", "lib/crypto/data-integrity-proof/public")
 includeProject("lib-crypto-data-integrity-proof-impl", "lib/crypto/data-integrity-proof/impl")
 includeProject("lib-crypto-data-integrity-proof-eddsa-jcs-2022", "lib/crypto/data-integrity-proof/eddsa-jcs-2022")
+includeProject("lib-crypto-data-integrity-proof-eddsa-rdfc-2022", "lib/crypto/data-integrity-proof/eddsa-rdfc-2022")
+includeProject("lib-crypto-data-integrity-proof-ecdsa-rdfc-2019", "lib/crypto/data-integrity-proof/ecdsa-rdfc-2019")
 
 // Compression primitives (GZIP / zlib / raw DEFLATE) — status lists, JWE, etc.
 includeProject("lib-compression", "lib/compression")
@@ -335,6 +378,8 @@ includeProject("services-statuslist-rest", "services/statuslist/rest")
 // JSON-LD 1.1 capability (Track A: loader + validators; Track B: full processor)
 includeProject("lib-jsonld-public", "lib/jsonld/public")
 includeProject("lib-jsonld-loader", "lib/jsonld/loader")
+includeProject("lib-jsonld-rdf-canon", "lib/jsonld/rdf-canon")
+includeProject("lib-jsonld-processor", "lib/jsonld/processor")
 
 // SD-JWT libraries
 includeProject("lib-sdjwt-public", "lib/sdjwt/public")
@@ -353,6 +398,7 @@ includeProject("lib-oauth2-server-authorization-public", "lib/oauth2/server/auth
 includeProject("lib-oauth2-server-authorization-impl", "lib/oauth2/server/authorization/impl")
 includeProject("lib-oauth2-server-resource-public", "lib/oauth2/server/resource/public")
 includeProject("lib-oauth2-server-resource-impl", "lib/oauth2/server/resource/impl")
+includeProject("lib-oauth2-server-rest", "lib/oauth2/server/rest")
 
 // OpenID OID4VC (shared VC-family types)
 includeProject("lib-openid-oid4vc-common-public", "lib/openid/oid4vc/common/public")
@@ -363,6 +409,7 @@ includeProject("lib-openid-oid4vci-common-public", "lib/openid/oid4vci/common/pu
 includeProject("lib-openid-oid4vci-common-impl", "lib/openid/oid4vci/common/impl")
 includeProject("lib-openid-oid4vci-issuer-public", "lib/openid/oid4vci/issuer/public")
 includeProject("lib-openid-oid4vci-issuer-impl", "lib/openid/oid4vci/issuer/impl")
+includeProject("lib-openid-oid4vci-issuer-rest", "lib/openid/oid4vci/issuer/rest")
 includeProject("lib-openid-oid4vci-holder-public", "lib/openid/oid4vci/holder/public")
 includeProject("lib-openid-oid4vci-holder-impl", "lib/openid/oid4vci/holder/impl")
 includeProject("lib-openid-oid4vci-rest-public", "lib/openid/oid4vci/rest/public")
@@ -378,6 +425,7 @@ includeProject("lib-openid-oid4vp-common-impl", "lib/openid/oid4vp/common/impl")
 includeProject("lib-openid-oid4vp-holder-public", "lib/openid/oid4vp/holder/public")
 includeProject("lib-openid-oid4vp-holder-impl", "lib/openid/oid4vp/holder/impl")
 includeProject("lib-openid-oid4vp-verifier-public", "lib/openid/oid4vp/verifier/public")
+includeProject("lib-openid-oid4vp-verifier-vcdm-impl", "lib/openid/oid4vp/verifier/vcdm-impl")
 includeProject("lib-openid-oid4vp-verifier-impl", "lib/openid/oid4vp/verifier/impl")
 includeProject("lib-openid-oid4vp-verifier-rest", "lib/openid/oid4vp/verifier/rest")
 includeProject("lib-openid-oid4vp-universal-public", "lib/openid/oid4vp/universal/public")
@@ -415,6 +463,7 @@ includeProject("wallet-profile-public", "wallet/profile/public")
 includeProject("wallet-profile-impl", "wallet/profile/impl")
 includeProject("wallet-app-public", "wallet/app/public") // Phase 1
 includeProject("wallet-app-impl", "wallet/app/impl")
+includeProject("wallet-app-client-rest", "wallet/app/client-rest")
 includeProject("wallet-kit", "wallet/kit")
 includeProject("wallet-presentation-contracts", "wallet/presentation/contracts")
 includeProject("wallet-presentation", "wallet/presentation/presenter")
@@ -546,6 +595,14 @@ includeProject("lib-mdoc-datatransfer", "lib/mdoc/datatransfer")
 includeProject("lib-mdoc-reader", "lib/mdoc/reader")
 
 
+
+// TS 11 attestation catalogs
+includeProject("lib-catalog-public", "lib/catalog/public")
+includeProject("lib-catalog-ts11-public", "lib/catalog/ts11-public")
+includeProject("lib-catalog-impl", "lib/catalog/impl")
+includeProject("lib-catalog-persistence-api", "lib/catalog/persistence/api")
+includeProject("lib-catalog-persistence-memory", "lib/catalog/persistence/memory")
+includeProject("lib-catalog-persistence-sqlite", "lib/catalog/persistence/sqlite")
 
 // Trust libraries
 includeProject("lib-trust-core-public", "lib/trust/core/public")

@@ -33,6 +33,8 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestUriHandler
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 
@@ -51,6 +53,7 @@ interface GetRequestObjectEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/request-uri/{correlationId}",
                 produces = setOf(MediaType.Custom("application/oauth-authz-req+jwt"), MediaType.ApplicationJson),
                 operationId = "getRequestObjectByRequestUri",
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("oid4vp", "request-uri"),
                 summary = "Fetch OID4VP request object by request_uri",
                 authPolicy = EndpointAuthPolicy.PUBLIC,
@@ -67,7 +70,8 @@ interface GetRequestObjectEndpointCommand : HttpEndpointCommand {
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesBinding(SessionScope::class, binding = binding<GetRequestObjectEndpointCommand>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
+@StringKey(GetRequestObjectEndpointCommand.COMMAND_ID)
 class GetRequestObjectEndpointCommandImpl(
     execution: SessionExecution,
     private val requestUriHandler: RequestUriHandler,

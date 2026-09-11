@@ -30,6 +30,7 @@ import com.sphereon.openid.oid4vp.holder.Oid4vpHolder
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolder.Commands
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderAdapter
 import com.sphereon.openid.oid4vp.holder.Oid4vpHolderService
+import com.sphereon.openid.oid4vp.holder.PreparedPresentation
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommand
 import com.sphereon.openid.oid4vp.holder.ResolveAuthorizationRequestCommand
@@ -92,7 +93,8 @@ class Oid4vpHolderServiceImpl(
     override suspend fun createAuthorizationResponse(
         request: ResolvedOid4vpRequest,
         selectedCredentials: List<SelectedCredential>,
-    ): IdkResult<AuthorizationResponse, IdkError> = createAuthorizationResponseCommand.execute(CreateAuthorizationResponseArgs(request, selectedCredentials))
+        preparedPresentations: List<PreparedPresentation>,
+    ): IdkResult<AuthorizationResponse, IdkError> = createAuthorizationResponseCommand.execute(CreateAuthorizationResponseArgs(request, selectedCredentials, preparedPresentations))
 
     override suspend fun submitAuthorizationResponse(
         resolvedRequest: ResolvedOid4vpRequest,

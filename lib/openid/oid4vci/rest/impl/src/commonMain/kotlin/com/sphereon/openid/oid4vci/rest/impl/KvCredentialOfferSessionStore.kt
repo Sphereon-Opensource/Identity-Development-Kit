@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.http.callback.CallbackSigningAlgorithm
 import com.sphereon.core.api.log.AppLogManager
 import com.sphereon.data.store.kv.InMemoryKvStoreConfig
 import com.sphereon.data.store.kv.KotlinxSerializationJsonKvCodec
@@ -194,6 +195,8 @@ class KvCredentialOfferSessionStore(
         val callbackUrl: String? = null,
         val callbackStatuses: List<String>? = null,
         val callbackIncludeIssuanceData: Boolean = false,
+        val callbackSecretRef: String? = null,
+        val callbackSigning: String? = null,
         val state: String? = null,
         val createdAt: Long,
         val lastUpdatedAt: Long,
@@ -202,6 +205,7 @@ class KvCredentialOfferSessionStore(
         val rateLimitMaxPerWindow: Int? = null,
         val rateLimitWindowSeconds: Long? = null,
         val offerTemplate: CredentialOfferTemplate? = null,
+        val authorizationPolicySnapshot: com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationPolicySnapshot? = null,
     ) {
         fun toPublic(): CredentialOfferSession {
             val callbackConfig =
@@ -213,6 +217,8 @@ class KvCredentialOfferSessionStore(
                                 CredentialOfferSessionStatus.entries.firstOrNull { it.name == name }
                             } ?: emptyList(),
                         includeIssuanceData = callbackIncludeIssuanceData,
+                        secretRef = callbackSecretRef,
+                        signing = callbackSigning?.let { name -> CallbackSigningAlgorithm.entries.firstOrNull { it.name == name } },
                     )
                 }
             val resolvedLifecycle =
@@ -240,6 +246,7 @@ class KvCredentialOfferSessionStore(
                 uriLifecycle = resolvedLifecycle,
                 rateLimit = resolvedRateLimit,
                 offerTemplate = offerTemplate,
+                authorizationPolicySnapshot = authorizationPolicySnapshot,
             )
         }
 
@@ -254,6 +261,8 @@ class KvCredentialOfferSessionStore(
                     callbackUrl = session.callbackConfig?.url,
                     callbackStatuses = session.callbackConfig?.statuses?.map { it.name },
                     callbackIncludeIssuanceData = session.callbackConfig?.includeIssuanceData ?: false,
+                    callbackSecretRef = session.callbackConfig?.secretRef,
+                    callbackSigning = session.callbackConfig?.signing?.name,
                     state = session.state,
                     createdAt = session.createdAt,
                     lastUpdatedAt = session.lastUpdatedAt,
@@ -262,6 +271,7 @@ class KvCredentialOfferSessionStore(
                     rateLimitMaxPerWindow = session.rateLimit?.maxPerWindow,
                     rateLimitWindowSeconds = session.rateLimit?.windowSeconds,
                     offerTemplate = session.offerTemplate,
+                    authorizationPolicySnapshot = session.authorizationPolicySnapshot,
                 )
         }
     }

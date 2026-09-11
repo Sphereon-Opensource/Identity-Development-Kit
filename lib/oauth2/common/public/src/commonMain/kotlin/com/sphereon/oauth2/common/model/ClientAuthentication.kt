@@ -29,8 +29,8 @@ import kotlinx.serialization.Serializable
  * - private_key_jwt: JWT signed with private key (RFC 7523)
  * - none: Public client (no authentication)
  * - attest_jwt_client_auth: Client attestation JWT (draft-ietf-oauth-attestation-based-client-auth)
- * - tls_client_auth: PKI mutual-TLS (RFC 8705 §2.1)
- * - self_signed_tls_client_auth: Self-signed mutual-TLS bound to a registered JWK (RFC 8705 §2.2)
+ * - tls_client_auth: PKI mutual-TLS (RFC 8705 Â§2.1)
+ * - self_signed_tls_client_auth: Self-signed mutual-TLS bound to a registered JWK (RFC 8705 Â§2.2)
  */
 @JsExportCompat
 @Serializable
@@ -58,10 +58,12 @@ enum class ClientAuthenticationMethod(
  * Used for client_secret_basic and client_secret_post authentication methods
  */
 @JsExportCompat
-data class ClientCredentials(
+class ClientCredentials(
     val clientId: String,
     val clientSecret: String,
-)
+) {
+    override fun toString(): String = "ClientCredentials(<redacted>)"
+}
 
 /**
  * Client assertion for JWT-based authentication (RFC 7521, RFC 7523)
@@ -69,13 +71,15 @@ data class ClientCredentials(
  * Used for client_secret_jwt and private_key_jwt authentication methods
  */
 @JsExportCompat
-data class ClientAssertion(
+class ClientAssertion(
     val clientId: String,
     // e.g., "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
     val assertionType: String,
     // The JWT
     val assertion: String,
-)
+) {
+    override fun toString(): String = "ClientAssertion(<redacted>)"
+}
 
 /**
  * Client attestation for attestation-based authentication
@@ -84,10 +88,16 @@ data class ClientAssertion(
  * (draft-ietf-oauth-attestation-based-client-auth)
  */
 @JsExportCompat
-data class ClientAttestation(
+class ClientAttestation(
     val clientAttestationJwt: String,
     val clientAttestationPopJwt: String,
-)
+) {
+    override fun toString(): String = "ClientAttestation(<redacted>)"
+
+    override fun equals(other: Any?): Boolean = this === other
+
+    override fun hashCode(): Int = REDACTED_HASH_CODE
+}
 
 /**
  * Configuration for client authentication
@@ -100,36 +110,44 @@ sealed interface ClientAuthenticationConfig {
      *
      * Sends credentials in Authorization header: Basic base64(clientId:clientSecret)
      */
-    data class Basic(
+    class Basic(
         val credentials: ClientCredentials,
-    ) : ClientAuthenticationConfig
+    ) : ClientAuthenticationConfig {
+        override fun toString(): String = "ClientAuthenticationConfig.Basic(<redacted>)"
+    }
 
     /**
      * Client credentials in POST body (RFC 6749 Section 2.3.1)
      *
      * Sends client_id and client_secret as form parameters
      */
-    data class Post(
+    class Post(
         val credentials: ClientCredentials,
-    ) : ClientAuthenticationConfig
+    ) : ClientAuthenticationConfig {
+        override fun toString(): String = "ClientAuthenticationConfig.Post(<redacted>)"
+    }
 
     /**
      * JWT signed with client secret (RFC 7523)
      *
      * Client authenticates using a JWT signed with the client secret (HMAC)
      */
-    data class SecretJwt(
+    class SecretJwt(
         val assertion: ClientAssertion,
-    ) : ClientAuthenticationConfig
+    ) : ClientAuthenticationConfig {
+        override fun toString(): String = "ClientAuthenticationConfig.SecretJwt(<redacted>)"
+    }
 
     /**
      * JWT signed with private key (RFC 7523)
      *
      * Client authenticates using a JWT signed with a private key (RSA/ECDSA)
      */
-    data class PrivateKeyJwt(
+    class PrivateKeyJwt(
         val assertion: ClientAssertion,
-    ) : ClientAuthenticationConfig
+    ) : ClientAuthenticationConfig {
+        override fun toString(): String = "ClientAuthenticationConfig.PrivateKeyJwt(<redacted>)"
+    }
 
     /**
      * No authentication - public client
@@ -157,30 +175,20 @@ sealed interface ClientAuthenticationConfig {
     data object Anonymous : ClientAuthenticationConfig
 
     /**
-     * Mutual-TLS client authentication (RFC 8705 §2).
+     * Mutual-TLS client authentication (RFC 8705 Â§2).
      *
-     * The TLS handshake at the AS edge presented [clientCertificateDer] (DER-encoded leaf
-     * certificate). The actual verification mode (PKI subject/SAN match versus self-signed
-     * JWK match) is selected per-client by the registered `token_endpoint_auth_method`. The
-     * request body (or Basic header) carries the `client_id`; no shared secret or JWT
-     * assertion is involved.
+     * The governed HTTP request context owns the endpoint-bound KMS client identity used by the
+     * TLS handshake. The actual verification mode (PKI subject/SAN match versus self-signed JWK
+     * match) is selected per-client by the registered `token_endpoint_auth_method`. Governed
+     * outbound clients construct this with only the `client_id`; the optional byte array remains
+     * solely for server-side extraction of the certificate presented at an inbound AS edge.
      */
-    data class MutualTls(
+    class MutualTls(
         val clientId: String,
-        val clientCertificateDer: ByteArray,
+        /** Presented server-side certificate bytes. Governed outbound clients leave this empty. */
+        val clientCertificateDer: ByteArray = byteArrayOf(),
     ) : ClientAuthenticationConfig {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (other !is MutualTls) return false
-            return clientId == other.clientId &&
-                clientCertificateDer.contentEquals(other.clientCertificateDer)
-        }
-
-        override fun hashCode(): Int {
-            var result = clientId.hashCode()
-            result = 31 * result + clientCertificateDer.contentHashCode()
-            return result
-        }
+        override fun toString(): String = "ClientAuthenticationConfig.MutualTls(<redacted>)"
     }
 }
 
@@ -191,7 +199,17 @@ sealed interface ClientAuthenticationConfig {
  */
 @JsExportCompat
 @Suppress("NON_EXPORTABLE_TYPE")
-data class ClientAuthenticationResult(
+class ClientAuthenticationResult(
     val headers: Map<String, String>,
     val bodyParameters: Map<String, String>,
-)
+) {
+    override fun toString(): String = "ClientAuthenticationResult(<redacted>)"
+
+    override fun equals(other: Any?): Boolean = this === other
+
+    override fun hashCode(): Int = REDACTED_HASH_CODE
+}
+
+private const val REDACTED_HASH_CODE: Int = 0
+
+

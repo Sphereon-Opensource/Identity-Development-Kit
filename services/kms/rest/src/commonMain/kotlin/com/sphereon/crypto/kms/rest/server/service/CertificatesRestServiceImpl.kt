@@ -9,6 +9,8 @@
 
 package com.sphereon.crypto.kms.rest.server.service
 
+import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
@@ -19,6 +21,16 @@ import com.sphereon.crypto.core.kms.CertificateService
 import com.sphereon.crypto.core.kms.CertificateStoreService
 import com.sphereon.crypto.core.kms.HasKeyStoreService
 import com.sphereon.crypto.core.kms.KeyManagerService
+import com.sphereon.crypto.certificate.persistence.CertificateReferenceKind
+import com.sphereon.crypto.certificate.persistence.CertificateReferenceRecord
+import com.sphereon.crypto.certificate.persistence.CertificateReferenceSource
+import com.sphereon.crypto.certificate.persistence.CertificateReferenceStoreErrorCodes
+import com.sphereon.crypto.core.ResourceControlMode
+import com.sphereon.core.api.model.Origin
+import com.sphereon.crypto.kms.rest.api.command.CertificateReferenceResponse
+import com.sphereon.crypto.kms.rest.api.command.CertificateReferenceMetadataResponse
+import com.sphereon.crypto.kms.rest.api.command.CertificateReferencesResponse
+import com.sphereon.crypto.kms.rest.api.command.RegisterCertificateReferenceInput
 import com.sphereon.crypto.core.x509.certificateChainFromDer
 import com.sphereon.crypto.core.x509.certificateFromDer
 import com.sphereon.crypto.kms.rest.api.generated.infrastructure.Base64ByteArray
@@ -58,7 +70,30 @@ import kotlin.time.Clock
 class CertificatesRestServiceImpl(
     private val kms: KeyManagerService,
     private val certificateService: CertificateService,
+    private val certificateReferenceRegistrar: CertificateReferenceRegistrar,
+    private val platformManagedCertificateAliasLister: PlatformManagedCertificateAliasLister,
 ) : CertificatesRestService {
+    override suspend fun registerCertificateReference(request: RegisterCertificateReferenceInput): CertificateReferenceResponse =
+        certificateReferenceRegistrar.register(request).getOrThrowReference().toResponse()
+
+    override suspend fun listCertificateReferences(
+        providerId: String?,
+        kind: CertificateReferenceKind?,
+        source: CertificateReferenceSource?,
+    ): CertificateReferencesResponse =
+        CertificateReferencesResponse(
+            references = certificateReferenceRegistrar
+                .list(providerId, kind, source)
+                .getOrThrowReference()
+                .map { it.toMetadataResponse() },
+        )
+
+    override suspend fun getCertificateReference(id: String): CertificateReferenceMetadataResponse {
+        val record = certificateReferenceRegistrar.findById(id).getOrThrowReference()
+            ?: throw CertificateReferenceResolutionException("NOT_FOUND_ERROR", "The certificate reference was not found")
+        return record.toMetadataResponse()
+    }
+
     override suspend fun generateCsr(request: GenerateCertificateSigningRequestRequest): CertificateSigningRequestResponse {
         val csr =
             certificateService.generateCSR(
@@ -104,12 +139,40 @@ class CertificatesRestServiceImpl(
         )
     }
 
-    override suspend fun listTrustedCertificateAliases(providerId: String?): CertificateAliasesResponse = CertificateAliasesResponse(aliases = certificateStore(providerId).listCertificateAliases())
+    override suspend fun listTrustedCertificateAliases(providerId: String?): CertificateAliasesResponse {
+        val referenceAliases = certificateReferenceRegistrar
+            .list(providerId, CertificateReferenceKind.TRUSTED_CERTIFICATE)
+            .getOrThrowReference()
+            .map { it.alias }
+        val platformAliases = platformManagedCertificateAliasLister.listTrustedCertificateAliases(providerId)
+        return CertificateAliasesResponse(aliases = (referenceAliases + platformAliases).distinct().toTypedArray())
+    }
 
     override suspend fun getTrustedCertificate(
         alias: String,
         providerId: String?
-    ): CertificateBytesResponse = CertificateBytesResponse(certificate = Base64ByteArray(certificateStore(providerId).getCertificate(alias).der))
+    ): CertificateBytesResponse {
+        val record = certificateReferenceRegistrar
+            .findLatest(alias, providerId, CertificateReferenceKind.TRUSTED_CERTIFICATE)
+            .getOrThrowReference()
+        if (record == null) {
+            return CertificateBytesResponse(certificate = Base64ByteArray(certificateStore(providerId).getCertificate(alias).der))
+        }
+        if (record.deletedAt != null) throw CertificateReferenceResolutionException("NOT_FOUND_ERROR", "The certificate reference is deleted")
+        val der = when (record.source) {
+            CertificateReferenceSource.STORED_PUBLIC_MATERIAL -> {
+                val stored = certificateReferenceRegistrar.storedChain(record).getOrThrowReference()
+                certificateReferenceRegistrar.verifyStoredRead(record, stored).getOrThrowReference()
+                stored.first()
+            }
+            CertificateReferenceSource.PROVIDER_NATIVE -> {
+                val fresh = certificateReferenceRegistrar.inspectProvider(record).getOrThrowReference()
+                certificateReferenceRegistrar.verifyProviderRead(record, fresh).getOrThrowReference()
+                fresh.certificate.der
+            }
+        }
+        return CertificateBytesResponse(certificate = Base64ByteArray(der))
+    }
 
     override suspend fun storeTrustedCertificate(
         alias: String,
@@ -124,17 +187,58 @@ class CertificatesRestServiceImpl(
     override suspend fun deleteTrustedCertificate(
         alias: String,
         providerId: String?
-    ): Boolean = certificateStore(providerId).deleteCertificate(alias)
+    ): Boolean {
+        val record = certificateReferenceRegistrar
+            .findLatest(alias, providerId, CertificateReferenceKind.TRUSTED_CERTIFICATE)
+            .getOrThrowReference()
+        if (record == null) return certificateStore(providerId).deleteCertificate(alias)
+        if (record.deletedAt != null) return record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
+        if (record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED) {
+            return certificateReferenceRegistrar.softDelete(record).getOrThrowReference()
+        }
+        val deleted = certificateStore(providerId).deleteCertificate(alias)
+        if (deleted) certificateReferenceRegistrar.softDelete(record).getOrThrowReference()
+        return deleted
+    }
 
-    override suspend fun listCertificateChainAliases(providerId: String?): CertificateAliasesResponse = CertificateAliasesResponse(aliases = certificateStore(providerId).listCertificateChainAliases())
+    override suspend fun listCertificateChainAliases(providerId: String?): CertificateAliasesResponse {
+        val referenceAliases = certificateReferenceRegistrar
+            .list(providerId, CertificateReferenceKind.KEY_CERTIFICATE_CHAIN)
+            .getOrThrowReference()
+            .map { it.alias }
+        val platformAliases = platformManagedCertificateAliasLister.listCertificateChainAliases(providerId)
+        return CertificateAliasesResponse(aliases = (referenceAliases + platformAliases).distinct().toTypedArray())
+    }
 
     override suspend fun getCertificateChain(
         alias: String,
         providerId: String?
-    ): CertificateChainResponse =
-        CertificateChainResponse(
-            certificates = certificateStore(providerId).getCertificateChain(alias).map { Base64ByteArray(it.der) }.toTypedArray(),
-        )
+    ): CertificateChainResponse {
+        val record = certificateReferenceRegistrar
+            .findLatest(alias, providerId, CertificateReferenceKind.KEY_CERTIFICATE_CHAIN)
+            .getOrThrowReference()
+        if (record == null) {
+            return CertificateChainResponse(
+                certificates = certificateStore(providerId).getCertificateChain(alias).map { Base64ByteArray(it.der) }.toTypedArray(),
+            )
+        }
+        if (record.deletedAt != null) throw CertificateReferenceResolutionException("NOT_FOUND_ERROR", "The certificate chain reference is deleted")
+        val der = when (record.source) {
+            CertificateReferenceSource.STORED_PUBLIC_MATERIAL -> {
+                val stored = certificateReferenceRegistrar.storedChain(record).getOrThrowReference()
+                certificateReferenceRegistrar.verifyStoredRead(record, stored).getOrThrowReference()
+                stored
+            }
+            CertificateReferenceSource.PROVIDER_NATIVE -> {
+                val fresh = certificateReferenceRegistrar.inspectProvider(record).getOrThrowReference()
+                certificateReferenceRegistrar.verifyProviderRead(record, fresh).getOrThrowReference()
+                certificateReferenceRegistrar
+                    .completeChainFromTrustStore(fresh.certificate.der, record.providerId)
+                    .getOrThrowReference()
+            }
+        }
+        return CertificateChainResponse(certificates = der.map { Base64ByteArray(it) }.toTypedArray())
+    }
 
     override suspend fun storeCertificateChain(
         alias: String,
@@ -149,14 +253,35 @@ class CertificatesRestServiceImpl(
     override suspend fun deleteCertificateChain(
         alias: String,
         providerId: String?
-    ): Boolean = certificateStore(providerId).deleteCertificateChain(alias)
+    ): Boolean {
+        val record = certificateReferenceRegistrar
+            .findLatest(alias, providerId, CertificateReferenceKind.KEY_CERTIFICATE_CHAIN)
+            .getOrThrowReference()
+        if (record == null) return certificateStore(providerId).deleteCertificateChain(alias)
+        if (record.deletedAt != null) return record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
+        if (record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED) {
+            return certificateReferenceRegistrar.softDelete(record).getOrThrowReference()
+        }
+        val deleted = certificateStore(providerId).deleteCertificateChain(alias)
+        if (deleted) certificateReferenceRegistrar.softDelete(record).getOrThrowReference()
+        return deleted
+    }
 
     private suspend fun certificateStore(providerId: String?): CertificateStoreService {
         val target: Any =
             if (providerId == null) {
                 kms.keyStore
             } else {
-                kms.getProviderById(providerId)
+                try {
+                    kms.getProviderById(providerId)
+                } catch (unknownProvider: com.sphereon.crypto.core.PKIException) {
+                    // The registry refuses an id it does not hold; that is a caller addressing
+                    // error, not a server fault, so it must not surface as a 500.
+                    throw CertificateReferenceResolutionException(
+                        "KMS_PROVIDER_NOT_FOUND",
+                        unknownProvider.message ?: "KMS provider '$providerId' is not configured",
+                    )
+                }
             }
         return target as? CertificateStoreService
             ?: (target as? HasKeyStoreService)?.keyStore as? CertificateStoreService
@@ -212,6 +337,66 @@ class CertificatesRestServiceImpl(
                 .atTime(0, 0)
                 .toString(),
         )
+
+    private fun <T> IdkResult<T, IdkError>.getOrThrowReference(): T =
+        getOrElse { error ->
+            throw CertificateReferenceResolutionException(
+                code = error.code,
+                message = safeReferenceErrorMessage(error.code),
+            )
+        }
+
+    private fun safeReferenceErrorMessage(code: String): String =
+        when (code) {
+            "NOT_FOUND_ERROR" -> "The certificate reference was not found"
+            CertificateReferenceStoreErrorCodes.AMBIGUOUS_REFERENCE -> "The certificate reference is ambiguous"
+            CertificateReferenceStoreErrorCodes.KEY_IDENTITY_MISMATCH -> "The certificate does not match the linked key"
+            CertificateReferenceStoreErrorCodes.PROVIDER_DRIFT -> "The provider certificate no longer matches its registered reference"
+            else -> "The certificate reference operation failed"
+        }
+
+    private fun CertificateReferenceRecord.toResponse(): CertificateReferenceResponse =
+        CertificateReferenceResponse(
+            id = id,
+            alias = alias,
+            providerId = providerId,
+            providerCertificateId = providerCertificateId,
+            kind = kind,
+            source = source,
+            controlMode = controlMode,
+            origin = when (controlMode) {
+                ResourceControlMode.PLATFORM_MANAGED -> Origin.MANAGED
+                ResourceControlMode.EXTERNALLY_MANAGED -> Origin.EXTERNAL
+            },
+            linkedKeyReferenceId = linkedKeyReferenceId,
+            certificateChain = certificateChainDer?.let {
+                CertificateReferenceRecord.decodeCertificateChain(it).map(::Base64ByteArray)
+            },
+            certificateFingerprint = Base64ByteArray(certificateFingerprint),
+            publicKeyFingerprint = Base64ByteArray(publicKeyFingerprint),
+        )
+
+    private suspend fun CertificateReferenceRecord.toMetadataResponse(): CertificateReferenceMetadataResponse {
+        val linkedKey = certificateReferenceRegistrar.findLinkedKeyReference(this).getOrThrowReference()
+        return CertificateReferenceMetadataResponse(
+            id = id,
+            alias = alias,
+            providerId = providerId,
+            providerCertificateId = providerCertificateId,
+            kind = kind,
+            source = source,
+            controlMode = controlMode,
+            origin = when (controlMode) {
+                ResourceControlMode.PLATFORM_MANAGED -> Origin.MANAGED
+                ResourceControlMode.EXTERNALLY_MANAGED -> Origin.EXTERNAL
+            },
+            linkedKeyReferenceId = linkedKeyReferenceId,
+            linkedKeyAlias = linkedKey?.alias,
+            linkedKeyKid = linkedKey?.kid,
+            certificateFingerprint = Base64ByteArray(certificateFingerprint),
+            publicKeyFingerprint = Base64ByteArray(publicKeyFingerprint),
+        )
+    }
 
     @ContributesTo(SessionScope::class)
     interface Graph {

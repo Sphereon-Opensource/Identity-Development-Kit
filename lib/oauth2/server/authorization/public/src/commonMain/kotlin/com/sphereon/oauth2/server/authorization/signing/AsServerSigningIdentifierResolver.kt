@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.server.authorization.signing
 
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
+import com.sphereon.crypto.resolution.managed.ManagedOptsKeyInfo
 
 /**
  * Resolves the AS sign-time signing identifier.
@@ -41,4 +42,25 @@ interface AsServerSigningIdentifierResolver {
      * verification picks the matching entry.
      */
     suspend fun resolveSigningIdentifier(): ManagedIdentifierOptsOrResult?
+
+    /**
+     * Resolve an active private signing key for the requested JWS algorithm.
+     * Implementations must fail closed rather than returning a key for a different algorithm.
+     */
+    suspend fun resolveSigningIdentifier(jwsAlgorithm: String): ManagedIdentifierOptsOrResult? {
+        val resolved = resolveSigningIdentifier() ?: return null
+        val actual = (resolved as? ManagedOptsKeyInfo)?.identifier?.signatureAlgorithm?.jose?.value
+        require(actual != null && actual.equals(jwsAlgorithm, ignoreCase = true)) {
+            "The active signing key uses '${actual ?: "an unknown algorithm"}', not '$jwsAlgorithm'"
+        }
+        return resolved
+    }
+
+    /**
+     * Algorithms for which this server currently has an active signing key.
+     */
+    suspend fun supportedSigningAlgorithms(): Set<String> {
+        val resolved = resolveSigningIdentifier() as? ManagedOptsKeyInfo ?: return emptySet()
+        return setOfNotNull(resolved.identifier.signatureAlgorithm?.jose?.value)
+    }
 }

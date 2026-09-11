@@ -44,6 +44,7 @@ import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStatus
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialStore
 import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import com.sphereon.data.store.credential.design.model.SdPolicy as DesignSdPolicy
 
@@ -154,13 +155,23 @@ class DeferredPipelineReExecutor(
     ): DispatchInputs? {
         val configId = entry.credentialConfigurationId
         val configuration = issuerConfigProvider.credentialConfigurations[configId]
-        val mergedAttributes = configuration?.let { mergeAttributes(session, tokenContext, configId) }
-        if (configuration == null || mergedAttributes == null) {
+        val mergedInputs = configuration?.let { mergeIssuanceInputs(session, tokenContext, configId) }
+        if (configuration == null || mergedInputs == null) {
             return null
         }
         val request = CredentialRequest(credentialConfigurationId = configId, format = configuration.format)
         val handler = formatHandlers.firstOrNull { it.canHandle(request, configuration) } ?: return null
-        return DispatchInputs(configId, configuration, mergedAttributes, request, handler, entry.transactionId)
+        return DispatchInputs(
+            configId = configId,
+            configuration = configuration,
+            attributes = mergedInputs.attributes,
+            vcdmProperties = mergedInputs.vcdmProperties,
+            credentialId = mergedInputs.credentialId,
+            credentialSubjects = mergedInputs.credentialSubjects,
+            request = request,
+            handler = handler,
+            deferredTransactionId = entry.transactionId,
+        )
     }
 
     /**
@@ -206,11 +217,11 @@ class DeferredPipelineReExecutor(
      * Priority mirrors [HandleCredentialRequestCommandImpl]: preSeeded → accumulated → contributed.
      * Returns `null` if the contributor errors so the caller falls back to the 202 path.
      */
-    private suspend fun mergeAttributes(
+    private suspend fun mergeIssuanceInputs(
         session: IssuanceSession,
         tokenContext: ValidatedTokenContext,
         configId: String,
-    ): Map<String, JsonElement>? {
+    ): MergedIssuanceInputs? {
         val merged = mutableMapOf<String, JsonElement>()
         session.preSeededAttributes?.let { merged.putAll(it) }
         session.accumulatedAttributes?.let { merged.putAll(it) }
@@ -219,7 +230,12 @@ class DeferredPipelineReExecutor(
                 .contribute(session, tokenContext, configId)
                 .getOrElse { return null }
         merged.putAll(contributed.attributes)
-        return merged
+        return MergedIssuanceInputs(
+            attributes = merged,
+            vcdmProperties = contributed.vcdmProperties,
+            credentialId = contributed.credentialId,
+            credentialSubjects = contributed.credentialSubjects,
+        )
     }
 
     private suspend fun contributeOid4vciPhase(
@@ -256,12 +272,16 @@ class DeferredPipelineReExecutor(
             // behaviour for re-execution that didn't see a fresh proof.
             holderBindingKey = null,
             attributes = inputs.attributes,
+            vcdmProperties = inputs.vcdmProperties,
+            credentialId = inputs.credentialId,
+            credentialSubjects = inputs.credentialSubjects,
             sdPolicies = designContext.sdPolicies,
             mandatoryClaims = designContext.mandatoryClaims,
             signingKeyAlias = signingConfig.signingKeyAlias,
             signingKeyMode = signingConfig.signingKeyMode,
             signingVerificationMethodId = signingConfig.signingVerificationMethodId,
-            signingCertChainPath = signingConfig.signingCertChainPath,
+            dataIntegrityCryptosuite = signingConfig.dataIntegrityCryptosuite,
+            signingX5c = signingConfig.signingX5c,
             issuanceClockSkewInSeconds = issuerConfigProvider.issuanceClockSkewInSeconds,
             expirationInDays = expirationInDays,
         )
@@ -346,9 +366,19 @@ class DeferredPipelineReExecutor(
         val configId: String,
         val configuration: CredentialConfigurationSupported,
         val attributes: Map<String, JsonElement>,
+        val vcdmProperties: JsonObject,
+        val credentialId: String?,
+        val credentialSubjects: List<JsonObject>,
         val request: CredentialRequest,
         val handler: CredentialFormatHandler,
         val deferredTransactionId: String,
+    )
+
+    private data class MergedIssuanceInputs(
+        val attributes: Map<String, JsonElement>,
+        val vcdmProperties: JsonObject,
+        val credentialId: String?,
+        val credentialSubjects: List<JsonObject>,
     )
 
     private data class DesignContext(

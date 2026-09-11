@@ -29,6 +29,7 @@ interface ListVerificationRelationshipsEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "listVerificationRelationships",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("VerificationRelationships"),
                 summary = "List verification relationships on a DID",
             )
@@ -47,6 +48,7 @@ interface AddVerificationRelationshipEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "addVerificationRelationship",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("VerificationRelationships"),
                 summary = "Add a verification relationship linking a verification method to a purpose",
             )
@@ -63,6 +65,7 @@ interface RemoveVerificationRelationshipEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/identifiers/{did}/verification-relationships/{relationshipId}",
                 operationId = "removeVerificationRelationship",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("VerificationRelationships"),
                 summary = "Remove a verification relationship",
             )

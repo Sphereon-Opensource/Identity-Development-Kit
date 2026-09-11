@@ -52,6 +52,7 @@ import com.sphereon.crypto.core.interop.keyInfoToEcdsaDerKmpContext
 import com.sphereon.crypto.core.interop.keyInfoToRSADerKmpContext
 import com.sphereon.crypto.core.interop.okpRawToJwk
 import com.sphereon.crypto.core.interop.resolveEcdsaKmpCurve
+import com.sphereon.crypto.core.interop.resolveEcdsaKmpDigest
 import com.sphereon.crypto.core.interop.resolveEdDsaKmpCurve
 import com.sphereon.crypto.core.interop.resolvePSSSaltSize
 import com.sphereon.crypto.core.interop.resolveRSAKmpDigest
@@ -66,6 +67,7 @@ import com.sphereon.crypto.core.interop.toRsaPkcs1PublicKey
 import com.sphereon.crypto.core.interop.toRsaPssPrivateKey
 import com.sphereon.crypto.core.interop.toRsaPssPublicKey
 import com.sphereon.crypto.core.interop.toSphereonJwk
+import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkType
@@ -86,6 +88,7 @@ import com.sphereon.crypto.core.kms.KmsProvider
 import com.sphereon.crypto.core.kms.KmsProviderCapabilities
 import com.sphereon.crypto.core.kms.KmsProviderConfigBase
 import com.sphereon.crypto.core.kms.KmsProviderOperation
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
 import com.sphereon.crypto.core.kms.OperationCapability
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
@@ -98,10 +101,12 @@ import com.sphereon.crypto.core.sign.model.SignOutput
 import com.sphereon.crypto.core.sign.model.SignOutputData
 import com.sphereon.crypto.core.sign.model.Signature
 import com.sphereon.crypto.core.sign.model.SignatureLevel
+import com.sphereon.crypto.core.sign.requireSigningKeyCompatible
+import com.sphereon.crypto.core.sign.keyCompatibilityFailure
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.crypto.core.x509.CertificateCreationUtils
 import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreConfigType
-import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreService
+import com.sphereon.crypto.kms.keystore.memory.MemoryKeyStoreFactory
 import com.sphereon.crypto.kms.keystore.software.JksKeyStoreConfig
 import com.sphereon.crypto.kms.keystore.software.EncryptedFileKeyStoreConfig
 import com.sphereon.crypto.kms.keystore.software.Pkcs12KeyStoreConfig
@@ -150,6 +155,7 @@ class SoftwareKmsProviderImpl(
     // Assisted because this comes from a factory in app scope
     @Assisted private val execution: SessionExecution,
     @Assisted val keyStoreManager: KeyStoreManager? = null,
+    private val memoryKeyStoreFactory: MemoryKeyStoreFactory,
 ) : SoftwareKmsProvider {
     private val config: SoftwareKmsProviderConfigType = providerConfig as? SoftwareKmsProviderConfigType ?: throw IllegalArgumentException("Config must be ISoftwareKmsProviderConfig")
     private val log = execution.log.logManager.withTag("SoftwareKmsProvider")
@@ -164,7 +170,7 @@ class SoftwareKmsProviderImpl(
                 require(it is MemoryKeyStoreConfigType) {
                     "A key store manager is required when key store configuration is supplied and not of type MemoryKeyStoreConfig. Config: $config"
                 }
-                MemoryKeyStoreService(it)
+                memoryKeyStoreFactory.create(it, execution)
             }
         }
 
@@ -709,8 +715,11 @@ class SoftwareKmsProviderImpl(
 
         // If certificate options are provided use them, otherwise see if we need to create a self signed cert and use the alias as CN
         val supportsCertificate = keyType == KeyTypeMapping.EC || keyType == KeyTypeMapping.RSA
+        // Implicit certificates are self-signed. An encryption recipient must
+        // never be used as a signer merely because automatic certificates are on.
+        val supportsSelfSigning = keyUse == JwkUse.sig && KeyOperations.SIGN in keyOpsMapping
         val certOpts =
-            certificateOptions ?: if (!config.autoCreateCertificate || !supportsCertificate) {
+            certificateOptions ?: if (!config.autoCreateCertificate || !supportsCertificate || !supportsSelfSigning) {
                 null
             } else {
                 CertificateOptions(
@@ -788,7 +797,21 @@ class SoftwareKmsProviderImpl(
         keyInfo: KeyInfoType<*>,
         mangedKeyRequired: Boolean = false,
     ): DerKmpKeyInfoContext {
-        log.debug("[KEYSTORE-LOOKUP] Looking up key with alias=${keyInfo.alias}, kid=${keyInfo.kid}, signatureAlgorithm=${keyInfo.signatureAlgorithm}")
+        val inlineKey =
+            keyInfo.key?.let { suppliedKey ->
+                runCatching { CoseJoseKeyMappingService.toJoseJwk(suppliedKey) }
+                    .getOrElse { cause ->
+                        throw IllegalArgumentException(
+                            "Inline key material cannot be converted to a JWK; refusing keystore lookup",
+                            cause,
+                        )
+                    }
+            }
+        if (inlineKey != null) {
+            validateInlineKeySelection(keyInfo, inlineKey)
+        } else {
+            log.debug("[KEYSTORE-LOOKUP] Looking up key with alias=${keyInfo.alias}, kid=${keyInfo.kid}, signatureAlgorithm=${keyInfo.signatureAlgorithm}")
+        }
         // When a managed (private) key is required (e.g., for signing) and the keystore exposes
         // private key material for signing, we must request PRIVATE visibility from the keystore.
         // Software keystores (memory, PKCS12, JKS, file-backed) store and expose private key bytes
@@ -807,39 +830,34 @@ class SoftwareKmsProviderImpl(
                 keyInfo
             }
         val resolvedKeyInfo =
-            if (!mangedKeyRequired) {
-                // Short-circuit when the caller already supplied a JWK on `keyInfo` — the
-                // keystore lookup is unnecessary (and impossible without an alias) for the
-                // verification path, where the verifier passes the JWK directly.
-                val resolved =
-                    keyInfo as? ResolvedKeyInfoType<*>
-                        ?: if (keyInfo.key != null) {
-                            ResolvedKeyInfo(
-                                key = keyInfo.key as JwkType,
-                                keyVisibility = keyInfo.keyVisibility ?: KeyVisibility.PUBLIC,
-                                keyType = (keyInfo.key as? Jwk)?.let { jwk -> KeyTypeMapping.fromJose(jwk.kty) } ?: KeyTypeMapping.EC,
-                                alias = keyInfo.alias ?: keyInfo.kid ?: "<inline-key>",
-                                providerId = keyInfo.providerId ?: id,
-                                kid = keyInfo.kid,
-                                signatureAlgorithm = keyInfo.signatureAlgorithm,
-                            )
-                        } else {
-                            privateKeyStore?.getKey(keyInfo)
-                        }
+            if (inlineKey != null) {
+                // Supplied material is authoritative even when an alias/kid accompanies it. This
+                // is required while an automatically generated certificate is signed before the
+                // generated alias has been persisted. Public-only material must never borrow a
+                // stored private key; callers selecting a stored signing key must omit material.
+                if (keyInfo is ResolvedKeyInfoType<*>) {
+                    keyInfo
+                } else {
+                    ResolvedKeyInfo(
+                        key = inlineKey,
+                        opts = keyInfo.opts,
+                        keyVisibility = keyInfo.keyVisibility ?: KeyVisibility.PUBLIC,
+                        keyType = keyInfo.keyType ?: inlineKey.getKeyType(),
+                        alias = keyInfo.alias,
+                        providerId = keyInfo.providerId,
+                        kid = keyInfo.kid ?: inlineKey.kid,
+                        signatureAlgorithm = keyInfo.signatureAlgorithm ?: inlineKey.getSignatureAlgorithm(),
+                        x5c = keyInfo.x5c ?: inlineKey.x5c,
+                        keyEncoding = keyInfo.keyEncoding,
+                        noCache = keyInfo.noCache,
+                    )
+                }
+            } else if (!mangedKeyRequired) {
+                val resolved = privateKeyStore?.getKey(keyInfo)
                 log.debug("[KEYSTORE-LOOKUP] Retrieved key: alias=${resolved?.alias}, signatureAlgorithm=${resolved?.signatureAlgorithm}")
                 resolved
             } else {
-                val key = keyInfo.key
-                val resolved =
-                    if (keyInfo is ManagedKeyInfoType<*> || (keyInfo is ResolvedKeyInfoType<*> && key != null && key.d != null)) {
-                        if (key!!.d == null) {
-                            privateKeyStore?.getKey(lookupKeyInfo) ?: keyInfo
-                        } else {
-                            keyInfo
-                        }
-                    } else {
-                        privateKeyStore?.getKey(lookupKeyInfo)
-                    }
+                val resolved = privateKeyStore?.getKey(lookupKeyInfo)
                 log.debug("[KEYSTORE-LOOKUP] Retrieved key: alias=${resolved?.alias}, signatureAlgorithm=${resolved?.signatureAlgorithm}")
                 resolved
             }
@@ -879,6 +897,25 @@ class SoftwareKmsProviderImpl(
         }
     }
 
+    private fun validateInlineKeySelection(
+        keyInfo: KeyInfoType<*>,
+        inlineKey: JwkType,
+    ) {
+        require(keyInfo.providerId == null || keyInfo.providerId == id) {
+            "Inline key provider '${keyInfo.providerId}' does not match software KMS provider '$id'"
+        }
+        // An alias does not override explicit key identity on supplied material.
+        if (
+            keyInfo.kid != null &&
+            inlineKey.kid != null &&
+            keyInfo.kid != inlineKey.kid
+        ) {
+            throw IllegalArgumentException(
+                "Inline key kid '${inlineKey.kid}' does not match selected kid '${keyInfo.kid}'",
+            )
+        }
+    }
+
     /**
      * Generates a signature for the given input data using the provided key information.
      *
@@ -892,20 +929,43 @@ class SoftwareKmsProviderImpl(
         input: ByteArray,
         requireX5Chain: Boolean,
     ): ByteArray {
-        // Try native signing first (e.g., iOS keychain)
-        val nativeSignature = signWithNativeKey(keyInfo, input)
-        if (nativeSignature != null) {
-            return nativeSignature
+        requireManagedSigningKeySelection(keyInfo)
+        // Resolve once with private visibility. Inline material is authoritative, while a
+        // selector is looked up once and can then be used by native or software signing.
+        val resolvedContext = keyInfoToBytesWithKeystoreLookup(keyInfo, mangedKeyRequired = true)
+        val resolvedKey = resolvedContext.key
+        val requestedAlgorithm = keyInfo.signatureAlgorithm ?: resolvedKey.getSignatureAlgorithm()
+            ?: throw IllegalArgumentException("No signature algorithm found or supplied for $keyInfo")
+        val policyInfo = if (keyInfo.key != null) keyInfo else resolvedSigningKeyInfo(keyInfo, resolvedKey, requestedAlgorithm)
+        policyInfo.requireSigningKeyCompatible(requestedAlgorithm)
+
+        // Inline material is authoritative and must never be redirected to a provider alias.
+        // Native signing is reserved for selectors whose private material is not exportable.
+        if (keyInfo.key == null) {
+            val nativeSignature = signWithNativeKey(policyInfo, input)
+            if (nativeSignature != null) return nativeSignature
         }
 
         // Fall back to software signing
-        val (key, _, privateKeyBytes, curveImpl, algImpl) = keyInfoToBytesWithKeystoreLookup(keyInfo, mangedKeyRequired = true)
+        val (key, _, privateKeyBytes, curveImpl, algImpl) = resolvedContext
+
+        val softwarePolicyInfo = if (keyInfo.key != null) keyInfo else resolvedSigningKeyInfo(keyInfo, key, requestedAlgorithm)
+        softwarePolicyInfo.requireSigningKeyCompatible(requestedAlgorithm)
 
         return when {
-            key.kty == JwaKeyType.EC && key.d != null && curveImpl != null -> {
-                // Load private key from JWK directly (no DER/signum roundtrip)
-                val privateKey = key.toEcdsaPrivateKey(provider = cryptoProvider, curve = curveImpl)
-                return privateKey.signatureGenerator(digest = algImpl, format = ECDSA.SignatureFormat.RAW).generateSignature(input)
+            key.kty == JwaKeyType.EC && key.d != null -> {
+                // Load private key from JWK directly (no DER/signum roundtrip).
+                // Prefer the precomputed curveImpl; fall back to the JWK crv when the
+                // ECDSA context builder left curveImpl null (alias-resolved PKCS12 keys).
+                val curve =
+                    curveImpl
+                        ?: resolveEcdsaKmpCurve(Curve.fromJose(key.crv ?: JwaCurve.P_256))
+                        ?: throw IllegalArgumentException(
+                            "Unsupported EC curve '${key.crv}' for software signing of ${keyInfo.alias ?: keyInfo.kid}",
+                        )
+                val digest = algImpl ?: resolveEcdsaKmpDigest(requestedAlgorithm)
+                val privateKey = key.toEcdsaPrivateKey(provider = cryptoProvider, curve = curve)
+                return privateKey.signatureGenerator(digest = digest, format = ECDSA.SignatureFormat.RAW).generateSignature(input)
             }
 
             key.kty == JwaKeyType.OKP && key.d != null -> {
@@ -920,7 +980,7 @@ class SoftwareKmsProviderImpl(
             }
 
             key.kty == JwaKeyType.RSA && key.n != null && key.d != null -> {
-                val signatureAlgorithm = keyInfo.signatureAlgorithm ?: key.getSignatureAlgorithm() ?: SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1
+                val signatureAlgorithm = requestedAlgorithm
                 log.debug("[SIGNING] RSA: keyInfo.signatureAlgorithm=${keyInfo.signatureAlgorithm}, key.getSignatureAlgorithm()=${key.getSignatureAlgorithm()}, resolved=$signatureAlgorithm")
                 val digest = resolveRSAKmpDigest(signatureAlgorithm)
                 when (signatureAlgorithm) {
@@ -940,7 +1000,11 @@ class SoftwareKmsProviderImpl(
             }
 
             else -> {
-                throw IllegalArgumentException("Private key resolution or HSMs not supported yet. Please provide a private key")
+                throw IllegalArgumentException(
+                    "Private key resolution or HSMs not supported yet. Please provide a private key " +
+                        "(kty=${key.kty}, hasD=${key.d != null}, curveImpl=${curveImpl != null}, " +
+                        "alias=${keyInfo.alias}, kid=${keyInfo.kid}, visibility=${keyInfo.keyVisibility})",
+                )
             }
         }
     }
@@ -960,6 +1024,10 @@ class SoftwareKmsProviderImpl(
         signature: ByteArray,
     ): Boolean {
         val (key, _, _, curveImpl, algImpl) = keyInfoToBytesWithKeystoreLookup(keyInfo)
+        val signatureAlgorithm = keyInfo.signatureAlgorithm ?: key.getSignatureAlgorithm()
+            ?: throw IllegalArgumentException("No signature algorithm found or supplied for $keyInfo")
+        keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(signatureAlgorithm) }
+        resolvedSigningKeyInfo(keyInfo, key).verificationPolicyInfo().requireVerificationKeyCompatible(signatureAlgorithm)
         return when {
             key.kty == JwaKeyType.OKP && key.x != null -> {
                 // EdDSA (Ed25519 / Ed448): no digest parameter; signature length fixed.
@@ -979,7 +1047,6 @@ class SoftwareKmsProviderImpl(
             }
 
             key.n != null -> {
-                val signatureAlgorithm = keyInfo.signatureAlgorithm ?: key.getSignatureAlgorithm() ?: SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1
                 log.debug("[VERIFICATION] RSA: keyInfo.signatureAlgorithm=${keyInfo.signatureAlgorithm}, key.getSignatureAlgorithm()=${key.getSignatureAlgorithm()}, resolved=$signatureAlgorithm")
                 val digest = resolveRSAKmpDigest(signatureAlgorithm)
                 when (signatureAlgorithm) {
@@ -1010,8 +1077,11 @@ class SoftwareKmsProviderImpl(
         signatureEncoding: SignatureEncoding,
         requireX5Chain: Boolean,
     ): ByteArray {
+        requireManagedSigningKeySelection(keyInfo)
         require(digest.isNotEmpty()) { "digest is required" }
         val (key, _, _, curveImpl, _) = keyInfoToBytesWithKeystoreLookup(keyInfo, mangedKeyRequired = true)
+
+        resolvedSigningKeyInfo(keyInfo, key).requireSigningKeyCompatible(signatureAlgorithm)
 
         require(signatureAlgorithm.cryptoAlgorithm == CryptoAlg.ECDSA) { "Digest signing currently supports ECDSA algorithms only, got: $signatureAlgorithm" }
         require(key.kty == JwaKeyType.EC) { "Digest signing with $signatureAlgorithm requires an EC key, got: ${key.kty}" }
@@ -1034,6 +1104,9 @@ class SoftwareKmsProviderImpl(
         require(digest.isNotEmpty()) { "digest is required" }
         require(signature.isNotEmpty()) { "signature is required" }
         val (key, _, _, curveImpl, _) = keyInfoToBytesWithKeystoreLookup(keyInfo)
+
+        keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(signatureAlgorithm) }
+        resolvedSigningKeyInfo(keyInfo, key).verificationPolicyInfo().requireVerificationKeyCompatible(signatureAlgorithm)
 
         require(signatureAlgorithm.cryptoAlgorithm == CryptoAlg.ECDSA) { "Digest verification currently supports ECDSA algorithms only, got: $signatureAlgorithm" }
         require(key.kty == JwaKeyType.EC) { "Digest verification with $signatureAlgorithm requires an EC key, got: ${key.kty}" }
@@ -1066,6 +1139,53 @@ class SoftwareKmsProviderImpl(
         signInput: SignInput,
         signature: Signature,
     ): Boolean = isValidRawSignature(signature.keyInfo, signInput.input, signature.value)
+
+    private fun resolvedSigningKeyInfo(
+        requestedKeyInfo: KeyInfoType<*>,
+        resolvedKey: Jwk,
+        requestedAlgorithm: SignatureAlgorithm? = requestedKeyInfo.signatureAlgorithm,
+    ): KeyInfoType<*> {
+        val kid = resolvedKey.kid ?: requestedKeyInfo.kid
+        val x5c = requestedKeyInfo.x5c ?: resolvedKey.x5c
+        return if (requestedKeyInfo is ResolvedKeyInfoType<*>) {
+            ResolvedKeyInfo(
+                kid = kid,
+                key = resolvedKey,
+                opts = requestedKeyInfo.opts,
+                keyVisibility = requestedKeyInfo.keyVisibility,
+                signatureAlgorithm = requestedAlgorithm,
+                x5c = x5c,
+                alias = requestedKeyInfo.alias,
+                providerId = requestedKeyInfo.providerId,
+                keyType = requestedKeyInfo.keyType,
+                keyEncoding = requestedKeyInfo.keyEncoding,
+                noCache = requestedKeyInfo.noCache,
+            )
+        } else {
+            KeyInfo(
+                kid = kid,
+                key = resolvedKey,
+                opts = requestedKeyInfo.opts,
+                keyVisibility = requestedKeyInfo.keyVisibility,
+                signatureAlgorithm = requestedAlgorithm,
+                x5c = x5c,
+                alias = requestedKeyInfo.alias,
+                providerId = requestedKeyInfo.providerId,
+                keyType = requestedKeyInfo.keyType,
+                keyEncoding = requestedKeyInfo.keyEncoding,
+                noCache = requestedKeyInfo.noCache,
+            )
+        }
+    }
+
+    private fun KeyInfoType<*>.requireVerificationKeyCompatible(requestedAlgorithm: SignatureAlgorithm) {
+        val failure = keyCompatibilityFailure(requestedAlgorithm, KeyOperations.VERIFY)
+        if (failure != null) {
+            throw IllegalArgumentException(failure)
+        }
+    }
+
+    private fun KeyInfoType<*>.verificationPolicyInfo(): KeyInfoType<*> = this
 
     // Encryption operations
     override suspend fun encrypt(

@@ -29,7 +29,6 @@ import kotlin.jvm.JvmStatic
  * - vc+sd-jwt: W3C Verifiable Credential secured using SD-JWT
  * - mso_mdoc: ISO 18013-5 mobile driving license format
  * - jwt_vc_json: JWT Verifiable Credential
- * - jwt_vp_json: JWT Verifiable Presentation
  */
 @JsExportCompat
 @Serializable
@@ -73,15 +72,6 @@ enum class CredentialFormat(
     JWT_VC_JSON("jwt_vc_json"),
 
     /**
-     * JWT Verifiable Presentation format
-     *
-     * W3C Verifiable Presentation in JWT format.
-     * Structure: header.payload.signature
-     */
-    @SerialName("jwt_vp_json")
-    JWT_VP_JSON("jwt_vp_json"),
-
-    /**
      * VCDM 2.0 enveloped via JOSE (W3C VC JOSE/COSE §3.1.1).
      *
      * The credential body is a JSON-LD VCDM 2.0 document; the entire body is
@@ -91,8 +81,12 @@ enum class CredentialFormat(
      * Structure: header.payload.signature where payload is the VCDM 2.0 JSON-LD
      * document with `iss`/`iat`/`exp` JWT registered claims merged at the root.
      */
-    @SerialName("vc+ld+json+jwt")
-    VC_LD_JSON_JWT("vc+ld+json+jwt"),
+    @SerialName("jwt_vc_json-ld")
+    JWT_VC_JSON_LD("jwt_vc_json-ld"),
+
+    /** W3C Verifiable Credential secured with Data Integrity. */
+    @SerialName("ldp_vc")
+    LDP_VC("ldp_vc"),
     ;
 
     /**
@@ -105,13 +99,25 @@ enum class CredentialFormat(
      * Check if this format is a JWT variant (but not SD-JWT)
      */
     val isJwt: Boolean
-        get() = this == JWT_VC_JSON || this == JWT_VP_JSON
+        get() = this == JWT_VC_JSON || this == JWT_VC_JSON_LD
+
+    /** True for all strict compact-JWS VCDM representations. */
+    val isCompactJws: Boolean
+        get() = this == JWT_VC_JSON || this == JWT_VC_JSON_LD
+
+    /** True only for compact-JWS VCDM credential representations. */
+    val isJwtVc: Boolean
+        get() = this == JWT_VC_JSON || this == JWT_VC_JSON_LD
 
     /**
      * Check if this format is mDoc
      */
     val isMdoc: Boolean
         get() = this == MSO_MDOC
+
+    /** True for the OID4VCI/OID4VP Data Integrity Credential Format Profile. */
+    val isDataIntegrity: Boolean
+        get() = this == LDP_VC
 
     companion object {
         /**
@@ -142,37 +148,12 @@ enum class CredentialFormat(
                 lowerValue == "application/dc+sd-jwt" -> SD_JWT_VC
                 lowerValue == "application/vc+sd-jwt" -> W3C_VC_SD_JWT
                 lowerValue == "mso_mdoc" || lowerValue.contains("mdoc") -> MSO_MDOC
+                lowerValue == "jwt_vc_json-ld" -> JWT_VC_JSON_LD
+                lowerValue == "ldp_vc" -> LDP_VC
                 lowerValue.contains("jwt_vc") || lowerValue == "jwt_vc_json" -> JWT_VC_JSON
-                lowerValue.contains("jwt_vp") || lowerValue == "jwt_vp_json" -> JWT_VP_JSON
                 else -> null
             }
         }
-
-        /**
-         * Detect the credential format from a presentation string
-         *
-         * Analyzes the structure of the presentation to determine its format:
-         * - SD-JWT: Contains '~' separator (e.g., "header.payload.signature~disclosure1~kb-jwt")
-         * - JWT: Three base64url parts separated by dots (header.payload.signature)
-         * - mDoc: Base64/Base64url encoded CBOR (no dots, longer than 20 chars)
-         *
-         * @param presentation The presentation string to analyze
-         * @return Detected CredentialFormat, or null if format cannot be determined
-         */
-        @JvmStatic
-        fun detectFormat(presentation: String): CredentialFormat? =
-            when {
-                // SD-JWT: Contains disclosure separators (~)
-                presentation.contains("~") -> SD_JWT_VC
-
-                // JWT: Three base64url parts separated by dots
-                presentation.matches(JWT_PATTERN) -> JWT_VC_JSON
-
-                // mDoc: Base64/Base64url encoded CBOR (no dots, reasonable length)
-                presentation.length > 20 && !presentation.contains(".") -> MSO_MDOC
-
-                else -> null
-            }
 
         /**
          * Check if a format string matches any known credential format
@@ -183,14 +164,8 @@ enum class CredentialFormat(
         @JvmStatic
         fun isKnownFormat(format: String): Boolean = fromValueLenient(format) != null
 
-        private val JWT_PATTERN = Regex("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*$")
     }
 }
-
-/**
- * Extension function to detect format of a presentation string
- */
-fun String.detectCredentialFormat(): CredentialFormat? = CredentialFormat.detectFormat(this)
 
 /**
  * Extension function to check if a format string matches a CredentialFormat

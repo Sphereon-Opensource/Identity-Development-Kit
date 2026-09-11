@@ -18,8 +18,34 @@
 package com.sphereon.crypto.key.persistence
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.ManagedKeyReferenceFilter
+
+enum class KeyReferenceHistoryCapability {
+    UNSUPPORTED,
+    DURABLE,
+}
+
+object KeyReferenceStoreErrorCodes {
+    const val DURABLE_HISTORY_UNSUPPORTED = "KMS_KEY_REFERENCE_DURABLE_HISTORY_UNSUPPORTED"
+    const val AMBIGUOUS_REFERENCE = "KMS_KEY_REFERENCE_AMBIGUOUS"
+    const val EXTERNAL_KEY_REGISTRATION_CONFLICT = "KMS_EXTERNAL_KEY_REGISTRATION_CONFLICT"
+}
+
+class KeyReferenceResolutionException(
+    val code: String,
+    message: String,
+) : Exception(message)
+
+private fun <T> unsupportedHistoryResult(): IdkResult<T, IdkError> =
+    Err(
+        IdkError.fromString(
+            code = KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
+            message = "This key reference store does not provide durable ownership history",
+        ),
+    )
 
 /**
  * Repository interface for tenant-aware key reference persistence.
@@ -36,6 +62,16 @@ interface KeyReferenceStore {
      * Returns `false` for the [NoOpKeyReferenceStore] default binding.
      */
     val isAvailable: Boolean get() = true
+
+    /**
+     * Whether destructive ownership decisions can rely on durable active and soft-deleted history.
+     *
+     * The source-compatible default is deliberately unsupported. Implementations may advertise
+     * [KeyReferenceHistoryCapability.DURABLE] only when they override every all-match lookup below
+     * and retain soft-deleted rows across process restarts.
+     */
+    val ownershipHistoryCapability: KeyReferenceHistoryCapability
+        get() = KeyReferenceHistoryCapability.UNSUPPORTED
 
     /** Insert a new key reference. Fails if a record with the same alias+provider already exists for this tenant. */
     suspend fun save(record: KeyReferenceRecord): IdkResult<KeyReferenceRecord, IdkError>
@@ -62,6 +98,62 @@ interface KeyReferenceStore {
         alias: String,
         providerId: String? = null,
     ): IdkResult<KeyReferenceRecord?, IdkError>
+
+    /** Find every active alias match. Durable stores must override this method. */
+    suspend fun findAllActiveByAlias(
+        tenantId: String,
+        alias: String,
+        providerId: String? = null,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> =
+        findByAlias(tenantId, alias, providerId).map { record -> listOfNotNull(record) }
+
+    /** Find every active kid match. Durable stores must override this method. */
+    suspend fun findAllActiveByKid(
+        tenantId: String,
+        kid: String,
+        providerId: String? = null,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> =
+        findByKid(tenantId, kid, providerId).map { record -> listOfNotNull(record) }
+
+    /** Find every alias match, including soft-deleted rows. */
+    suspend fun findAllByAliasIncludingDeleted(
+        tenantId: String,
+        alias: String,
+        providerId: String? = null,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> = unsupportedHistoryResult()
+
+    /** Find every kid match, including soft-deleted rows. */
+    suspend fun findAllByKidIncludingDeleted(
+        tenantId: String,
+        kid: String,
+        providerId: String? = null,
+    ): IdkResult<List<KeyReferenceRecord>, IdkError> = unsupportedHistoryResult()
+
+    /**
+     * Find the most recent key reference by alias, including soft-deleted history.
+     *
+     * This is an ownership-authority lookup for destructive operations. It is tenant scoped and
+     * optionally provider scoped; implementations must return a deterministic latest row when an
+     * identifier has been reused after a previous soft delete.
+     */
+    suspend fun findLatestByAliasIncludingDeleted(
+        tenantId: String,
+        alias: String,
+        providerId: String? = null,
+    ): IdkResult<KeyReferenceRecord?, IdkError> = unsupportedHistoryResult()
+
+    /**
+     * Find the most recent key reference by kid, including soft-deleted history.
+     *
+     * This is an ownership-authority lookup for destructive operations. It is tenant scoped and
+     * optionally provider scoped; implementations must return a deterministic latest row when an
+     * identifier has been reused after a previous soft delete.
+     */
+    suspend fun findLatestByKidIncludingDeleted(
+        tenantId: String,
+        kid: String,
+        providerId: String? = null,
+    ): IdkResult<KeyReferenceRecord?, IdkError> = unsupportedHistoryResult()
 
     /** List all key references for a tenant, optionally filtered. */
     suspend fun findAll(

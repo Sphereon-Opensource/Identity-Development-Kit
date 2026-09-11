@@ -44,6 +44,10 @@ kotlin {
                 api(projects.libWalletWscaPublic)
                 api(projects.libOpenidOid4vciHolderPublic)
                 api(projects.libOpenidOid4vciCommonPublic)
+                // Peer-aware VCDM Data Integrity verifier contract. The wallet receipt path
+                // consumes this seam and fails closed when no deployment implementation is wired.
+                api(projects.libOpenidOid4vpVerifierPublic)
+                api(projects.libCryptoCorePublic)
                 implementation(projects.libOauth2CommonPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)
                 // SD-JWT VC verification command (sdjwt.vc.verify): the receiver verifies the

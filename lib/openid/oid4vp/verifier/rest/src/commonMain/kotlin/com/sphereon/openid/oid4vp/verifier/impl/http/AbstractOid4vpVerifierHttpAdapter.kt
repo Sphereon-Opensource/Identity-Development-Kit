@@ -20,9 +20,10 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
+import com.sphereon.core.api.http.command.ResolvedHttpRequest
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.openid.oid4vp.verifier.config.MutableOid4vpVerifierInstanceIdProvider
 import com.sphereon.openid.oid4vp.verifier.config.Oid4vpVerifierInstanceResolver
@@ -37,18 +38,20 @@ abstract class AbstractOid4vpVerifierHttpAdapter(
     id: String,
     execution: SessionExecution,
     mount: HttpAdapterMount,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
     private val verifierInstanceResolver: Oid4vpVerifierInstanceResolver,
     private val verifierInstanceIdProvider: MutableOid4vpVerifierInstanceIdProvider,
 ) : CommandBackedHttpAdapter(
         id = id,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount = mount,
     ) {
     override suspend fun doExecute(
-        args: GenericHttpRequest,
-        applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
+        args: ResolvedHttpRequest,
+        applyDuring: (ResolvedHttpRequest) -> ResolvedHttpRequest,
     ): IdkResult<GenericHttpResponse, IdkError> {
-        val resolution = verifierInstanceResolver.resolve(args)
+        val resolution = verifierInstanceResolver.resolve(args.request)
         if (resolution.isErr) return Err(resolution.error)
 
         val instanceId = resolution.value?.trim()?.takeIf(String::isNotEmpty)

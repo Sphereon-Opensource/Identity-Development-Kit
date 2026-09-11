@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="{{locale}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{title}}</title>
+<link rel="stylesheet" href="{{assetsBase}}/css/neutral-login.css">
+{{themeStyleBlockOrEmpty}}
+</head>
+<body class="neutral-login {{pageClass}}">
+<main class="login-shell">
+  <section class="login-card">
+    {{logoBlockOrEmpty}}
+    <h1>{{title}}</h1>
+    {{noticeBlockOrEmpty}}
+    {{errorBlockOrEmpty}}
+    <div class="method-sections">{{methodSections}}</div>
+    {{cancelForm}}
+  </section>
+</main>
+</body>
+</html>

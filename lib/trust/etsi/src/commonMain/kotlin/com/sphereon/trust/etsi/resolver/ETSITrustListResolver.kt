@@ -68,7 +68,7 @@ class ETSITrustListResolver(
 
         // TODO: Add ETSI-specific verification (e.g., XML signature verification)
         if (options.verifySignature) {
-            verifySignature(trustListData)
+            verifySignature(trustListData, options)
         }
 
         return trustListData
@@ -81,13 +81,17 @@ class ETSITrustListResolver(
      * When XAdES properties are present (standard for ETSI trust lists),
      * signing time and certificate information are logged.
      */
-    private suspend fun verifySignature(trustListData: TrustListData) {
+    private suspend fun verifySignature(
+        trustListData: TrustListData,
+        options: ResolutionOptions,
+    ) {
         logger.debug("Verifying XML signature for trust list from ${trustListData.sourceUri}")
 
         val verificationOptions =
             XmlSignatureVerificationOptions(
                 validateCertificateChain = true,
                 checkRevocation = false, // Can be made configurable in the future
+                trustedRoots = options.trustedSignerRoots,
                 requireSignature = true,
             )
 

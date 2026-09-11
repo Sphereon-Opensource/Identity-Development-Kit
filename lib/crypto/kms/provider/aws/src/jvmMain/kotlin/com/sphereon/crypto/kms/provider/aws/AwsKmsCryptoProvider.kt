@@ -93,6 +93,10 @@ import com.sphereon.crypto.core.kms.EncryptionResult
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KeyWrapAlgorithm
 import com.sphereon.crypto.core.kms.PredefinedKmsProviderTypes
+import com.sphereon.crypto.core.kms.ProviderTenantAssignmentVerifier
+import com.sphereon.crypto.core.kms.ProviderNativeObjectLookup
+import com.sphereon.crypto.core.kms.ProviderNativeObjectType
+import com.sphereon.crypto.core.kms.requireManagedSigningKeySelection
 import com.sphereon.crypto.core.kms.command.EcdhDeriveMode
 import com.sphereon.crypto.core.kms.command.EcdhDeriveResult
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
@@ -100,22 +104,112 @@ import com.sphereon.crypto.core.kms.command.EcPointMultiplyResult
 import com.sphereon.crypto.core.kms.command.SignatureEncoding
 import com.sphereon.crypto.core.kms.command.SignatureEncodingCodec
 import com.sphereon.crypto.core.x509.Certificate
+import com.sphereon.crypto.core.sign.requireSigningKeyCompatible
+import com.sphereon.crypto.core.sign.keyCompatibilityFailure
 import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.interfaces.ECPublicKey
 import java.security.spec.X509EncodedKeySpec
 import com.sphereon.core.api.encodeToBase64Url
+import kotlinx.coroutines.CancellationException
+
+/** Internal SDK-neutral metadata used by tenant-assignment verification tests and adapter. */
+internal data class AwsKmsKeyIdentity(
+    val keyId: String,
+    val arn: String,
+)
+
+/** Internal page returned by AWS KMS resource-tag reads. */
+internal data class AwsKmsResourceTagPage(
+    val tags: List<Pair<String, String>>,
+    val truncated: Boolean,
+    val nextMarker: String?,
+)
+
+/** Keeps AWS SDK models and credentials out of the public tenant-assignment capability. */
+internal interface AwsKmsTenantAssignmentReader {
+    suspend fun describeKey(keyReference: String): AwsKmsKeyIdentity
+
+    suspend fun listResourceTags(keyId: String, marker: String?): AwsKmsResourceTagPage
+}
 
 actual class AwsKmsCryptoProvider actual constructor(
     settings: KeyProviderSettings
 ) : BaseAwsKmsCryptoProvider(settings),
+    ProviderTenantAssignmentVerifier,
     BackendKeyOperationProofProvider,
     BackendSymmetricKmsKeyLifecycle {
 
     @Volatile
     private var sharedClient: KmsClient? = null
     private val clientMutex = Mutex()
+    private var tenantAssignmentReader: AwsKmsTenantAssignmentReader? = null
+
+    override suspend fun isAssignedToTenant(
+        lookup: ProviderNativeObjectLookup,
+        tenantId: String,
+    ): Boolean {
+        if (lookup.type != ProviderNativeObjectType.KEY || tenantId.isBlank()) return false
+
+        return try {
+            val reader = tenantAssignmentReader ?: defaultTenantAssignmentReader()
+            val aliasIdentity = reader.describeKey(requireAwsNativeAlias(lookup.alias))
+            val requestedIdentity =
+                lookup.id?.let {
+                    requireAwsNativeKeyIdentity(it)
+                    reader.describeKey(it)
+                }
+            if (requestedIdentity != null && requestedIdentity != aliasIdentity) return false
+            reader.hasTenantAssignment(aliasIdentity.keyId, tenantId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    internal constructor(
+        settings: KeyProviderSettings,
+        tenantAssignmentReader: AwsKmsTenantAssignmentReader,
+    ) : this(settings) {
+        this.tenantAssignmentReader = tenantAssignmentReader
+    }
+
+    private suspend fun defaultTenantAssignmentReader(): AwsKmsTenantAssignmentReader {
+        val client = getAWSKmsClient()
+        return object : AwsKmsTenantAssignmentReader {
+            override suspend fun describeKey(keyReference: String): AwsKmsKeyIdentity {
+                val metadata = client.describeKey(DescribeKeyRequest { keyId = keyReference }).keyMetadata
+                    ?: throw IllegalStateException("AWS KMS did not return key metadata")
+                return AwsKmsKeyIdentity(
+                    keyId = metadata.keyId ?: throw IllegalStateException("AWS KMS key identity is missing"),
+                    arn = metadata.arn ?: throw IllegalStateException("AWS KMS key ARN is missing"),
+                )
+            }
+
+            override suspend fun listResourceTags(keyId: String, marker: String?): AwsKmsResourceTagPage {
+                val response =
+                    client.listResourceTags(
+                        ListResourceTagsRequest {
+                            this.keyId = keyId
+                            this.marker = marker
+                            limit = AWS_LIST_TAGS_PAGE_SIZE
+                        },
+                    )
+                return AwsKmsResourceTagPage(
+                    tags =
+                        response.tags.orEmpty().mapNotNull { tag ->
+                            val key = tag.tagKey ?: return@mapNotNull null
+                            val value = tag.tagValue ?: return@mapNotNull null
+                            key to value
+                        },
+                    truncated = response.truncated,
+                    nextMarker = response.nextMarker,
+                )
+            }
+        }
+    }
 
     private suspend fun getAWSKmsClient(): KmsClient {
         sharedClient?.let { return it }
@@ -245,13 +339,16 @@ actual class AwsKmsCryptoProvider actual constructor(
         input: ByteArray,
         requireX5Chain: Boolean
     ): ByteArray {
-        var algorithm = keyInfo.signatureAlgorithm
-        if (algorithm == null) {
-            // No alg supplied. Although the AWS SDK lists the signature param as optional it really is not. So let's lookup the key in this case
-            val key = getKey(keyInfo)
-            algorithm = key.signatureAlgorithm
-                ?: throw IllegalArgumentException("Key does not have a signature algorithm set")
-        }
+        requireManagedSigningKeySelection(keyInfo)
+        // The selector (alias/kid/providerId) is not a signing policy. Resolve the actual
+        // AWS public key first and validate the requested algorithm against that metadata before
+        // handing any bytes to KMS. This also prevents an inline key from changing the key that
+        // an explicit provider selector addresses.
+        val resolved = getKey(keyInfo)
+        val algorithm = keyInfo.signatureAlgorithm ?: resolved.signatureAlgorithm
+            ?: throw IllegalArgumentException("Key does not have a signature algorithm set")
+        keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(algorithm) }
+        resolved.signingPolicyInfo().requireSigningKeyCompatible(algorithm)
 
         val client = getAWSKmsClient()
         val signResponse = client.sign(SignRequest {
@@ -271,7 +368,11 @@ actual class AwsKmsCryptoProvider actual constructor(
         input: ByteArray,
         signature: ByteArray
     ): Boolean {
-        val algorithm = keyInfo.signatureAlgorithm
+        val resolved = getKey(keyInfo)
+        val algorithm = keyInfo.signatureAlgorithm ?: resolved.signatureAlgorithm
+            ?: throw IllegalArgumentException("Key does not have a signature algorithm set")
+        keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(algorithm) }
+        resolved.verificationPolicyInfo().requireVerificationKeyCompatible(algorithm)
 
         val client = getAWSKmsClient()
         try {
@@ -295,7 +396,11 @@ actual class AwsKmsCryptoProvider actual constructor(
         signatureEncoding: SignatureEncoding,
         requireX5Chain: Boolean,
     ): ByteArray {
+        requireManagedSigningKeySelection(keyInfo)
         requireDigestLength(signatureAlgorithm, digest)
+        val resolved = getKey(keyInfo)
+        keyInfo.key?.let { keyInfo.requireSigningKeyCompatible(signatureAlgorithm) }
+        resolved.signingPolicyInfo().requireSigningKeyCompatible(signatureAlgorithm)
         val signResponse =
             getAWSKmsClient().sign(
                 SignRequest {
@@ -317,6 +422,9 @@ actual class AwsKmsCryptoProvider actual constructor(
         signatureEncoding: SignatureEncoding,
     ): Boolean {
         requireDigestLength(signatureAlgorithm, digest)
+        val resolved = getKey(keyInfo)
+        keyInfo.key?.let { keyInfo.requireVerificationKeyCompatible(signatureAlgorithm) }
+        resolved.verificationPolicyInfo().requireVerificationKeyCompatible(signatureAlgorithm)
         val nativeSignature = normalizeAwsSignatureInput(signature, signatureEncoding, signatureAlgorithm)
         return try {
             getAWSKmsClient()
@@ -479,7 +587,8 @@ actual class AwsKmsCryptoProvider actual constructor(
             val nEncoded = modulusBytes.encodeToBase64Url()
             val eEncoded = exponentBytes.encodeToBase64Url()
 
-            // Determine RSA algorithm based on signature algorithm hint or default to PS256
+            // Determine RSA algorithm only from an explicit signature hint. AWS KMS lookup
+            // metadata is algorithm-neutral across RS*/PS*.
             val alg = when (signatureAlgorithm) {
                 SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1 -> JwaAlgorithm.PS256
                 SignatureAlgorithm.RSA_SSA_PSS_SHA384_MGF1 -> JwaAlgorithm.PS384
@@ -487,7 +596,10 @@ actual class AwsKmsCryptoProvider actual constructor(
                 SignatureAlgorithm.RSA_SHA256 -> JwaAlgorithm.RS256
                 SignatureAlgorithm.RSA_SHA384 -> JwaAlgorithm.RS384
                 SignatureAlgorithm.RSA_SHA512 -> JwaAlgorithm.RS512
-                else -> JwaAlgorithm.PS256 // Default to PS256
+                // AWS KMS RSA keys support both PKCS#1 and PSS. A lookup has no algorithm
+                // restriction, so do not fabricate one into the returned JWK. The caller's
+                // requested algorithm is validated and supplied to the Sign API above.
+                else -> null
             }
 
             Jwk.Builder()
@@ -1182,6 +1294,24 @@ private fun canonicalBackendKeyIdentityDigest(value: String): String =
             .digest(value.encodeToByteArray())
             .joinToString(separator = "") { "%02x".format(it) }
 
+/**
+ * AWS KMS does not expose an RSA PKCS#1-v1.5 versus PSS restriction in GetPublicKey. A JWK
+ * synthesized from that response therefore has no authoritative `alg`; remove the historical
+ * RSA inference from the policy DTO while retaining all actual family/curve/use/key_ops data.
+ */
+private fun ManagedKeyInfoType<*>.signingPolicyInfo(): KeyInfoType<*> {
+    val dto = KeyInfo.fromDTO(this)
+    return if ((dto.key as? JwkType)?.alg == null) dto.copy(signatureAlgorithm = null) else dto
+}
+
+private fun ManagedKeyInfoType<*>.verificationPolicyInfo(): KeyInfoType<*> = signingPolicyInfo()
+
+private fun KeyInfoType<*>.requireVerificationKeyCompatible(requestedAlgorithm: SignatureAlgorithm) {
+    keyCompatibilityFailure(requestedAlgorithm, KeyOperations.VERIFY)?.let { failure ->
+        throw IllegalArgumentException(failure)
+    }
+}
+
 internal data class AwsSymmetricKeyRevocationPlan(
     val scheduleDeletion: Boolean,
     val deleteAlias: Boolean,
@@ -1232,6 +1362,44 @@ fun determineAwsKeyId(keyInfo: KeyInfoType<*>): String {
     return if (keyInfo.alias == keyInfo.kid || keyInfo.alias == null || keyIdArg.startsWith("alias/")) keyIdArg else "alias/$keyIdArg"
 }
 
+private suspend fun AwsKmsTenantAssignmentReader.hasTenantAssignment(
+    keyId: String,
+    tenantId: String,
+): Boolean {
+    var marker: String? = null
+    repeat(AWS_MAX_TENANT_ASSIGNMENT_TAG_PAGES) {
+        val page = listResourceTags(keyId, marker)
+        if (
+            page.tags.any { (key, value) ->
+                key == AWS_TENANT_ASSIGNMENT_TAG_KEY &&
+                    MessageDigest.isEqual(value.encodeToByteArray(), tenantId.encodeToByteArray())
+            }
+        ) {
+            return true
+        }
+        marker =
+            if (page.truncated) {
+                page.nextMarker ?: throw IllegalStateException("AWS KMS tag pagination is invalid")
+            } else {
+                null
+            }
+        if (marker == null) return false
+    }
+    throw IllegalStateException("AWS KMS tag pagination exceeded its bounded scan")
+}
+
+private fun requireAwsNativeAlias(alias: String): String {
+    val normalized = if (alias.startsWith("alias/")) alias else "alias/$alias"
+    require(AWS_NATIVE_ALIAS.matches(normalized)) { "AWS KMS alias is invalid" }
+    return normalized
+}
+
+private fun requireAwsNativeKeyIdentity(identity: String) {
+    require(AWS_KMS_KEY_ARN.matches(identity) || AWS_KMS_KEY_ID.matches(identity)) {
+        "AWS KMS key identity is invalid"
+    }
+}
+
 /**
  * Binds the caller's opaque AAD to AWS KMS ciphertext without disclosing the AAD itself in
  * CloudTrail or provider diagnostics. AWS authenticates the complete encryption-context map and
@@ -1254,6 +1422,10 @@ private const val AWS_LIST_KEYS_PAGE_SIZE: Int = 1_000
 private const val AWS_LIST_TAGS_PAGE_SIZE: Int = 50
 private const val AWS_MAX_RECONCILIATION_PAGES: Int = 1_000
 private const val AWS_MAX_TAG_PAGES: Int = 100
+private const val AWS_MAX_TENANT_ASSIGNMENT_TAG_PAGES: Int = 100
+private const val AWS_TENANT_ASSIGNMENT_TAG_KEY: String = "sphereon-tenant-id"
 private val AWS_KMS_KEY_ARN =
     Regex("^arn:aws(?:-[a-z0-9-]+)?:kms:[a-z0-9-]+:[0-9]{12}:key/[0-9a-fA-F-]{36}$")
+private val AWS_KMS_KEY_ID = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 private val AWS_KMS_BINDING_ALIAS = Regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+private val AWS_NATIVE_ALIAS = Regex("^alias/[A-Za-z0-9/_-]{1,255}$")

@@ -103,7 +103,7 @@ class WscdAwareExecutionPlannerTest {
             val decision = executor.plan(request(keyRef = null))
 
             assertEquals(WalletProtocolExecutionPlacement.WALLET_APP, decision.placement)
-            assertEquals(WalletSecurityOperation.PRESENTATION_SHARING, decision.securityOperation)
+            assertEquals(WalletSecurityOperation.PRESENT_CREDENTIALS, decision.securityOperation)
             assertEquals(WalletSecurityAssurance.USER_PRESENT, decision.requiredAssurance)
             assertEquals(1, resolverCalls)
         }
@@ -118,7 +118,7 @@ class WscdAwareExecutionPlannerTest {
             sessionId = WalletInteractionSessionId("s1"),
             sessionWalletUnitId = "wallet",
             protocol = WalletProtocol.OID4VP,
-            operation = WalletSecurityOperation.PRESENTATION_SHARING,
+            operation = WalletSecurityOperation.PRESENT_CREDENTIALS,
             audience = "verifier",
             keyRef = keyRef,
             walletUnitId = walletUnitId,

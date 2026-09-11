@@ -36,6 +36,9 @@ data class JAdESProtectedHeaders(
     /** Signing time (RFC 3339 in "sigT" claim) */
     @SerialName("sigT")
     val sigT: String? = null,
+    /** Current TS 119 602 signing time as an integer RFC 7519 NumericDate. */
+    @SerialName("iat")
+    val iat: Long? = null,
     /** Certificate chain (standard JWS x5c header) */
     @SerialName("x5c")
     val x5c: List<String>? = null,
@@ -55,18 +58,14 @@ data class JAdESProtectedHeaders(
     @SerialName("srAts")
     val srAts: List<JsonObject>? = null,
 ) {
-    /**
-     * Parse sigT as an Instant if present and valid.
-     */
+    /** Resolve the current NumericDate or the historical RFC 3339 signing time. */
     fun getSigningTime(): Instant? =
-        sigT?.let {
-            try {
-                Instant.parse(it)
-            } catch (_: Exception) {
-                // Ignored: sigT value is not a valid ISO instant
-                null
-            }
+        iat?.let { epochSeconds ->
+            runCatching { Instant.fromEpochSeconds(epochSeconds) }
+                .getOrNull()
+                ?.takeIf { it.epochSeconds == epochSeconds && it.nanosecondsOfSecond == 0 }
         }
+            ?: sigT?.let { value -> runCatching { Instant.parse(value) }.getOrNull() }
 }
 
 /**
@@ -113,6 +112,10 @@ data class JAdESValidationResult(
     val etsiHeaders: JAdESProtectedHeaders? = null,
     val errors: List<String> = emptyList(),
     val warnings: List<String> = emptyList(),
+    /** Exact bytes passed to validation, never trimmed or re-serialized. */
+    val serializedData: ByteArray? = null,
+    /** Stable machine-readable diagnostics accompanying [errors]. */
+    val reasonCodes: List<String> = emptyList(),
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) {
@@ -144,13 +147,31 @@ data class JAdESValidationResult(
         if (errors != other.errors) {
             return false
         }
+        if (warnings != other.warnings) {
+            return false
+        }
+        if (serializedData != null) {
+            if (other.serializedData == null || !serializedData.contentEquals(other.serializedData)) {
+                return false
+            }
+        } else if (other.serializedData != null) {
+            return false
+        }
+        if (reasonCodes != other.reasonCodes) {
+            return false
+        }
         return true
     }
 
     override fun hashCode(): Int {
         var result = valid.hashCode()
         result = 31 * result + signatureValid.hashCode()
+        result = 31 * result + (signingTime?.hashCode() ?: 0)
         result = 31 * result + (signingCertificate?.contentHashCode() ?: 0)
+        result = 31 * result + errors.hashCode()
+        result = 31 * result + warnings.hashCode()
+        result = 31 * result + (serializedData?.contentHashCode() ?: 0)
+        result = 31 * result + reasonCodes.hashCode()
         return result
     }
 }

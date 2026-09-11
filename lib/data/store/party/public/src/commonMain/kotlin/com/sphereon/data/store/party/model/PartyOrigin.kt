@@ -22,8 +22,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * The origin of a party record, indicating whether it was created internally
- * or synced from an external source.
+ * Where a party record comes from and who owns its lifecycle.
  */
 @JsExportCompat
 @Serializable
@@ -47,4 +46,11 @@ enum class PartyOrigin {
     /** Party was materialized from an externally initiated connector write. */
     @SerialName("connector_external_write")
     CONNECTOR_EXTERNAL_WRITE,
+
+    /**
+     * Party the holder met during a wallet interaction, not synced from elsewhere.
+     * Edits are not overwritten by a later sync.
+     */
+    @SerialName("ceremony_discovery")
+    CEREMONY_DISCOVERY,
 }

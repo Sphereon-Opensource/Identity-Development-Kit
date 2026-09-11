@@ -16,10 +16,13 @@
 
 package com.sphereon.trust.etsi.signature.xades
 
+import com.sphereon.core.api.Encoding
+import com.sphereon.core.api.decodeFrom
 import com.sphereon.trust.etsi.testutil.EtsiTestContext
 import com.sphereon.trust.etsi.testutil.FIDES_TL_URL
 import com.sphereon.trust.etsi.testutil.ensureDomAvailable
 import com.sphereon.trust.etsi.testutil.readTestResource
+import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,6 +33,64 @@ import kotlin.test.assertTrue
 class XAdESValidatorTest {
     private val testContext = EtsiTestContext("xades-test", this)
     private val validator: XAdESValidator = testContext.xadesValidator
+
+    @Test
+    fun shouldFailClosedWhenSignerRootsAreNotConfigured() =
+        runTest {
+            ensureDomAvailable()
+            val euLotl = readTestResource("eu-lotl/eu-lotl.xml")
+            val result =
+                validator.validate(
+                    euLotl.encodeToByteArray(),
+                    XAdESValidationOptions(
+                        validateReferences = false,
+                        trustedCertificates = null,
+                    ),
+                )
+
+            assertFalse(result.valid)
+            assertTrue(result.reasonCodes.contains(TrustDiagnosticReasonCodes.SIGNER_ROOT_NOT_CONFIGURED))
+        }
+
+    @Test
+    fun explicitlyPinnedEmbeddedSignerCertificateIsAccepted() =
+        runTest {
+            ensureDomAvailable()
+            val euLotl = readTestResource("eu-lotl/eu-lotl.xml")
+            val signerCertificateBase64 =
+                euLotl
+                    .substringAfter("<ds:KeyInfo><ds:X509Data><ds:X509Certificate>")
+                    .substringBefore("</ds:X509Certificate>")
+            val result =
+                validator.validate(
+                    euLotl.encodeToByteArray(),
+                    XAdESValidationOptions(
+                        validateReferences = false,
+                        trustedCertificates = listOf(signerCertificateBase64.decodeFrom(Encoding.BASE64)),
+                    ),
+                )
+
+            assertTrue(result.valid, "An explicitly pinned embedded signer must be accepted: ${result.errors}")
+            assertFalse(result.reasonCodes.contains(TrustDiagnosticReasonCodes.EMBEDDED_CERTIFICATE_NOT_TRUSTED))
+        }
+
+    @Test
+    fun unrelatedConfiguredSignerRootIsRejected() =
+        runTest {
+            ensureDomAvailable()
+            val euLotl = readTestResource("eu-lotl/eu-lotl.xml")
+            val result =
+                validator.validate(
+                    euLotl.encodeToByteArray(),
+                    XAdESValidationOptions(
+                        validateReferences = false,
+                        trustedCertificates = listOf(byteArrayOf(1, 2, 3)),
+                    ),
+                )
+
+            assertFalse(result.valid)
+            assertFalse(result.reasonCodes.contains(TrustDiagnosticReasonCodes.EMBEDDED_CERTIFICATE_NOT_TRUSTED))
+        }
 
     @Test
     fun shouldReportNoSignatureWhenAbsent() =
@@ -53,7 +114,7 @@ class XAdESValidatorTest {
             val result =
                 validator.validate(
                     fidesTl.encodeToByteArray(),
-                    XAdESValidationOptions(validateReferences = false),
+                    XAdESValidationOptions(validateReferences = false, validateCertificateChain = false),
                 )
             assertTrue(result.signaturePresent, "Signature should be present in FIDES-TL.xml")
             assertTrue(result.signatureValid, "FIDES-TL signature should be valid (no longer double-base64)")
@@ -234,6 +295,7 @@ class XAdESValidatorTest {
                         validateReferences = false,
                         validateSigningCertificate = true,
                         requireXAdESProperties = true,
+                        validateCertificateChain = false,
                     ),
                 )
 

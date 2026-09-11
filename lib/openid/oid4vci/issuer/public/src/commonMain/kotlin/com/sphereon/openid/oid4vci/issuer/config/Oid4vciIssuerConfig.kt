@@ -21,7 +21,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.core.compat.JsExportIgnoreCompat
-import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierOptsOrResult
 import com.sphereon.openid.oid4vc.common.DisplayProperties
 import com.sphereon.openid.oid4vci.common.model.BatchCredentialIssuance
@@ -30,6 +29,9 @@ import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncrypt
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
 import com.sphereon.openid.oid4vci.issuer.format.SigningKeyMode
 import com.sphereon.statuslist.StatusListBinding
+import kotlinx.serialization.Serializable
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Configuration provider for the OID4VCI issuer.
@@ -72,6 +74,13 @@ interface Oid4vciIssuerConfigProvider {
 
     @JsExportIgnoreCompat
     val credentialConfigurations: Map<String, CredentialConfigurationSupported>
+    /** Stable authorization-server override configured for one credential configuration. */
+    @OptIn(ExperimentalUuidApi::class)
+    @JsExportIgnoreCompat
+    fun credentialAuthorizationServerId(credentialConfigurationId: String): Uuid? = null
+    @JsExportIgnoreCompat
+    fun credentialAuthorizationServerAllowedGrants(credentialConfigurationId: String): Set<com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant>? = null
+
     val authorizationServers: List<String>?
     val display: List<DisplayProperties>?
 
@@ -149,7 +158,7 @@ interface Oid4vciIssuerConfigProvider {
         get() = null
 
     /**
-     * Per-credential signing configuration (key alias, key reference mode, cert chain path).
+     * Per-credential signing configuration (key alias, key reference mode, resolved x5c chain).
      *
      * Keyed by credential configuration ID. Used at issuance time to resolve the signing key
      * and populate the JWT protected header with the appropriate identifier (kid, x5c, etc.).
@@ -182,6 +191,11 @@ interface Oid4vciIssuerConfigProvider {
     @JsExportIgnoreCompat
     fun statusListBindingFor(credentialConfigId: String): IdkResult<StatusListBinding?, IdkError> = Ok(statusListBindings[credentialConfigId])
 
+    /** Suspend-aware resolution used by issuance when definitions may be backed by persistence. */
+    @JsExportIgnoreCompat
+    suspend fun statusListBindingForIssuance(credentialConfigId: String): IdkResult<StatusListBinding?, IdkError> =
+        statusListBindingFor(credentialConfigId)
+
     /**
      * Per-credential, per-proof-carrier trust configuration for OID4VCI 1.0 §7.2 key
      * attestations. The outer key is the credential configuration ID; the inner key is the
@@ -190,26 +204,21 @@ interface Oid4vciIssuerConfigProvider {
      * configures policy and trust together inside one block per proof carrier.
      *
      * Each entry carries:
-     * - `trustedJwks` — direct JWK pinning (matched by `kid` or by JWK thumbprint).
-     * - `trustedIssuers` — required `iss` claim allow-list.
-     * - `x509TrustAnchorPaths` — extra PEM CA bundles for `x5c`-bound attestation JWTs,
-     *   used in addition to the global `lib/trust/x509` anchors.
+     * The verifier material is selected from the persisted Trust Domain attachment and is never
+     * read from YAML, filesystem paths, or a global fallback store.
      *
-     * Absent entry = no per-config override; the verifier falls back to the global X.509
-     * anchors only.
+     * Missing persisted attachment or verifier material fails closed.
      */
     @JsExportIgnoreCompat
-    val keyAttesterTrustConfigs: Map<String, Map<String, KeyAttesterTrustConfig>>
-        get() = emptyMap()
-
-    /**
-     * Convenience lookup for [keyAttesterTrustConfigs]. Returns null when the credential
-     * has no per-config trust override for the given proof carrier.
-     */
-    fun keyAttesterTrustFor(
-        credentialConfigId: String,
-        proofType: String,
-    ): KeyAttesterTrustConfig? = keyAttesterTrustConfigs[credentialConfigId]?.get(proofType)
+    suspend fun walletProviderTrustFor(
+        args: ResolveWalletProviderTrustArgs,
+    ): IdkResult<ResolvedWalletProviderTrust, IdkError> =
+        com.sphereon.core.api.Err(
+            IdkError.fromString(
+                code = "wallet_provider_trust_not_resolved",
+                message = "Wallet-provider trust is not resolved for credential configuration '${args.credentialConfigurationId}'",
+            ),
+        )
 
     /**
      * All KMS key names this issuer actively signs with — union of the resolved per-credential
@@ -285,7 +294,8 @@ enum class MissingRequiredClaimsPolicy {
 enum class Oid4vciSpecVersion(
     val value: String,
 ) {
-    V1_0("1.0");
+    V1_0("1.0"),
+    V1_1("1.1");
 
     companion object {
         fun parse(value: String?): Oid4vciSpecVersion =
@@ -297,19 +307,37 @@ enum class Oid4vciSpecVersion(
 }
 
 @JsExportCompat
+@Serializable
 enum class Oid4vciIssuerSpecProfile(
     val version: Oid4vciSpecVersion,
     val oid4vciSpec: String,
     val sdJwtVcSpec: SdJwtVcSpecProfile,
+    /** OID4VCI 1.0 Final requires `alg`; the pinned 1.1 draft permits JWK-derived agreement. */
+    val credentialResponseEncryptionAlgorithmRequired: Boolean,
+    /** `credential_response_encryption.zip` is introduced by the pinned 1.1 draft. */
+    val credentialResponseEncryptionCompressionAllowed: Boolean,
 ) {
     OID4VCI_1_0_FINAL(
         version = Oid4vciSpecVersion.V1_0,
         oid4vciSpec = "openid-4-verifiable-credential-issuance-1_0-final",
         sdJwtVcSpec = SdJwtVcSpecProfile.DRAFT_11,
+        credentialResponseEncryptionAlgorithmRequired = true,
+        credentialResponseEncryptionCompressionAllowed = false,
+    ),
+    OID4VCI_1_1_DRAFT_2A1F0513(
+        version = Oid4vciSpecVersion.V1_1,
+        oid4vciSpec = "openid-4-verifiable-credential-issuance-1_1-2a1f0513",
+        sdJwtVcSpec = SdJwtVcSpecProfile.DRAFT_11,
+        credentialResponseEncryptionAlgorithmRequired = false,
+        credentialResponseEncryptionCompressionAllowed = true,
     );
 
     companion object {
         fun forVersion(version: Oid4vciSpecVersion): Oid4vciIssuerSpecProfile = entries.single { it.version == version }
+
+        fun parse(value: String): Oid4vciIssuerSpecProfile =
+            entries.singleOrNull { it.name == value }
+                ?: throw IllegalArgumentException("Unsupported OID4VCI issuer profile '$value'")
     }
 }
 
@@ -328,20 +356,26 @@ enum class SdJwtVcSpecProfile(
  *   credential configuration id and no key is created. The name is process-internal and must never
  *   reach a DTO or a REST response.
  * @property signingKeyMode Key reference mode determining how the signing key is identified in the JWT header.
- * @property signingCertChainPath Optional PEM file path for X.509 certificate chain (fallback when KMS key has no x5c).
+ * @property signingX5c Optional resolved X.509 certificate chain in RFC 7517 x5c encoding. The
+ *   strings are standard-base64 DER certificates, as required by JOSE/COSE; PEM and DER parsing
+ *   is performed by the common certificate utilities before this boundary.
+ * @property dataIntegrityCryptosuite Explicit cryptosuite used for `ldp_vc` Data Integrity issuance.
  */
 @JsExportCompat
 data class CredentialSigningConfig(
     val signingKeyAlias: String? = null,
     val signingKeyMode: SigningKeyMode = SigningKeyMode.None,
-    /** Exact assertionMethod DID URL selected for this key. Required for DID signing modes. */
+    /** Exact assertionMethod verification-method URI selected for this key. */
     val signingVerificationMethodId: String? = null,
-    val signingCertChainPath: String? = null,
+    val signingX5c: Array<String>? = null,
+    val dataIntegrityCryptosuite: String? = null,
     /**
      * Validity window of issued credentials of this configuration, expressed in days.
-     * When non-null the format handler emits an `exp` claim at `iat + days × 86400`.
-     * When null (the default) no `exp` claim is emitted — per SD-JWT VC §3.2.2 and
-     * RFC 7519 §4.1.4, absence of `exp` means the credential has no expiration.
+     * When non-null, handlers derive an absent semantic end from the data-validity start plus
+     * `days * 86400`. VCDM 1.1 emits that end as both `expirationDate` and NumericDate `exp`;
+     * VCDM 2.0 retains `validUntil` in the VC payload while `exp` remains a separate
+     * signature-lifetime policy, currently aligned to the same configured duration.
+     * When null (the default) no `exp` claim is emitted, so no signature expiration is configured.
      *
      * YAML: `sphereon.oid4vci.issuer.credentials.[<id>].expiration-in-days` (kebab-case).
      */
@@ -355,28 +389,9 @@ data class CredentialSigningConfig(
  * The verifier resolves the attester key in this priority order:
  * 1. `x5c` header → validate chain via `X509TrustValidationService` against the union
  *    of [x509TrustAnchorPaths] and the globally loaded `lib/trust/x509` anchors.
- * 2. `kid` / `jwk` header → match against [trustedJwks] (by `kid`, falling back to
- *    JWK thumbprint).
- * 3. When [trustedIssuers] is non-empty, also enforce that the JWT's `iss` claim is
- *    in the list.
+ * 2. `kid` / `jwk` header → match against typed persisted JWK verifier material.
  *
- * All-null = "no per-config override"; callers should fall back to the global trust
- * store. An empty list explicitly trusts nothing of that flavour.
+ * Missing persisted trust material is never inferred or replaced by a process-wide store.
  *
- * YAML: `sphereon.oid4vci.issuer.credentials.[<id>].key-attester-trust.{jwks,issuers,x509-anchor-paths}`.
+ * This material is never sourced from configuration files.
  */
-@JsExportCompat
-data class KeyAttesterTrustConfig
-    @JsExportIgnoreCompat
-    constructor(
-        val mode: String? = null,
-        @JsExportIgnoreCompat val trustedJwks: List<Jwk>? = null,
-        val trustedIssuers: List<String>? = null,
-        val x509TrustAnchorPaths: List<String>? = null,
-        /**
-         * Requires the VDX Wallet Unit/TS03 persisted-evidence profile in addition to the
-         * generic OID4VCI key-attestation contract. This is an operator policy and must not
-         * be inferred from the protocol-level `key_attestations_required` metadata field.
-         */
-        val requireWalletUnitEvidence: Boolean = false,
-    )

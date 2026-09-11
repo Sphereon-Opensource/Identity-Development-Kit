@@ -288,6 +288,7 @@ data class OAuth2ServerInstanceConfig(
     // Browser-login session lifetimes (OIDC Core 1.0 §2 auth_time, prompt/max_age semantics)
     val session: SessionConfig = SessionConfig(),
     val webAuthn: WebAuthnLoginConfig = WebAuthnLoginConfig(),
+    val login: LoginPageConfig = LoginPageConfig(),
     /**
      * Optional plain-text notice rendered above the credential form on the AS login page (for
      * example, a demo deployment advertising its seeded test account). Null or blank renders
@@ -312,10 +313,59 @@ data class OAuth2ServerInstanceConfig(
      * Recommended production posture: configure [issuer] AND set this to `false`.
      */
     val trustForwardedHeaders: Boolean = true,
+    /**
+     * Which client-registry source is authoritative for this authorization server when a client
+     * id exists both in persistent storage and in configuration.
+     *
+     * A tenant authorization server keeps the default: its administered, durable registrations
+     * are primary and configuration is the secondary source. A platform authorization server is
+     * provisioned from configuration, so it sets [ClientRegistrySourcePrecedence.CONFIGURATION_PRIMARY].
+     */
+    val clientRegistrySourcePrecedence: ClientRegistrySourcePrecedence = ClientRegistrySourcePrecedence.PERSISTENCE_PRIMARY,
 ) {
     companion object {
         const val CONFIG_PREFIX = "oauth2.servers"
     }
+}
+
+@JsExportCompat
+@Serializable
+enum class LoginMethod {
+    PASSWORD,
+    FEDERATION,
+    WALLET,
+}
+
+@JsExportCompat
+@Serializable
+enum class LoginInteraction {
+    AUTO,
+    CHOOSER,
+}
+
+@JsExportCompat
+@Serializable
+enum class LoginRenderer {
+    SPHEREON,
+    NEUTRAL,
+}
+
+@JsExportCompat
+@Serializable
+data class LoginPageConfig(
+    val interaction: LoginInteraction = LoginInteraction.AUTO,
+    val renderer: LoginRenderer = LoginRenderer.SPHEREON,
+    val themeResolutionEnabled: Boolean = true,
+    val showPasswordForm: Boolean = true,
+    val showFederation: Boolean = true,
+    val showWallet: Boolean = false,
+    val walletAuthorizationUrl: String? = null,
+    val defaultMethod: LoginMethod = LoginMethod.PASSWORD,
+) {
+    fun enabledMethodCount(): Int =
+        listOf(showPasswordForm, showFederation, showWallet).count { it }
+
+    fun requiresChooser(): Boolean = interaction == LoginInteraction.CHOOSER
 }
 
 @JsExportCompat

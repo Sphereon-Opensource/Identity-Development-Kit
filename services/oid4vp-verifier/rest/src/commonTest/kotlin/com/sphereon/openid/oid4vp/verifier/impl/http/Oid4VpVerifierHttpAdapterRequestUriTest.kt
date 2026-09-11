@@ -29,7 +29,10 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
+import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.api.log.AsyncLogService
 import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.SessionLogManager
@@ -147,21 +150,33 @@ class Oid4VpVerifierHttpAdapterRequestUriTest {
             val adapter =
                 Oid4vpVerifierHttpAdapter(
                     execution = execution,
+                    endpointCommandRegistry =
+                        object : HttpEndpointCommandRegistry {
+                            private val commands = listOf(getCommand, postCommand, directPostCommand, readyCommand).associateBy { it.id }
+                            override fun get(handlerCommandId: String): HttpEndpointCommand? = commands[handlerCommandId]
+                            override fun listHandlerCommandIds(): Set<String> = commands.keys
+                        },
                     verifierInstanceResolver = instanceResolver,
                     verifierInstanceIdProvider = instanceIdProvider,
-                    getRequestObjectCommand = getCommand,
-                    postRequestObjectCommand = postCommand,
-                    directPostResponseCommand = directPostCommand,
-                    readyCommand = readyCommand,
                 )
 
-            val response =
-                adapter.handleRequest(
-                    GenericHttpRequest(
-                        method = "GET",
-                        path = "/oid4vp/request-uri/$correlationId",
-                    ),
+            val request =
+                GenericHttpRequest(
+                    method = "GET",
+                    path = "/oid4vp/request-uri/$correlationId",
                 )
+            val route =
+                HttpAdapterRouteMatch(
+                    adapterId = adapter.id,
+                    method = request.method,
+                    originalPath = request.path,
+                    normalizedPath = request.path,
+                    matchedPathPattern = "/oid4vp${getCommand.endpoint.pathPattern}",
+                    handlerCommandId = getCommand.id,
+                    tenantIdFromPath = null,
+                )
+            val response =
+                adapter.handleResolvedRequest(route.applyTo(request), route)
 
             assertEquals(200, response.statusCode)
             assertEquals("application/oauth-authz-req+jwt", response.headers["Content-Type"])

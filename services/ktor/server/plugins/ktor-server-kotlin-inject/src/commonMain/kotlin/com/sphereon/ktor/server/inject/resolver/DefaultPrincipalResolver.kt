@@ -30,7 +30,8 @@ import io.ktor.server.application.ApplicationCall
  */
 class DefaultPrincipalResolver : PrincipalResolver {
     override fun resolve(call: ApplicationCall): PrincipalInput =
-        call.attributes.getOrNull(ValidatedJwtClaimsAttribute)
+        call.attributes
+            .getOrNull(ValidatedJwtClaimsAttribute)
             ?.claimsInput
             ?: DefaultPrincipalInputString(IdentityConstants.ANONYMOUS_PRINCIPAL_ID)
 }

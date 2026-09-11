@@ -1,0 +1,33 @@
+-- Baseline certificate-reference schema. Keep this DDL identical to the canonical .sq schema.
+
+CREATE TABLE IF NOT EXISTS certificate_reference (
+    id TEXT NOT NULL PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    alias TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    provider_certificate_id TEXT,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    control_mode TEXT NOT NULL DEFAULT 'platform_managed',
+    linked_key_reference_id TEXT,
+    certificate_chain_der BLOB,
+    certificate_fingerprint BLOB NOT NULL,
+    public_key_fingerprint BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by_id TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by_id TEXT,
+    deleted_at TEXT,
+    deleted_by_id TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cert_ref_tenant_alias_provider_kind
+    ON certificate_reference(tenant_id, alias, provider_id, kind)
+    WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant ON certificate_reference(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant_provider ON certificate_reference(tenant_id, provider_id);
+CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant_provider_certificate
+    ON certificate_reference(tenant_id, provider_id, provider_certificate_id);
+CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant_linked_key
+    ON certificate_reference(tenant_id, linked_key_reference_id);

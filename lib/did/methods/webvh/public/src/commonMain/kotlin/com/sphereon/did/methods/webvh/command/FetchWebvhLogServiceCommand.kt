@@ -47,6 +47,7 @@ interface FetchWebvhLogServiceCommand :
                 pathPattern = "/{did}/log",
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "fetchWebvhLog",
                 tags = setOf("did:webvh"),
                 summary = "Fetch a did:webvh log",

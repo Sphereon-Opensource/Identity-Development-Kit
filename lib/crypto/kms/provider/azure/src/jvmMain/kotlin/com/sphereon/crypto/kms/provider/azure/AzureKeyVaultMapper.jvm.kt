@@ -30,30 +30,30 @@ import com.azure.identity.InteractiveBrowserCredentialBuilder
 import com.azure.identity.UsernamePasswordCredential
 import com.azure.identity.UsernamePasswordCredentialBuilder
 import com.azure.security.keyvault.certificates.models.KeyVaultCertificate
-import com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm
+import com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm as AzureSignatureAlgorithm
 import com.azure.security.keyvault.keys.models.JsonWebKey
 import com.azure.security.keyvault.keys.models.KeyCurveName
 import com.azure.security.keyvault.keys.models.KeyOperation
 import com.azure.security.keyvault.keys.models.KeyProperties
 import com.azure.security.keyvault.keys.models.KeyType
 import com.azure.security.keyvault.keys.models.KeyVaultKey
-import io.ktor.client.HttpClient
 import com.sphereon.core.api.encodeToBase64
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.SignClientException
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.KeyOperations
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.interop.getPublicKeyJwk
 import com.sphereon.crypto.core.jose.JoseKeyOperations
 import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.x509.Certificate
-import com.sphereon.crypto.core.x509.certificateChainToX5c
 import com.sphereon.crypto.core.x509.certificateFromDer
-import com.sphereon.crypto.core.x509.downloadCertificateChain
 import java.time.Duration
 import java.io.ByteArrayInputStream
 
@@ -184,11 +184,38 @@ fun KeyOperation.toKeyOperations(): KeyOperations {
 fun KeyVaultKey.toJwk(): Jwk {
     val jsonWebKey: JsonWebKey = this.key
 
-    return Jwk.Builder().withKid(this.properties.toKid())
-        .withKty(jsonWebKey.keyType?.toString()?.let { JwaKeyType.fromValue(it) }) // Key type
+    val keyType =
+        when (jsonWebKey.keyType) {
+            KeyType.EC, KeyType.EC_HSM -> JwaKeyType.EC
+            KeyType.RSA, KeyType.RSA_HSM -> JwaKeyType.RSA
+            else -> jsonWebKey.keyType?.toString()?.let { JwaKeyType.fromValue(it) }
+        }
+    val builder = Jwk.Builder().withKid(this.properties.toKid())
+        .withKty(keyType)
         .withAlg(mapJwkToAlgorithm(jsonWebKey)) // Algorithm
-        .withX(jsonWebKey.x?.encodeToBase64(true)).withY(jsonWebKey.y?.encodeToBase64(true))
-        .withKeyOps(jsonWebKey.keyOps?.map { JoseKeyOperations.fromValue(it.toKeyOperations().jose.value) }?.toTypedArray()).build()
+        .withKeyOps(jsonWebKey.keyOps?.map { JoseKeyOperations.fromValue(it.toKeyOperations().jose.value) }?.toTypedArray())
+    when (jsonWebKey.keyType) {
+        KeyType.EC, KeyType.EC_HSM -> {
+            builder
+                .withCrv(
+                    when (jsonWebKey.curveName) {
+                        KeyCurveName.P_256 -> JwaCurve.P_256
+                        KeyCurveName.P_384 -> JwaCurve.P_384
+                        KeyCurveName.P_521 -> JwaCurve.P_521
+                        else -> null
+                    },
+                )
+                .withX(jsonWebKey.x?.encodeToBase64Url())
+                .withY(jsonWebKey.y?.encodeToBase64Url())
+        }
+        KeyType.RSA, KeyType.RSA_HSM -> {
+            builder
+                .withN(jsonWebKey.n?.encodeToBase64Url())
+                .withE(jsonWebKey.e?.encodeToBase64Url())
+        }
+        else -> Unit
+    }
+    return builder.build()
 }
 
 /**
@@ -219,14 +246,17 @@ fun KeyOperations.toAzureKeyOperation(): KeyOperation {
  */
 fun mapJwkToAlgorithm(jwk: JsonWebKey): JwaAlgorithm? {
     return when (jwk.keyType) {
-        KeyType.EC -> when {
+        KeyType.EC, KeyType.EC_HSM -> when {
             jwk.curveName.toString() == "P-256" -> JwaAlgorithm.ES256
             jwk.curveName.toString() == "P-384" -> JwaAlgorithm.ES384
             jwk.curveName.toString() == "P-521" -> JwaAlgorithm.ES512
             else -> null
         }
 
-        KeyType.RSA -> JwaAlgorithm.RS256
+        // Azure RSA keys are capable of both RSASSA-PKCS1-v1.5 and RSASSA-PSS. The Key Vault
+        // public-key response does not carry a signing-algorithm restriction, so synthesizing
+        // RS256 here would make a selector/lookup reject valid PS* requests.
+        KeyType.RSA, KeyType.RSA_HSM -> null
         else -> null
     }
 }
@@ -252,21 +282,21 @@ fun Curve.toAzureKeyCurveName(): KeyCurveName {
  *
  * @return Corresponding SignatureAlgorithm based on key type and curve
  */
-fun KeyVaultKey.toSignatureAlgorithm(): SignatureAlgorithm {
+fun KeyVaultKey.toSignatureAlgorithm(): SignatureAlgorithm? {
     return when (this.key.keyType) {
-        KeyType.EC -> {
+        KeyType.EC, KeyType.EC_HSM -> {
             when (this.key.curveName) {
-                KeyCurveName.P_256 -> SignatureAlgorithm.ES256
-                KeyCurveName.P_384 -> SignatureAlgorithm.ES384
-                KeyCurveName.P_521 -> SignatureAlgorithm.ES512
+                KeyCurveName.P_256 -> SignatureAlgorithm.ECDSA_SHA256
+                KeyCurveName.P_384 -> SignatureAlgorithm.ECDSA_SHA384
+                KeyCurveName.P_521 -> SignatureAlgorithm.ECDSA_SHA512
                 else -> throw SignClientException("Unsupported curve: ${this.key.curveName}")
             }
         }
 
         KeyType.RSA, KeyType.RSA_HSM -> {
-            // Default to PS256 for RSA keys - Azure supports PS256, PS384, PS512, RS256, RS384, RS512
-            // Using PSS (PS*) as it's more secure than PKCS#1 v1.5 (RS*)
-            SignatureAlgorithm.PS256
+            // Azure's public RSA response does not identify an RS*/PS* restriction. Selecting
+            // PS256 here would fabricate policy; callers must supply the algorithm explicitly.
+            null
         }
 
         else -> throw SignClientException("Unsupported key type: ${this.key.keyType}")
@@ -298,7 +328,9 @@ fun KeyVaultKey.toManagedKeyInfo(): ManagedKeyInfoType<Jwk> {
 
 /**
  * Converts Azure KeyVaultCertificate to managed certificate information with JWK.
- * Downloads additional certificates in the chain and builds complete certificate info.
+ * Uses only the public leaf CER returned by Azure Key Vault. Full-chain retrieval is
+ * intentionally unsupported here; following certificate AIA URLs would create an
+ * unconstrained outbound-network boundary outside the provider API.
  *
  * @return ManagedKeyInfo containing the certificate and key information
  */
@@ -307,73 +339,16 @@ suspend fun KeyVaultCertificate.toManagedCertInfo(): ManagedKeyInfoType<Jwk> {
     val version = properties.version
     val kid = "$name:$version"
 
-    // get the cert chain
     val leafCert: Certificate = certificateFromDer(cer)
-    val chain = mutableListOf(leafCert).apply {
-        addAll(leafCert.downloadCertificateChain(HttpClient()))
-    }
-    val x5c = certificateChainToX5c(chain.toTypedArray())
+    val x5c = azureCertificateX5c(leafCert.der)
 
     // build the JWK
     val jwk = Jwk.from(leafCert.getPublicKeyJwk(x5c = x5c))
-    /*val builder = Jwk.Builder().withKid(kid)
-        .withKty(
-            when (pubKey) {
-                is ECPublicKey -> JwaKeyType.EC
-                is CryptoPublicKey.EC -> JwaKeyType.EC
-                is RSAPublicKey -> JwaKeyType.RSA
-                is CryptoPublicKey.RSA -> JwaKeyType.RSA
-                else -> throw SignClientException("Unsupported key type: ${pubKey.javaClass.name}")
-            }
-        )
-        .withAlg(
-            when (pubKey) {
-                is ECPublicKey -> {
-                    when (pubKey.params.curve.field.fieldSize) {
-                        256 -> JwaAlgorithm.ES256
-                        384 -> JwaAlgorithm.ES384
-                        521 -> JwaAlgorithm.ES512
-                        else -> null
-                    }
-                }
-
-                is RSAPublicKey -> JwaAlgorithm.RS256 // TODO KIWA-26 implement RSA support after branch software-kms-with-rsa is merged
-                else -> null
-            }
-        )
-        .withKeyOps(arrayOf(JoseKeyOperations.VERIFY))
-
-    // Add EC-specific parameters if applicable
-    if (pubKey is ECPublicKey) {
-        val xBytes = pubKey.w.affineX.toByteArray().let {
-            if (it[0] == 0.toByte()) it.copyOfRange(1, it.size) else it
-        }
-        val yBytes = pubKey.w.affineY.toByteArray().let {
-            if (it[0] == 0.toByte()) it.copyOfRange(1, it.size) else it
-        }
-        builder.withX(xBytes.encodeToBase64(true))
-            .withY(yBytes.encodeToBase64(true))
-    } else if (pubKey is RSAPublicKey) {
-        builder.withN(pubKey.modulus.toByteArray().encodeToBase64(true))
-            .withE(pubKey.publicExponent.toByteArray().encodeToBase64(true))
-    }
-
-    // collect all chain DER→Base64 into an Array<String>
-    val x5cArray = chain.map { it.encodeToDer().encodeToBase64(true) }.toTypedArray()
-
-    val jwk = builder.withX5c(x5cArray).build()*/
     val resolved = ResolvedKeyInfo.fromKey(jwk)
     return ManagedKeyInfo(
         alias = kid, providerId = properties.id.substringBefore("/certificates"), resolvedKeyInfo = resolved
     )
 }
-/*
 
-private val httpClient by lazy {
-    HttpClientProvider.newInstance().createClient(
-        HttpClientOptions(
-            engine = HttpClientEngineType.CIO
-        )
-    )
-}
-*/
+/** RFC 7517 x5c uses standard padded base64, unlike JWK thumbprints. */
+internal fun azureCertificateX5c(der: ByteArray): Array<String> = arrayOf(der.encodeToBase64())

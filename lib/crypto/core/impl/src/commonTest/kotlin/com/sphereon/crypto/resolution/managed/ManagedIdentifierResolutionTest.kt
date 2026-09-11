@@ -26,6 +26,7 @@ import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
 import com.sphereon.crypto.core.testutil.createCryptoTestAppGraph
+import com.sphereon.crypto.jose.jws.command.jwsAlgorithmCompatibilityFailure
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactoryImpl
 import com.sphereon.crypto.resolution.IdentifierContext
@@ -38,6 +39,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -399,19 +401,19 @@ class ManagedIdentifierResolutionTest {
             assertNotNull(result.identifier)
         }
 
-    // =========== Algorithm Hint Override Tests ===========
+    // =========== Algorithm Hint Compatibility Tests ===========
 
     @Test
-    fun keyInfoResolutionServiceShouldOverrideAlgorithmFromHint() =
+    fun keyInfoResolutionServiceShouldKeepResolvedAlgorithmWhenHintConflicts() =
         runTest {
-            // Generate and store a key without specifying an algorithm
+            // Store authoritative algorithm metadata independently of the caller's hint.
             val keyPair = keyManagerService.generateKey(alg = SignatureAlgorithm.ECDSA_SHA256)
             val resolvedKeyInfo =
                 ResolvedKeyInfo(
                     key = keyPair.jose.privateJwk!!,
                     alias = null,
                     providerId = null,
-                    signatureAlgorithm = null, // No algorithm set on the stored key
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
                 )
 
             val storedKey =
@@ -439,12 +441,43 @@ class ManagedIdentifierResolutionTest {
             assertTrue(result.isOk, "Resolution should succeed")
             assertNotNull(result.value.keyInfo)
 
-            // The result should have the hinted algorithm, not the stored one
+            // A protected JWS alg is a request, not permission to rewrite KMS-resolved metadata.
             assertEquals(
-                SignatureAlgorithm.ECDSA_SHA384,
+                SignatureAlgorithm.ECDSA_SHA256,
                 result.value.keyInfo.signatureAlgorithm,
-                "Should use algorithm hint from identifier",
+                "Should keep the KMS-resolved algorithm when the hint conflicts",
             )
+            assertNotNull(result.value.keyInfo.jwsAlgorithmCompatibilityFailure("ES384"))
+        }
+
+    @Test
+    fun keyInfoResolutionServiceShouldNotFillMissingAlgorithmFromConflictingHint() =
+        runTest {
+            val keyPair = keyManagerService.generateKey(alg = SignatureAlgorithm.ECDSA_SHA256)
+            keyManagerService.storeKey(
+                keyInfo = ResolvedKeyInfo(key = keyPair.jose.privateJwk!!, signatureAlgorithm = null),
+                providerId = "test-software-provider",
+                alias = "missing-alg-hint-test-key",
+                certChain = null,
+            )
+
+            val result = keyInfoResolutionService.resolve(
+                ManagedOptsKeyInfo(
+                    identifier = KeyInfo<KeyType>(
+                        alias = "missing-alg-hint-test-key",
+                        signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA384,
+                    ),
+                    context = IdentifierContext(),
+                ),
+            )
+
+            assertTrue(result.isOk, "Resolution should succeed without adopting the hint")
+            val resolved = result.value.keyInfo
+            assertNull(resolved.signatureAlgorithm, "Absent stored metadata must remain absent")
+            assertEquals(SignatureAlgorithm.ECDSA_SHA256, resolved.key.getSignatureAlgorithm())
+            assertNull(resolved.jwsAlgorithmCompatibilityFailure("ES256"))
+            assertNotNull(resolved.jwsAlgorithmCompatibilityFailure("ES384"))
+
         }
 
     @Test

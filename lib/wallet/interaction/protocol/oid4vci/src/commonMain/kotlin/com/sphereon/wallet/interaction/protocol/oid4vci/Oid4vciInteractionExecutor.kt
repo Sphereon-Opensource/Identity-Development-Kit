@@ -11,6 +11,7 @@ import com.sphereon.wallet.interaction.WalletCredentialSelectionRequest
 import com.sphereon.wallet.interaction.WalletDisclosureSummary
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionContext
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
 import com.sphereon.wallet.interaction.WalletInteractionState
 
 interface Oid4vciIssuanceExecutor {
@@ -35,9 +36,10 @@ interface Oid4vciIssuanceExecutor {
         context: WalletInteractionContext,
         state: WalletInteractionState,
         credentialRecordId: String,
+        credentialInstanceId: String? = null,
     ): Oid4vciIssuanceExecutionResult =
         Oid4vciIssuanceExecutionResult.Failed(
-            code = "oid4vci.execution_not_configured",
+            code = WalletInteractionFailureCodes.OID4VCI_EXECUTION_NOT_CONFIGURED,
             messageKey = "wallet.interaction.error.oid4vci_execution_not_configured",
             retryable = true,
         )
@@ -61,7 +63,7 @@ interface Oid4vciIssuanceExecutor {
                     action: WalletInteractionAction?,
                 ): Oid4vciIssuanceExecutionResult =
                     Oid4vciIssuanceExecutionResult.Failed(
-                        code = "oid4vci.execution_not_configured",
+                        code = WalletInteractionFailureCodes.OID4VCI_EXECUTION_NOT_CONFIGURED,
                         messageKey = "wallet.interaction.error.oid4vci_execution_not_configured",
                         retryable = true,
                     )

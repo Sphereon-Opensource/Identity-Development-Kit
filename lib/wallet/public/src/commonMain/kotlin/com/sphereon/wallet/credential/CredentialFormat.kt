@@ -19,56 +19,13 @@ package com.sphereon.wallet.credential
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-@Serializable
-enum class CredentialFormat(
-    val value: String,
-) {
-    @SerialName("dc+sd-jwt")
-    SD_JWT_VC("dc+sd-jwt"),
-
-    @SerialName("vc+sd-jwt")
-    W3C_VC_SD_JWT("vc+sd-jwt"),
-
-    @SerialName("mso_mdoc")
-    MSO_MDOC("mso_mdoc"),
-
-    @SerialName("jwt_vc_json")
-    JWT_VC_JSON("jwt_vc_json"),
-
-    @SerialName("jwt_vp_json")
-    JWT_VP_JSON("jwt_vp_json"),
-
-    @SerialName("vc+ld+json+jwt")
-    VC_LD_JSON_JWT("vc+ld+json+jwt"),
-    ;
-
-    val isSdJwt: Boolean
-        get() = this == SD_JWT_VC || this == W3C_VC_SD_JWT
-
-    val isJwt: Boolean
-        get() = this == JWT_VC_JSON || this == JWT_VP_JSON
-
-    val isMdoc: Boolean
-        get() = this == MSO_MDOC
-
-    companion object {
-        fun fromValue(value: String): CredentialFormat? = entries.find { it.value == value }
-
-        fun fromValueLenient(value: String): CredentialFormat? {
-            fromValue(value)?.let { return it }
-
-            val lowerValue = value.lowercase()
-            return when {
-                lowerValue == "application/dc+sd-jwt" -> SD_JWT_VC
-                lowerValue == "application/vc+sd-jwt" -> W3C_VC_SD_JWT
-                lowerValue == "mso_mdoc" || lowerValue.contains("mdoc") -> MSO_MDOC
-                lowerValue.contains("jwt_vc") || lowerValue == "jwt_vc_json" -> JWT_VC_JSON
-                lowerValue.contains("jwt_vp") || lowerValue == "jwt_vp_json" -> JWT_VP_JSON
-                else -> null
-            }
-        }
-    }
-}
+/**
+ * The wallet uses the canonical OID4VC credential-format vocabulary.
+ *
+ * This is a type alias, not a second enum: credential formats have one owner and one serializer
+ * across the IDK. Presentation formats are represented by the separate PresentationFormat type.
+ */
+typealias CredentialFormat = com.sphereon.openid.oid4vc.common.CredentialFormat
 
 @Serializable
 data class CredentialDisplayProperties(

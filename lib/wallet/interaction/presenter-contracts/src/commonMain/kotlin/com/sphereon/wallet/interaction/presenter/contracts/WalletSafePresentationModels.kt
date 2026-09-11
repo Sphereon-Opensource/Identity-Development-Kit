@@ -59,12 +59,33 @@ data class WalletTrustSignalPresentation(
 }
 
 @Serializable
+enum class WalletTrustChainLinksPresentation { VERIFIED, BROKEN }
+
+@Serializable
+enum class WalletTrustChainHopPositionPresentation { LEAF, INTERMEDIATE, ANCHOR }
+
+@Serializable
+data class WalletTrustChainHopPresentation(
+    val identifier: String,
+    val position: WalletTrustChainHopPositionPresentation,
+    val displayName: String? = null,
+    val assertedBy: String? = null,
+)
+
+@Serializable
+data class WalletTrustChainPresentation(
+    val hops: List<WalletTrustChainHopPresentation>,
+    val links: WalletTrustChainLinksPresentation,
+)
+
+@Serializable
 data class WalletTrustPresentation(
     val status: WalletTrustStatusPresentation,
     val action: WalletTrustActionPresentation,
     val mechanism: WalletTrustMechanismPresentation,
     val signals: List<WalletTrustSignalPresentation>,
     val markedTrustedByUser: Boolean,
+    val chain: WalletTrustChainPresentation? = null,
 )
 
 @Serializable

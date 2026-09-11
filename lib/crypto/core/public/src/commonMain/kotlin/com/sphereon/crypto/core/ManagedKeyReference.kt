@@ -42,8 +42,14 @@ ManagedKeyReferenceFilter
 
 /**
  * Convert a fully-resolved [ManagedKeyInfoType] to a metadata-only [ManagedKeyReference].
+ *
+ * @param origin The provenance of the referenced resource.
+ * @param controlMode The lifecycle control mode. Defaults to platform-managed.
  */
-fun ManagedKeyInfoType<*>.toKeyReference(origin: Origin = Origin.MANAGED): ManagedKeyReference =
+fun ManagedKeyInfoType<*>.toKeyReference(
+    origin: Origin = Origin.MANAGED,
+    controlMode: ResourceControlMode = ResourceControlMode.PLATFORM_MANAGED,
+): ManagedKeyReference =
     ManagedKeyReference(
         alias = alias,
         kid = kid,
@@ -53,13 +59,20 @@ fun ManagedKeyInfoType<*>.toKeyReference(origin: Origin = Origin.MANAGED): Manag
         keyType = keyType,
         keyVisibility = keyVisibility,
         keyEncoding = keyEncoding,
+        controlMode = controlMode,
     )
 
 /**
  * Convert any [KeyInfoType] to a [ManagedKeyReference] if it has the required fields.
  * Returns null if alias or providerId are missing.
+ *
+ * @param origin The provenance of the referenced resource.
+ * @param controlMode The lifecycle control mode. Defaults to platform-managed.
  */
-fun KeyInfoType<*>.toKeyReferenceOrNull(origin: Origin = Origin.MANAGED): ManagedKeyReference? {
+fun KeyInfoType<*>.toKeyReferenceOrNull(
+    origin: Origin = Origin.MANAGED,
+    controlMode: ResourceControlMode = ResourceControlMode.PLATFORM_MANAGED,
+): ManagedKeyReference? {
     val a = alias ?: return null
     val p = providerId ?: return null
     return ManagedKeyReference(
@@ -71,27 +84,35 @@ fun KeyInfoType<*>.toKeyReferenceOrNull(origin: Origin = Origin.MANAGED): Manage
         keyType = keyType,
         keyVisibility = keyVisibility,
         keyEncoding = keyEncoding,
+        controlMode = controlMode,
     )
 }
 
 /**
  * Convert any [KeyInfoType] to a signing reference when it has a managed alias.
  *
- * Signing must address the private key by its managed provider alias. A public key id
- * derived for JOSE/COSE headers is not necessarily the provider lookup id, so do not
- * send it as an additional lookup constraint to remote KMS services.
+ * Signing addresses the private key by its managed provider alias. When a caller also
+ * supplies a kid, preserve it as an independent constraint so the signing boundary can
+ * prove that the alias still resolves to the intended key.
+ *
+ * @param origin The provenance of the referenced resource.
+ * @param controlMode The lifecycle control mode. Defaults to platform-managed.
  */
-fun KeyInfoType<*>.toSigningKeyReferenceOrNull(origin: Origin = Origin.MANAGED): ManagedKeyReference? {
+fun KeyInfoType<*>.toSigningKeyReferenceOrNull(
+    origin: Origin = Origin.MANAGED,
+    controlMode: ResourceControlMode = ResourceControlMode.PLATFORM_MANAGED,
+): ManagedKeyReference? {
     val a = alias ?: return null
     val p = providerId ?: return null
     return ManagedKeyReference(
         alias = a,
-        kid = null,
+        kid = kid,
         providerId = p,
         origin = origin,
         signatureAlgorithm = signatureAlgorithm,
         keyType = keyType,
         keyVisibility = keyVisibility,
         keyEncoding = keyEncoding,
+        controlMode = controlMode,
     )
 }

@@ -18,8 +18,10 @@ package com.sphereon.openid.oid4vp.universal.impl
 
 import com.sphereon.core.api.conf.DefaultPrincipalMapPropertySource
 import com.sphereon.core.api.http.GenericHttpRequest
-import com.sphereon.core.api.http.dispatch.DefaultHttpAdapterDispatcher
+import com.sphereon.core.api.http.GenericHttpResponse
 import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelector
 import com.sphereon.core.api.service.SessionScopedCommandRegistry
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfoType
@@ -70,6 +72,19 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+
+private suspend fun HttpAdapterDispatcher.dispatchSelected(
+    appGraph: Any,
+    request: GenericHttpRequest,
+): GenericHttpResponse {
+    val selector = (appGraph as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
+    return when (val selection = selector.select(request.method, request.path)) {
+        is HttpAdapterRouteSelection.Selected -> dispatch(request, selection.match)
+        is HttpAdapterRouteSelection.NotFound -> GenericHttpResponse(404, emptyMap(), "Not found")
+        is HttpAdapterRouteSelection.Ambiguous -> GenericHttpResponse(500, emptyMap(), "Ambiguous route")
+        is HttpAdapterRouteSelection.Misconfigured -> GenericHttpResponse(500, emptyMap(), selection.message)
+    }
+}
 
 /**
  * End-to-end integration tests for the Universal OID4VP REST API.
@@ -165,7 +180,7 @@ class UniversalOid4vpE2ETest {
                     body = json.encodeToString(CreateAuthorizationRequestInput.serializer(), input),
                 )
 
-            val createResponse = dispatcher.dispatch(createRequest)
+            val createResponse = dispatcher.dispatchSelected(app, createRequest)
             assertEquals(201, createResponse.statusCode, "Expected 201 Created")
 
             val output = json.decodeFromString(CreateAuthorizationRequestOutput.serializer(), createResponse.body!!)
@@ -182,7 +197,7 @@ class UniversalOid4vpE2ETest {
                     path = "/oid4vp/backend/auth/requests/${output.correlationId}",
                 )
 
-            val statusResponse = dispatcher.dispatch(statusRequest)
+            val statusResponse = dispatcher.dispatchSelected(app, statusRequest)
             assertEquals(200, statusResponse.statusCode)
 
             val statusOutput = json.decodeFromString(GetAuthorizationRequestStatusOutput.serializer(), statusResponse.body!!)
@@ -196,11 +211,11 @@ class UniversalOid4vpE2ETest {
                     path = "/oid4vp/backend/auth/requests/${output.correlationId}",
                 )
 
-            val deleteResponse = dispatcher.dispatch(deleteRequest)
+            val deleteResponse = dispatcher.dispatchSelected(app, deleteRequest)
             assertEquals(204, deleteResponse.statusCode)
 
             // 9. Verify session is deleted
-            val statusAfterDelete = dispatcher.dispatch(statusRequest)
+            val statusAfterDelete = dispatcher.dispatchSelected(app, statusRequest)
             assertEquals(404, statusAfterDelete.statusCode)
         }
 
@@ -242,7 +257,8 @@ class UniversalOid4vpE2ETest {
                 )
 
             val createResponse =
-                dispatcher.dispatch(
+                dispatcher.dispatchSelected(
+                    app,
                     GenericHttpRequest.withTextBody(
                         method = "POST",
                         path = "/oid4vp/backend/auth/requests",
@@ -292,7 +308,8 @@ class UniversalOid4vpE2ETest {
                 )
 
             val createResponse =
-                dispatcher.dispatch(
+                dispatcher.dispatchSelected(
+                    app,
                     GenericHttpRequest.withTextBody(
                         method = "POST",
                         path = "/oid4vp/backend/auth/requests",
@@ -327,7 +344,8 @@ class UniversalOid4vpE2ETest {
             val dispatcher = (sessionGraph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
 
             val statusResponse =
-                dispatcher.dispatch(
+                dispatcher.dispatchSelected(
+                    app,
                     GenericHttpRequest(
                         method = "GET",
                         path = "/oid4vp/backend/auth/requests/non-existent-correlation-id",
@@ -360,7 +378,8 @@ class UniversalOid4vpE2ETest {
             val dispatcher = (sessionGraph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
 
             val deleteResponse =
-                dispatcher.dispatch(
+                dispatcher.dispatchSelected(
+                    app,
                     GenericHttpRequest(
                         method = "DELETE",
                         path = "/oid4vp/backend/auth/requests/non-existent-correlation-id",
@@ -441,7 +460,7 @@ class UniversalOid4vpE2ETest {
                     body = json.encodeToString(CreateAuthorizationRequestInput.serializer(), input),
                 )
 
-            val createResponse = dispatcher.dispatch(createRequest)
+            val createResponse = dispatcher.dispatchSelected(app, createRequest)
             assertEquals(201, createResponse.statusCode, "Expected 201 Created")
 
             val universalOutput = json.decodeFromString(CreateAuthorizationRequestOutput.serializer(), createResponse.body!!)
@@ -610,7 +629,7 @@ class UniversalOid4vpE2ETest {
                     path = "/oid4vp/backend/auth/requests/$correlationId",
                 )
 
-            val statusResponse = dispatcher.dispatch(statusRequest)
+            val statusResponse = dispatcher.dispatchSelected(app, statusRequest)
             assertEquals(200, statusResponse.statusCode)
 
             val statusOutput = json.decodeFromString(GetAuthorizationRequestStatusOutput.serializer(), statusResponse.body!!)
@@ -642,7 +661,7 @@ class UniversalOid4vpE2ETest {
                     method = "DELETE",
                     path = "/oid4vp/backend/auth/requests/$correlationId",
                 )
-            val deleteResponse = dispatcher.dispatch(deleteRequest)
+            val deleteResponse = dispatcher.dispatchSelected(app, deleteRequest)
             assertEquals(204, deleteResponse.statusCode)
         }
 
@@ -732,7 +751,7 @@ class UniversalOid4vpE2ETest {
                     body = json.encodeToString(CreateAuthorizationRequestInput.serializer(), input),
                 )
 
-            val createResponse = dispatcher.dispatch(createRequest)
+            val createResponse = dispatcher.dispatchSelected(app, createRequest)
             assertEquals(201, createResponse.statusCode, "Expected 201 Created")
 
             val universalOutput = json.decodeFromString(CreateAuthorizationRequestOutput.serializer(), createResponse.body!!)
@@ -942,7 +961,7 @@ class UniversalOid4vpE2ETest {
                     path = "/oid4vp/backend/auth/requests/$correlationId",
                 )
 
-            val statusResponse = dispatcher.dispatch(statusRequest)
+            val statusResponse = dispatcher.dispatchSelected(app, statusRequest)
             assertEquals(200, statusResponse.statusCode)
 
             val statusOutput = json.decodeFromString(GetAuthorizationRequestStatusOutput.serializer(), statusResponse.body!!)
@@ -954,7 +973,7 @@ class UniversalOid4vpE2ETest {
                     method = "DELETE",
                     path = "/oid4vp/backend/auth/requests/$correlationId",
                 )
-            val deleteResponse = dispatcher.dispatch(deleteRequest)
+            val deleteResponse = dispatcher.dispatchSelected(app, deleteRequest)
             assertEquals(204, deleteResponse.statusCode)
         }
 }

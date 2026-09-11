@@ -126,13 +126,37 @@ abstract class AbstractCoseCryptoService(
             )
         // verifyAndAmendKeyInfo guarantees alg is set in protectedHeader via buildFinalHeaders
         val alg = checkNotNull(protectedHeader.alg) { "Algorithm resolution failed for key: ${cborKeyInfo.key}" }
+        val signatureAlgorithm =
+            SignatureAlgorithm.tryFromCoseForKey(alg, cborKeyInfo).getOrElse { throw it.toException() }
         val coseSign1 = input.copy(protectedHeader = protectedHeader, unprotectedHeader = unprotectedHeader)
+        val originalKeyInfo = keyInfo
+        val signingKeyInfo =
+            if (
+                originalKeyInfo != null &&
+                originalKeyInfo.key == null &&
+                originalKeyInfo.alias != null
+            ) {
+                KeyInfo<KeyType>(
+                    kid = originalKeyInfo.kid,
+                    opts = originalKeyInfo.opts,
+                    keyVisibility = originalKeyInfo.keyVisibility,
+                    signatureAlgorithm = originalKeyInfo.signatureAlgorithm ?: signatureAlgorithm,
+                    x5c = originalKeyInfo.x5c,
+                    alias = originalKeyInfo.alias,
+                    providerId = originalKeyInfo.providerId,
+                    keyType = originalKeyInfo.keyType,
+                    keyEncoding = originalKeyInfo.keyEncoding,
+                    noCache = originalKeyInfo.noCache,
+                )
+            } else {
+                cborKeyInfo
+            }
         val toSign =
             createToBeSignedCbor(
                 protectedHeader = protectedHeader,
                 payload = coseSign1.payload,
-                keyInfo = cborKeyInfo,
-                alg = SignatureAlgorithm.fromCose(alg),
+                keyInfo = signingKeyInfo,
+                alg = signatureAlgorithm,
                 headerCodec = coseHeaderCborCodec,
             ).getOrElse { throw it.toException() }
         return PreSign1Result(
@@ -249,7 +273,8 @@ abstract class AbstractCoseCryptoService(
         algKeyType: CoseKeyTypeEnum,
         kid: String?,
     ): KeyInfo<CoseKeyType> {
-        val signatureAlgorithm = SignatureAlgorithm.fromCose(sigAlg)
+        val signatureAlgorithm =
+            SignatureAlgorithm.tryFromCoseForKey(sigAlg, KeyInfo(key = jwk)).getOrElse { throw it.toException() }
 
         // Build CoseKey with appropriate parameters based on key type
         val isEcKey = algKeyType == CoseKeyTypeEnum.EC2
@@ -359,11 +384,18 @@ abstract class AbstractCoseCryptoService(
                 else -> throw IllegalStateException("No key info provided and no x5chain in headers to construct one from")
             }
 
-        // Step 4: Resolve the actual key
+        // Step 4: Resolve the actual key and retain the resolver's public metadata.
+        // The original keyInfo may be an alias-only signing selector with no kid; do
+        // not use that selector as the returned public-key metadata.
+        val resolvedPublicKeyInfo =
+            if (resolvedKeyInfo.key == null) {
+                this.resolvePublicCborKey(resolvedKeyInfo)
+            } else {
+                null
+            }
         val key: CoseKeyType =
-            CoseJoseKeyMappingService.toCoseKey(
-                resolvedKeyInfo.key ?: this.resolvePublicCborKey(resolvedKeyInfo).key,
-            )
+            resolvedPublicKeyInfo?.key
+                ?: CoseJoseKeyMappingService.toCoseKey(checkNotNull(resolvedKeyInfo.key))
 
         // Step 5: Update x5chain from key if not already set
         if (x5chain == null) {
@@ -387,12 +419,16 @@ abstract class AbstractCoseCryptoService(
                 x5chain,
             )
 
+        val finalKeyInfo =
+            resolvedPublicKeyInfo
+                ?: CoseJoseKeyMappingService.toResolvedCoseKeyInfo(
+                    CoseJoseKeyMappingService.toResolvedKeyInfo(resolvedKeyInfo, key),
+                )
+
         return Triple(
             finalUnprotectedHeader,
             finalProtectedHeader,
-            CoseJoseKeyMappingService.toResolvedCoseKeyInfo(
-                CoseJoseKeyMappingService.toResolvedKeyInfo(resolvedKeyInfo, key),
-            ),
+            finalKeyInfo,
         )
     }
 

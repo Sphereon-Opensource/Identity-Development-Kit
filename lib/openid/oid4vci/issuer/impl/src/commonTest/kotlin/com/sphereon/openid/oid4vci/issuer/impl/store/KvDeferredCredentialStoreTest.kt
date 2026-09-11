@@ -35,6 +35,7 @@ class KvDeferredCredentialStoreTest {
         val kvStoreManager = InMemoryTestKvStoreManager()
         return KvDeferredCredentialStore(
             kvStoreManager = kvStoreManager,
+            kvStoreService = UnconfiguredKvStoreService,
             execution = NoOpSessionExecution(),
         )
     }

@@ -75,6 +75,10 @@ kotlin {
                 implementation(projects.libCryptoCoreImpl)
                 implementation(projects.libCryptoCore)
                 implementation(projects.libCryptoKmsProviderSoftware)
+                // The managed-key selector is the bridge from the KMS provider to the
+                // tenant-scoped key-reference authority. Keep it on this test composition
+                // root's classpath so Metro replaces the iterating-only default binding.
+                implementation(projects.libCryptoKeyPersistenceImpl)
 
                 // HTTP client (used by holder metadata resolution)
                 implementation(projects.libDataLinkHttpClientPublic)
@@ -94,6 +98,14 @@ kotlin {
                 implementation(projects.libOpenidOid4vpCommonImpl)
                 implementation(projects.libOpenidOid4vpVerifierPublic)
                 implementation(projects.libOpenidOid4vpVerifierImpl)
+                // VCDM verification is a first-class part of the integration session graph.
+                // Keep the verifier and every production Data Integrity cryptosuite visible to
+                // Metro here; implementation dependencies of the REST service are not exported.
+                implementation(project(":lib-openid-oid4vp-verifier-vcdm-impl"))
+                implementation(projects.libCryptoDataIntegrityProofImpl)
+                implementation(projects.libCryptoDataIntegrityProofEddsaJcs2022)
+                implementation(projects.libCryptoDataIntegrityProofEddsaRdfc2022)
+                implementation(projects.libCryptoDataIntegrityProofEcdsaRdfc2019)
                 implementation(projects.libOpenidOid4vpDcql)
 
                 // DCQL query store (DcqlQueryConfigurationStore, DcqlQueryResolver bindings)
@@ -155,12 +167,19 @@ kotlin {
                 implementation(projects.libWalletInteractionTestFixtures)
                 implementation(projects.libWalletInteractionProtocolOid4vci)
                 implementation(projects.libWalletInteractionProtocolOid4vp)
+                // Exercise the production wallet interaction REST command boundary in the
+                // issue/store/present proof; the test must not drive the engine directly.
+                implementation(projects.libWalletInteractionClientRest)
 
                 // WSCA/WSCD (real Software-profile key custody + key attestation): the
                 // KA-on-demand e2e leg mints a holder key and self-attests it exactly the way a
                 // real OSS wallet does, rather than faking a compact JWT by hand.
                 implementation(projects.libWalletWscaImpl)
                 implementation(projects.libWalletWscdSoftware)
+                // The Software WSCD now requires the authoritative wallet-unit owner metadata
+                // that GenerateKeyCommand indexes.  This test app is intentionally ephemeral,
+                // so use the shared in-memory test authority rather than disabling that check.
+                implementation(projects.libWalletWscdTestFixtures)
                 implementation(projects.libWalletUnitPublic)
 
                 // In-memory blob backing store for BlobWalletCredentialStore

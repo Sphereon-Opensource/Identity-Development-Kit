@@ -21,10 +21,13 @@ import com.sphereon.cbor.CborString
 import com.sphereon.cbor.StringLabel
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.cose.COSE_Sign1
+import com.sphereon.crypto.core.cose.CoseMac0Cbor
+import com.sphereon.mdoc.transfer.reader.Iso18013Oid4vpHandover
 import com.sphereon.mdoc.transfer.reader.SessionTranscript
 import com.sphereon.util.stringify
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.js.JsName
 import kotlin.js.JsStatic
 import kotlin.jvm.JvmInline
 import kotlin.jvm.JvmStatic
@@ -38,18 +41,48 @@ enum class DeviceAuthType {
     MAC,
 }
 
-@Serializable
-@JvmInline
-value class DeviceMac(
-    private val mac: String,
+/**
+ * Device MAC authentication value.
+ *
+ * ISO/IEC 18013-5 defines this field as a detached COSE_Mac0.  Older versions of this library
+ * exposed a string wrapper and some deployed callers still construct that form, so the legacy
+ * constructor and [toCborItem] remain available.  New code should use [CoseMac0Cbor] and the
+ * codec in the mdoc implementation module; the common model never treats a legacy string as
+ * authenticated data.
+ */
+@JsExportCompat
+class DeviceMac private constructor(
+    val coseMac0: CoseMac0Cbor?,
+    private val legacyMac: String?,
 ) {
-    fun toCborItem(): CborString = CborString(mac)
+    @JsName("fromLegacyMac")
+    constructor(mac: String) : this(coseMac0 = null, legacyMac = mac)
 
-    override fun toString(): String = mac
+    @JsName("fromCoseMac0Value")
+    constructor(coseMac0: CoseMac0Cbor) : this(coseMac0 = coseMac0, legacyMac = null)
+
+    /** Legacy text representation retained for source and wire compatibility. */
+    fun toCborItem(): CborString =
+        CborString(
+            legacyMac
+                ?: error("COSE_Mac0 must be encoded with a CoseMac0CborCodec"),
+        )
+
+    fun isCoseMac0(): Boolean = coseMac0 != null
+
+    override fun equals(other: Any?): Boolean =
+        other is DeviceMac && coseMac0 == other.coseMac0 && legacyMac == other.legacyMac
+
+    override fun hashCode(): Int = 31 * (coseMac0?.hashCode() ?: 0) + (legacyMac?.hashCode() ?: 0)
+
+    override fun toString(): String = coseMac0?.toString() ?: legacyMac.orEmpty()
 
     companion object {
         @JvmStatic
         fun fromCborItem(structure: CborString): DeviceMac = DeviceMac(structure.value)
+
+        @JvmStatic
+        fun fromCoseMac0(value: CoseMac0Cbor): DeviceMac = DeviceMac(value)
     }
 }
 
@@ -58,7 +91,14 @@ value class DeviceMac(
 @ObjCName("DeviceAuth", exact = true)
 data class DeviceAuth(
     val deviceSignature: COSE_Sign1<DeviceAuthentication>? = null,
-    val deviceMac: DeviceMac? = null, // DeviceMac FIXME
+    /**
+     * Legacy representation of the device MAC authentication value.
+     *
+     * The common verifier does not currently have the session-specific EMacKey
+     * needed to validate COSE_Mac0.  Keep the field for wire compatibility, but
+     * never treat its presence as authenticated data.
+     */
+    val deviceMac: DeviceMac? = null,
     val original: ByteArray?,
 ) {
     init {
@@ -81,9 +121,9 @@ data class DeviceAuth(
         check(this.deviceMac == null || this.deviceSignature == null) {
             "Cannot have both a device signature and MAC at the same time"
         }
-        if (this.deviceMac !== null) {
-            throw NotImplementedError("Device MAC is not implemented yet. Only signatures supported for now")
-        }
+        // Presence is preserved for legacy decode/round-trip compatibility.  A verifier must
+        // still validate the MAC with the session-specific EMacKey before accepting it; the
+        // validation layer, rather than this transport model, owns that policy decision.
     }
 
     override fun toString(): String = "DeviceAuth(deviceSignature=$deviceSignature, deviceMac=$deviceMac, original=${stringify(original)})"
@@ -132,6 +172,43 @@ data class DeviceAuthentication(
                     nonce = nonce,
                     jwkThumbprint = jwkThumbprint,
                     responseUri = responseUri,
+                )
+            return DeviceAuthentication(
+                sessionTranscript = sessionTranscript,
+                docType = docType,
+                deviceNamespaces = deviceNamespaces,
+                original = null,
+            )
+        }
+
+        /**
+         * Build DeviceAuthentication for ISO/IEC TS 18013-7 Annex B.
+         *
+         * This must not use [fromOid4vp], whose handover is the OpenID4VP 1.0
+         * final/DCQL profile. Annex B has its own three-element handover and
+         * binds both URI hashes to the per-presentation mdoc-generated nonce.
+         */
+        @JsStatic
+        @JvmStatic
+        fun fromIso18013Oid4vp(
+            clientId: String,
+            responseUri: String,
+            mdocGeneratedNonce: String,
+            nonce: String,
+            docType: DocType,
+            deviceNamespaces: DeviceNameSpaces,
+        ): DeviceAuthentication {
+            val sessionTranscript =
+                SessionTranscript(
+                    handover =
+                        Iso18013Oid4vpHandover
+                            .fromInputs(
+                                clientId = clientId,
+                                responseUri = responseUri,
+                                mdocGeneratedNonce = mdocGeneratedNonce,
+                                nonce = nonce,
+                            ) as com.sphereon.mdoc.transfer.reader.Handover<*, com.sphereon.cbor.CborItem<*>>,
+                    original = null,
                 )
             return DeviceAuthentication(
                 sessionTranscript = sessionTranscript,

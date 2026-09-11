@@ -45,6 +45,7 @@ interface EndSessionGetHttpEndpointCommand : HttpEndpointCommand {
                 pathPattern = "/logout",
                 operationId = "endSessionGet",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("logout"),
                 summary = "OIDC RP-Initiated Logout 1.0 end-session endpoint (GET)",
             )
@@ -68,6 +69,7 @@ interface EndSessionPostHttpEndpointCommand : HttpEndpointCommand {
                 consumes = setOf(MediaType.ApplicationFormUrlEncoded),
                 operationId = "endSessionPost",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("logout"),
                 summary = "OIDC RP-Initiated Logout 1.0 end-session endpoint (POST)",
             )

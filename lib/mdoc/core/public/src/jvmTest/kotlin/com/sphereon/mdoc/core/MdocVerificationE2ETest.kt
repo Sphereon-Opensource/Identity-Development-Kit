@@ -19,13 +19,27 @@ package com.sphereon.mdoc.core
 import com.sphereon.core.compat.DateTimeUtils
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.core.compat.Uuid
+import com.sphereon.cbor.Cbor
+import com.sphereon.cbor.CborArray
+import com.sphereon.cbor.CborEncodedItem
+import com.sphereon.cbor.CborItem
+import com.sphereon.cbor.CborMap
+import com.sphereon.cbor.CborString
+import com.sphereon.cbor.toCborItem
 import com.sphereon.crypto.core.CoseCryptoServiceImpl
+import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
+import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.cose.CoseKey
 import com.sphereon.crypto.core.cose.CoseKeyType
+import com.sphereon.crypto.core.cose.CoseAlgorithm
+import com.sphereon.crypto.core.cose.CoseHeaderCbor
+import com.sphereon.crypto.core.cose.CoseMac0InputCbor
+import com.sphereon.crypto.core.defaultCreateMac0
+import com.sphereon.crypto.core.defaultCreateMac0UsingKeys
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.X509DistinguishedNameElements
 import com.sphereon.crypto.core.x509.X509VerifyServiceImpl
@@ -36,9 +50,12 @@ import com.sphereon.mdoc.data.DeviceAuthValidationImpl
 import com.sphereon.mdoc.data.IssuerAuthValidationImpl
 import com.sphereon.mdoc.data.MdocValidationsImpl
 import com.sphereon.mdoc.data.device.DataElementIdentifier
+import com.sphereon.mdoc.data.device.DeviceAuth
 import com.sphereon.mdoc.data.device.DeviceItemsRequest
 import com.sphereon.mdoc.data.device.DeviceNameSpaces
+import com.sphereon.mdoc.data.device.DeviceSigned
 import com.sphereon.mdoc.data.device.DeviceSignedItems
+import com.sphereon.mdoc.data.device.DeviceMac
 import com.sphereon.mdoc.data.device.DocRequest
 import com.sphereon.mdoc.data.device.DocType
 import com.sphereon.mdoc.data.device.IntentToRetain
@@ -142,6 +159,143 @@ class MdocVerificationE2ETest {
                 authorizationRequestNonce = authRequestNonce,
                 description = "wrong client_id",
             )
+        }
+
+    @Test
+    fun deviceMacVerificationUsesTheReconstructedSessionTranscript() =
+        runTest {
+            val signed = buildSignedHolderDocument()
+            val expectedTranscript =
+                SessionTranscript.fromOid4vpClientIdAndResponseUri(
+                    clientId = verifierClientId,
+                    nonce = authRequestNonce,
+                    jwkThumbprint = null,
+                    responseUri = verifierResponseUri,
+                )
+            val macKey = "01234567890123456789012345678901".encodeToByteArray()
+            val deviceSigned = requireNotNull(signed.document.deviceSigned)
+            val macPayload =
+                CborEncodedItem<Any>(
+                    encodeExpectedDeviceAuthenticationPayload(
+                        sessionTranscript = expectedTranscript,
+                        docType = signed.document.docType.toString(),
+                        deviceNamespaces = deviceSigned.nameSpaces,
+                    ),
+                ).value.toBstr()
+            val mac =
+                defaultCreateMac0(
+                    input =
+                        CoseMac0InputCbor(
+                            protectedHeader = CoseHeaderCbor(alg = CoseAlgorithm.HMAC256_256),
+                            detachedPayload = macPayload.value,
+                        ),
+                    sharedSecret = macKey,
+                ).coseMac0
+            val macDocument =
+                signed.document.copy(
+                    deviceSigned =
+                        deviceSigned.copy(
+                            deviceAuth = DeviceAuth(deviceMac = DeviceMac.fromCoseMac0(mac), original = null),
+                            original = null,
+                        ),
+                    original = null,
+                )
+
+            val result =
+                buildValidators(signed.issuerCertChain).deviceAuth.verifyDeviceAuthWithMac(
+                    document = macDocument,
+                    expectedSessionTranscript = expectedTranscript,
+                    macKey = macKey,
+                )
+            assertFalse(result.error, "A valid COSE_Mac0 should verify: ${result.message}")
+
+            val wrongTranscript =
+                SessionTranscript.fromOid4vpClientIdAndResponseUri(
+                    clientId = "x509_san_dns:imposter.example.com",
+                    nonce = authRequestNonce,
+                    jwkThumbprint = null,
+                    responseUri = verifierResponseUri,
+                )
+            val wrongResult =
+                buildValidators(signed.issuerCertChain).deviceAuth.verifyDeviceAuthWithMac(
+                    document = macDocument,
+                    expectedSessionTranscript = wrongTranscript,
+                    macKey = macKey,
+                )
+            assertTrue(wrongResult.error && wrongResult.critical, "A transcript mismatch must fail closed.")
+        }
+
+    @Test
+    fun deviceSigningUsesAnAdvertisedReaderMacKey() =
+        runTest {
+            val signed = buildSignedHolderDocument()
+            val readerKeyPair =
+                ctx.kms.generateKeyAsync(
+                    alias = "test-reader-mac-key-${Uuid.v4String()}",
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    providerId = null,
+                )
+            val readerPrivateKeyInfo = readerKeyPair.toManagedKeyInfo<CoseKey>(KeyVisibility.PRIVATE, KeyEncoding.COSE)
+            val readerPublicKey = requireNotNull(readerPrivateKeyInfo.key).toPublicKey() as CoseKey
+            val holderPublicKey = requireNotNull(signed.deviceKeyInfo.key).toPublicKey() as CoseKey
+            val readerPrivateResolved =
+                CoseJoseKeyMappingService.toResolvedCoseKeyInfo(
+                    CoseJoseKeyMappingService.toResolvedKeyInfo(readerPrivateKeyInfo, readerPrivateKeyInfo.key),
+                )
+
+            val expectedTranscript =
+                SessionTranscript.fromOid4vpClientIdAndResponseUri(
+                    clientId = verifierClientId,
+                    nonce = authRequestNonce,
+                    jwkThumbprint = null,
+                    responseUri = verifierResponseUri,
+                )
+            val request =
+                DocRequest(
+                    itemsRequest = DeviceItemsRequest(docType = mdlDocType, nameSpaces = emptyMap()),
+                )
+            val deviceAuthentication =
+                com.sphereon.mdoc.data.device.DeviceAuthentication(
+                    sessionTranscript = expectedTranscript,
+                    docType = mdlDocType,
+                    deviceNamespaces = DeviceNameSpaces(mapOf()),
+                    original = null,
+                )
+
+            val macDocument =
+                mdocSignService.deviceSignDocument(
+                    request = request,
+                    document = signed.document,
+                    deviceAuthentication = deviceAuthentication,
+                    deviceKeyInfo = signed.deviceKeyInfo,
+                    macKeys = arrayOf(readerPublicKey),
+                )
+            val macAuth = requireNotNull(macDocument.deviceSigned).deviceAuth
+            assertTrue(macAuth.deviceMac?.isCoseMac0() == true, "An advertised MAC key must select COSE_Mac0 authentication.")
+
+            var verifierMacKey: ByteArray? = null
+            defaultCreateMac0UsingKeys(
+                provider = dev.whyoleg.cryptography.CryptographyProvider.Default,
+                input =
+                    CoseMac0InputCbor(
+                        protectedHeader = CoseHeaderCbor(alg = CoseAlgorithm.HMAC256_256),
+                        detachedPayload = byteArrayOf(0),
+                    ),
+                selfPrivateKey = readerPrivateResolved,
+                otherPublicKey = ResolvedKeyInfo(key = holderPublicKey),
+            ) { provider, input, sharedSecret, alg ->
+                verifierMacKey = sharedSecret
+                defaultCreateMac0(input = input, sharedSecret = sharedSecret, alg = alg, provider = provider)
+            }
+
+            val result =
+                buildValidators(signed.issuerCertChain).deviceAuth.verifyDeviceAuthWithMac(
+                    document = macDocument,
+                    expectedSessionTranscript = expectedTranscript,
+                    macKey = requireNotNull(verifierMacKey),
+                )
+            assertFalse(result.error, "Holder-generated COSE_Mac0 should verify with the reader-derived EMacKey: ${result.message}")
         }
 
     @Test
@@ -263,6 +417,7 @@ class MdocVerificationE2ETest {
     private data class SignedHolderDocument(
         val document: com.sphereon.mdoc.data.device.Document,
         val issuerCertChain: Array<String>,
+        val deviceKeyInfo: ManagedKeyInfoType<CoseKeyType>,
     )
 
     @Suppress("UNCHECKED_CAST")
@@ -348,7 +503,41 @@ class MdocVerificationE2ETest {
                 requireDeviceX5Chain = false,
             )
 
-        return SignedHolderDocument(document = signedDocument, issuerCertChain = issued.certChain)
+        return SignedHolderDocument(document = signedDocument, issuerCertChain = issued.certChain, deviceKeyInfo = deviceKeyInfo)
+    }
+
+    private fun encodeExpectedDeviceAuthenticationPayload(
+        sessionTranscript: SessionTranscript,
+        docType: String,
+        deviceNamespaces: DeviceNameSpaces,
+    ): ByteArray {
+        val sessionTranscriptItem: CborItem<*> =
+            Cbor.tryDecode(SessionTranscriptCborCodecImpl().encode(sessionTranscript).getOrThrow()).getOrThrow()
+        return Cbor.encode(
+            CborArray(
+                mutableListOf(
+                    CborString("DeviceAuthentication"),
+                    sessionTranscriptItem,
+                    CborString(docType),
+                    CborEncodedItem<CborMap<CborString, CborMap<CborString, CborItem<*>>>>(
+                        Cbor.encode(
+                            CborMap(
+                                deviceNamespaces.value.entries
+                                    .associate { (namespace, items) ->
+                                        CborString(namespace.toString()) to
+                                            CborMap(
+                                                items.value.entries
+                                                    .associate { (identifier, value) ->
+                                                        CborString(identifier.toString()) to value.toCborItem()
+                                                    }.toMutableMap(),
+                                            )
+                                    }.toMutableMap(),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
     }
 
     private data class IssuerKeyMaterial(

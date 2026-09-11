@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.config
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vci.issuer.config.MutableOid4vciIssuerInstanceIdProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
+import com.sphereon.openid.oid4vci.issuer.config.requireCanonicalOid4vciIssuerInstanceId
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -42,7 +43,7 @@ class DefaultOid4vciIssuerInstanceIdProvider : MutableOid4vciIssuerInstanceIdPro
     override fun currentInstanceId(): String? = instanceId
 
     override fun setCurrentInstanceId(instanceId: String) {
-        this.instanceId = instanceId
+        this.instanceId = requireCanonicalOid4vciIssuerInstanceId(instanceId)
     }
 
     override fun clearCurrentInstanceId() {

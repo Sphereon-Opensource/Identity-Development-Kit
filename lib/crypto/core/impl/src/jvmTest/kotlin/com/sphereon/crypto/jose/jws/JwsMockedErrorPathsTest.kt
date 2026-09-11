@@ -52,6 +52,7 @@ import com.sphereon.crypto.jose.jws.command.PrepareJwsCommand
 import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.IdentifierContext
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
 import com.sphereon.crypto.resolution.managed.ManagedIdentifierKeyResult
 import io.mockk.coEvery
@@ -62,6 +63,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -2225,8 +2228,13 @@ class JwsMockedErrorPathsTest {
             // Create a mock external identifier result for x5c
             val ecJwk = Jwk(kty = JwaKeyType.EC, crv = JwaCurve.P_256, x = "test-x", y = "test-y")
             val resolvedKeyInfo = ResolvedKeyInfo.fromKey(ecJwk)
-            val externalResult = mockk<com.sphereon.crypto.resolution.extern.ExternalIdentifierResult>(relaxed = true)
+            val externalResult = mockk<ExternalIdentifierResult.X5c>(relaxed = true)
             every { externalResult.keyInfo } returns resolvedKeyInfo
+            every { externalResult.identifierOpts } returns ExternalIdentifierX5cOpts(listOf("cert1", "cert2"), verify = true)
+            every { externalResult.verificationResult.error } returns false
+            every { externalResult.verificationResult.critical } returns false
+            every { externalResult.verificationResult.message } returns "Certificate chain validated"
+            every { externalResult.verificationResult.publicKey } returns ecJwk
 
             // Mock for x5c resolution
             coEvery { mockIdentifierService.resolve(any<com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts>()) } returns
@@ -2251,11 +2259,41 @@ class JwsMockedErrorPathsTest {
             assertTrue(result.value.isValid, "Should be valid")
             coVerify(exactly = 1) {
                 mockIdentifierService.resolve(
-                    match<com.sphereon.crypto.resolution.extern.ExternalIdentifierX5cOpts> {
-                        it.identifier == listOf("cert1", "cert2") && it.verify == false
+                    match<ExternalIdentifierX5cOpts> {
+                        it.identifier == listOf("cert1", "cert2") && it.verify == true
                     },
                 )
             }
+        }
+
+    @Test
+    fun testVerifyJws_RejectsX5cWhenVerificationIsDisabled() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            val mockIdentifierService = mockk<com.sphereon.crypto.resolution.IdentifierService>()
+            val mockSignatureService = mockk<SignatureService>()
+            val key = Jwk(kty = JwaKeyType.EC, crv = JwaCurve.P_256, x = "test-x", y = "test-y")
+            val keyInfo = ResolvedKeyInfo.fromKey(key)
+            val x5cResult = mockk<ExternalIdentifierResult.X5c>(relaxed = true)
+            every { x5cResult.keyInfo } returns keyInfo
+            every { x5cResult.identifierOpts } returns ExternalIdentifierX5cOpts(listOf("cert1"), verify = false)
+            every { x5cResult.verificationResult.error } returns false
+            every { x5cResult.verificationResult.critical } returns false
+            every { x5cResult.verificationResult.message } returns "X509 verification has been disabled"
+            every { x5cResult.verificationResult.publicKey } returns key
+            coEvery { mockIdentifierService.resolve(any<ExternalIdentifierX5cOpts>()) } returns IdkResult.ok(x5cResult)
+            coEvery { mockSignatureService.isValidRawSignature(any(), any(), any()) } returns true
+            val command = com.sphereon.crypto.jose.jws.command.VerifyJwsCommandImpl(mockExecution, mockIdentifierService, mockSignatureService)
+
+            val result = command.execute(VerifyJwsArgs(
+                jws = JwsCompact("eyJhbGciOiJFUzI1NiIsIng1YyI6WyJjZXJ0MSJdfQ.dGVzdA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+                identifier = null,
+            ))
+
+            assertTrue(result.isOk)
+            assertTrue(result.value.errorMessages.any { it.contains("chain validation", ignoreCase = true) })
+            assertTrue(!result.value.isValid)
+            coVerify(exactly = 0) { mockSignatureService.isValidRawSignature(any(), any(), any()) }
         }
 
     @Test
@@ -2315,6 +2353,41 @@ class JwsMockedErrorPathsTest {
                 result.value.errorMessages.any { it.contains("Unexpected error") },
                 "Should report unexpected error",
             )
+        }
+
+    @Test
+    fun testVerifyJws_RejectsDeactivatedDidBeforeCrypto() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            val mockIdentifierService = mockk<com.sphereon.crypto.resolution.IdentifierService>()
+            val mockSignatureService = mockk<SignatureService>()
+            val didResult = mockk<ExternalIdentifierResult.Did>(relaxed = true)
+
+            every { didResult.didResolutionResult.didDocumentMetadata } returns mapOf("deactivated" to "true")
+            coEvery { mockIdentifierService.resolve(any<com.sphereon.crypto.resolution.IdentifierOptsOrResult>()) } returns
+                IdkResult.ok(didResult)
+            coEvery { mockSignatureService.isValidRawSignature(any(), any(), any()) } returns true
+
+            val command =
+                com.sphereon.crypto.jose.jws.command.VerifyJwsCommandImpl(
+                    execution = mockExecution,
+                    identifierService = mockIdentifierService,
+                    signatureService = mockSignatureService,
+                )
+            val result =
+                command.execute(
+                    VerifyJwsArgs(
+                        jws = JwsCompact("eyJhbGciOiJFUzI1NiIsImtpZCI6InRlc3Qta2lkIn0.dGVzdA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+                        identifier = null,
+                    ),
+                )
+
+            assertTrue(result.isOk, "deactivated DID rejection must remain a structured validation result")
+            assertFalse(result.value.isValid)
+            assertTrue(result.value.errorMessages.any { it.contains("DID is deactivated", ignoreCase = true) })
+            assertFalse(result.value.trustEstablished)
+            assertEquals(null, result.value.cryptoVerified)
+            coVerify(exactly = 0) { mockSignatureService.isValidRawSignature(any(), any(), any()) }
         }
 
     @Test

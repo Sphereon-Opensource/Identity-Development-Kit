@@ -20,6 +20,8 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusPurpose
+import com.sphereon.statuslist.MdocStatusListProfile
+import com.sphereon.statuslist.StatusProofFormat
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -41,6 +43,14 @@ interface CredentialStatusEnricher {
         credentialId: String?,
         credentialHash: String?,
     ): IdkResult<Unit, IdkError>
+
+    /**
+     * CANCEL: release a reservation that cannot be completed.
+     *
+     * Implementations must remove the entry and make its index available again. The operation is
+     * idempotent so an issuer can safely retry cleanup after a transient persistence/signing error.
+     */
+    suspend fun cancel(handle: StatusReservationHandle): IdkResult<Unit, IdkError>
 }
 
 /** Inputs the enricher needs to choose a list and allocate an entry during issuance. */
@@ -54,6 +64,12 @@ data class StatusEnrichmentContext(
     val statusListCorrelationId: String,
     val entryCorrelationId: String? = null,
     val credentialId: String? = null,
+    /** Optional ISO mdoc aggregation endpoint to carry in StatusListInfo. */
+    val aggregationUri: String? = null,
+    /** Expected ISO profile, copied from the issuer binding for definition consistency checks. */
+    val mdocProfile: MdocStatusListProfile? = null,
+    /** Expected proof envelope, copied from the issuer binding for definition consistency checks. */
+    val proofFormat: StatusProofFormat? = null,
 )
 
 /** Opaque handle to a reserved entry, returned by [CredentialStatusEnricher.reserve]. */
@@ -79,4 +95,6 @@ data class ReservedStatus(
     val handle: StatusReservationHandle,
     val claim: JsonObject,
     val mergeTarget: StatusClaimMergeTarget,
+    /** Binary identifier allocated for an ISO Identifier List, when applicable. */
+    val identifier: ByteArray? = null,
 )

@@ -19,17 +19,12 @@ package com.sphereon.openid.oid4vp.dcql.store.rest
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.CommandBackedHttpAdapter
-import com.sphereon.core.api.http.command.HttpEndpointCommand
+import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.OpenApiHints
 import com.sphereon.di.session.SessionScope
-import com.sphereon.openid.oid4vp.dcql.store.http.CreateDcqlQueryEndpointCommand
-import com.sphereon.openid.oid4vp.dcql.store.http.DeleteDcqlQueryEndpointCommand
-import com.sphereon.openid.oid4vp.dcql.store.http.GetDcqlQueryEndpointCommand
-import com.sphereon.openid.oid4vp.dcql.store.http.ListDcqlQueriesEndpointCommand
-import com.sphereon.openid.oid4vp.dcql.store.http.PatchDcqlQueryEndpointCommand
-import com.sphereon.openid.oid4vp.dcql.store.http.ReplaceDcqlQueryEndpointCommand
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -50,33 +45,21 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<HttpAdapter>())
+@ContributesIntoMap(SessionScope::class, binding = binding<HttpAdapter>())
+@StringKey(DcqlQueryAdminHttpAdapter.ID)
 class DcqlQueryAdminHttpAdapter(
     execution: SessionExecution,
-    private val listCommand: ListDcqlQueriesEndpointCommand,
-    private val createCommand: CreateDcqlQueryEndpointCommand,
-    private val getCommand: GetDcqlQueryEndpointCommand,
-    private val replaceCommand: ReplaceDcqlQueryEndpointCommand,
-    private val patchCommand: PatchDcqlQueryEndpointCommand,
-    private val deleteCommand: DeleteDcqlQueryEndpointCommand,
+    endpointCommandRegistry: HttpEndpointCommandRegistry,
 ) : CommandBackedHttpAdapter(
         id = ID,
         execution = execution,
+        endpointCommandRegistry = endpointCommandRegistry,
         mount =
             HttpAdapterMount(
                 serverPrefix = "",
                 adapterBasePath = "/api/dcql/v1",
             ),
     ) {
-    override val endpointCommands: List<HttpEndpointCommand> =
-        listOf(
-            listCommand,
-            createCommand,
-            getCommand,
-            replaceCommand,
-            patchCommand,
-            deleteCommand,
-        )
 
     override val openApiHints =
         OpenApiHints(

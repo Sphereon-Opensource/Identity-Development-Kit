@@ -88,6 +88,55 @@ class ClientMetadataSerializationTest {
     }
 
     @Test
+    fun ldpVcUsesFinalProofTypeAndCryptosuiteWireNames() {
+        val metadata =
+            ClientMetadata(
+                vpFormatsSupported =
+                    mapOf(
+                        "ldp_vc" to
+                            VpFormatInfo(
+                                proofTypeValues = listOf("DataIntegrityProof", "Ed25519Signature2020"),
+                                cryptosuiteValues = listOf("eddsa-rdfc-2022", "ecdsa-rdfc-2019"),
+                            ),
+                    ),
+            )
+
+        val ldpVc =
+            json.encodeToJsonElement(ClientMetadata.serializer(), metadata)
+                .jsonObject["vp_formats_supported"]!!.jsonObject["ldp_vc"]!!.jsonObject
+
+        assertEquals("[\"DataIntegrityProof\",\"Ed25519Signature2020\"]", ldpVc["proof_type_values"].toString())
+        assertEquals("[\"eddsa-rdfc-2022\",\"ecdsa-rdfc-2019\"]", ldpVc["cryptosuite_values"].toString())
+        assertFalse(ldpVc.containsKey("proof_types_supported"))
+    }
+
+    @Test
+    fun ldpVcBuilderPopulatesFinalDataIntegrityFields() {
+        val ldpVc =
+            buildVpFormats {
+                ldpVc(
+                    proofTypeValues = listOf("DataIntegrityProof"),
+                    cryptosuiteValues = listOf("eddsa-rdfc-2022"),
+                )
+            }["ldp_vc"]
+
+        assertEquals(listOf("DataIntegrityProof"), ldpVc?.proofTypeValues)
+        assertEquals(listOf("eddsa-rdfc-2022"), ldpVc?.cryptosuiteValues)
+    }
+
+    @Test
+    fun vpFormatInfoBuilderPopulatesFinalDataIntegrityFields() {
+        val info =
+            buildVpFormatInfo {
+                proofTypeValues("DataIntegrityProof")
+                cryptosuiteValues("eddsa-rdfc-2022")
+            }
+
+        assertEquals(listOf("DataIntegrityProof"), info.proofTypeValues)
+        assertEquals(listOf("eddsa-rdfc-2022"), info.cryptosuiteValues)
+    }
+
+    @Test
     fun `jwks emits standard RFC 7517 keys array with the JWK alg field set`() {
         val metadata = ClientMetadata(jwks = JwkSet(arrayOf(encJwk())))
         val obj = json.encodeToJsonElement(ClientMetadata.serializer(), metadata).jsonObject
@@ -267,5 +316,26 @@ class ClientMetadataValidationTest {
         val metadata = ClientMetadata(encryptedResponseEncValuesSupported = emptyList())
         val result = validateClientMetadata(metadata)
         assertFalse(result.isValid, "Empty enc list should fail")
+    }
+
+    @Test
+    fun `ldp_vc final proof type and cryptosuite lists must not be empty`() {
+        val emptyProofTypes =
+            validateClientMetadata(
+                ClientMetadata(
+                    vpFormatsSupported =
+                        mapOf("ldp_vc" to VpFormatInfo(proofTypeValues = emptyList())),
+                ),
+            )
+        val emptyCryptosuites =
+            validateClientMetadata(
+                ClientMetadata(
+                    vpFormatsSupported =
+                        mapOf("ldp_vc" to VpFormatInfo(cryptosuiteValues = emptyList())),
+                ),
+            )
+
+        assertFalse(emptyProofTypes.isValid)
+        assertFalse(emptyCryptosuites.isValid)
     }
 }

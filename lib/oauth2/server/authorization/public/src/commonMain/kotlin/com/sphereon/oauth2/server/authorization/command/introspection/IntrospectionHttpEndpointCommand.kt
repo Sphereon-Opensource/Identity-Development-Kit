@@ -35,6 +35,7 @@ interface IntrospectionHttpEndpointCommand : HttpEndpointCommand {
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "introspectToken",
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 tags = setOf("introspection"),
                 summary = "RFC 7662 OAuth 2.0 Token Introspection",
             )

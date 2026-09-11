@@ -20,19 +20,23 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
-import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.TokenResponse
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
+import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand
 import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseArgs
+import com.sphereon.oauth2.server.authorization.command.CreateTokenResponseCommand
 import com.sphereon.oauth2.server.authorization.command.GrantParameters
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantCommand
 import com.sphereon.oauth2.server.authorization.command.token.GrantContext
 import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
+import com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys
 import com.sphereon.oauth2.server.authorization.impl.command.token.executeWithTrustedClientAuthorization
-import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.binding
 
 /**
@@ -43,9 +47,14 @@ import dev.zacsweers.metro.binding
  */
 @Inject
 @SingleIn(SessionScope::class)
-@ContributesIntoSet(SessionScope::class, binding = binding<GrantHandler>())
-class ClientCredentialsGrantHandlerImpl : GrantHandler {
-    override val grantType: String = GrantType.CLIENT_CREDENTIALS.value
+@ContributesIntoMap(SessionScope::class, binding = binding<GrantHandler>())
+@StringKey(GrantHandlerKeys.CLIENT_CREDENTIALS)
+class ClientCredentialsGrantHandlerImpl(
+    private val verifyClientCredentialsGrant: VerifyClientCredentialsGrantCommand,
+    private val createAccessToken: CreateAccessTokenCommand,
+    private val createTokenResponse: CreateTokenResponseCommand,
+) : GrantHandler {
+    override val grantType: String = GrantHandlerKeys.CLIENT_CREDENTIALS
 
     override fun supports(params: GrantParameters): Boolean = params is GrantParameters.ClientCredentials
 
@@ -68,12 +77,11 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
         val ccParams = params as GrantParameters.ClientCredentials
         val tokenRequest = context.tokenRequest
         val applied = context.applied
-        val commands = context.commands
         val proofJkt = context.proofJkt
         val certThumbprint = context.certThumbprintS256
 
         val verified =
-            commands.verifyClientCredentialsGrant
+            verifyClientCredentialsGrant
                 .executeWithTrustedClientAuthorization(
                     VerifyClientCredentialsGrantArgs(
                         clientId = tokenRequest.clientId,
@@ -88,7 +96,7 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
         // proof's thumbprint is pinned as `cnf.jkt` on the access token; subsequent
         // resource-server requests must present a proof from the same key.
         val accessToken =
-            commands.createAccessToken
+            createAccessToken
                 .execute(
                     CreateAccessTokenArgs(
                         subject = verified.subject,
@@ -102,7 +110,7 @@ class ClientCredentialsGrantHandlerImpl : GrantHandler {
                     ),
                 ).getOrElse { error -> return Err(error) }
 
-        return commands.createTokenResponse.execute(
+        return createTokenResponse.execute(
             CreateTokenResponseArgs(
                 accessToken = accessToken.value,
                 tokenType = tokenTypeFor(proofJkt),

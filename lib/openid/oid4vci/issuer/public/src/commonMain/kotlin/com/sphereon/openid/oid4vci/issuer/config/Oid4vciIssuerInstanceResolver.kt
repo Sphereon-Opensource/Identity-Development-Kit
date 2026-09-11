@@ -26,12 +26,12 @@ import com.sphereon.core.compat.JsExportCompat
  *
  * The HTTP adapter publishes the result on [MutableOid4vciIssuerInstanceIdProvider] so downstream
  * session-scoped collaborators (notably the issuer config provider) read it without taking the id
- * as a method argument. A `null`/error result leaves the holder empty, which makes config reads
- * fall back to the singular issuer namespace (`oid4vci.issuer.*`).
+ * as a method argument. The result must be a canonical issuer resource UUID. A `null`, invalid, or
+ * error result fails closed at the HTTP boundary and never selects a singular config namespace.
  *
  * Tenant-aware routing strategies live above IDK; downstream layers (EDK/VDX) contribute their own
  * resolver implementation that replaces the default IDK binding — e.g. mapping a request to a
- * persisted issuer party id under `${INSTANCES_NAMESPACE}.<id>`.
+ * persisted issuer resource UUID under `${INSTANCES_NAMESPACE}.<id>`.
  *
  * Twin of the OAuth2 `OAuth2ServerInstanceResolver`.
  */

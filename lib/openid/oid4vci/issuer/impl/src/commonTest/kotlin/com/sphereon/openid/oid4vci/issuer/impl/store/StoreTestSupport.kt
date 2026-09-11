@@ -40,6 +40,7 @@ import com.sphereon.data.store.kv.KvStoreVersioning
 import com.sphereon.data.store.kv.KvVersionAppendResult
 import com.sphereon.data.store.kv.KvVersionedEntry
 import com.sphereon.data.store.kv.impl.KvStoreManager
+import com.sphereon.data.store.kv.impl.KvStoreService
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
 import kotlinx.coroutines.sync.Mutex
@@ -238,6 +239,15 @@ internal class InMemoryTestKvStoreManager : KvStoreManager {
         configService: ConfigService,
         execution: SessionExecution?,
     ): Set<KvStore> = setOf(store)
+}
+
+internal object UnconfiguredKvStoreService : KvStoreService {
+    override fun getStoreIds(): Array<String> = emptyArray()
+
+    override fun getStoreConfig(storeId: String): KvStoreConfigBase =
+        throw IllegalArgumentException("No configured test store: $storeId")
+
+    override fun getStore(storeId: String): KvStore = throw UnsupportedOperationException("not used in store tests")
 }
 
 /**

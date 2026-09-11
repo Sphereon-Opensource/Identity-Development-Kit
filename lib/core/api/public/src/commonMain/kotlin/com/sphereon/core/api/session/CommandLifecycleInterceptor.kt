@@ -23,9 +23,69 @@ import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Provides
 import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.EmptyCoroutineContext
 
 private const val DEFAULT_INTERCEPTOR_ORDER = 100
+
+/** Identifies whether the current command tree began at a transport boundary or in-process. */
+enum class CommandInvocationBoundary {
+    EXTERNAL,
+    INTERNAL,
+}
+
+/**
+ * Typed coroutine-owned command nesting state.
+ *
+ * External HTTP/gRPC adapters install [externalBoundary] before dispatch. [CommandAdapter]
+ * replaces that marker with depth zero for the first service command and increments the depth for
+ * every command invoked from its coroutine. A new external boundary resets the depth. This keeps
+ * lifecycle policy request-local without a thread local or process-wide mutable registry.
+ */
+class CommandInvocationContext private constructor(
+    val boundary: CommandInvocationBoundary,
+    val commandDepth: Int,
+) : AbstractCoroutineContextElement(Key) {
+    init {
+        require(commandDepth >= BOUNDARY_MARKER_DEPTH) { "Command invocation depth is invalid" }
+    }
+
+    val isRootCommand: Boolean get() = commandDepth == 0
+
+    internal fun enterCommand(): CommandInvocationContext =
+        CommandInvocationContext(
+            boundary = boundary,
+            commandDepth = commandDepth + 1,
+        )
+
+    companion object Key : CoroutineContext.Key<CommandInvocationContext> {
+        private const val BOUNDARY_MARKER_DEPTH: Int = -1
+
+        /** Installs a fresh external service boundary; the first command enters at depth zero. */
+        fun externalBoundary(): CommandInvocationContext =
+            CommandInvocationContext(
+                boundary = CommandInvocationBoundary.EXTERNAL,
+                commandDepth = BOUNDARY_MARKER_DEPTH,
+            )
+
+        /**
+         * Marks execution already owned by an external streaming command whose API does not use
+         * [CommandAdapter]. Regular commands invoked while collecting that stream enter at depth
+         * one and are therefore treated as internal invocations.
+         */
+        fun externalCommand(): CommandInvocationContext =
+            CommandInvocationContext(
+                boundary = CommandInvocationBoundary.EXTERNAL,
+                commandDepth = 0,
+            )
+
+        internal fun internalRoot(): CommandInvocationContext =
+            CommandInvocationContext(
+                boundary = CommandInvocationBoundary.INTERNAL,
+                commandDepth = 0,
+            )
+    }
+}
 
 /**
  * Context passed to interceptors during command lifecycle.
@@ -111,7 +171,7 @@ interface CommandLifecycleInterceptor {
      * @param args The original command arguments
      * @param result The command result, or null if execution was skipped/threw
      * @param denied The first denial verdict if any interceptor denied, or null
-     * @param durationMs Wall-clock duration in milliseconds
+     * @param durationMs Monotonic elapsed duration in milliseconds
      */
     suspend fun afterExecute(
         context: CommandExecutionContext,

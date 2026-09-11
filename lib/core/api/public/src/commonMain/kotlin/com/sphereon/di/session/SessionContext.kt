@@ -20,6 +20,7 @@ package com.sphereon.di.session
 import com.sphereon.di.context.ContextAware
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.NoOpSessionContext
+import com.sphereon.di.context.PrincipalType
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -42,6 +43,7 @@ interface SessionContext : ContextAware {
         get() = sessionId
 
     fun isAnonymous(): Boolean =
+        context.principalType == PrincipalType.ANONYMOUS ||
         (
             this.sessionId == IdentityConstants.ANONYMOUS_SESSION_ID && this.context.tenant.tenantId == IdentityConstants.ANONYMOUS_TENANT_ID &&
                 this.context.principal == IdentityConstants.ANONYMOUS_PRINCIPAL_ID

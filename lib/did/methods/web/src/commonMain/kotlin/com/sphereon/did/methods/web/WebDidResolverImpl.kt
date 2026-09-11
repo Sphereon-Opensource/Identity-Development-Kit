@@ -39,6 +39,7 @@ import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Provider
 import dev.zacsweers.metro.SingleIn
@@ -369,6 +370,11 @@ class WebDidResolverImpl(
         } finally {
             client.close()
         }
+    }
+
+    @ContributesTo(SessionScope::class)
+    interface Graph : WebDidResolver.Graph {
+        override val webDidResolver: WebDidResolver
     }
 
     companion object {

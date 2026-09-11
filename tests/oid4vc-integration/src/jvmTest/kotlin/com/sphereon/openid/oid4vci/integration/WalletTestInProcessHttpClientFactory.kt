@@ -18,15 +18,15 @@ package com.sphereon.openid.oid4vci.integration
 
 import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.GenericHttpResponse
-import com.sphereon.core.api.http.HttpAdapter
-import com.sphereon.core.api.http.RoutableHttpAdapter
+import com.sphereon.core.api.http.dispatch.HttpAdapterDispatcher
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelection
+import com.sphereon.core.api.http.dispatch.HttpAdapterRouteSelector
 import com.sphereon.di.session.SessionScope
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientFactoryJvmImpl
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -40,40 +40,19 @@ import io.ktor.http.headersOf
 // =========================================================================
 // In-process HttpClientFactory replacement for holder HTTP calls, shared by
 // WalletInteractionOid4vciRealProtocolE2ETest and WalletInteractionOid4vpDcqlRealProtocolE2ETest,
-// which both depend on WalletTestAdapterHolderGraph for their wireInProcessAdapters() helper.
+// which both issue requests against the same route-first HTTP graph as production.
 //
 // Any holder (OID4VCI/OID4VP) uses the session-scoped HttpClientFactory binding for all
 // outgoing HTTP. The default binding (HttpClientFactoryJvmImpl) makes real CIO/OkHttp calls
 // that can't reach an in-process issuer/verifier.
 //
-// We cannot inject Set<HttpAdapter> directly because some adapters transitively depend on
-// FetchRequestUriCommandImpl -> HttpClientFactory -> this factory, creating a hard runtime
-// cycle (StackOverflowError even if the compile-time cycle is broken with Provider<>).
-//
-// Solution: a thread-safe holder object (WalletTestAdapterHolder) is bound into the DI graph
-// as a singleton. The factory reads adapters from the holder lazily at createClient() time.
-// Each test sets the adapters on the holder AFTER the graph is fully constructed (and all
-// commands are already instantiated), so there is no circular construction.
+// The AppScope selector is metadata-only and the SessionScope dispatcher resolves only the
+// selected Lazy<HttpAdapter>. This keeps the HttpClientFactory -> adapter graph lazy without the
+// mutable eager-adapter holder that used to materialize every adapter before each test.
 //
 // replaces = [HttpClientFactoryJvmImpl::class] ensures Metro picks this binding when this test
 // module is on the classpath.
 // =========================================================================
-
-/**
- * Thread-safe mutable holder for the adapter set.
- * Set once after graph construction; read by WalletTestInProcessHttpClientFactory.createClient().
- */
-@Inject
-@SingleIn(SessionScope::class)
-class WalletTestAdapterHolder {
-    @Volatile
-    var adapters: Set<HttpAdapter> = emptySet()
-}
-
-@ContributesTo(SessionScope::class)
-interface WalletTestAdapterHolderGraph {
-    val walletTestAdapterHolder: WalletTestAdapterHolder
-}
 
 @Inject
 @SingleIn(SessionScope::class)
@@ -83,10 +62,10 @@ interface WalletTestAdapterHolderGraph {
     replaces = [HttpClientFactoryJvmImpl::class],
 )
 class WalletTestInProcessHttpClientFactory(
-    private val adapterHolder: WalletTestAdapterHolder,
+    private val routeSelector: HttpAdapterRouteSelector,
+    private val dispatcher: HttpAdapterDispatcher,
 ) : HttpClientFactory {
     override fun createClient(options: HttpClientOptions): HttpClient {
-        val adapters = adapterHolder.adapters
         val engine =
             MockEngine { request ->
                 val url = request.url
@@ -118,21 +97,22 @@ class WalletTestInProcessHttpClientFactory(
                         bodySupplier = body?.let { { it } },
                     )
 
-                var response: GenericHttpResponse? = null
-                for (adapter in adapters) {
-                    if (adapter is RoutableHttpAdapter && !adapter.canHandle(genericRequest)) continue
-                    val result = adapter.handleRequest(genericRequest)
-                    // 404 = not found by this adapter; keep trying.
-                    // COMMAND_ARG_NOT_SUPPORTED_ERROR at 400 means canHandle() was a false positive
-                    // (e.g. OAuth2DiscoveryHttpAdapter claims /.well-known/* paths but can't handle
-                    // /.well-known/openid-credential-issuer - it returns 400 with that error code).
-                    // Continue to the next adapter so the OID4VCI issuer metadata adapter can claim it.
-                    if (result.statusCode == 404) continue
-                    if (result.statusCode == 400 && result.body?.contains("COMMAND_ARG_NOT_SUPPORTED_ERROR") == true) continue
-                    response = result
-                    break
-                }
-                val resp = response ?: GenericHttpResponse(404, emptyMap(), "Not found by WalletTestInProcessHttpClientFactory")
+                val resp =
+                    when (val selection = routeSelector.select(method, path)) {
+                        is HttpAdapterRouteSelection.Selected -> dispatcher.dispatch(genericRequest, selection.match)
+                        is HttpAdapterRouteSelection.NotFound ->
+                            com.sphereon.core.api.http.GenericHttpResponse(
+                                404,
+                                emptyMap(),
+                                "Not found by WalletTestInProcessHttpClientFactory",
+                            )
+                        is HttpAdapterRouteSelection.Ambiguous ->
+                            com.sphereon.core.api.http.GenericHttpResponse(500, emptyMap(), "Ambiguous in-process HTTP route")
+                        is HttpAdapterRouteSelection.Misconfigured ->
+                            com.sphereon.core.api.http.GenericHttpResponse(500, emptyMap(), selection.message)
+                    }
+
+                WalletTestInProcessHttpCapture.record(genericRequest, resp)
 
                 respond(
                     content = resp.body ?: "",
@@ -148,4 +128,41 @@ class WalletTestInProcessHttpClientFactory(
     override fun getEngineTypesSupported(): List<HttpClientEngineType> = listOf(HttpClientEngineType.CIO)
 
     override fun getEngineTypeDefault(): HttpClientEngineType = HttpClientEngineType.CIO
+}
+
+/** Captures holder-originated HTTP exchanges for E2E assertions at the verifier/RP boundary. */
+internal object WalletTestInProcessHttpCapture {
+    private val exchanges = mutableListOf<WalletTestHttpExchange>()
+
+    @Synchronized
+    fun clear() {
+        exchanges.clear()
+    }
+
+    @Synchronized
+    fun snapshot(): List<WalletTestHttpExchange> = exchanges.toList()
+
+    @Synchronized
+    internal fun record(request: GenericHttpRequest, response: GenericHttpResponse) {
+        exchanges += WalletTestHttpExchange(request.method, request.path, request.body, response)
+    }
+}
+
+internal data class WalletTestHttpExchange(
+    val method: String,
+    val path: String,
+    val body: String?,
+    val response: GenericHttpResponse,
+)
+
+/** Route a test request through the same AppScope selection and SessionScope dispatch as ingress. */
+internal suspend fun Oid4vciTestContext.dispatchInProcessHttp(request: GenericHttpRequest): GenericHttpResponse {
+    val selector = (app as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
+    val dispatcher = (session.graph as HttpAdapterDispatcher.Graph).httpAdapterDispatcher
+    return when (val selection = selector.select(request.method, request.path)) {
+        is HttpAdapterRouteSelection.Selected -> dispatcher.dispatch(request, selection.match)
+        is HttpAdapterRouteSelection.NotFound -> GenericHttpResponse(404, emptyMap(), "Not found")
+        is HttpAdapterRouteSelection.Ambiguous -> GenericHttpResponse(500, emptyMap(), "Ambiguous route")
+        is HttpAdapterRouteSelection.Misconfigured -> GenericHttpResponse(500, emptyMap(), selection.message)
+    }
 }

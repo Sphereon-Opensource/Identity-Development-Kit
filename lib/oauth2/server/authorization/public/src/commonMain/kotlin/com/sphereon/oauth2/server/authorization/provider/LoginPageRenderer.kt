@@ -21,6 +21,7 @@ import com.sphereon.conf.theme.core.model.ResolvedTheme
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.oauth2.common.config.LoginMethod
 
 /**
  * Strategy for rendering the AS's first-party login surface served at `GET /login`. IDK ships a
@@ -99,6 +100,15 @@ data class LoginPageContext(
      * back to deriving the base from [returnUrl] when this is blank (transitional).
      */
     val formActionBase: String = "",
+    val showPasswordForm: Boolean = true,
+    val showWebAuthn: Boolean = false,
+    val showWallet: Boolean = false,
+    val walletAuthorizationUrl: String? = null,
+    val defaultMethod: LoginMethod = LoginMethod.PASSWORD,
+    val display: String = "page",
+    val acrValues: List<String> = emptyList(),
+    val forceReauth: Boolean = false,
+    val cspNonce: String? = null,
     /**
      * Tenant-resolved LIGHT theme for this render, or null when no theme resolver is assembled,
      * no tenant is known, or resolution failed. Renderers treat null as "use built-in defaults";
@@ -149,6 +159,7 @@ data class LoginPageResponse(
     val html: String,
     val contentType: String = "text/html; charset=utf-8",
     val cspNonce: String? = null,
+    val imageOrigins: List<String> = emptyList(),
 )
 
 /**

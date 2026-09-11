@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import com.sphereon.conf.theme.ui.compose.ComponentTheme
 import com.sphereon.conf.theme.ui.compose.parseColor
 import com.sphereon.conf.theme.ui.compose.parseDp
+import com.sphereon.conf.theme.ui.compose.tokenFill
+import com.sphereon.conf.theme.ui.compose.tokenGradient
 import com.sphereon.conf.theme.ui.compose.tokens.LocalButtonTokens
 import androidx.compose.ui.tooling.preview.Preview
 
@@ -60,18 +62,22 @@ fun Button(
 
     when (variant) {
         ButtonVariant.Primary -> {
-            val bg = parseColor(tokens.primaryBackground)
+            // The primary background token holds the brand gradient by default, which is not a
+            // Color. Resolve it as a fill: Material gets a transparent container and the gradient
+            // is painted behind it. A flat token still takes the plain Material path.
+            val fill = tokenFill(tokens.primaryBackground, MaterialTheme.colorScheme.primary)
             val fg = parseColor(tokens.primaryForeground)
             // Disabled uses onSurface tints rather than an alpha-faded brand color: a translucent
             // brand fill with translucent white text is illegible on light surfaces.
             val disabledBase = MaterialTheme.colorScheme.onSurface
             androidx.compose.material3.Button(
                 onClick = onClick,
-                modifier = modifier,
+                // Only paint the gradient while enabled; disabled uses the flat disabled container.
+                modifier = if (enabled) modifier.tokenGradient(fill, shape) else modifier,
                 enabled = enabled,
                 colors =
                     ButtonDefaults.buttonColors(
-                        containerColor = bg,
+                        containerColor = if (enabled) fill.containerColor else Color.Transparent,
                         contentColor = fg,
                         disabledContainerColor = disabledBase.copy(alpha = 0.12f),
                         disabledContentColor = disabledBase.copy(alpha = 0.38f),
@@ -107,8 +113,10 @@ fun Button(
         }
 
         ButtonVariant.Outline -> {
-            val fg = parseColor(tokens.primaryBackground)
-            val borderColor = parseColor(tokens.primaryBackground)
+            // Text and border need a solid colour. The primary background token is the brand
+            // gradient, which is invalid for both, so read the flat brand role instead.
+            val fg = MaterialTheme.colorScheme.primary
+            val borderColor = MaterialTheme.colorScheme.primary
             OutlinedButton(
                 onClick = onClick,
                 modifier = modifier,

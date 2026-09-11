@@ -25,6 +25,7 @@ import com.sphereon.crypto.dataintegrity.cryptosuite.CryptosuiteVerification
 import com.sphereon.crypto.dataintegrity.model.DataIntegrityProof
 import com.sphereon.crypto.dataintegrity.model.DataIntegrityVerificationResult
 import com.sphereon.crypto.dataintegrity.registry.CryptosuiteRegistry
+import com.sphereon.crypto.dataintegrity.resolution.VerificationMethodResolutionPolicy
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -52,6 +53,8 @@ interface VerifyProofAlgorithm {
         securedDocument: JsonObject,
         expectedProofPurpose: String? = null,
         expectedMediaType: String? = null,
+        verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy =
+            VerificationMethodResolutionPolicy.empty(),
     ): IdkResult<DataIntegrityVerificationResult, IdkError>
 }
 
@@ -71,6 +74,7 @@ class VerifyProofAlgorithmImpl(
         securedDocument: JsonObject,
         expectedProofPurpose: String?,
         expectedMediaType: String?,
+        verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy,
     ): IdkResult<DataIntegrityVerificationResult, IdkError> {
         val proofObjects =
             extractProofObjects(securedDocument)
@@ -85,6 +89,7 @@ class VerifyProofAlgorithmImpl(
                 proofObjects = proofObjects,
                 unsecuredDocument = unsecuredDocument,
                 expectedProofPurpose = expectedProofPurpose,
+                verificationMethodResolutionPolicy = verificationMethodResolutionPolicy,
                 accumulator = accumulator,
             )
         }
@@ -124,6 +129,7 @@ class VerifyProofAlgorithmImpl(
         proofObjects: List<JsonObject>,
         unsecuredDocument: JsonObject,
         expectedProofPurpose: String?,
+        verificationMethodResolutionPolicy: VerificationMethodResolutionPolicy,
         accumulator: ProofAccumulator,
     ) {
         val proof =
@@ -150,7 +156,11 @@ class VerifyProofAlgorithmImpl(
                 )
                 return
             }
-        val verifierResult = verifier.verifyProof(cryptosuiteInput, proof)
+        val verifierResult = verifier.verifyProof(
+            cryptosuiteInput,
+            proof,
+            verificationMethodResolutionPolicy,
+        )
         if (verifierResult.isErr) {
             accumulator.recordFailure(
                 "PROOF_VERIFICATION_ERROR: ${verifierResult.error.message.defaultMessage}",

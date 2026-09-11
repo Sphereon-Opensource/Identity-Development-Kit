@@ -24,6 +24,7 @@ import com.sphereon.wallet.wscd.WscdProfile
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -83,7 +84,26 @@ class SoftwareWscdFactoryTest {
             assertTrue(result.isErr, "factory must reject configs it does not support")
         }
 
-    private suspend fun newFactory(): SoftwareWscdFactory {
+    @Test
+    fun persistentStorageRequiredRefusesTheFirstKeyOperation() =
+        runTest {
+            val factory = newFactory(SoftwareWscdKeyStoreConfiguration.PersistentStorageRequired)
+            val wscd = factory.create(WscdConfig.Software()).value
+            val spec =
+                WscdKeySpec(
+                    walletUnitId = "wallet-storage-required",
+                    usage = SecureComponentUsage.WALLET_CREDENTIAL_PROOF,
+                    algorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
+
+            val failure = assertFailsWith<IllegalStateException> { wscd.generateKey(spec) }
+
+            assertEquals("software_wscd_persistent_storage_required", failure.message)
+        }
+
+    private suspend fun newFactory(
+        keyStoreConfiguration: SoftwareWscdKeyStoreConfiguration = SoftwareWscdKeyStoreConfiguration.InMemoryForTestingOnly,
+    ): SoftwareWscdFactory {
         val sessionId = "wallet-wscd-software-factory-test-${Uuid.v4String()}"
         val app =
             createWalletAppGraph(
@@ -102,7 +122,7 @@ class SoftwareWscdFactoryTest {
                 softwareKmsProviderFactory = softwareKmsProviderFactory,
                 execution = session.asCoreApiServiceGraph().serviceExecution,
                 app = app,
-                keyStoreConfiguration = SoftwareWscdKeyStoreConfiguration.InMemoryForTestingOnly,
+                keyStoreConfiguration = keyStoreConfiguration,
                 sessionId = sessionId,
             )
         return SoftwareWscdFactory(

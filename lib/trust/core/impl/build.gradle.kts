@@ -73,6 +73,7 @@ kotlin {
         }
         val jvmMain by getting {
             dependencies {
+                implementation(sphereonlib.io.ktor.client.okhttp.jvm)
             }
         }
         val jvmTest by getting {

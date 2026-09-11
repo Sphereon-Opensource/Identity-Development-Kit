@@ -27,6 +27,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.atomicfu.locks.synchronized
 
 /**
  * In-memory implementation of PreAuthorizedCodeStorage.
@@ -46,7 +47,7 @@ class InMemoryPreAuthorizedCodeStorage(
         data: PreAuthorizedCodeData,
     ): IdkResult<Unit, AuthorizationServerError.StorageError> =
         try {
-            partition.preAuthorizedCodes[code] = data
+            synchronized(partition) { partition.preAuthorizedCodes[code] = data }
             Ok(Unit)
         } catch (expected: Exception) {
             Err(
@@ -58,9 +59,48 @@ class InMemoryPreAuthorizedCodeStorage(
             )
         }
 
+    override suspend fun findPreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> =
+        try {
+            Ok(synchronized(partition) { partition.preAuthorizedCodes[code] })
+        } catch (expected: Exception) {
+            Err(
+                AuthorizationServerError.StorageError(
+                    operation = "findPreAuthorizedCode",
+                    details = expected.message ?: "Unknown error",
+                    exception = expected,
+                ),
+            )
+        }
+
+    override suspend fun consumePreAuthorizedCodeIfValid(
+        code: String,
+        expectedData: PreAuthorizedCodeData,
+        now: kotlin.time.Instant,
+    ): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> =
+        try {
+            val data =
+                synchronized(partition) {
+                    val current = partition.preAuthorizedCodes[code]
+                    if (current == expectedData && current.expiresAt > now) {
+                        partition.preAuthorizedCodes.remove(code)
+                    } else {
+                        null
+                    }
+                }
+            Ok(data)
+        } catch (expected: Exception) {
+            Err(
+                AuthorizationServerError.StorageError(
+                    operation = "consumePreAuthorizedCodeIfValid",
+                    details = expected.message ?: "Unknown error",
+                    exception = expected,
+                ),
+            )
+        }
+
     override suspend fun consumePreAuthorizedCode(code: String): IdkResult<PreAuthorizedCodeData?, AuthorizationServerError.StorageError> =
         try {
-            val data = partition.preAuthorizedCodes.remove(code)
+            val data = synchronized(partition) { partition.preAuthorizedCodes.remove(code) }
             Ok(data)
         } catch (expected: Exception) {
             Err(
@@ -72,5 +112,6 @@ class InMemoryPreAuthorizedCodeStorage(
             )
         }
 
-    override suspend fun isCodeUsed(code: String): IdkResult<Boolean, AuthorizationServerError.StorageError> = Ok(code !in partition.preAuthorizedCodes)
+    override suspend fun isCodeUsed(code: String): IdkResult<Boolean, AuthorizationServerError.StorageError> =
+        Ok(synchronized(partition) { code !in partition.preAuthorizedCodes })
 }

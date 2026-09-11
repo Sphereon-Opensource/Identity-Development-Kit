@@ -74,6 +74,12 @@ enum class KmsProviderOperation {
     HARDWARE_BACKED,
     ATTESTATION,
     KEY_ATTESTATION,
+
+    // Additive read-only certificate operations. Keep appended to preserve existing ordinals.
+    /** Read a provider-native certificate without mutating provider state. */
+    GET_CERTIFICATE,
+    /** Inspect and register an existing provider key without importing or generating key material. */
+    REGISTER_KEY_REFERENCE,
 }
 
 /**

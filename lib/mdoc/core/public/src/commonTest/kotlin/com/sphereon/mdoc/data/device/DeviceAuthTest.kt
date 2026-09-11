@@ -93,14 +93,15 @@ class DeviceAuthTest {
     }
 
     @Test
-    fun testDeviceAuthWithMacThrowsNotImplemented() {
-        assertFailsWith<NotImplementedError> {
+    fun testDeviceAuthWithMacPreservesLegacyModel() {
+        val deviceAuth =
             DeviceAuth(
                 deviceSignature = null,
                 deviceMac = DeviceMac("test-mac"),
                 original = null,
             )
-        }
+
+        assertEquals(DeviceAuthType.MAC, deviceAuth.getAuthType())
     }
 
     @Test

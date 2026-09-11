@@ -279,23 +279,29 @@ class Ts03WalletAttestationEncoder(
         claims: Ts03WalletInstanceAttestationClaims,
         signer: WalletAttestationSigner,
         signingRequest: WalletAttestationSigningRequest,
-    ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> = encodeCompactJwt(json.encodeToString(claims), signer, signingRequest)
+    ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> =
+        encodeCompactJwt(json.encodeToString(claims), signer, signingRequest, typ = WALLET_INSTANCE_ATTESTATION_TYP)
 
     suspend fun encodeKeyAttestation(
         claims: Ts03KeyAttestationClaims,
         signer: WalletAttestationSigner,
         signingRequest: WalletAttestationSigningRequest,
-    ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> = encodeCompactJwt(json.encodeToString(claims), signer, signingRequest)
+    ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> =
+        encodeCompactJwt(json.encodeToString(claims), signer, signingRequest, typ = KEY_ATTESTATION_TYP)
 
     private suspend fun encodeCompactJwt(
         claimsJson: String,
         signer: WalletAttestationSigner,
         signingRequest: WalletAttestationSigningRequest,
+        typ: String,
     ): com.sphereon.core.api.IdkResult<Ts03EncodedJwt, com.sphereon.core.api.error.IdkError> {
+        // encodeDefaults=false would drop Ts03JwtHeader.typ's default "JWT", so pass typ
+        // explicitly (KA requires key-attestation+jwt per OpenID4VCI KeyAttestationVerifier).
         val headerJson =
             json.encodeToString(
                 Ts03JwtHeader(
                     alg = signingRequest.algorithm.jwtAlg,
+                    typ = typ,
                     kid = signingRequest.keyId,
                     x5c = signingRequest.x5c,
                 ),
@@ -324,6 +330,12 @@ class Ts03WalletAttestationEncoder(
                         ),
             ),
         )
+    }
+
+    private companion object {
+        const val KEY_ATTESTATION_TYP: String = "key-attestation+jwt"
+        /** WIA is not yet constrained to a protocol typ elsewhere; keep JWT until a TS03 WIA typ is wired. */
+        const val WALLET_INSTANCE_ATTESTATION_TYP: String = "JWT"
     }
 }
 

@@ -22,7 +22,11 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.KeyInfo
+import com.sphereon.crypto.core.KeyEncoding
 import com.sphereon.crypto.core.KeyType
+import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.dataintegrity.cryptosuite.DataIntegrityCryptosuiteCreator
 import com.sphereon.crypto.dataintegrity.model.DataIntegrityProof
@@ -68,25 +72,31 @@ class EddsaJcs2022Creator(
             )
         }
 
-        val proofWithoutValue =
-            DataIntegrityProof(
-                type = DataIntegrityProof.TYPE_DATA_INTEGRITY,
-                cryptosuite = EddsaJcs2022Cryptosuite.ID,
-                proofPurpose = options.proofPurpose,
-                verificationMethod = options.verificationMethod,
-                proofValue = "",
-                id = options.proofId,
-                created = options.created,
-                expires = options.expires,
-                domain = options.domain,
-                challenge = options.challenge,
-                nonce = options.nonce,
-                previousProof = options.previousProof,
-            )
+        val managedKey = try {
+            keyManagerService.getKeyResult(
+                KeyInfo<KeyType>(
+                    alias = options.signingKeyRef,
+                    keyVisibility = KeyVisibility.PUBLIC,
+                    keyEncoding = KeyEncoding.JOSE,
+                ),
+            ).getOrElse { return Err(it) }.key
+                ?: return Err(IdkError.NOT_FOUND_ERROR(resource = "Ed25519 signing key", message = "Signing key '${options.signingKeyRef}' was not resolved"))
+        } catch (expected: Exception) {
+            return Err(IdkError.fromString(message = "EddsaJcs2022Creator: signing key resolution failed: ${expected.message}", code = "PROOF_GENERATION_ERROR", exception = expected))
+        }
+        val jwk = managedKey.key as? JwkType
+            ?: return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "EddsaJcs2022Creator requires a JOSE Ed25519 signing key"))
+        try {
+            EddsaJcs2022Cryptosuite.requireEd25519Key(jwk)
+        } catch (expected: IllegalArgumentException) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = expected.message ?: "Invalid Ed25519 signing key"))
+        }
+
+        val proofWithoutValue = options.toEddsaJcs2022ProofConfig()
 
         val hashData = EddsaJcs2022Cryptosuite.hashData(unsecuredDocument, proofWithoutValue)
 
-        val keyInfo = KeyInfo<KeyType>(alias = options.signingKeyRef)
+        val keyInfo = KeyInfo<KeyType>(alias = options.signingKeyRef, signatureAlgorithm = SignatureAlgorithm.ED25519)
         val signature =
             try {
                 keyManagerService.createRawSignature(keyInfo, hashData, requireX5Chain = false)
@@ -103,3 +113,26 @@ class EddsaJcs2022Creator(
         return Ok(proofWithoutValue.copy(proofValue = EddsaJcs2022Cryptosuite.encodeProofValue(signature)))
     }
 }
+
+/**
+ * Builds the proof configuration that is canonicalized and signed by
+ * `eddsa-jcs-2022`. Extensions remain top-level proof properties and are
+ * validated by [DataIntegrityProof] before they can enter the hash input.
+ */
+internal fun ProofOptions.toEddsaJcs2022ProofConfig(): DataIntegrityProof =
+    DataIntegrityProof(
+        type = DataIntegrityProof.TYPE_DATA_INTEGRITY,
+        cryptosuite = EddsaJcs2022Cryptosuite.ID,
+        proofPurpose = proofPurpose,
+        verificationMethod = verificationMethod,
+        proofValue = "",
+        id = proofId,
+        created = created,
+        expires = expires,
+        domain = domain,
+        domainSet = domainSet,
+        challenge = challenge,
+        nonce = nonce,
+        previousProof = previousProof,
+        additionalProofProperties = additionalProofProperties ?: JsonObject(emptyMap()),
+    )

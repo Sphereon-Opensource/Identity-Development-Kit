@@ -30,14 +30,22 @@ import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.data.store.party.model.IdentifierType
 import com.sphereon.wallet.credential.CredentialFormat
 import com.sphereon.wallet.credential.CredentialLifecycleState
 import com.sphereon.wallet.credential.CredentialRefreshMethod
+import com.sphereon.wallet.credential.DeferredIssuanceState
+import com.sphereon.wallet.credential.IdentifierRef
+import com.sphereon.wallet.credential.IssuanceSession
+import com.sphereon.wallet.credential.IssuanceSessionStatus
+import com.sphereon.wallet.credential.KeyRef
+import com.sphereon.wallet.credential.RetryPolicy
 import com.sphereon.wallet.credential.WalletCredentialStore
 import com.sphereon.wallet.credential.WalletIssuanceSessionStore
 import com.sphereon.wallet.interaction.WalletCredentialPreview
 import com.sphereon.wallet.interaction.WalletInteractionAction
 import com.sphereon.wallet.interaction.WalletInteractionContext
+import com.sphereon.wallet.interaction.WalletInteractionFailureCodes
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStatus
 import com.sphereon.wallet.interaction.WalletNestedPresentationExecutionResult
@@ -49,6 +57,7 @@ import com.sphereon.wallet.unit.WalletProviderAttestationSignerRef
 import com.sphereon.wallet.wsca.Wsca
 import com.sphereon.wallet.wsca.WscaClientAttestationAuthRequest
 import com.sphereon.wallet.wsca.WscaDpopProofRequest
+import com.sphereon.wallet.wsca.WscaSigningRequest
 import com.sphereon.core.api.encodeToBase64Url
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -59,9 +68,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 data class Oid4vciHolderIssuanceOptions(
-    val signingKeyId: String,
+    /** Exact WSCA key aliases, one independently provisioned key per requested credential. */
+    val signingKeyIds: List<String>,
     val operationBinding: String? = null,
     val signingAlgorithm: String = "ES256",
     val clientId: String? = null,
@@ -224,6 +235,8 @@ interface Oid4vciIssuanceOptionsProvider {
         context: WalletInteractionContext,
         state: WalletInteractionState,
         resolvedOffer: ResolvedCredentialOffer,
+        /** Existing aliases for reissuance/refresh; providers must not mint replacements. */
+        existingHolderKeyAliases: List<String> = emptyList(),
     ): Oid4vciHolderIssuanceOptions
 }
 
@@ -242,9 +255,16 @@ interface Oid4vciTokenEndpointProofsProvider {
 }
 
 class SecureComponentOid4vciTokenEndpointProofsProvider(
-    private val secureComponentCryptoSurface: Wsca,
+    private val secureComponentCryptoSurfaceProvider: () -> Wsca,
     private val privateKeyJwtAssertionAssembly: PrivateKeyJwtAssertionAssembly,
 ) : Oid4vciTokenEndpointProofsProvider {
+    constructor(
+        secureComponentCryptoSurface: Wsca,
+        privateKeyJwtAssertionAssembly: PrivateKeyJwtAssertionAssembly,
+    ) : this({ secureComponentCryptoSurface }, privateKeyJwtAssertionAssembly)
+
+    private val secureComponentCryptoSurface: Wsca by lazy { secureComponentCryptoSurfaceProvider() }
+
     override suspend fun dpopProof(request: Oid4vciDpopProofRequest): IdkResult<String?, IdkError> {
         val haip = request.options.haipTokenProofs
         if (haip == null && !request.options.dpopEnabled) return Ok(null)
@@ -381,14 +401,16 @@ class SecureComponentOid4vciTokenEndpointProofsProvider(
             } catch (expected: IllegalArgumentException) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = expected.message ?: "private_key_jwt assembly failed", throwable = expected))
             }
-        val signature =
-            secureComponentCryptoSurface
-                .sign(
-                    walletUnitId = request.context.walletUnitId,
-                    keyRef = keyRef,
-                    signingInput = assembled.signingInput,
-                    operationBinding = requireOperationBinding(request.options),
-                ).getOrElse { return Err(it) }
+        val signingRequest =
+            WscaSigningRequest(
+                walletUnitId = request.context.walletUnitId,
+                keyRef = keyRef,
+                signingInput = assembled.signingInput,
+                operationBinding = requireOperationBinding(request.options),
+                audience = audience,
+            )
+        val prepared = secureComponentCryptoSurface.prepareSign(signingRequest).getOrElse { return Err(it) }
+        val signature = secureComponentCryptoSurface.sign(prepared, signingRequest).getOrElse { return Err(it) }
         val assertion = privateKeyJwtAssertionAssembly.finish(assembled, signature)
         return Ok(
             Oid4vciTokenEndpointProofs(
@@ -558,18 +580,18 @@ class Oid4vciHolderIssuanceExecutor(
         val rawOffer =
             sessionState.entryPointRaw?.takeIf { it.isNotBlank() }
                 ?: return failed(
-                    code = "oid4vci.credential_offer_missing",
+                    code = WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_OFFER_MISSING,
                     messageKey = "wallet.interaction.error.oid4vci_credential_offer_missing",
                     retryable = true,
                 )
 
         val offer = holder.parseCredentialOffer(rawOffer)
         if (offer.isErr) {
-            return failed("oid4vci.offer_parse_failed", "wallet.interaction.error.oid4vci_offer_parse_failed", offer.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_OFFER_PARSE_FAILED, "wallet.interaction.error.oid4vci_offer_parse_failed", offer.error)
         }
         val resolved = holder.resolveCredentialOffer(offer.value)
         if (resolved.isErr) {
-            return failed("oid4vci.offer_resolve_failed", "wallet.interaction.error.oid4vci_offer_resolve_failed", resolved.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_OFFER_RESOLVE_FAILED, "wallet.interaction.error.oid4vci_offer_resolve_failed", resolved.error)
         }
 
         val options =
@@ -577,7 +599,7 @@ class Oid4vciHolderIssuanceExecutor(
                 optionsProvider.options(context, state, resolved.value)
             } catch (_: Exception) {
                 return failed(
-                    code = "oid4vci.options_unavailable",
+                    code = WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE,
                     messageKey = "wallet.interaction.error.oid4vci_options_unavailable",
                     retryable = true,
                 )
@@ -595,14 +617,14 @@ class Oid4vciHolderIssuanceExecutor(
 
         val authorizationServer = holder.selectAuthorizationServer(resolved.value.issuerMetadata, preAuthorizedGrant.authorizationServer)
         if (authorizationServer.isErr) {
-            return failed("oid4vci.authorization_server_resolve_failed", "wallet.interaction.error.oid4vci_authorization_server_resolve_failed", authorizationServer.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_AUTHORIZATION_SERVER_RESOLVE_FAILED, "wallet.interaction.error.oid4vci_authorization_server_resolve_failed", authorizationServer.error)
         }
         val challengedOptions = options.withAttestationChallenge(authorizationServer.value).getOrElse {
-            return failed("oid4vci.attestation_challenge_failed", "wallet.interaction.error.oid4vci_attestation_challenge_failed", it)
+            return failed(WalletInteractionFailureCodes.OID4VCI_ATTESTATION_CHALLENGE_FAILED, "wallet.interaction.error.oid4vci_attestation_challenge_failed", it)
         }
         val tokenEndpoint = authorizationServer.value.tokenEndpoint
         val tokenProofs = tokenEndpointProofs(context, state, resolved.value, challengedOptions, tokenEndpoint, authorizationServer.value.issuer).getOrElse {
-            return failed("oid4vci.token_proofs_failed", "wallet.interaction.error.oid4vci_token_proofs_failed", it)
+            return failed(WalletInteractionFailureCodes.OID4VCI_TOKEN_PROOFS_FAILED, "wallet.interaction.error.oid4vci_token_proofs_failed", it)
         }
 
         val token =
@@ -623,7 +645,7 @@ class Oid4vciHolderIssuanceExecutor(
                 clientAuthentication = tokenProofs.clientAuthentication,
             )
         if (token.isErr) {
-            return failed("oid4vci.token_exchange_failed", "wallet.interaction.error.oid4vci_token_exchange_failed", token.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_TOKEN_EXCHANGE_FAILED, "wallet.interaction.error.oid4vci_token_exchange_failed", token.error)
         }
         context.updateOid4vciState {
             it.copy(
@@ -638,7 +660,7 @@ class Oid4vciHolderIssuanceExecutor(
 
         val cNonce = resolveProofNonce(resolved.value, token.value.cNonce)
         if (cNonce.isErr) {
-            return failed("oid4vci.nonce_request_failed", "wallet.interaction.error.oid4vci_nonce_request_failed", cNonce.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_NONCE_REQUEST_FAILED, "wallet.interaction.error.oid4vci_nonce_request_failed", cNonce.error)
         }
         val credentialConfigurationId = selectCredentialConfigurationId(options, state, resolved.value)
         val proofSelection =
@@ -653,7 +675,7 @@ class Oid4vciHolderIssuanceExecutor(
                 .getOrElse { return credentialRequestProofFailure(it) }
 
         val credentialDpopProof = credentialEndpointDpopProof(context, state, resolved.value, options, token.value.accessToken).getOrElse {
-            return failed("oid4vci.credential_dpop_proof_failed", "wallet.interaction.error.oid4vci_credential_dpop_proof_failed", it)
+            return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_DPOP_PROOF_FAILED, "wallet.interaction.error.oid4vci_credential_dpop_proof_failed", it)
         }
         context.updateOid4vciState {
             it.copy(
@@ -674,7 +696,7 @@ class Oid4vciHolderIssuanceExecutor(
                 tokenAuthorizationDetails = token.value.authorizationDetails,
             )
         if (credential.isErr) {
-            return failed("oid4vci.credential_request_failed", "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_REQUEST_FAILED, "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
         }
 
         return handleCredentialResponse(context, state, resolved.value, credential.value)
@@ -684,9 +706,9 @@ class Oid4vciHolderIssuanceExecutor(
      * Wallet-initiated credential refresh: loads the existing record ->
      * looks up its stored OAuth2 refresh token -> re-resolves the authorization server (issuer
      * endpoints are never cached on the record) -> exchanges the refresh token for a fresh access
-     * token -> re-requests the credential with the record's EXISTING active-instance holder key
-     * (REUSED, not freshly minted - see the holderKeyAlias derivation below) -> stores through the
-     * SAME [credentialReceiver] used for normal issuance, so supersede semantics live in one place.
+     * token -> re-requests the credential(s) with the EXISTING active-instance holder keys
+     * (REUSED, never freshly minted) -> stores through the SAME [credentialReceiver] used for normal
+     * issuance, so replacement and sibling-preservation semantics live in one place.
      *
      * Every failure path returns a typed [Oid4vciIssuanceExecutionResult.Failed]; nothing throws.
      */
@@ -694,57 +716,70 @@ class Oid4vciHolderIssuanceExecutor(
         context: WalletInteractionContext,
         state: WalletInteractionState,
         credentialRecordId: String,
+        credentialInstanceId: String?,
     ): Oid4vciIssuanceExecutionResult {
         val recordResult = credentialStore.getCredential(context.walletUnitId, credentialRecordId)
         if (recordResult.isErr) {
-            return failed("oid4vci.refresh_record_lookup_failed", "wallet.interaction.error.oid4vci_refresh_record_lookup_failed", recordResult.error, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_RECORD_LOOKUP_FAILED, "wallet.interaction.error.oid4vci_refresh_record_lookup_failed", recordResult.error, retryable = true)
         }
         val record =
             recordResult.value
-                ?: return failed("oid4vci.refresh_record_not_found", "wallet.interaction.error.oid4vci_refresh_record_not_found")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_RECORD_NOT_FOUND, "wallet.interaction.error.oid4vci_refresh_record_not_found")
 
         val refreshState =
             record.refreshState
-                ?: return failed("oid4vci.refresh_state_missing", "wallet.interaction.error.oid4vci_refresh_state_missing")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_STATE_MISSING, "wallet.interaction.error.oid4vci_refresh_state_missing")
         if (refreshState.refreshMethod != CredentialRefreshMethod.OID4VCI_REISSUANCE) {
-            return failed("oid4vci.refresh_method_unsupported", "wallet.interaction.error.oid4vci_refresh_method_unsupported")
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_METHOD_UNSUPPORTED, "wallet.interaction.error.oid4vci_refresh_method_unsupported")
         }
         val provenance =
             record.issuanceProvenance
-                ?: return failed("oid4vci.refresh_provenance_missing", "wallet.interaction.error.oid4vci_refresh_provenance_missing")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_PROVENANCE_MISSING, "wallet.interaction.error.oid4vci_refresh_provenance_missing")
         val credentialIssuer = provenance.credentialIssuerUrl
         val credentialConfigurationId = provenance.credentialConfigurationId
 
-        // REUSE (not mint): the EXISTING active instance's holder key is re-presented on
-        // reissuance. This is the OPPOSITE
-        // of normal issuance/obtainCredential, which mints a fresh unlinkability key per credential;
-        // a reissued credential intentionally keeps the SAME public key as the credential it replaces.
-        val holderKeyAlias =
-            record.instances
-                .lastOrNull { it.lifecycleState == CredentialLifecycleState.ACTIVE }
-                ?.holderKeyRef
-                ?.alias
-                ?: record.instances.lastOrNull()?.holderKeyRef?.alias
-                ?: return failed("oid4vci.refresh_holder_key_missing", "wallet.interaction.error.oid4vci_refresh_holder_key_missing")
+        val activeInstances = record.instances.filter { it.lifecycleState == CredentialLifecycleState.ACTIVE }
+        val refreshInstances =
+            if (credentialInstanceId != null) {
+                val target = record.instances.singleOrNull { it.id == credentialInstanceId }
+                    ?: return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_RECORD_NOT_FOUND, "wallet.interaction.error.oid4vci_refresh_record_not_found")
+                if (target.lifecycleState != CredentialLifecycleState.ACTIVE) {
+                    return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_HOLDER_KEY_MISSING, "wallet.interaction.error.oid4vci_refresh_holder_key_missing")
+                }
+                listOf(target)
+            } else {
+                // A record-level refresh is a true batch refresh: every active instance is
+                // reissued in one request. This preserves the record's sibling pool while keeping
+                // the one-key-per-instance mapping exact. A record with no active instance cannot
+                // be refreshed safely because there is no current holder-key binding to present.
+                activeInstances
+            }
+        if (refreshInstances.isEmpty()) {
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_HOLDER_KEY_MISSING, "wallet.interaction.error.oid4vci_refresh_holder_key_missing")
+        }
+        val holderKeyAliases = refreshInstances.mapNotNull { it.holderKeyRef?.alias }
+        if (holderKeyAliases.size != refreshInstances.size || holderKeyAliases.distinct().size != holderKeyAliases.size) {
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_HOLDER_KEY_MISSING, "wallet.interaction.error.oid4vci_refresh_holder_key_missing")
+        }
 
         val refreshTokenResult = issuanceSessionStore.getRefreshToken(context.walletUnitId, credentialRecordId)
         if (refreshTokenResult.isErr) {
-            return failed("oid4vci.refresh_token_lookup_failed", "wallet.interaction.error.oid4vci_refresh_token_lookup_failed", refreshTokenResult.error, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_LOOKUP_FAILED, "wallet.interaction.error.oid4vci_refresh_token_lookup_failed", refreshTokenResult.error, retryable = true)
         }
         val refreshToken =
             refreshTokenResult.value?.takeIf { it.isNotBlank() }
-                ?: return failed("oid4vci.refresh_token_missing", "wallet.interaction.error.oid4vci_refresh_token_missing")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_MISSING, "wallet.interaction.error.oid4vci_refresh_token_missing")
 
         val metadataResult = holder.resolveIssuerMetadata(credentialIssuer)
         if (metadataResult.isErr) {
-            return failed("oid4vci.refresh_issuer_metadata_failed", "wallet.interaction.error.oid4vci_refresh_issuer_metadata_failed", metadataResult.error, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_ISSUER_METADATA_FAILED, "wallet.interaction.error.oid4vci_refresh_issuer_metadata_failed", metadataResult.error, retryable = true)
         }
         val metadata = metadataResult.value
         val credConfig =
             metadata.credentialConfigurationsSupported[credentialConfigurationId]
-                ?: return failed("oid4vci.refresh_credential_configuration_unknown", "wallet.interaction.error.oid4vci_refresh_credential_configuration_unknown")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_CREDENTIAL_CONFIGURATION_UNKNOWN, "wallet.interaction.error.oid4vci_refresh_credential_configuration_unknown")
         if (CredentialFormat.fromValueLenient(credConfig.format) == null) {
-            return failed("oid4vci.refresh_credential_format_unsupported", "wallet.interaction.error.oid4vci_refresh_credential_format_unsupported")
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_CREDENTIAL_FORMAT_UNSUPPORTED, "wallet.interaction.error.oid4vci_refresh_credential_format_unsupported")
         }
 
         // Do NOT persist AS endpoints on the record: re-resolve the authorization server fresh from
@@ -753,7 +788,7 @@ class Oid4vciHolderIssuanceExecutor(
         val authorizationServer = holder.selectAuthorizationServer(metadata, null)
         if (authorizationServer.isErr) {
             return failed(
-                "oid4vci.refresh_authorization_server_resolve_failed",
+                WalletInteractionFailureCodes.OID4VCI_REFRESH_AUTHORIZATION_SERVER_RESOLVE_FAILED,
                 "wallet.interaction.error.oid4vci_refresh_authorization_server_resolve_failed",
                 authorizationServer.error,
                 retryable = true,
@@ -766,7 +801,11 @@ class Oid4vciHolderIssuanceExecutor(
         val effectiveMetadata =
             refreshState.refreshEndpoint
                 ?.takeIf { it.isNotBlank() }
-                ?.let { metadata.copy(credentialEndpoint = it) }
+                ?.let {
+                    metadata.copy(
+                        credentialEndpoint = it,
+                    )
+                }
                 ?: metadata
         // Synthetic offer/resolved-offer: a wallet-initiated refresh has no CredentialOffer at all, but
         // every downstream helper (options provider, DPoP proof provider, requestCredentialWithDpopNonceRetry)
@@ -777,19 +816,26 @@ class Oid4vciHolderIssuanceExecutor(
 
         val baseOptions =
             try {
-                optionsProvider.options(context, state, resolvedOfferForRefresh)
+                optionsProvider.options(context, state, resolvedOfferForRefresh, existingHolderKeyAliases = holderKeyAliases)
             } catch (_: Exception) {
-                return failed(code = "oid4vci.refresh_options_unavailable", messageKey = "wallet.interaction.error.oid4vci_refresh_options_unavailable", retryable = true)
+                return failed(code = WalletInteractionFailureCodes.OID4VCI_REFRESH_OPTIONS_UNAVAILABLE, messageKey = "wallet.interaction.error.oid4vci_refresh_options_unavailable", retryable = true)
             }
-        // Override signingKeyId to the REUSED holder key regardless of what the options provider would
-        // otherwise mint for a NEW-key issuance flow (see the holderKeyAlias derivation/comment above).
-        val options = baseOptions.copy(signingKeyId = holderKeyAlias, credentialConfigurationId = credentialConfigurationId)
+        // The options provider may configure algorithms and client authentication, but it is not
+        // allowed to mint replacement holder keys during reissuance. Existing aliases are an
+        // immutable record-to-request mapping, and batch size follows the selected instances.
+        val options =
+            baseOptions.copy(
+                credentialConfigurationId = credentialConfigurationId,
+                signingKeyIds = holderKeyAliases,
+                batchSize = holderKeyAliases.size,
+            )
 
         context.updateOid4vciState {
             it.copy(
                 refreshTargetCredentialRecordId = credentialRecordId,
+                refreshTargetCredentialInstanceIds = refreshInstances.map { it.id },
                 credentialConfigurationId = credentialConfigurationId,
-                holderKeyAliases = listOf(holderKeyAlias),
+                holderKeyAliases = holderKeyAliases,
             )
         }
 
@@ -804,7 +850,7 @@ class Oid4vciHolderIssuanceExecutor(
                 refreshToken = refreshToken,
             )
         if (tokenResult.isErr) {
-            return failed("oid4vci.refresh_token_exchange_failed", "wallet.interaction.error.oid4vci_refresh_token_exchange_failed", tokenResult.error, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_TOKEN_EXCHANGE_FAILED, "wallet.interaction.error.oid4vci_refresh_token_exchange_failed", tokenResult.error, retryable = true)
         }
         val token = tokenResult.value
         context.updateOid4vciState {
@@ -823,40 +869,23 @@ class Oid4vciHolderIssuanceExecutor(
 
         val cNonce = resolveProofNonce(resolvedOfferForRefresh, token.cNonce)
         if (cNonce.isErr) {
-            return failed("oid4vci.refresh_nonce_request_failed", "wallet.interaction.error.oid4vci_refresh_nonce_request_failed", cNonce.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_NONCE_REQUEST_FAILED, "wallet.interaction.error.oid4vci_refresh_nonce_request_failed", cNonce.error)
         }
-        val keyAttestationJwt =
-            keyAttestationJwtIfRequired(
-                context,
-                resolvedOfferForRefresh,
-                credentialConfigurationId,
-                holderKeyAlias,
-                options.signingAlgorithm,
-                cNonce.value,
-                options.operationBinding,
-                options.haipTokenProofs,
-            )
-                .getOrElse { return failed("oid4vci.refresh_key_attestation_failed", "wallet.interaction.error.oid4vci_refresh_key_attestation_failed", it, retryable = true) }
-        val proof =
-            credentialRequestProofProvider.createProof(
-                Oid4vciCredentialRequestProofRequest(
-                    walletUnitId = context.walletUnitId,
-                    operationBinding = options.operationBinding,
-                    issuerUrl = effectiveMetadata.credentialIssuer,
-                    cNonce = cNonce.value,
-                    signingKeyId = holderKeyAlias,
-                    signingAlgorithm = options.signingAlgorithm,
-                    clientId = options.clientId,
-                    keyAttestationJwt = keyAttestationJwt,
-                ),
-            )
-        if (proof.isErr) {
-            return failed("oid4vci.refresh_proof_creation_failed", "wallet.interaction.error.oid4vci_refresh_proof_creation_failed", proof.error)
-        }
+        val proofSelection =
+            createCredentialRequestProofs(
+                context = context,
+                resolvedOffer = resolvedOfferForRefresh,
+                credentialConfigurationId = credentialConfigurationId,
+                cNonce = cNonce.value,
+                options = options,
+                clientId = options.clientId,
+            ).getOrElse {
+                return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_PROOF_CREATION_FAILED, "wallet.interaction.error.oid4vci_refresh_proof_creation_failed", it)
+            }
 
         val credentialDpopProof =
             credentialEndpointDpopProof(context, state, resolvedOfferForRefresh, options, token.accessToken).getOrElse {
-                return failed("oid4vci.refresh_credential_dpop_proof_failed", "wallet.interaction.error.oid4vci_refresh_credential_dpop_proof_failed", it, retryable = true)
+                return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_CREDENTIAL_DPOP_PROOF_FAILED, "wallet.interaction.error.oid4vci_refresh_credential_dpop_proof_failed", it, retryable = true)
             }
         val credential =
             requestCredentialWithDpopNonceRetry(
@@ -867,16 +896,16 @@ class Oid4vciHolderIssuanceExecutor(
                 accessToken = token.accessToken,
                 dpopProofJwt = credentialDpopProof,
                 credentialConfigurationId = credentialConfigurationId,
-                proofs = proof.value.proofs,
+                proofs = proofSelection.createdProof.proofs,
                 tokenAuthorizationDetails = token.authorizationDetails,
             )
         if (credential.isErr) {
-            return failed("oid4vci.refresh_credential_request_failed", "wallet.interaction.error.oid4vci_refresh_credential_request_failed", credential.error, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_CREDENTIAL_REQUEST_FAILED, "wallet.interaction.error.oid4vci_refresh_credential_request_failed", credential.error, retryable = true)
         }
         val credentialResponse = credential.value
         if (credentialResponse.transactionId != null) {
             // Deferred reissuance is not supported: a refresh must complete synchronously.
-            return failed("oid4vci.refresh_deferred_unsupported", "wallet.interaction.error.oid4vci_refresh_deferred_unsupported")
+            return failed(WalletInteractionFailureCodes.OID4VCI_REFRESH_DEFERRED_UNSUPPORTED, "wallet.interaction.error.oid4vci_refresh_deferred_unsupported")
         }
         return handleCredentialResponse(context, state, resolvedOfferForRefresh, credentialResponse)
     }
@@ -888,27 +917,50 @@ class Oid4vciHolderIssuanceExecutor(
     ): Oid4vciIssuanceExecutionResult {
         val deferred =
             sessionState.deferred
-                ?: return failed("oid4vci.deferred_endpoint_missing", "wallet.interaction.error.oid4vci_deferred_endpoint_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_DEFERRED_ENDPOINT_MISSING, "wallet.interaction.error.oid4vci_deferred_endpoint_missing", retryable = true)
+        val persistedDeferredAccessToken =
+            try {
+                issuanceSessionStore.getDeferredAccessToken(context.walletUnitId, context.sessionId.value)
+            } catch (failure: Exception) {
+                return failed(
+                    WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED,
+                    "wallet.interaction.error.oid4vci_deferred_request_failed",
+                    retryable = true,
+                    arguments = mapOf("causeType" to (failure::class.simpleName ?: "Exception"), "cause" to failure.message.orEmpty()),
+                )
+            }
+        if (persistedDeferredAccessToken.isErr) {
+            return failed(
+                WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED,
+                "wallet.interaction.error.oid4vci_deferred_request_failed",
+                persistedDeferredAccessToken.error,
+                retryable = true,
+            )
+        }
         val accessToken =
-            sessionState.tokens?.accessToken
-                ?: return failed("oid4vci.access_token_missing", "wallet.interaction.error.oid4vci_access_token_missing", retryable = true)
+            persistedDeferredAccessToken.value?.takeIf { it.isNotBlank() }
+                ?: return failed(
+                    WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED,
+                    "wallet.interaction.error.oid4vci_deferred_request_failed",
+                    retryable = true,
+                )
         val rawOffer =
             sessionState.entryPointRaw?.takeIf { it.isNotBlank() }
-                ?: return failed("oid4vci.credential_offer_missing", "wallet.interaction.error.oid4vci_credential_offer_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_OFFER_MISSING, "wallet.interaction.error.oid4vci_credential_offer_missing", retryable = true)
         val offer = holder.parseCredentialOffer(rawOffer)
         if (offer.isErr) {
-            return failed("oid4vci.offer_parse_failed", "wallet.interaction.error.oid4vci_offer_parse_failed", offer.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_OFFER_PARSE_FAILED, "wallet.interaction.error.oid4vci_offer_parse_failed", offer.error)
         }
         val resolved = holder.resolveCredentialOffer(offer.value)
         if (resolved.isErr) {
-            return failed("oid4vci.offer_resolve_failed", "wallet.interaction.error.oid4vci_offer_resolve_failed", resolved.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_OFFER_RESOLVE_FAILED, "wallet.interaction.error.oid4vci_offer_resolve_failed", resolved.error)
         }
         val options =
             try {
                 optionsProvider.options(context, state, resolved.value)
             } catch (_: Exception) {
                 return failed(
-                    code = "oid4vci.options_unavailable",
+                    code = WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE,
                     messageKey = "wallet.interaction.error.oid4vci_options_unavailable",
                     retryable = true,
                 )
@@ -921,7 +973,7 @@ class Oid4vciHolderIssuanceExecutor(
                     when (value) {
                         "true" -> true
                         "false" -> false
-                        else -> return failed("oid4vci.options_unavailable", "wallet.interaction.error.oid4vci_options_unavailable", retryable = true)
+                        else -> return failed(WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE, "wallet.interaction.error.oid4vci_options_unavailable", retryable = true)
                     }
                 } ?: false
         val requestEncryption = credentialRequestEncryption(resolved.value, encryptCredentialRequest)
@@ -934,7 +986,7 @@ class Oid4vciHolderIssuanceExecutor(
                 deferredCredentialEndpoint = deferred.deferredCredentialEndpoint,
                 accessToken = accessToken,
             ).getOrElse {
-                return failed("oid4vci.deferred_dpop_proof_failed", "wallet.interaction.error.oid4vci_deferred_dpop_proof_failed", it, retryable = true)
+                return failed(WalletInteractionFailureCodes.OID4VCI_DEFERRED_DPOP_PROOF_FAILED, "wallet.interaction.error.oid4vci_deferred_dpop_proof_failed", it, retryable = true)
             }
         val credential =
             requestDeferredCredentialWithDpopNonceRetry(
@@ -951,7 +1003,7 @@ class Oid4vciHolderIssuanceExecutor(
                 requestEncryptionEnc = requestEncryption?.enc,
             )
         if (credential.isErr) {
-            return failed("oid4vci.deferred_request_failed", "wallet.interaction.error.oid4vci_deferred_request_failed", credential.error, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED, "wallet.interaction.error.oid4vci_deferred_request_failed", credential.error, retryable = true)
         }
         return handleCredentialResponse(context, state, resolved.value, credential.value)
     }
@@ -974,22 +1026,22 @@ class Oid4vciHolderIssuanceExecutor(
     ): Oid4vciIssuanceExecutionResult {
         val authorizationGrant =
             resolvedOffer.offer.grants?.authorizationCode
-                ?: return failed("oid4vci.unsupported_grant", "wallet.interaction.error.oid4vci_unsupported_grant")
-        val clientId = options.clientId ?: return failed("oid4vci.client_id_missing", "wallet.interaction.error.oid4vci_client_id_missing")
-        val redirectUri = options.redirectUri ?: return failed("oid4vci.redirect_uri_missing", "wallet.interaction.error.oid4vci_redirect_uri_missing")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_UNSUPPORTED_GRANT, "wallet.interaction.error.oid4vci_unsupported_grant")
+        val clientId = options.clientId ?: return failed(WalletInteractionFailureCodes.OID4VCI_CLIENT_ID_MISSING, "wallet.interaction.error.oid4vci_client_id_missing")
+        val redirectUri = options.redirectUri ?: return failed(WalletInteractionFailureCodes.OID4VCI_REDIRECT_URI_MISSING, "wallet.interaction.error.oid4vci_redirect_uri_missing")
         val authorizationServer = holder.selectAuthorizationServer(resolvedOffer.issuerMetadata, authorizationGrant.authorizationServer)
         if (authorizationServer.isErr) {
-            return failed("oid4vci.authorization_server_resolve_failed", "wallet.interaction.error.oid4vci_authorization_server_resolve_failed", authorizationServer.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_AUTHORIZATION_SERVER_RESOLVE_FAILED, "wallet.interaction.error.oid4vci_authorization_server_resolve_failed", authorizationServer.error)
         }
         val challengedOptions = options.withAttestationChallenge(authorizationServer.value).getOrElse {
-            return failed("oid4vci.attestation_challenge_failed", "wallet.interaction.error.oid4vci_attestation_challenge_failed", it)
+            return failed(WalletInteractionFailureCodes.OID4VCI_ATTESTATION_CHALLENGE_FAILED, "wallet.interaction.error.oid4vci_attestation_challenge_failed", it)
         }
         authorizationServer.value.interactiveAuthorizationEndpoint?.takeIf { it.isNotBlank() }?.let { iaeEndpoint ->
             return initiateInteractiveAuthorization(context, state, resolvedOffer, challengedOptions, authorizationServer.value, iaeEndpoint)
         }
         val authorizationEndpoint =
             authorizationServer.value.authorizationEndpoint
-                ?: return failed("oid4vci.authorization_endpoint_missing", "wallet.interaction.error.oid4vci_authorization_endpoint_missing")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_AUTHORIZATION_ENDPOINT_MISSING, "wallet.interaction.error.oid4vci_authorization_endpoint_missing")
         val usePar = challengedOptions.usePar || authorizationServer.value.metadata.requirePushedAuthorizationRequests == true
         val credentialConfigurationIds = state.effectiveOfferedCredentialConfigurationIds(resolvedOffer)
         val scope =
@@ -1002,7 +1054,7 @@ class Oid4vciHolderIssuanceExecutor(
             if (usePar) {
                 val parEndpoint =
                     authorizationServer.value.pushedAuthorizationRequestEndpoint
-                        ?: return failed("oid4vci.par_endpoint_missing", "wallet.interaction.error.oid4vci_par_endpoint_missing")
+                        ?: return failed(WalletInteractionFailureCodes.OID4VCI_PAR_ENDPOINT_MISSING, "wallet.interaction.error.oid4vci_par_endpoint_missing")
                 buildParAuthorizationRequestWithDpopNonceRetry(
                     context = context,
                     state = state,
@@ -1029,7 +1081,7 @@ class Oid4vciHolderIssuanceExecutor(
                 )
             }
         if (authorizationRequest.isErr) {
-            return failed("oid4vci.authorization_request_failed", "wallet.interaction.error.oid4vci_authorization_request_failed", authorizationRequest.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_AUTHORIZATION_REQUEST_FAILED, "wallet.interaction.error.oid4vci_authorization_request_failed", authorizationRequest.error)
         }
         context.updateOid4vciState {
             it.copy(
@@ -1109,8 +1161,8 @@ class Oid4vciHolderIssuanceExecutor(
         authorizationServer: ResolvedAuthorizationServer,
         iaeEndpoint: String,
     ): Oid4vciIssuanceExecutionResult {
-        val clientId = options.clientId ?: return failed("oid4vci.client_id_missing", "wallet.interaction.error.oid4vci_client_id_missing")
-        val redirectUri = options.redirectUri ?: return failed("oid4vci.redirect_uri_missing", "wallet.interaction.error.oid4vci_redirect_uri_missing")
+        val clientId = options.clientId ?: return failed(WalletInteractionFailureCodes.OID4VCI_CLIENT_ID_MISSING, "wallet.interaction.error.oid4vci_client_id_missing")
+        val redirectUri = options.redirectUri ?: return failed(WalletInteractionFailureCodes.OID4VCI_REDIRECT_URI_MISSING, "wallet.interaction.error.oid4vci_redirect_uri_missing")
         val tokenEndpoint = authorizationServer.tokenEndpoint
         val result =
             holder.initiateIae(
@@ -1125,7 +1177,7 @@ class Oid4vciHolderIssuanceExecutor(
                 ),
             )
         if (result.isErr) {
-            return failed("oid4vci.iae_initiate_failed", "wallet.interaction.error.oid4vci_iae_initiate_failed", result.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_IAE_INITIATE_FAILED, "wallet.interaction.error.oid4vci_iae_initiate_failed", result.error)
         }
         context.updateOid4vciState {
             it.copy(
@@ -1152,13 +1204,13 @@ class Oid4vciHolderIssuanceExecutor(
     ): Oid4vciIssuanceExecutionResult {
         val iae =
             sessionState.iae
-                ?: return failed("oid4vci.iae_endpoint_missing", "wallet.interaction.error.oid4vci_iae_endpoint_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_IAE_ENDPOINT_MISSING, "wallet.interaction.error.oid4vci_iae_endpoint_missing", retryable = true)
         val iaeEndpoint =
             iae.iaeEndpoint
-                ?: return failed("oid4vci.iae_endpoint_missing", "wallet.interaction.error.oid4vci_iae_endpoint_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_IAE_ENDPOINT_MISSING, "wallet.interaction.error.oid4vci_iae_endpoint_missing", retryable = true)
         val authSession =
             iae.authSession
-                ?: return failed("oid4vci.iae_auth_session_missing", "wallet.interaction.error.oid4vci_iae_auth_session_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_IAE_AUTH_SESSION_MISSING, "wallet.interaction.error.oid4vci_iae_auth_session_missing", retryable = true)
         val nestedResponse =
             when (
                 val response =
@@ -1191,26 +1243,26 @@ class Oid4vciHolderIssuanceExecutor(
                 ),
             )
         if (result.isErr) {
-            return failed("oid4vci.iae_follow_up_failed", "wallet.interaction.error.oid4vci_iae_follow_up_failed", result.error, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_IAE_FOLLOW_UP_FAILED, "wallet.interaction.error.oid4vci_iae_follow_up_failed", result.error, retryable = true)
         }
 
         val rawOffer =
             sessionState.entryPointRaw?.takeIf { it.isNotBlank() }
-                ?: return failed("oid4vci.credential_offer_missing", "wallet.interaction.error.oid4vci_credential_offer_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_OFFER_MISSING, "wallet.interaction.error.oid4vci_credential_offer_missing", retryable = true)
         val offer = holder.parseCredentialOffer(rawOffer)
         if (offer.isErr) {
-            return failed("oid4vci.offer_parse_failed", "wallet.interaction.error.oid4vci_offer_parse_failed", offer.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_OFFER_PARSE_FAILED, "wallet.interaction.error.oid4vci_offer_parse_failed", offer.error)
         }
         val resolved = holder.resolveCredentialOffer(offer.value)
         if (resolved.isErr) {
-            return failed("oid4vci.offer_resolve_failed", "wallet.interaction.error.oid4vci_offer_resolve_failed", resolved.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_OFFER_RESOLVE_FAILED, "wallet.interaction.error.oid4vci_offer_resolve_failed", resolved.error)
         }
         val options =
             try {
                 optionsProvider.options(context, state, resolved.value)
             } catch (_: Exception) {
                 return failed(
-                    code = "oid4vci.options_unavailable",
+                    code = WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE,
                     messageKey = "wallet.interaction.error.oid4vci_options_unavailable",
                     retryable = true,
                 )
@@ -1232,7 +1284,7 @@ class Oid4vciHolderIssuanceExecutor(
 
             is IaeHolderResult.Error -> {
                 failed(
-                    code = "oid4vci.iae_error",
+                    code = WalletInteractionFailureCodes.OID4VCI_IAE_ERROR,
                     messageKey = "wallet.interaction.error.oid4vci_iae_error",
                     arguments =
                         buildMap {
@@ -1254,7 +1306,7 @@ class Oid4vciHolderIssuanceExecutor(
     ): Oid4vciIssuanceExecutionResult {
         if (result.type != IAE_OPENID4VP_PRESENTATION) {
             return failed(
-                code = "oid4vci.iae_interaction_unsupported",
+                code = WalletInteractionFailureCodes.OID4VCI_IAE_INTERACTION_UNSUPPORTED,
                 messageKey = "wallet.interaction.error.oid4vci_iae_interaction_unsupported",
                 retryable = true,
                 arguments = mapOf("interactionType" to result.type),
@@ -1272,7 +1324,7 @@ class Oid4vciHolderIssuanceExecutor(
         }
         if (result.openid4vpRequest == null && result.requestUri.isNullOrBlank()) {
             return failed(
-                code = "oid4vci.iae_openid4vp_request_missing",
+                code = WalletInteractionFailureCodes.OID4VCI_IAE_OPENID4VP_REQUEST_MISSING,
                 messageKey = "wallet.interaction.error.oid4vci_iae_openid4vp_request_missing",
                 retryable = true,
             )
@@ -1314,16 +1366,16 @@ class Oid4vciHolderIssuanceExecutor(
         val sessionState = context.oid4vciState()
         val iae =
             sessionState.iae
-                ?: return failed("oid4vci.token_endpoint_missing", "wallet.interaction.error.oid4vci_token_endpoint_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_TOKEN_ENDPOINT_MISSING, "wallet.interaction.error.oid4vci_token_endpoint_missing", retryable = true)
         val tokenEndpoint =
             iae.tokenEndpoint
-                ?: return failed("oid4vci.token_endpoint_missing", "wallet.interaction.error.oid4vci_token_endpoint_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_TOKEN_ENDPOINT_MISSING, "wallet.interaction.error.oid4vci_token_endpoint_missing", retryable = true)
         val codeVerifier =
             iae.codeVerifier?.takeIf { it.isNotBlank() }
-                ?: return failed("oid4vci.iae_code_verifier_missing", "wallet.interaction.error.oid4vci_iae_code_verifier_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_IAE_CODE_VERIFIER_MISSING, "wallet.interaction.error.oid4vci_iae_code_verifier_missing", retryable = true)
         val redirectUri =
             iae.redirectUri
-                ?: return failed("oid4vci.redirect_uri_missing", "wallet.interaction.error.oid4vci_redirect_uri_missing", retryable = true)
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_REDIRECT_URI_MISSING, "wallet.interaction.error.oid4vci_redirect_uri_missing", retryable = true)
         val clientId = iae.clientId ?: options.clientId
         val tokenProofs =
             tokenEndpointProofs(
@@ -1334,7 +1386,7 @@ class Oid4vciHolderIssuanceExecutor(
                 tokenEndpoint = tokenEndpoint,
                 authorizationServerIssuer = iae.authorizationServerIssuer,
             ).getOrElse {
-            return failed("oid4vci.token_proofs_failed", "wallet.interaction.error.oid4vci_token_proofs_failed", it, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_TOKEN_PROOFS_FAILED, "wallet.interaction.error.oid4vci_token_proofs_failed", it, retryable = true)
         }
         val token =
             exchangeAuthorizationCodeWithDpopNonceRetry(
@@ -1354,7 +1406,7 @@ class Oid4vciHolderIssuanceExecutor(
                 clientAuthentication = tokenProofs.clientAuthentication,
             )
         if (token.isErr) {
-            return failed("oid4vci.authorization_code_exchange_failed", "wallet.interaction.error.oid4vci_authorization_code_exchange_failed", token.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_AUTHORIZATION_CODE_EXCHANGE_FAILED, "wallet.interaction.error.oid4vci_authorization_code_exchange_failed", token.error)
         }
         context.updateOid4vciState {
             it.copy(
@@ -1369,7 +1421,7 @@ class Oid4vciHolderIssuanceExecutor(
         }
         val cNonce = resolveProofNonce(resolvedOffer, token.value.cNonce)
         if (cNonce.isErr) {
-            return failed("oid4vci.nonce_request_failed", "wallet.interaction.error.oid4vci_nonce_request_failed", cNonce.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_NONCE_REQUEST_FAILED, "wallet.interaction.error.oid4vci_nonce_request_failed", cNonce.error)
         }
         val credentialConfigurationId = selectCredentialConfigurationId(options, state, resolvedOffer)
         val proofSelection =
@@ -1383,7 +1435,7 @@ class Oid4vciHolderIssuanceExecutor(
             )
                 .getOrElse { return credentialRequestProofFailure(it) }
         val credentialDpopProof = credentialEndpointDpopProof(context, state, resolvedOffer, options, token.value.accessToken).getOrElse {
-            return failed("oid4vci.credential_dpop_proof_failed", "wallet.interaction.error.oid4vci_credential_dpop_proof_failed", it, retryable = true)
+            return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_DPOP_PROOF_FAILED, "wallet.interaction.error.oid4vci_credential_dpop_proof_failed", it, retryable = true)
         }
         context.updateOid4vciState {
             it.copy(
@@ -1404,7 +1456,7 @@ class Oid4vciHolderIssuanceExecutor(
                 tokenAuthorizationDetails = token.value.authorizationDetails,
             )
         if (credential.isErr) {
-            return failed("oid4vci.credential_request_failed", "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_REQUEST_FAILED, "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
         }
         return handleCredentialResponse(context, state, resolvedOffer, credential.value)
     }
@@ -1444,10 +1496,15 @@ class Oid4vciHolderIssuanceExecutor(
             }
         }
 
-        val holderKeyAliases =
-            (1..requestedBatchSize).map { index ->
-                if (index == 1) options.signingKeyId else "${options.signingKeyId}-batch-$index"
-            }
+        val holderKeyAliases = options.signingKeyIds
+        if (holderKeyAliases.size != requestedBatchSize || holderKeyAliases.any(String::isBlank) || holderKeyAliases.distinct().size != holderKeyAliases.size) {
+            return Err(
+                IdkError.fromString(
+                    code = "oid4vci.credential_holder_key_count_mismatch",
+                    message = "OID4VCI requires one distinct provisioned holder key per requested credential",
+                ),
+            )
+        }
         val proofRequests = mutableListOf<Oid4vciCredentialRequestProofRequest>()
         for (holderKeyAlias in holderKeyAliases) {
             val keyAttestationJwt =
@@ -1464,7 +1521,7 @@ class Oid4vciHolderIssuanceExecutor(
                     return Err(
                         IdkError
                             .fromString(
-                                code = "oid4vci.key_attestation_failed",
+                                code = WalletInteractionFailureCodes.OID4VCI_KEY_ATTESTATION_FAILED,
                                 message = error.message.defaultMessage,
                             ).addCause(error),
                     )
@@ -1504,15 +1561,15 @@ class Oid4vciHolderIssuanceExecutor(
     }
 
     private fun credentialRequestProofFailure(error: IdkError): Oid4vciIssuanceExecutionResult =
-        if (error.code == "oid4vci.key_attestation_failed") {
+        if (error.code == WalletInteractionFailureCodes.OID4VCI_KEY_ATTESTATION_FAILED) {
             failed(
-                code = "oid4vci.key_attestation_failed",
+                code = WalletInteractionFailureCodes.OID4VCI_KEY_ATTESTATION_FAILED,
                 messageKey = "wallet.interaction.error.oid4vci_key_attestation_failed",
                 error = error,
             )
         } else {
             failed(
-                code = "oid4vci.proof_creation_failed",
+                code = WalletInteractionFailureCodes.OID4VCI_PROOF_CREATION_FAILED,
                 messageKey = "wallet.interaction.error.oid4vci_proof_creation_failed",
                 error = error,
             )
@@ -1564,12 +1621,19 @@ class Oid4vciHolderIssuanceExecutor(
         // OID4VCI 1.0: when the token's authorization_details authorize credential_identifiers,
         // the credential request MUST reference one of them and MUST NOT carry
         // credential_configuration_id (the two are mutually exclusive on the wire).
-        val credentialIdentifier = authorizedCredentialIdentifier(tokenAuthorizationDetails, credentialConfigurationId)
+        // A batch request is identified by its configuration, never by one credential identifier;
+        // selecting the first authorization detail would silently request only one sibling while
+        // sending multiple proofs.
+        val credentialIdentifier =
+            if (options.batchSize == 1) authorizedCredentialIdentifier(tokenAuthorizationDetails, credentialConfigurationId) else null
         val requestConfigurationId = credentialConfigurationId.takeIf { credentialIdentifier == null }
+        // OID4VCI 1.0 final performs batch issuance at the ordinary Credential Endpoint.
+        // The separate Batch Credential Endpoint existed only in older drafts.
+        val credentialEndpoint = resolvedOffer.issuerMetadata.credentialEndpoint
         val requestEncryption = credentialRequestEncryption(resolvedOffer, options.encryptCredentialRequest)
         val initial =
             holder.requestCredential(
-                credentialEndpoint = resolvedOffer.issuerMetadata.credentialEndpoint,
+                credentialEndpoint = credentialEndpoint,
                 accessToken = accessToken,
                 dpopProofJwt = dpopProofJwt,
                 credentialConfigurationId = requestConfigurationId,
@@ -1585,7 +1649,7 @@ class Oid4vciHolderIssuanceExecutor(
                 .getOrElse { return Err(it) }
                 ?: return initial
         return holder.requestCredential(
-            credentialEndpoint = resolvedOffer.issuerMetadata.credentialEndpoint,
+            credentialEndpoint = credentialEndpoint,
             accessToken = accessToken,
             dpopProofJwt = retryDpop,
             credentialConfigurationId = requestConfigurationId,
@@ -1695,7 +1759,7 @@ class Oid4vciHolderIssuanceExecutor(
         val sessionState = context.oid4vciState()
         val authorization =
             sessionState.authorization
-                ?: return failed("oid4vci.token_endpoint_missing", "wallet.interaction.error.oid4vci_token_endpoint_missing")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_TOKEN_ENDPOINT_MISSING, "wallet.interaction.error.oid4vci_token_endpoint_missing")
         val authorizationResponse =
             holder.parseAndValidateAuthorizationResponse(
                 callbackUrl = callback,
@@ -1705,7 +1769,7 @@ class Oid4vciHolderIssuanceExecutor(
             )
         if (authorizationResponse.isErr) {
             return failed(
-                "oid4vci.authorization_response_invalid",
+                WalletInteractionFailureCodes.OID4VCI_AUTHORIZATION_RESPONSE_INVALID,
                 "wallet.interaction.error.oid4vci_authorization_response_invalid",
                 authorizationResponse.error,
             )
@@ -1714,10 +1778,10 @@ class Oid4vciHolderIssuanceExecutor(
         val tokenEndpoint = authorization.tokenEndpoint
         val codeVerifier =
             authorization.codeVerifier
-                ?: return failed("oid4vci.code_verifier_missing", "wallet.interaction.error.oid4vci_code_verifier_missing")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_CODE_VERIFIER_MISSING, "wallet.interaction.error.oid4vci_code_verifier_missing")
         val redirectUri =
             authorization.redirectUri ?: options.redirectUri
-                ?: return failed("oid4vci.redirect_uri_missing", "wallet.interaction.error.oid4vci_redirect_uri_missing")
+                ?: return failed(WalletInteractionFailureCodes.OID4VCI_REDIRECT_URI_MISSING, "wallet.interaction.error.oid4vci_redirect_uri_missing")
         val clientId = authorization.clientId ?: options.clientId
         val challengedOptions =
             authorization.attestationChallenge?.let { challenge ->
@@ -1732,7 +1796,7 @@ class Oid4vciHolderIssuanceExecutor(
                 tokenEndpoint = tokenEndpoint,
                 authorizationServerIssuer = authorization.authorizationServerIssuer,
             ).getOrElse {
-            return failed("oid4vci.token_proofs_failed", "wallet.interaction.error.oid4vci_token_proofs_failed", it)
+            return failed(WalletInteractionFailureCodes.OID4VCI_TOKEN_PROOFS_FAILED, "wallet.interaction.error.oid4vci_token_proofs_failed", it)
         }
         val token =
             exchangeAuthorizationCodeWithDpopNonceRetry(
@@ -1752,7 +1816,7 @@ class Oid4vciHolderIssuanceExecutor(
                 clientAuthentication = tokenProofs.clientAuthentication,
             )
         if (token.isErr) {
-            return failed("oid4vci.authorization_code_exchange_failed", "wallet.interaction.error.oid4vci_authorization_code_exchange_failed", token.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_AUTHORIZATION_CODE_EXCHANGE_FAILED, "wallet.interaction.error.oid4vci_authorization_code_exchange_failed", token.error)
         }
         context.updateOid4vciState {
             it.copy(
@@ -1766,7 +1830,7 @@ class Oid4vciHolderIssuanceExecutor(
         }
         val cNonce = resolveProofNonce(resolvedOffer, token.value.cNonce)
         if (cNonce.isErr) {
-            return failed("oid4vci.nonce_request_failed", "wallet.interaction.error.oid4vci_nonce_request_failed", cNonce.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_NONCE_REQUEST_FAILED, "wallet.interaction.error.oid4vci_nonce_request_failed", cNonce.error)
         }
         val credentialConfigurationId = selectCredentialConfigurationId(options, state, resolvedOffer)
         val proofSelection =
@@ -1780,7 +1844,7 @@ class Oid4vciHolderIssuanceExecutor(
             )
                 .getOrElse { return credentialRequestProofFailure(it) }
         val credentialDpopProof = credentialEndpointDpopProof(context, state, resolvedOffer, options, token.value.accessToken).getOrElse {
-            return failed("oid4vci.credential_dpop_proof_failed", "wallet.interaction.error.oid4vci_credential_dpop_proof_failed", it)
+            return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_DPOP_PROOF_FAILED, "wallet.interaction.error.oid4vci_credential_dpop_proof_failed", it)
         }
         context.updateOid4vciState {
             it.copy(
@@ -1801,7 +1865,7 @@ class Oid4vciHolderIssuanceExecutor(
                 tokenAuthorizationDetails = token.value.authorizationDetails,
             )
         if (credential.isErr) {
-            return failed("oid4vci.credential_request_failed", "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
+            return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_REQUEST_FAILED, "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
         }
         return handleCredentialResponse(context, state, resolvedOffer, credential.value)
     }
@@ -2114,19 +2178,23 @@ class Oid4vciHolderIssuanceExecutor(
         options: Oid4vciHolderIssuanceOptions,
         accessToken: String,
         nonce: String? = null,
-    ): IdkResult<String?, IdkError> =
-        tokenEndpointProofsProvider.dpopProof(
+    ): IdkResult<String?, IdkError> {
+        // OID4VCI 1.0 final binds DPoP to the ordinary Credential Endpoint for both
+        // single and multi-proof credential requests.
+        val credentialEndpoint = resolvedOffer.issuerMetadata.credentialEndpoint
+        return tokenEndpointProofsProvider.dpopProof(
             Oid4vciDpopProofRequest(
                 context = context,
                 state = state,
                 resolvedOffer = resolvedOffer,
                 options = options,
                 httpMethod = "POST",
-                httpUrl = resolvedOffer.issuerMetadata.credentialEndpoint,
+                httpUrl = credentialEndpoint,
                 nonce = nonce,
                 accessToken = accessToken,
             ),
         )
+    }
 
     private suspend fun deferredEndpointDpopProof(
         context: WalletInteractionContext,
@@ -2197,27 +2265,89 @@ class Oid4vciHolderIssuanceExecutor(
             // A blank transaction_id must not produce a deferred leg: retrieval would send an empty
             // id to the issuer instead of failing fast at the wallet.
             if (!deferredCredentialEndpoint.isNullOrBlank() && transactionId.isNotBlank()) {
-                context.updateOid4vciState {
-                    it.copy(
+                val sessionState = context.oid4vciState()
+                val accessToken =
+                    credentialResponse.additionalParameters[DEFERRAL_ACCESS_TOKEN_PARAMETER]
+                        ?.let { it as? JsonPrimitive }
+                        ?.contentOrNull
+                        ?.takeIf { it.isNotBlank() }
+                        ?: sessionState.tokens?.accessToken
+                        ?: return failed(
+                            WalletInteractionFailureCodes.OID4VCI_ACCESS_TOKEN_MISSING,
+                            "wallet.interaction.error.oid4vci_access_token_missing",
+                            retryable = true,
+                        )
+                val accessTokenRef =
+                    try {
+                        issuanceSessionStore.storeDeferredAccessToken(context.walletUnitId, context.sessionId.value, accessToken)
+                    } catch (failure: Exception) {
+                        return failedDeferredPersistence(failure)
+                    }
+                if (accessTokenRef.isErr) return failedDeferredPersistence(accessTokenRef.error)
+
+                val credentialConfigurationId =
+                    sessionState.credentialConfigurationId?.takeIf { it.isNotBlank() }
+                        ?: resolvedOffer.offer.credentialConfigurationIds.firstOrNull()?.takeIf { it.isNotBlank() }
+                        ?: return failed(
+                            WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED,
+                            "wallet.interaction.error.oid4vci_deferred_request_failed",
+                            retryable = true,
+                        )
+                val now = Clock.System.now()
+                val intervalSeconds = (credentialResponse.interval ?: DEFAULT_DEFERRED_INTERVAL_SECONDS).coerceAtLeast(0)
+                val deferredSession =
+                    IssuanceSession(
+                        id = context.sessionId.value,
+                        walletUnitId = context.walletUnitId,
+                        issuerRef = resolvedOffer.offer.credentialIssuer.toIssuerRef(),
+                        credentialIssuerUrl = resolvedOffer.offer.credentialIssuer,
+                        credentialConfigurationId = credentialConfigurationId,
+                        holderKeyRef = sessionState.holderKeyAliases.firstOrNull()?.let(::KeyRef),
+                        holderKeyRefs = sessionState.holderKeyAliases.map(::KeyRef),
+                        status = IssuanceSessionStatus.DEFERRED,
                         deferred =
-                            Oid4vciPrivateSessionState.DeferredLeg(
-                                deferredCredentialEndpoint = deferredCredentialEndpoint,
+                            DeferredIssuanceState(
                                 transactionId = transactionId,
+                                deferredCredentialEndpoint = deferredCredentialEndpoint,
+                                accessTokenRef = accessTokenRef.value,
+                                retryPolicy = RetryPolicy(initialDelaySeconds = intervalSeconds.toLong(), maxDelaySeconds = intervalSeconds.toLong()),
+                                nextPollAt = now.plus(intervalSeconds.toLong().seconds),
                             ),
+                        createdAt = now,
+                        updatedAt = now,
                     )
+                val persistedSession =
+                    try {
+                        issuanceSessionStore.putSession(context.walletUnitId, deferredSession)
+                    } catch (failure: Exception) {
+                        return failedDeferredPersistence(failure)
+                    }
+                if (persistedSession.isErr) return failedDeferredPersistence(persistedSession.error)
+                try {
+                    context.updateOid4vciState {
+                        it.copy(
+                            deferred =
+                                Oid4vciPrivateSessionState.DeferredLeg(
+                                    deferredCredentialEndpoint = deferredCredentialEndpoint,
+                                    transactionId = transactionId,
+                                ),
+                        )
+                    }
+                } catch (failure: Exception) {
+                    return failedDeferredPersistence(failure)
                 }
             }
             return Oid4vciIssuanceExecutionResult.Deferred(intervalSeconds = credentialResponse.interval)
         }
         if (credentialResponse.credentials.isNullOrEmpty()) {
-            return failed("oid4vci.empty_credential_response", "wallet.interaction.error.oid4vci_empty_credential_response")
+            return failed(WalletInteractionFailureCodes.OID4VCI_EMPTY_CREDENTIAL_RESPONSE, "wallet.interaction.error.oid4vci_empty_credential_response")
         }
         val previews =
             try {
                 credentialReceiver.receiveCredentialResponse(context, state, resolvedOffer, credentialResponse)
             } catch (expected: Exception) {
                 return failed(
-                    code = "oid4vci.credential_receiver_failed",
+                    code = WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_RECEIVER_FAILED,
                     messageKey = "wallet.interaction.error.oid4vci_credential_receiver_failed",
                     retryable = true,
                     arguments =
@@ -2292,9 +2422,25 @@ class Oid4vciHolderIssuanceExecutor(
 
     private fun notificationFailed(providerErrorCode: String): Oid4vciIssuerNotificationResult.Failed =
         Oid4vciIssuerNotificationResult.Failed(
-            code = "oid4vci.notification_failed",
+            code = WalletInteractionFailureCodes.OID4VCI_NOTIFICATION_FAILED,
             messageKey = "wallet.interaction.error.oid4vci_notification_failed",
             arguments = mapOf("providerErrorCode" to providerErrorCode),
+        )
+
+    private fun failedDeferredPersistence(error: IdkError): Oid4vciIssuanceExecutionResult.Failed =
+        failed(
+            code = WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED,
+            messageKey = "wallet.interaction.error.oid4vci_deferred_request_failed",
+            error = error,
+            retryable = true,
+        )
+
+    private fun failedDeferredPersistence(failure: Exception): Oid4vciIssuanceExecutionResult.Failed =
+        failed(
+            code = WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED,
+            messageKey = "wallet.interaction.error.oid4vci_deferred_request_failed",
+            retryable = true,
+            arguments = mapOf("causeType" to (failure::class.simpleName ?: "Exception"), "cause" to failure.message.orEmpty()),
         )
 
     private fun failed(
@@ -2328,6 +2474,14 @@ class Oid4vciHolderIssuanceExecutor(
 private const val IAE_OPENID4VP_PRESENTATION: String = "urn:openid:dcp:iae:openid4vp_presentation"
 private const val HAIP_PREFERRED_CREDENTIAL_FORMAT: String = "dc+sd-jwt"
 private const val JWT_PROOF_TYPE: String = "jwt"
+private const val DEFERRAL_ACCESS_TOKEN_PARAMETER: String = "deferral_access_token"
+private const val DEFAULT_DEFERRED_INTERVAL_SECONDS: Int = 5
+
+private fun String.toIssuerRef(): IdentifierRef =
+    IdentifierRef(
+        type = if (startsWith("did:")) IdentifierType.DID else IdentifierType("https"),
+        value = this,
+    )
 
 private fun signatureAlgorithm(joseAlgorithm: String): SignatureAlgorithm =
     when (joseAlgorithm.uppercase()) {

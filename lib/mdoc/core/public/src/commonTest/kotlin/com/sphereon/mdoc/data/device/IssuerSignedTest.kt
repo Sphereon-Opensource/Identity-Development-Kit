@@ -674,6 +674,41 @@ class IssuerSignedTest {
         assertEquals(1, limited.nameSpaces?.get(mdlNamespace)?.size)
     }
 
+    @Test
+    fun testIssuerSignedLimitDisclosuresUsesFirstAvailableAlternativeSet() {
+        val issuerSigned =
+            IssuerSigned(
+                nameSpaces = createNameSpaces(),
+                issuerAuth = createTestIssuerAuth(),
+                original = null,
+            )
+        val requested = DataElementIdentifier("missing_name")
+        val docRequest =
+            DocRequest
+                .Builder()
+                .withDocRequestInfo(
+                    DocRequestInfo(
+                        alternativeDataElements =
+                            listOf(
+                                AlternativeDataElementsSet(
+                                    requestedElement = mdlNamespace to requested,
+                                    alternativeElementSets =
+                                        listOf(
+                                            listOf(mdlNamespace to DataElementIdentifier("not_issued")),
+                                            listOf(mdlNamespace to DataElementIdentifier("given_name")),
+                                        ),
+                                ),
+                            ),
+                    ),
+                ).docType(mdlDocType)
+                .add(mdlNamespace, requested)
+                .buildDocRequest()
+
+        val limited = issuerSigned.limitDisclosures(docRequest)
+        val identifiers = limited.nameSpaces?.get(mdlNamespace)?.map { it.data().elementIdentifier }
+        assertEquals(listOf(DataElementIdentifier("given_name")), identifiers)
+    }
+
     // Equality tests
 
     @Test

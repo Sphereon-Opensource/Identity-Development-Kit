@@ -16,6 +16,7 @@
 
 package com.sphereon.statuslist.impl.driver
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.ContextConfig
@@ -34,28 +35,36 @@ import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.StatusValues
+import com.sphereon.statuslist.MdocStatusListPayload
+import com.sphereon.statuslist.MdocStatusListProfile
+import com.sphereon.statuslist.impl.enrich.CredentialStatusEnricherImpl
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import com.sphereon.statuslist.spi.StatusListSigner
 import com.sphereon.statuslist.spi.StatusListSigningKeyNameResolver
+import com.sphereon.statuslist.spi.StatusEnrichmentContext
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.datetime.Instant
 
 /** Test signer: echoes the encoded list so tests can assert the driver encoded the live bit state. */
 private class EchoStatusListSigner : StatusListSigner {
     var signCount: Int = 0
+    var lastArgs: SignStatusListTokenArgs? = null
 
-    override suspend fun signStatusListToken(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> =
-        Ok(
+    override suspend fun signStatusListToken(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> {
+        lastArgs = args
+        return Ok(
             StatusListToken(
                 token = "signed:${++signCount}:${args.encodedList}",
                 contentType = args.proofFormat.contentType,
                 ttlSeconds = args.ttlSeconds,
             ),
         )
+    }
 }
 
 /** Minimal session execution fixture: only the tenant id is consulted by the driver. */
@@ -75,6 +84,11 @@ class InMemoryStatusListDriverTest {
     private fun driver() = InMemoryStatusListDriver(InMemoryStatusListStore(), EchoStatusListSigner(), TestSessionExecution())
 
     private fun driverWithSigner(signer: EchoStatusListSigner) = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution())
+
+    private fun driverFor(
+        tenantId: String,
+        store: InMemoryStatusListStore,
+    ) = InMemoryStatusListDriver(store, EchoStatusListSigner(), TestSessionExecution(tenantId = tenantId))
 
     private fun createArgs(
         correlationId: String = "sl-1",
@@ -100,6 +114,33 @@ class InMemoryStatusListDriverTest {
             val dup = d.createStatusList(createArgs())
             assertTrue(dup.isErr)
             assertEquals("STATUSLIST_DUPLICATE_CORRELATION_ID", (dup as com.sphereon.core.api.Err).error.code)
+        }
+
+    @Test
+    fun createRejectsAHostingUriAlreadyOwnedByAnotherList() =
+        runTest {
+            val d = driver()
+            assertTrue(d.createStatusList(createArgs(correlationId = "sl-1")).isOk)
+            val duplicateUri =
+                d.createStatusList(
+                    createArgs(correlationId = "sl-2").copy(
+                        statusListUri = "https://issuer.example/statuslists/sl-1",
+                    ),
+                )
+            assertTrue(duplicateUri.isErr)
+            assertEquals("STATUSLIST_DUPLICATE_URI", (duplicateUri as com.sphereon.core.api.Err).error.code)
+        }
+
+    @Test
+    fun failedInitialSigningDoesNotLeaveAnUnpublishedList() =
+        runTest {
+            val signer = ToggleStatusListSigner()
+            signer.fail = true
+            val d = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution())
+
+            assertTrue(d.createStatusList(createArgs()).isErr)
+            assertNull((d.getStatusList(StatusListRef(correlationId = "sl-1")) as Ok).value)
+            assertNull((d.getStatusList(StatusListRef(statusListUri = "https://issuer.example/statuslists/sl-1")) as Ok).value)
         }
 
     @Test
@@ -142,6 +183,48 @@ class InMemoryStatusListDriverTest {
             val overflow = d.allocateEntry(AllocateEntryArgs(StatusListRef(correlationId = "sl-1")))
             assertTrue(overflow.isErr)
             assertEquals("STATUSLIST_EXHAUSTED", (overflow as com.sphereon.core.api.Err).error.code)
+        }
+
+    @Test
+    fun releasingAnUnboundReservationClearsItsBitAndMakesTheIndexReusable() =
+        runTest {
+            val d = driver()
+            d.createStatusList(createArgs(length = 8))
+            val allocated =
+                d.allocateEntry(
+                    AllocateEntryArgs(
+                        statusList = StatusListRef(correlationId = "sl-1"),
+                        explicitIndex = 3,
+                    ),
+                ) as Ok
+
+            assertTrue(
+                d.releaseEntry(
+                    EntryRef(statusListId = allocated.value.statusListId, statusListIndex = allocated.value.statusListIndex),
+                ).isOk,
+            )
+            assertNull(
+                (d.getEntry(EntryRef(statusListId = allocated.value.statusListId, statusListIndex = 3)) as Ok).value,
+            )
+
+            val reused =
+                d.allocateEntry(
+                    AllocateEntryArgs(
+                        statusList = StatusListRef(correlationId = "sl-1"),
+                        explicitIndex = 3,
+                    ),
+                ) as Ok
+            assertEquals(3, reused.value.statusListIndex)
+        }
+
+    @Test
+    fun releasingAnUnknownReservationIsIdempotentAndDoesNotFail() =
+        runTest {
+            val d = driver()
+            d.createStatusList(createArgs())
+            val result = d.releaseEntry(EntryRef(correlationId = "sl-1", statusListIndex = 2))
+            assertTrue(result.isOk)
+            assertEquals(false, (result as Ok).value)
         }
 
     @Test
@@ -194,6 +277,97 @@ class InMemoryStatusListDriverTest {
         }
 
     @Test
+    fun failedAllocationRollsBackTheReservationAndKeepsTheLastSignedToken() =
+        runTest {
+            val signer = ToggleStatusListSigner()
+            val d = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution())
+            d.createStatusList(createArgs())
+            val before = (d.getStatusListToken(StatusListRef(correlationId = "sl-1")) as Ok).value
+            signer.fail = true
+
+            val failed = d.allocateEntry(AllocateEntryArgs(StatusListRef(correlationId = "sl-1"), explicitIndex = 3))
+            assertTrue(failed.isErr)
+            assertNull((d.getEntry(EntryRef(correlationId = "sl-1", statusListIndex = 3)) as Ok).value)
+            assertEquals(before, (d.getStatusListToken(StatusListRef(correlationId = "sl-1")) as Ok).value)
+
+            signer.fail = false
+            assertTrue(d.allocateEntry(AllocateEntryArgs(StatusListRef(correlationId = "sl-1"), explicitIndex = 3)).isOk)
+        }
+
+    @Test
+    fun failedStatusUpdateRestoresThePreviousEntryAndSignedToken() =
+        runTest {
+            val signer = ToggleStatusListSigner()
+            val d = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution())
+            d.createStatusList(createArgs())
+            val allocated =
+                d.allocateEntry(
+                    AllocateEntryArgs(StatusListRef(correlationId = "sl-1"), explicitIndex = 3, credentialId = "cred-3"),
+                ) as Ok
+            val before = (d.getStatusListToken(StatusListRef(correlationId = "sl-1")) as Ok).value
+            signer.fail = true
+
+            val failed =
+                d.updateEntryStatus(
+                    com.sphereon.statuslist.UpdateEntryStatusArgs(
+                        entry = EntryRef(correlationId = "sl-1", credentialId = "cred-3"),
+                        value = StatusValues.INVALID,
+                    ),
+                )
+            assertTrue(failed.isErr)
+            val restored = (d.getEntry(EntryRef(statusListId = allocated.value.statusListId, statusListIndex = 3)) as Ok).value
+            assertNotNull(restored)
+            assertEquals(StatusValues.VALID, restored!!.value)
+            assertEquals(before, (d.getStatusListToken(StatusListRef(correlationId = "sl-1")) as Ok).value)
+        }
+
+    @Test
+    fun failedDefinitionRefreshRestoresThePreviousDefinitionAndSignedToken() =
+        runTest {
+            val signer = ToggleStatusListSigner()
+            val d = InMemoryStatusListDriver(InMemoryStatusListStore(), signer, TestSessionExecution())
+            d.createStatusList(createArgs())
+            val before = (d.getStatusList(StatusListRef(correlationId = "sl-1")) as Ok).value
+            val beforeToken = (d.getStatusListToken(StatusListRef(correlationId = "sl-1")) as Ok).value
+            signer.fail = true
+
+            val failed = d.refreshStatusListDefinition(createArgs().copy(issuer = "did:example:changed"))
+            assertTrue(failed.isErr)
+            val restored = (d.getStatusList(StatusListRef(correlationId = "sl-1")) as Ok).value
+            assertNotNull(restored)
+            assertEquals(before!!.issuer, restored!!.issuer)
+            assertEquals(beforeToken?.token, restored.signedToken)
+        }
+
+    @Test
+    fun entryLookupAndMutationCannotCrossTenantBoundariesByListId() =
+        runTest {
+            val store = InMemoryStatusListStore()
+            val tenantA = driverFor("tenant-a", store)
+            val tenantB = driverFor("tenant-b", store)
+            assertTrue(tenantA.createStatusList(createArgs()).isOk)
+            val allocated =
+                tenantA.allocateEntry(
+                    AllocateEntryArgs(
+                        statusList = StatusListRef(correlationId = "sl-1"),
+                        explicitIndex = 2,
+                    ),
+                ) as Ok
+
+            val foreignRef = EntryRef(statusListId = allocated.value.statusListId, statusListIndex = 2)
+            assertNull((tenantB.getEntry(foreignRef) as Ok).value)
+            assertTrue(
+                tenantB.updateEntryStatus(
+                    com.sphereon.statuslist.UpdateEntryStatusArgs(foreignRef, StatusValues.INVALID),
+                ).isErr,
+            )
+            assertEquals(
+                StatusValues.VALID,
+                ((tenantA.getEntry(foreignRef) as Ok).value ?: error("entry disappeared")).value,
+            )
+        }
+
+    @Test
     fun tokenReadReturnsStoredProjectionWithoutResigning() =
         runTest {
             val signer = EchoStatusListSigner()
@@ -206,6 +380,31 @@ class InMemoryStatusListDriverTest {
 
             assertEquals(1, signer.signCount, "token reads must not invoke KMS/signing")
             assertEquals(first, second)
+        }
+
+    @Test
+    fun hostedUriIsPublicReadOnlyAndCannotSelectAnotherTenantsManagementList() =
+        runTest {
+            val store = InMemoryStatusListStore()
+            val tenantA = driverFor("tenant-a", store)
+            val tenantB = driverFor("tenant-b", store)
+            val created = (tenantA.createStatusList(createArgs("tenant-a-list")) as Ok).value
+            val uri = created.statusListUri
+
+            assertNull((tenantB.getStatusList(StatusListRef(statusListUri = uri)) as Ok).value)
+            assertTrue((tenantB.deleteStatusList(StatusListRef(statusListUri = uri)) as Ok).value == false)
+            assertTrue(
+                tenantB.allocateEntry(
+                    AllocateEntryArgs(
+                        statusList = StatusListRef(statusListUri = uri),
+                        explicitIndex = 0,
+                    ),
+                ).isErr,
+            )
+            // The same URI remains usable by the public token projection, but does not grant
+            // access to tenant-scoped management state.
+            assertNotNull((tenantB.getStatusListToken(StatusListRef(statusListUri = uri)) as Ok).value)
+            assertNotNull((tenantA.getStatusList(StatusListRef(id = created.id)) as Ok).value)
         }
 
     @Test
@@ -311,6 +510,117 @@ class InMemoryStatusListDriverTest {
             assertTrue((created as Ok).value.signedToken.isNotBlank())
             assertNull(signer.lastKeyName)
         }
+
+    @Test
+    fun mdocStatusListProfilePassesOneBitBinaryPayloadToSigner() =
+        runTest {
+            val signer = EchoStatusListSigner()
+            val d = driverWithSigner(signer)
+            val args =
+                createArgs(length = 16).copy(
+                    proofFormat = StatusProofFormat.CWT,
+                    mdocProfile = MdocStatusListProfile.STATUS_LIST,
+                    validUntil = Instant.parse("2030-01-01T00:00:00Z"),
+                    aggregationUri = "https://issuer.example/statuslists/aggregate",
+                )
+
+            val created = d.createStatusList(args)
+            assertTrue(created.isOk)
+            assertEquals(MdocStatusListProfile.STATUS_LIST, (created as Ok).value.mdocProfile)
+            val initial = signer.lastArgs?.mdocPayload as MdocStatusListPayload.Token
+            assertEquals(1, initial.bits)
+            assertEquals(2, initial.list.size)
+            assertEquals(args.aggregationUri, initial.aggregationUri)
+
+            d.allocateEntry(AllocateEntryArgs(StatusListRef(correlationId = args.correlationId), explicitIndex = 3))
+            d.updateEntryStatus(
+                com.sphereon.statuslist.UpdateEntryStatusArgs(
+                    entry = EntryRef(correlationId = args.correlationId, statusListIndex = 3),
+                    value = StatusValues.INVALID,
+                ),
+            )
+            val updated = signer.lastArgs?.mdocPayload as MdocStatusListPayload.Token
+            assertEquals(1, (updated.list[0].toInt() ushr 3) and 1)
+        }
+
+    @Test
+    fun mdocIdentifierListPublishesOnlyRevokedAllocatedIdentifiers() =
+        runTest {
+            val signer = EchoStatusListSigner()
+            val d = driverWithSigner(signer)
+            val args =
+                createArgs(correlationId = "mdoc-identifiers", length = 4).copy(
+                    proofFormat = StatusProofFormat.CWT,
+                    mdocProfile = MdocStatusListProfile.IDENTIFIER_LIST,
+                    validUntil = Instant.parse("2030-01-01T00:00:00Z"),
+                )
+            assertTrue(d.createStatusList(args).isOk)
+            val identifier = byteArrayOf(0x10, 0x20)
+            val allocated =
+                d.allocateEntry(
+                    AllocateEntryArgs(
+                        statusList = StatusListRef(correlationId = args.correlationId),
+                        entryCorrelationId = "mso-1",
+                        identifier = identifier,
+                    ),
+                ) as Ok
+            assertTrue((signer.lastArgs?.mdocPayload as MdocStatusListPayload.IdentifierList).identifiers.isEmpty())
+
+            d.updateEntryStatus(
+                com.sphereon.statuslist.UpdateEntryStatusArgs(
+                    entry = EntryRef(correlationId = args.correlationId, entryCorrelationId = "mso-1"),
+                    value = StatusValues.INVALID,
+                ),
+            )
+            val revoked = signer.lastArgs?.mdocPayload as MdocStatusListPayload.IdentifierList
+            assertEquals(listOf(identifier.toList()), revoked.identifiers.map { it.toList() })
+            assertEquals(identifier.toList(), allocated.value.identifier?.toList())
+
+            val duplicate =
+                d.allocateEntry(
+                    AllocateEntryArgs(
+                        statusList = StatusListRef(correlationId = args.correlationId),
+                        identifier = identifier,
+                    ),
+                )
+            assertTrue(duplicate.isErr)
+        }
+
+    @Test
+    fun mdocStatusBindingRejectsAConfiguredProfileMismatchBeforeAllocation() =
+        runTest {
+            val d = driver()
+            val args =
+                createArgs(correlationId = "mdoc-status-mismatch").copy(
+                    proofFormat = StatusProofFormat.CWT,
+                    mdocProfile = MdocStatusListProfile.STATUS_LIST,
+                    validUntil = Instant.parse("2030-01-01T00:00:00Z"),
+                )
+            assertTrue(d.createStatusList(args).isOk)
+
+            val result =
+                CredentialStatusEnricherImpl(d).reserve(
+                    StatusEnrichmentContext(
+                        credentialConfigurationId = "org.iso.18013.mdl",
+                        format = "mso_mdoc",
+                        spec = StatusListSpec.TOKEN_STATUS_LIST,
+                        purposes = listOf(StatusPurpose.REVOCATION),
+                        statusListCorrelationId = args.correlationId,
+                        mdocProfile = MdocStatusListProfile.IDENTIFIER_LIST,
+                        proofFormat = StatusProofFormat.CWT,
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals(
+                "STATUSLIST_BINDING_DEFINITION_MISMATCH",
+                (result as Err).error.code,
+            )
+            assertNull(
+                (d.getEntry(EntryRef(correlationId = args.correlationId, statusListIndex = 0)) as Ok).value,
+                "profile mismatch must be rejected before an entry is allocated",
+            )
+        }
 }
 
 /**
@@ -325,6 +635,22 @@ private class RecordingStatusListSigner : StatusListSigner {
         return Ok(
             StatusListToken(
                 token = "signed:${args.encodedList}",
+                contentType = args.proofFormat.contentType,
+                ttlSeconds = args.ttlSeconds,
+            ),
+        )
+    }
+}
+
+private class ToggleStatusListSigner : StatusListSigner {
+    var fail: Boolean = false
+    var signCount: Int = 0
+
+    override suspend fun signStatusListToken(args: SignStatusListTokenArgs): IdkResult<StatusListToken, IdkError> {
+        if (fail) return Err(IdkError.UNKNOWN_ERROR(message = "signer unavailable"))
+        return Ok(
+            StatusListToken(
+                token = "signed:${++signCount}:${args.encodedList}",
                 contentType = args.proofFormat.contentType,
                 ttlSeconds = args.ttlSeconds,
             ),

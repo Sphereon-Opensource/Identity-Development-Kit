@@ -15,11 +15,15 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.encodeToBase64Url
+import com.sphereon.core.api.encodeToHex
 import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.random.SecureRandom
 import com.sphereon.core.api.service.EidasAssuranceLevel
 import com.sphereon.core.compat.Uuid
+import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
+import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.generateJwkThumbprint
 import com.sphereon.di.session.SessionScope
@@ -57,6 +61,9 @@ import com.sphereon.wallet.wsca.WscaClientAttestationAuthRequest
 import com.sphereon.wallet.wsca.WscaClientAttestationAuthResult
 import com.sphereon.wallet.wsca.WscaDpopProofRequest
 import com.sphereon.wallet.wsca.WscaDpopProofResult
+import com.sphereon.wallet.wsca.WscaPreparedSigning
+import com.sphereon.wallet.wsca.WscaPreparedSigningFactory
+import com.sphereon.wallet.wsca.WscaSigningRequest
 import com.sphereon.wallet.wsca.WscaUserAuthRequest
 import com.sphereon.wallet.wsca.WscaUserAuthentication
 import com.sphereon.wallet.wscd.Wscd
@@ -106,7 +113,10 @@ class LocalWsca
         private val dpopProofAssembly: DpopProofAssembly,
         userAuthenticator: WalletUserAuthenticator,
         private val walletProviderAttestationSignerResolver: WalletProviderAttestationSignerResolver,
+        private val secureRandom: SecureRandom,
     ) : Wsca {
+        private val preparedSigningFactory = WscaPreparedSigningFactory.create()
+
         override val wscdProfile: WscdProfile get() = wscd.profile
         override val userAuthentication: WscaUserAuthentication = LocalWscaUserAuthentication(userAuthenticator)
 
@@ -135,23 +145,103 @@ class LocalWsca
             return Ok(toWalletAttestedKeyRef(handle, algorithm, usage))
         }
 
-        override suspend fun sign(
+        override suspend fun discardCredentialKey(
             walletUnitId: String,
             keyRef: WalletAttestedKeyRef,
-            signingInput: ByteArray,
-            operationBinding: String,
+        ): IdkResult<Unit, IdkError> {
+            if (keyRef.walletUnitId != null && keyRef.walletUnitId != walletUnitId) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Credential key belongs to a different wallet unit"))
+            }
+            return wscd.deleteKey(toWscdKeyHandle(keyRef, walletUnitId))
+        }
+
+        override suspend fun prepareSign(request: WscaSigningRequest): IdkResult<WscaPreparedSigning, IdkError> {
+            return prepareSigning(request, OPERATION_TYPE_SIGN)
+        }
+
+        private suspend fun prepareSigning(
+            request: WscaSigningRequest,
+            operationType: String,
+        ): IdkResult<WscaPreparedSigning, IdkError> {
+            validateSigningRequest(request).getOrElse { return Err(it) }
+            val digestBinding = "sha256:${hash(request.signingInput, DigestAlg.SHA256).encodeToHex()}"
+            val nonce = request.nonce?.takeIf { it.isNotBlank() } ?: secureRandom.newToken(lengthBytes = NONCE_RANDOM_BYTES)
+            return Ok(
+                preparedSigningFactory.mint(
+                    walletUnitId = request.walletUnitId,
+                    keyRef = request.keyRef,
+                    walletAccountId = request.walletAccountId,
+                    operationBinding = request.operationBinding,
+                    operationType = operationType,
+                    digestBinding = digestBinding,
+                    nonce = nonce,
+                    audience = request.audience?.takeIf { it.isNotBlank() } ?: request.operationBinding,
+                    signingInput = request.signingInput,
+                ),
+            )
+        }
+
+        override suspend fun sign(
+            prepared: WscaPreparedSigning,
+            request: WscaSigningRequest,
         ): IdkResult<ByteArray, IdkError> {
+            return signPrepared(prepared, request, OPERATION_TYPE_SIGN)
+        }
+
+        private suspend fun signPrepared(
+            prepared: WscaPreparedSigning,
+            request: WscaSigningRequest,
+            expectedOperationType: String,
+        ): IdkResult<ByteArray, IdkError> {
+            validatePreparedSigning(prepared, request, expectedOperationType).getOrElse { return Err(it) }
             val activation =
                 userAuthentication
                     .authenticate(
                         WscaUserAuthRequest(
-                            walletUnitId = walletUnitId,
-                            operationType = OPERATION_TYPE_SIGN,
-                            operationBinding = operationBinding,
+                            walletUnitId = prepared.walletUnitId,
+                            operationType = expectedOperationType,
+                            operationBinding = prepared.operationBinding,
+                            operationKeyRef = prepared.keyRef.keyRef ?: prepared.keyRef.keyId,
+                            walletAccountId = prepared.walletAccountId,
+                            digestBinding = prepared.digestBinding,
+                            nonce = prepared.nonce,
+                            audience = prepared.audience,
                         ),
                     )
                     .getOrElse { return Err(it) }
-            return wscd.signDigest(toWscdKeyHandle(keyRef, walletUnitId), signingInput, activation)
+            return wscd.signDigest(toWscdKeyHandle(prepared.keyRef, prepared.walletUnitId), prepared.signingInput, activation)
+        }
+
+        private fun validateSigningRequest(request: WscaSigningRequest): IdkResult<Unit, IdkError> {
+            if (request.keyRef.walletUnitId != null && request.keyRef.walletUnitId != request.walletUnitId) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "WSCA key belongs to a different wallet unit"))
+            }
+            if (request.walletAccountId != null && request.keyRef.walletAccountId != null && request.walletAccountId != request.keyRef.walletAccountId) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "WSCA key belongs to a different wallet account"))
+            }
+            return Ok(Unit)
+        }
+
+        private fun validatePreparedSigning(
+            prepared: WscaPreparedSigning,
+            request: WscaSigningRequest,
+            expectedOperationType: String,
+        ): IdkResult<Unit, IdkError> {
+            validateSigningRequest(request).getOrElse { return Err(it) }
+            if (!preparedSigningFactory.owns(prepared) || prepared.operationType != expectedOperationType ||
+                prepared.walletUnitId != request.walletUnitId || prepared.keyRef != request.keyRef ||
+                prepared.walletAccountId != request.walletAccountId || prepared.operationBinding != request.operationBinding ||
+                prepared.audience != (request.audience ?: request.operationBinding) ||
+                request.nonce != null && request.nonce != prepared.nonce ||
+                !prepared.signingInput.contentEquals(request.signingInput)
+            ) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Signing request does not match its prepared WSCA context"))
+            }
+            val expectedDigest = "sha256:${hash(request.signingInput, DigestAlg.SHA256).encodeToHex()}"
+            if (prepared.digestBinding != expectedDigest) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Prepared WSCA digest binding does not match signing input"))
+            }
+            return Ok(Unit)
         }
 
         override suspend fun createDpopProof(request: WscaDpopProofRequest): IdkResult<WscaDpopProofResult, IdkError> {
@@ -178,18 +268,17 @@ class LocalWsca
                     ),
                     publicJwk,
                 )
-            val activation =
-                userAuthentication
-                    .authenticate(
-                        WscaUserAuthRequest(
-                            walletUnitId = request.walletUnitId,
-                            operationType = OPERATION_TYPE_DPOP,
-                            operationBinding = request.operationBinding,
-                        ),
-                    )
-                    .getOrElse { return Err(it) }
-            val signature =
-                wscd.signDigest(handle, assembled.signingInput, activation).getOrElse { return Err(it) }
+            val signingRequest =
+                WscaSigningRequest(
+                    walletUnitId = request.walletUnitId,
+                    keyRef = request.keyRef,
+                    signingInput = assembled.signingInput,
+                    operationBinding = request.operationBinding,
+                    audience = request.httpUrl,
+                    nonce = request.nonce,
+                )
+            val prepared = prepareSigning(signingRequest, OPERATION_TYPE_DPOP).getOrElse { return Err(it) }
+            val signature = signPrepared(prepared, signingRequest, OPERATION_TYPE_DPOP).getOrElse { return Err(it) }
             return Ok(
                 WscaDpopProofResult(
                     proofJwt = dpopProofAssembly.finish(assembled, signature),
@@ -261,6 +350,7 @@ class LocalWsca
                     protectedHeader = attestationHeader,
                     payload = attestationPayload,
                     operationBinding = request.operationBinding,
+                    audience = request.audience,
                 ).getOrElse { return Err(it) }
 
             val popHeader =
@@ -277,7 +367,14 @@ class LocalWsca
                     request.challenge?.let { put("challenge", it) }
                 }
             val popJwt =
-                signCompactJwt(request.walletUnitId, request.clientInstanceKey, popHeader, popPayload, request.operationBinding)
+                signCompactJwt(
+                    request.walletUnitId,
+                    request.clientInstanceKey,
+                    popHeader,
+                    popPayload,
+                    request.operationBinding,
+                    request.audience,
+                )
                     .getOrElse { return Err(it) }
 
             return Ok(
@@ -291,7 +388,10 @@ class LocalWsca
             )
         }
 
-        override suspend fun attestKeys(request: KeyAttestationIssueRequest): IdkResult<KeyAttestationIssueResult, IdkError> {
+        override suspend fun attestKeys(request: KeyAttestationIssueRequest): IdkResult<KeyAttestationIssueResult, IdkError> =
+            attestKeysInternal(request)
+
+        private suspend fun attestKeysInternal(request: KeyAttestationIssueRequest): IdkResult<KeyAttestationIssueResult, IdkError> {
             if (request.attestedKeys.isEmpty()) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Key attestation requires at least one attested key"))
             }
@@ -545,11 +645,21 @@ class LocalWsca
             protectedHeader: JsonObject,
             payload: JsonObject,
             operationBinding: String,
+            audience: String? = null,
         ): IdkResult<String, IdkError> {
             val encodedHeader = json.encodeToString(protectedHeader).encodeToByteArray().encodeToBase64Url()
             val encodedPayload = json.encodeToString(payload).encodeToByteArray().encodeToBase64Url()
             val signingInput = "$encodedHeader.$encodedPayload".encodeToByteArray()
-            val signature = sign(walletUnitId, signerKey, signingInput, operationBinding).getOrElse { return Err(it) }
+            val request =
+                WscaSigningRequest(
+                    walletUnitId = walletUnitId,
+                    keyRef = signerKey,
+                    signingInput = signingInput,
+                    operationBinding = operationBinding,
+                    audience = audience,
+                )
+            val prepared = prepareSign(request).getOrElse { return Err(it) }
+            val signature = sign(prepared, request).getOrElse { return Err(it) }
             return Ok("$encodedHeader.$encodedPayload.${signature.encodeToBase64Url()}")
         }
 
@@ -559,6 +669,7 @@ class LocalWsca
             protectedHeader: JsonObject,
             payload: JsonObject,
             operationBinding: String,
+            audience: String? = null,
         ): IdkResult<String, IdkError> {
             if (signerRef == null) {
                 val localKey =
@@ -568,7 +679,7 @@ class LocalWsca
                         algorithm = SignatureAlgorithm.ECDSA_SHA256,
                         keyAlias = null,
                     ).getOrElse { return Err(it) }
-                return signCompactJwt(walletUnitId, localKey, protectedHeader, payload, operationBinding)
+                return signCompactJwt(walletUnitId, localKey, protectedHeader, payload, operationBinding, audience)
             }
 
             val algorithm = parseWalletAttestationSigningAlgorithm(signerRef).getOrElse { return Err(it) }
@@ -589,7 +700,28 @@ class LocalWsca
                         algorithm = localSignatureAlgorithm,
                         keyAlias = keyAlias,
                     ).getOrElse { return Err(it) }
-                return signCompactJwt(walletUnitId, localKey, protectedHeader, payload, operationBinding)
+                val keyOwner =
+                    localKey.walletUnitId?.takeIf { it.isNotBlank() }
+                        ?: return Err(
+                            IdkError.fromString(
+                                code = "WALLET_WSCA_PROVIDER_KEY_OWNER_MISSING",
+                                category = ErrorCategory.VALIDATION,
+                                message = "LOCAL_WSCD provider signer key has no wallet-unit owner",
+                            ),
+                        )
+                if (keyOwner != walletUnitId) {
+                    return Err(
+                        IdkError.fromString(
+                            code = "WALLET_WSCA_PROVIDER_KEY_CROSS_UNIT_NOT_AUTHORIZED",
+                            category = ErrorCategory.VALIDATION,
+                            message = "Holder key-attestation signing cannot use a provider key owned by '$keyOwner'",
+                        ),
+                    )
+                }
+                // Provider attestations use the exact key resolved and ownership-checked by the
+                // provider boundary. Keep the requested holder wallet unit in KA claims/result,
+                // while WSCA signing validation follows the actual key owner.
+                return signCompactJwt(keyOwner, localKey, protectedHeader, payload, operationBinding, audience)
             }
             val signer = walletProviderAttestationSignerResolver.resolve(signerRef).getOrElse { return Err(it) }
             val encodedHeader = json.encodeToString(protectedHeader).encodeToByteArray().encodeToBase64Url()
@@ -752,6 +884,7 @@ class LocalWsca
             const val KEY_NAMESPACE: String = "wallet-units"
             const val KEY_ATTESTATION_TYP: String = "key-attestation+jwt"
             const val DEFAULT_ATTESTATION_TTL_SECONDS: Long = 300
+            const val NONCE_RANDOM_BYTES: Int = 16
 
             /** Mirrors `LocalWalletProvider.issueInstanceAttestation`'s WIA TTL ceiling (24 hours). */
             val ATTESTATION_MAX_TTL_SECONDS: Long = 24.hours.inWholeSeconds

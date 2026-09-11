@@ -25,6 +25,7 @@ import kotlinx.serialization.Serializable
 enum class DataFlowRole {
     SOURCE,
     DESTINATION,
+    PROCESSOR,
 }
 
 /**
@@ -38,6 +39,9 @@ enum class DataFlowRole {
 enum class AccessProtocol {
     HTTP,
     HTTPS,
+    WS,
+    WSS,
+    STDIO,
     JDBC,
     ODBC,
     SFTP,

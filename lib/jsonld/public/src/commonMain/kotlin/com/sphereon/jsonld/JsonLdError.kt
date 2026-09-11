@@ -118,6 +118,29 @@ sealed interface JsonLdError : IdkErrorType {
     }
 
     /**
+     * A remote JSON-LD document or redirect target is outside the configured
+     * document-loading policy. This is a hard authorization failure: context
+     * bytes determine the meaning of the signed document.
+     */
+    data class DocumentNotAllowed(
+        val iri: String,
+        val reason: String = "IRI is not present in the JSON-LD document allowlist",
+        override val exception: Throwable? = null,
+        override val causes: List<IdkErrorType> = emptyList(),
+    ) : JsonLdError {
+        override val code: String = "JSONLD_DOCUMENT_NOT_ALLOWED"
+        override val message: IdkError.Message =
+            IdkError.Message(
+                i18nKey = "com.sphereon.jsonld.error.document-not-allowed",
+                i18nParams = mapOf("iri" to iri, "reason" to reason),
+                defaultMessage = "JSON-LD document <$iri> is not allowed: $reason",
+            )
+        override val severity: IdkError.Severity = IdkError.Severity.FATAL
+        override val category: ErrorCategory = ErrorCategory.FORBIDDEN
+        override val meta: Map<String, Any?> = mapOf("iri" to iri, "reason" to reason)
+    }
+
+    /**
      * An IRI string supplied to a JSON-LD operation could not be parsed per
      * RFC 3987.
      */

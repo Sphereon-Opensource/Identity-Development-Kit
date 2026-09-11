@@ -26,6 +26,7 @@ import com.sphereon.crypto.core.cose.CoseHeaderCbor
 import com.sphereon.crypto.core.cose.CoseMac0InputCbor
 import com.sphereon.crypto.core.defaultCreateMac0
 import com.sphereon.crypto.core.defaultCreateMac0UsingKeys
+import com.sphereon.crypto.core.cose.defaultVerifyMac0
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.asKeyManagerServiceGraph
@@ -103,6 +104,37 @@ class CoseMac0Test {
                 result.coseMac0.tag.value
                     .isNotEmpty(),
                 "MAC tag should not be empty",
+            )
+        }
+
+    @Test
+    fun defaultVerifyMac0AcceptsValidAndRejectsTamperedDetachedPayload() =
+        runTest {
+            val created =
+                defaultCreateMac0(
+                    input =
+                        CoseMac0InputCbor(
+                            protectedHeader = CoseHeaderCbor(alg = CoseAlgorithm.HMAC256_256),
+                            detachedPayload = testPayload,
+                        ),
+                    sharedSecret = sharedSecret,
+                    provider = CryptographyProvider.Default,
+                )
+
+            val detached = created.coseMac0.detachedPayloadCopy()
+            assertTrue(
+                defaultVerifyMac0(
+                    value = detached,
+                    sharedSecret = sharedSecret,
+                    detachedPayload = testPayload,
+                ),
+            )
+            assertTrue(
+                !defaultVerifyMac0(
+                    value = detached,
+                    sharedSecret = sharedSecret,
+                    detachedPayload = "tampered".encodeToByteArray(),
+                ),
             )
         }
 

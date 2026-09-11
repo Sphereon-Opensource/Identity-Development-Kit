@@ -63,6 +63,7 @@ interface ValidateWebvhTrustServiceCommand :
                 pathPattern = "/{did}/trust",
                 produces = setOf(MediaType.ApplicationJson),
                 commandId = COMMAND_ID,
+                handlerCommandId = COMMAND_ID,
                 operationId = "validateWebvhTrust",
                 tags = setOf("did:webvh"),
                 summary = "Validate trust anchoring for a did:webvh DID",

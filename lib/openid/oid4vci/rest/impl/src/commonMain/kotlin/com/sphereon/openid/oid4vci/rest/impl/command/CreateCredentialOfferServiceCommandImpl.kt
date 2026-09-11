@@ -28,9 +28,15 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vc.common.QrCodeService
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationSelectionException
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationSelectionRequest
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciCredentialAuthorizationSelection
+import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciIssuerAuthorizationPolicyProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
-import com.sphereon.openid.oid4vci.issuer.config.currentInstanceIdOrDefault
+import com.sphereon.openid.oid4vci.issuer.config.requireCurrentInstanceId
+import com.sphereon.openid.oid4vci.issuer.impl.authorization.Oid4vciAuthorizationServerSelector
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferInput
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferOutput
 import com.sphereon.openid.oid4vci.rest.CreateCredentialOfferServiceCommand
@@ -58,7 +64,7 @@ import kotlin.uuid.Uuid
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<CreateCredentialOfferServiceCommand>())
 class CreateCredentialOfferServiceCommandImpl(
-    execution: SessionExecution,
+    private val sessionExecution: SessionExecution,
     private val createCredentialOfferCommand: CreateCredentialOfferCommand,
     private val credentialOfferSessionStore: CredentialOfferSessionStore,
     private val qrCodeService: QrCodeService,
@@ -66,9 +72,11 @@ class CreateCredentialOfferServiceCommandImpl(
     private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
     private val instanceIdProvider: Oid4vciIssuerInstanceIdProvider,
     private val sessionEventService: SessionEventService,
+    private val authorizationPolicyProvider: Oid4vciIssuerAuthorizationPolicyProvider,
+    private val authorizationServerSelector: Oid4vciAuthorizationServerSelector,
 ) : TypedServiceCommandAdapter<CreateCredentialOfferInput, CreateCredentialOfferOutput, IdkError>(
         commandId = CreateCredentialOfferServiceCommand.COMMAND_ID,
-        execution = execution,
+        execution = sessionExecution,
         inputTypeToken = typeToken<CreateCredentialOfferInput>(),
         outputTypeToken = typeToken<CreateCredentialOfferOutput>(),
     ),
@@ -80,7 +88,12 @@ class CreateCredentialOfferServiceCommandImpl(
         applyDuring: (CreateCredentialOfferInput) -> CreateCredentialOfferInput,
     ): IdkResult<CreateCredentialOfferOutput, IdkError> {
         val input = applyDuring(args)
-        val instanceId = instanceIdProvider.currentInstanceIdOrDefault()
+        val instanceId =
+            try {
+                instanceIdProvider.requireCurrentInstanceId()
+            } catch (error: IllegalArgumentException) {
+                return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = error.message ?: "Invalid OID4VCI issuer instance selector"))
+            }
 
         if (input.credentialConfigurationIds.isEmpty()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "credential_configuration_ids must not be empty"))
@@ -90,6 +103,37 @@ class CreateCredentialOfferServiceCommandImpl(
         val hasAuthCode = input.grants?.authorizationCode != null
         val txCodeConfig = input.grants?.preAuthorizedCode?.txCode
         val txCodeRequired = txCodeConfig != null
+
+        issuerConfigProvider.prepare()
+        val requiredGrants = buildSet {
+            if (hasAuthCode) add(Oid4vciAuthorizationGrant.AUTHORIZATION_CODE)
+            if (hasPreAuth || (!hasPreAuth && !hasAuthCode)) add(Oid4vciAuthorizationGrant.PRE_AUTHORIZED_CODE)
+        }
+        val authorizationSnapshot = try {
+            val policy = authorizationPolicyProvider.resolve(
+                sessionExecution.sessionContext.context.tenant.tenantId,
+                instanceId,
+            )
+            authorizationServerSelector.select(
+                policy,
+                Oid4vciAuthorizationSelectionRequest(
+                    credentialSelections = input.credentialConfigurationIds.map { configurationId ->
+                        Oid4vciCredentialAuthorizationSelection(
+                            credentialConfigurationId = configurationId,
+                            authorizationServerId = issuerConfigProvider.credentialAuthorizationServerId(configurationId),
+                            allowedGrants = issuerConfigProvider.credentialAuthorizationServerAllowedGrants(configurationId),
+                        )
+                    },
+                    templateAuthorizationServerId = input.templateAuthorizationServerId?.let(Uuid::parse),
+                    templateAllowedGrants = input.templateAuthorizationServerAllowedGrants,
+                    requiredGrants = requiredGrants,
+                ),
+            )
+        } catch (error: Oid4vciAuthorizationSelectionException) {
+            return Err(IdkError.INVALID_STATE(message = "${error.error}: ${error.message}"))
+        } catch (error: IllegalArgumentException) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = error.message ?: "Invalid authorization-server UUID selector"))
+        }
 
         // Prefer the Credential Issuer Identifier (OID4VCI §11.2.2) — may include a path
         // component (e.g. "${BASE}/oid4vci").
@@ -103,6 +147,7 @@ class CreateCredentialOfferServiceCommandImpl(
                 instanceId = instanceId,
                 issuerId = effectiveIssuerId,
                 credentialConfigurationIds = input.credentialConfigurationIds,
+                issuanceTemplateResourceId = input.templateId,
                 preAuthorizedCodeGrant = hasPreAuth || (!hasPreAuth && !hasAuthCode),
                 authorizationCodeGrant = hasAuthCode,
                 txCodeRequired = txCodeRequired,
@@ -114,6 +159,7 @@ class CreateCredentialOfferServiceCommandImpl(
                 scheme = input.scheme,
                 uriLifecycle = input.uriLifecycle,
                 rateLimit = input.rateLimit,
+                authorizationPolicySnapshot = authorizationSnapshot,
             )
 
         val created =
@@ -158,6 +204,7 @@ class CreateCredentialOfferServiceCommandImpl(
                 uriLifecycle = input.uriLifecycle,
                 rateLimit = input.rateLimit,
                 offerTemplate = offerTemplate,
+                authorizationPolicySnapshot = authorizationSnapshot,
             )
 
         credentialOfferSessionStore.create(session).getOrElse { error ->
@@ -167,7 +214,12 @@ class CreateCredentialOfferServiceCommandImpl(
         val config = configProvider.getConfig()
         val statusUri =
             config.externalBaseUrl?.let {
-                "${it.trimEnd('/')}/api/oid4vci/v1/backend/credential/offers/$correlationId"
+                // The status endpoint is the origin-rooted backend admin API. The issuer's
+                // external base URL carries the instance path, which serves protocol endpoints
+                // only; prefixing the admin path with it advertises a URL nothing routes.
+                val base = it.trimEnd('/')
+                val origin = Regex("^(https?://[^/]+)").find(base)?.groupValues?.get(1) ?: base
+                "$origin/api/oid4vci/v1/backend/credential/offers/$correlationId"
             }
 
         val qrUri =

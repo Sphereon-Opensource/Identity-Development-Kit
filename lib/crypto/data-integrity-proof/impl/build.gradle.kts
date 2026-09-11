@@ -56,8 +56,8 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(projects.libCryptoDataIntegrityProofPublic)
+                api(projects.libCryptoCore)
                 api(projects.libCoreApiPublic)
-                api(projects.libDidResolverPublic)
                 api(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.core)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)

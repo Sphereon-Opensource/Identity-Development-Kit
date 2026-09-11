@@ -214,6 +214,55 @@ class DesignSystemPaletteResolverTest {
     }
 
     @Test
+    fun halfStepsAreDerivedWhenThePaletteOmitsThem() {
+        val brandScale =
+            PaletteScale(
+                s50 = "#ECE4FC",
+                s100 = "#E0D2FA",
+                s200 = "#C7ADF5",
+                s300 = "#AE89F1",
+                s400 = "#9564EC",
+                s500 = "#7C40E8",
+                s600 = "#5D1AD6",
+                s700 = "#4714A4",
+                s800 = "#320E72",
+                s900 = "#1C0840",
+            )
+        val config = ThemeColorConfig.ExplicitPalettes(palettes = DesignSystemPalette(brand = brandScale))
+        val tokens = DesignSystemPaletteResolver.resolve(config, ThemeVariant.LIGHT)
+
+        // Derived half-steps land within one channel step of the authored reference
+        // values (#854EE9 / #4F16B7), so a tenant palette that only carries the ten
+        // canonical stops still gets a compliant brand gradient.
+        assertEquals("#854DE9", tokens["palette.brand.450"])
+        assertEquals("#4F16B6", tokens["palette.brand.650"])
+    }
+
+    @Test
+    fun authoredHalfStepsWinOverDerivedOnes() {
+        val brandScale =
+            PaletteScale(
+                s50 = "#ECE4FC",
+                s100 = "#E0D2FA",
+                s200 = "#C7ADF5",
+                s300 = "#AE89F1",
+                s400 = "#9564EC",
+                s500 = "#7C40E8",
+                s600 = "#5D1AD6",
+                s700 = "#4714A4",
+                s800 = "#320E72",
+                s900 = "#1C0840",
+                s450 = "#854EE9",
+                s650 = "#4F16B7",
+            )
+        val config = ThemeColorConfig.ExplicitPalettes(palettes = DesignSystemPalette(brand = brandScale))
+        val tokens = DesignSystemPaletteResolver.resolve(config, ThemeVariant.LIGHT)
+
+        assertEquals("#854EE9", tokens["palette.brand.450"])
+        assertEquals("#4F16B7", tokens["palette.brand.650"])
+    }
+
+    @Test
     fun fixedTokensShouldBePresent() {
         val config = ThemeColorConfig.SeedColor("#6750A4")
         val tokens = DesignSystemPaletteResolver.resolve(config, ThemeVariant.LIGHT)

@@ -18,11 +18,17 @@ package com.sphereon.crypto.kms.provider.software
 
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyVisibility
+import com.sphereon.crypto.core.ResolvedKeyInfo
+import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.generic.Curve
 import com.sphereon.crypto.core.generic.DigestAlg
 import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.hash
+import com.sphereon.crypto.core.jose.JwaAlgorithm
+import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.core.jose.JwkUse
+import com.sphereon.crypto.core.generic.KeyOperations
 import com.sphereon.crypto.core.kms.KeyAgreementAlgorithm
 import com.sphereon.crypto.core.kms.KmsProviderOperation
 import com.sphereon.crypto.core.kms.command.EcPointMultiplyOutput
@@ -125,6 +131,302 @@ class SoftwareCryptoProviderTest {
         }
 
     @Test
+    fun automaticCertificateDoesNotUseEncryptionRecipientAsSigner() =
+        runTest {
+            val provider = ctx.softwareKmsProviderFactory.create(
+                SoftwareKmsProviderConfig(
+                    id = "test-rsa-encryption-auto-cert",
+                    cryptographyProvider = CryptographyProvider.Default.name,
+                    autoCreateCertificate = true,
+                ),
+                ctx.session.sessionExecution,
+            )
+            val generated = provider.generateKeyAsync(
+                alias = "license-recipient",
+                use = JwkUse.enc,
+                keyOperations = arrayOf(KeyOperations.ENCRYPT, KeyOperations.DECRYPT),
+                alg = SignatureAlgorithm.RSA_SHA256,
+            )
+
+            assertEquals("enc", generated.jose.publicJwk.use)
+            assertTrue(generated.jose.publicJwk.x5c.isNullOrEmpty())
+            assertFailsWith<IllegalArgumentException> {
+                provider.createRawSignature(
+                    generated.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE),
+                    "must-not-sign".encodeToByteArray(),
+                    requireX5Chain = false,
+                )
+            }
+        }
+
+    @Test
+    fun automaticCertificateSignsAndVerifiesBeforeAliasPersistence() =
+        runTest {
+            val certificateEnabledProvider =
+                ctx.softwareKmsProviderFactory.create(
+                    SoftwareKmsProviderConfig(
+                        id = "test-ecdsa-auto-cert-signing",
+                        cryptographyProvider = CryptographyProvider.Default.name,
+                        autoCreateCertificate = true,
+                    ),
+                    ctx.session.sessionExecution,
+                )
+            val generated = certificateEnabledProvider.generateKeyAsync(alias = "certificate-before-store", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateInfo = generated.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE)
+            val publicInfo = generated.joseToManagedKeyInfo(visibility = KeyVisibility.PUBLIC)
+            val input = "certificate-before-store".encodeToByteArray()
+
+            val signature = certificateEnabledProvider.createRawSignature(privateInfo, input, requireX5Chain = false)
+
+            assertTrue(certificateEnabledProvider.isValidRawSignature(publicInfo, input, signature))
+            assertTrue(!generated.jose.publicJwk.x5c.isNullOrEmpty())
+        }
+
+    @Test
+    fun inlinePrivateKeyWithAliasSignsWithoutKeystoreLookup() =
+        runTest {
+            val generated = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateJwk = checkNotNull(generated.jose.privateJwk)
+            val keyInfo =
+                KeyInfo(
+                    key = privateJwk,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    alias = "not-present-in-keystore",
+                    providerId = softwareKMSProvider.id,
+                    kid = privateJwk.kid,
+                )
+            val input = "inline-private-alias".encodeToByteArray()
+
+            val signature = softwareKMSProvider.createRawSignature(keyInfo, input, requireX5Chain = false)
+            assertTrue(softwareKMSProvider.isValidRawSignature(keyInfo.toPublicKeyInfo(), input, signature))
+        }
+
+    @Test
+    fun inlinePublicResolvedKeyWithAliasVerifiesWithoutKeystoreLookup() =
+        runTest {
+            val generated = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateInfo = generated.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE)
+            val input = "inline-public-alias".encodeToByteArray()
+            val signature = softwareKMSProvider.createRawSignature(privateInfo, input, requireX5Chain = false)
+            val publicJwk = generated.jose.publicJwk
+            val publicInfo =
+                ResolvedKeyInfo(
+                    key = publicJwk,
+                    keyVisibility = KeyVisibility.PUBLIC,
+                    keyType = KeyTypeMapping.EC,
+                    alias = "not-present-in-keystore",
+                    providerId = softwareKMSProvider.id,
+                    kid = publicJwk.kid,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
+
+            assertTrue(softwareKMSProvider.isValidRawSignature(publicInfo, input, signature))
+        }
+
+    @Test
+    fun inlinePublicMaterialCannotSignEvenWhenAliasIsPresent() =
+        runTest {
+            val generated = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val publicJwk = generated.jose.publicJwk
+            val publicInfo =
+                KeyInfo(
+                    key = publicJwk,
+                    keyVisibility = KeyVisibility.PUBLIC,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    alias = "not-present-in-keystore",
+                    providerId = softwareKMSProvider.id,
+                    kid = publicJwk.kid,
+                )
+
+            val failure = assertFailsWith<IllegalArgumentException> {
+                softwareKMSProvider.createRawSignature(publicInfo, "public-only".encodeToByteArray(), requireX5Chain = false)
+            }
+            assertTrue(failure.message.orEmpty().contains("private", ignoreCase = true))
+        }
+
+    @Test
+    fun inlinePublicMaterialMarkedPrivateCannotSignThroughAlias() =
+        runTest {
+            val generated = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val publicJwk = generated.jose.publicJwk
+            val publicInfo =
+                KeyInfo(
+                    key = publicJwk,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    alias = "not-present-in-keystore",
+                    providerId = softwareKMSProvider.id,
+                    kid = publicJwk.kid,
+                )
+
+            val failure = assertFailsWith<IllegalArgumentException> {
+                softwareKMSProvider.createRawSignature(publicInfo, "public-only-private-metadata".encodeToByteArray(), requireX5Chain = false)
+            }
+            assertTrue(failure.message.orEmpty().contains("private", ignoreCase = true))
+        }
+
+    @Test
+    fun inlinePublicMaterialCannotBorrowAPersistedPrivateKeyForRawOrDigestSigning() =
+        runTest {
+            val provider = ctx.softwareKmsProviderFactory.create(
+                SoftwareKmsProviderConfig(
+                    id = "test-public-material-authority",
+                    cryptographyProvider = CryptographyProvider.Default.name,
+                    persistKeysDuringGeneration = true,
+                ),
+                ctx.session.sessionExecution,
+            )
+            val generated = provider.generateKeyAsync(alias = "persisted-signer", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val input = "public-material-cannot-borrow-private-key".encodeToByteArray()
+            for (visibility in listOf(KeyVisibility.PRIVATE, KeyVisibility.PUBLIC)) {
+                val publicInfo = KeyInfo(
+                    key = generated.jose.publicJwk,
+                    keyVisibility = visibility,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    alias = generated.alias,
+                    providerId = provider.id,
+                    kid = generated.kid,
+                )
+                assertFailsWith<IllegalArgumentException> {
+                    provider.createRawSignature(publicInfo, input, requireX5Chain = false)
+                }
+                assertFailsWith<IllegalArgumentException> {
+                    provider.signDigest(publicInfo, hash(input, DigestAlg.SHA256), SignatureAlgorithm.ECDSA_SHA256, SignatureEncoding.RAW)
+                }
+            }
+        }
+
+    @Test
+    fun inlineCosePrivateKeyWithAliasSignsWithoutKeystoreLookup() =
+        runTest {
+            val generated = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val privateJwk = checkNotNull(generated.jose.privateJwk)
+            val cosePrivateKey = CoseJoseKeyMappingService.toCoseKey(privateJwk)
+            val keyInfo =
+                KeyInfo(
+                    key = cosePrivateKey,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                    alias = "not-present-in-keystore",
+                    providerId = softwareKMSProvider.id,
+                    kid = privateJwk.kid,
+                )
+            val input = "inline-cose-private-alias".encodeToByteArray()
+
+            val signature = softwareKMSProvider.createRawSignature(keyInfo, input, requireX5Chain = false)
+            assertTrue(softwareKMSProvider.isValidRawSignature(generated.joseToManagedKeyInfo(visibility = KeyVisibility.PUBLIC), input, signature))
+        }
+
+    @Test
+    fun inlineKeyWithCrossKeyKidFailsBeforeAnyLookupOrSigning() =
+        runTest {
+            val first = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val second = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val firstPrivate = checkNotNull(first.jose.privateJwk)
+            val secondKid = checkNotNull(second.kid)
+            val crossSelected =
+                ResolvedKeyInfo(
+                    key = firstPrivate,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    keyType = KeyTypeMapping.EC,
+                    alias = second.alias,
+                    providerId = softwareKMSProvider.id,
+                    kid = secondKid,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
+
+            val failure = assertFailsWith<IllegalArgumentException> {
+                softwareKMSProvider.createRawSignature(crossSelected, "cross-key".encodeToByteArray(), requireX5Chain = false)
+            }
+            assertTrue(failure.message.orEmpty().contains("kid", ignoreCase = true))
+            assertTrue(failure.message.orEmpty().contains("match", ignoreCase = true))
+        }
+
+    @Test
+    fun unresolvedAliasStillResolvesThroughKeystoreForSigning() =
+        runTest {
+            val persistedProvider =
+                ctx.softwareKmsProviderFactory.create(
+                    SoftwareKmsProviderConfig(
+                        id = "test-ecdsa-selector",
+                        cryptographyProvider = CryptographyProvider.Default.name,
+                        persistKeysDuringGeneration = true,
+                    ),
+                    ctx.session.sessionExecution,
+                )
+            val generated = persistedProvider.generateKeyAsync(alias = "selector-signing", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val selector =
+                KeyInfo<com.sphereon.crypto.core.jose.Jwk>(
+                    alias = generated.alias,
+                    providerId = persistedProvider.id,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            val input = "selector-signing".encodeToByteArray()
+            val signature = persistedProvider.createRawSignature(selector, input, requireX5Chain = false)
+
+            assertTrue(persistedProvider.isValidRawSignature(selector, input, signature))
+        }
+
+    @Test
+    fun directSigningRejectsAliasKidMismatchBeforeSoftwareCryptoAndPreservesSelectors() =
+        runTest {
+            val keyA = softwareKMSProvider.generateKeyAsync(alias = "direct-selector-a", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyB = softwareKMSProvider.generateKeyAsync(alias = "direct-selector-b", alg = SignatureAlgorithm.ECDSA_SHA256)
+            val publicA = keyA.joseToManagedKeyInfo(visibility = KeyVisibility.PUBLIC)
+            val publicB = keyB.joseToManagedKeyInfo(visibility = KeyVisibility.PUBLIC)
+            val providerId = checkNotNull(publicB.providerId)
+            val aliasB = checkNotNull(publicB.alias)
+            val kidA = checkNotNull(publicA.kid)
+            val kidB = checkNotNull(publicB.kid)
+            val input = "direct selector raw".encodeToByteArray()
+            val mismatch =
+                assertFailsWith<IllegalArgumentException> {
+                    softwareKMSProvider.createRawSignature(
+                        KeyInfo<Jwk>(
+                            alias = aliasB,
+                            kid = kidA,
+                            providerId = providerId,
+                            signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256,
+                        ),
+                        input,
+                        requireX5Chain = false,
+                    )
+                }
+            assertTrue(mismatch.message.orEmpty().contains("resolved to kid '$kidB'"))
+
+            val matching =
+                softwareKMSProvider.createRawSignature(
+                    KeyInfo<Jwk>(alias = aliasB, kid = kidB, providerId = providerId, signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256),
+                    input,
+                    requireX5Chain = false,
+                )
+            assertTrue(softwareKMSProvider.isValidRawSignature(publicB, input, matching))
+
+            val digest = hash(input, DigestAlg.SHA256)
+            val digestMismatch =
+                assertFailsWith<IllegalArgumentException> {
+                    softwareKMSProvider.signDigest(
+                        KeyInfo<Jwk>(alias = aliasB, kid = kidA, providerId = providerId, signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256),
+                        digest,
+                        SignatureAlgorithm.ECDSA_SHA256,
+                        SignatureEncoding.RAW,
+                    )
+                }
+            assertTrue(digestMismatch.message.orEmpty().contains("resolved to kid '$kidB'"))
+
+            val digestSignature =
+                softwareKMSProvider.signDigest(
+                    KeyInfo<Jwk>(alias = aliasB, kid = kidB, providerId = providerId, signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA256),
+                    digest,
+                    SignatureAlgorithm.ECDSA_SHA256,
+                    SignatureEncoding.RAW,
+                )
+            assertTrue(softwareKMSProvider.verifyDigest(publicB, digest, digestSignature, SignatureAlgorithm.ECDSA_SHA256, SignatureEncoding.RAW))
+        }
+
+    @Test
     fun testValidEcdsaRawSignatureAndVerification() =
         runTest {
             val managedKeyPair = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
@@ -180,6 +482,49 @@ class SoftwareCryptoProviderTest {
                 ),
                 "A digest signature must not verify as a normal ECDSA signature over SHA-256(digest)",
             )
+        }
+
+    @Test
+    fun rawSigningRejectsExplicitAlgorithmConflictingWithResolvedJwk() =
+        runTest {
+            val managed = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1)
+            val privateKey = checkNotNull(managed.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE).key as? Jwk)
+            val conflicting = KeyInfo(
+                key = privateKey.copy(alg = JwaAlgorithm.RS256),
+                keyVisibility = KeyVisibility.PRIVATE,
+                signatureAlgorithm = SignatureAlgorithm.RSA_SSA_PSS_SHA256_MGF1,
+            )
+            assertFailsWith<IllegalArgumentException> {
+                softwareKMSProvider.createRawSignature(conflicting, "algorithm-bound".encodeToByteArray(), false)
+            }
+        }
+
+    @Test
+    fun rawVerificationRejectsExplicitAlgorithmConflictingWithResolvedJwk() =
+        runTest {
+            val managed = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo = managed.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE)
+            val signature = softwareKMSProvider.createRawSignature(keyInfo, "verify-policy".encodeToByteArray(), false)
+            val conflicting = KeyInfo.fromDTO(keyInfo).copy(signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA384)
+
+            assertFailsWith<IllegalArgumentException> {
+                softwareKMSProvider.isValidRawSignature(conflicting, "verify-policy".encodeToByteArray(), signature)
+            }
+        }
+
+    @Test
+    fun digestSigningRejectsCurveAndAlgorithmMismatchBeforeCrypto() =
+        runTest {
+            val managed = softwareKMSProvider.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+            val keyInfo = managed.joseToManagedKeyInfo(visibility = KeyVisibility.PRIVATE)
+            assertFailsWith<IllegalArgumentException> {
+                softwareKMSProvider.signDigest(
+                    keyInfo = keyInfo,
+                    digest = hash("digest".encodeToByteArray(), DigestAlg.SHA384),
+                    signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA384,
+                    signatureEncoding = SignatureEncoding.RAW,
+                )
+            }
         }
 
     @Test

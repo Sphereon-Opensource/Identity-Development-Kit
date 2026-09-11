@@ -1,0 +1,3 @@
+# No relative IRIs in N-Quads
+<http://example/s> <http://example/p> <o> .
+

@@ -478,6 +478,7 @@ class MdocEngagementFactoryImpl(
                     ).withEphemeralKey(ephemeralKey)
                     .withRetrievalMethods(config.retrievalMethods)
                     .withEngagementMethods(*config.engagementMethods.toTypedArray())
+                    .withTrustedOriginDomain(config.trustedOriginDomain)
                     .withDebugLogger(debugLogger),
             )
         }

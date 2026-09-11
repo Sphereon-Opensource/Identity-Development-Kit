@@ -26,6 +26,7 @@ import com.sphereon.crypto.core.cose.CoseKey
 import com.sphereon.crypto.core.cose.CoseKeyCborCodecImpl
 import com.sphereon.crypto.core.cose.CoseKeyJson
 import com.sphereon.crypto.core.cose.CoseKeyTypeEnum
+import com.sphereon.crypto.core.generic.KeyTypeMapping
 import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
@@ -319,6 +320,7 @@ class CoseJoseKeyMappingServiceTest {
 
             assertEquals("test-kid", result.kid)
             assertEquals(SignatureAlgorithm.ECDSA_SHA256, result.signatureAlgorithm)
+            assertEquals(KeyTypeMapping.EC, result.keyType)
             assertNotNull(result.key)
         }
 
@@ -357,6 +359,7 @@ class CoseJoseKeyMappingServiceTest {
 
             assertEquals("test-kid", result.kid)
             assertEquals(SignatureAlgorithm.ECDSA_SHA256, result.signatureAlgorithm)
+            assertEquals(KeyTypeMapping.EC, result.keyType)
             assertEquals(CborUInt(CoseKeyTypeEnum.EC2.value.toLong()), result.key.kty)
         }
 
