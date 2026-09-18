@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vp.verifier.store
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.openid.oid4vp.common.store.Oid4vpStore
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
@@ -96,6 +97,23 @@ interface AuthorizationSessionStore : Oid4vpStore<String, AuthorizationSession> 
         correlationId: String,
         validationResult: ValidationResult,
     ): IdkResult<AuthorizationSession, IdkError>
+
+    /**
+     * Persist a validation result without notifying callbacks or status publishers. The verifier
+     * uses this boundary when a local relying-party business decision must be recorded before any
+     * external completion signal is delivered. Implementations that do not support deferred
+     * delivery retain the historical behavior through this default.
+     */
+    suspend fun storeValidationResultDeferred(
+        correlationId: String,
+        validationResult: ValidationResult,
+    ): IdkResult<AuthorizationSession, IdkError> = storeValidationResult(correlationId, validationResult)
+
+    /** Deliver notifications for a result previously persisted through [storeValidationResultDeferred]. */
+    suspend fun dispatchDeferredValidation(
+        correlationId: String,
+        previous: AuthorizationSession? = null,
+    ): IdkResult<Unit, IdkError> = Ok(Unit)
 
     /**
      * Get a session for request_uri handling.

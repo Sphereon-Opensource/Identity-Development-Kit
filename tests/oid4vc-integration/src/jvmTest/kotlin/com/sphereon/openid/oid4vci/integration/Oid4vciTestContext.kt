@@ -65,6 +65,13 @@ class Oid4vciTestContext(
             "oid4vci.issuer.identifier",
             OID4VCI_TEST_ISSUER_URL,
         )
+        // Credential requests execute against the app-scoped configuration. Keep the integration
+        // issuer explicit about its ordinary business-authorization decision; production remains
+        // fail-closed when this policy is not configured.
+        DefaultAppMapPropertySource.addProperty(
+            "oid4vci.business-authorization.mode",
+            "ordinary",
+        )
         DefaultAppMapPropertySource.addProperty(
             Oid4vciIssuerProtocolConfig.BASE_PATH_KEY,
             Oid4vciIssuerProtocolConfig.normalizeBasePath(protocolBasePath),

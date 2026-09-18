@@ -91,9 +91,12 @@ abstract class AbstractConfigEnvironment(
 
     override fun getConfigLocation(): Path {
         // Try to get from property resolver first (if available without causing recursion)
-        // Then fall back to environment variable, then default
+        // The documented JVM property is checked first so embedded runtimes
+        // can provide generated configuration after process startup. The
+        // environment aliases remain the deployment configuration contract.
         val location =
-            Env.get(ENV_CONFIG_LOCATION)
+            Env.get(CONFIG_LOCATION_PROP_KEY)
+                ?: Env.get(ENV_CONFIG_LOCATION)
                 ?: Env.get(ENV_CONFIG_LOCATION_ALT)
                 ?: DEFAULT_CONFIG_LOCATION
         return Path(location)

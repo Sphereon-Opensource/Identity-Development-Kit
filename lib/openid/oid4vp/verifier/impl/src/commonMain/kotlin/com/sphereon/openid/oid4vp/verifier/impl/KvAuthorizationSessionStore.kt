@@ -46,6 +46,7 @@ import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
 import com.sphereon.openid.oid4vp.verifier.ParsedAuthorizationResponse
+import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejection
 import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionCallbackDispatcher
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionStatusUpdate
@@ -262,12 +263,18 @@ class KvAuthorizationSessionStore(
         val valid: Boolean,
         val matchedCredentials: List<MatchedCredentialEntry> = emptyList(),
         val errors: List<String> = emptyList(),
+        /**
+         * Credentials discarded on credential-status grounds. Defaulted so that sessions written
+         * before rejections existed still decode: their stored JSON carries no `rejections` key.
+         */
+        val rejections: List<CredentialValidationRejection> = emptyList(),
     ) {
         fun toPublic(): ValidationResult =
             ValidationResult(
                 valid = valid,
                 matchedCredentials = matchedCredentials.map { it.toPublic() },
                 errors = errors,
+                rejections = rejections,
             )
     }
 
@@ -438,34 +445,58 @@ class KvAuthorizationSessionStore(
         correlationId: String,
         validationResult: ValidationResult,
     ): IdkResult<AuthorizationSession, IdkError> =
-        update(correlationId) { existing, now ->
-            val nextStatus =
-                if (validationResult.valid) {
-                    AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED
-                } else {
-                    AuthorizationSessionStatus.ERROR
-                }
-            val nextError =
-                if (!validationResult.valid && validationResult.errors.isNotEmpty()) {
-                    AuthorizationSessionErrorEntry(code = "validation_failed", message = validationResult.errors.joinToString("; "))
-                } else {
-                    existing.error
-                }
-            existing.copy(
-                status = nextStatus.name,
-                error = nextError,
-                validationResult =
-                    ValidationResultEntry(
-                        valid = validationResult.valid,
-                        matchedCredentials =
-                            validationResult.matchedCredentials.map {
-                                MatchedCredentialEntry.fromPublic(it)
-                            },
-                        errors = validationResult.errors,
-                    ),
-                updatedAt = now,
-            )
+        update(correlationId, dispatch = true) { existing, now ->
+            validationEntry(existing, now, validationResult)
         }
+
+    override suspend fun storeValidationResultDeferred(
+        correlationId: String,
+        validationResult: ValidationResult,
+    ): IdkResult<AuthorizationSession, IdkError> =
+        update(correlationId, dispatch = false) { existing, now ->
+            validationEntry(existing, now, validationResult)
+        }
+
+    override suspend fun dispatchDeferredValidation(
+        correlationId: String,
+        previous: AuthorizationSession?,
+    ): IdkResult<Unit, IdkError> {
+        val current = get(correlationId).getOrElse { return Err(it) } ?: return Ok(Unit)
+        emitStatusTransition(previous ?: current, current)
+        dispatchIfConfigured(current)
+        return Ok(Unit)
+    }
+
+    private fun validationEntry(
+        existing: AuthorizationSessionEntry,
+        now: Long,
+        validationResult: ValidationResult,
+    ): AuthorizationSessionEntry {
+        val nextStatus =
+            if (validationResult.valid) {
+                AuthorizationSessionStatus.AUTHORIZATION_RESPONSE_VERIFIED
+            } else {
+                AuthorizationSessionStatus.ERROR
+            }
+        val nextError =
+            if (!validationResult.valid && validationResult.errors.isNotEmpty()) {
+                AuthorizationSessionErrorEntry(code = "validation_failed", message = validationResult.errors.joinToString("; "))
+            } else {
+                existing.error
+            }
+        return existing.copy(
+            status = nextStatus.name,
+            error = nextError,
+            validationResult =
+                ValidationResultEntry(
+                    valid = validationResult.valid,
+                    matchedCredentials = validationResult.matchedCredentials.map { MatchedCredentialEntry.fromPublic(it) },
+                    errors = validationResult.errors,
+                    rejections = validationResult.rejections,
+                ),
+            updatedAt = now,
+        )
+    }
 
     override suspend fun getForRequestUri(
         correlationId: String,
@@ -766,6 +797,7 @@ class KvAuthorizationSessionStore(
 
     private suspend fun update(
         correlationId: String,
+        dispatch: Boolean = true,
         transform: (AuthorizationSessionEntry, nowEpochMillis: Long) -> AuthorizationSessionEntry,
     ): IdkResult<AuthorizationSession, IdkError> {
         val now = clock.now().toEpochMilliseconds()
@@ -804,8 +836,10 @@ class KvAuthorizationSessionStore(
             val result = versionStore.append(namespace, correlationId, head?.versionId, updated, (existing.expiresAt - now).milliseconds).getOrElse { return Err(it) }
             if (result is KvVersionAppendResult.Conflict) return Err(IdkError.INVALID_STATE(message = "Concurrent claimed verification update"))
             val public = updated.toPublic(json)
-            emitStatusTransition(existing.toPublic(json), public)
-            dispatchIfConfigured(public)
+            if (dispatch) {
+                emitStatusTransition(existing.toPublic(json), public)
+                dispatchIfConfigured(public)
+            }
             return Ok(public)
         }
         val ttlSecondsRemaining = ((updated.expiresAt - now).coerceAtLeast(0L) / AUTHORIZATION_SESSION_MILLIS_PER_SECOND).coerceAtLeast(1L)
@@ -816,8 +850,10 @@ class KvAuthorizationSessionStore(
 
         val previous = existing.toPublic(json)
         val public = updated.toPublic(json)
-        emitStatusTransition(previous, public)
-        dispatchIfConfigured(public)
+        if (dispatch) {
+            emitStatusTransition(previous, public)
+            dispatchIfConfigured(public)
+        }
         return Ok(public)
     }
 

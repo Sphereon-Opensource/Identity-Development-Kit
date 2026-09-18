@@ -38,9 +38,11 @@ class ConfiguredOid4vpRequestTrustMaterialProvider(
         val values = buildList {
             resolver.getPropertyAsString(TRUST_ANCHORS_KEY)?.let(::add)
             addAll(
+                // Sorted by key so the anchor order is the same on every run and every platform.
                 resolver.getSubPropertiesAsString(setOf(TRUST_ANCHORS_KEY), stripPrefix = true, redact = false)
-                    .toSortedMap()
-                    .values,
+                    .entries
+                    .sortedBy { it.key }
+                    .map { it.value },
             )
         }
         val anchors = values.flatMap(::splitPemCertificates).distinct().map(::Oid4vpX509TrustAnchor)

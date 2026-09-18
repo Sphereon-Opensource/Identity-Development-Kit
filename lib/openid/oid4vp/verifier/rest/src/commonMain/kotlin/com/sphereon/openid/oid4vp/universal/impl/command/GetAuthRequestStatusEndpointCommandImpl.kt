@@ -31,13 +31,13 @@ import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusEndpointCommand
 import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusInput
 import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusServiceCommand
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
+import com.sphereon.openid.oid4vp.universal.universalOid4vpResponseJson
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.StringKey
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import kotlinx.serialization.json.Json
 
 /**
  * Thin HTTP wrapper around [GetAuthRequestStatusServiceCommand].
@@ -55,12 +55,6 @@ class GetAuthRequestStatusEndpointCommandImpl(
         endpoint = GetAuthRequestStatusEndpointCommand.ENDPOINT,
     ),
     GetAuthRequestStatusEndpointCommand {
-    private val json =
-        Json {
-            ignoreUnknownKeys = true
-            encodeDefaults = true
-        }
-
     override suspend fun doExecute(
         args: GenericHttpRequest,
         applyDuring: (GenericHttpRequest) -> GenericHttpRequest,
@@ -84,7 +78,7 @@ class GetAuthRequestStatusEndpointCommandImpl(
                         "Content-Type" to "application/json",
                         "Cache-Control" to "no-store",
                     ),
-                body = json.encodeToString(GetAuthorizationRequestStatusOutput.serializer(), output),
+                body = universalOid4vpResponseJson.encodeToString(GetAuthorizationRequestStatusOutput.serializer(), output),
             ),
         )
     }

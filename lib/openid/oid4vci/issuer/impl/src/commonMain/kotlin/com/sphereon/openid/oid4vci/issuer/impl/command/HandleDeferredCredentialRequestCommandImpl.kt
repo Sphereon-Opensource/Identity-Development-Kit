@@ -98,6 +98,7 @@ class HandleDeferredCredentialRequestCommandImpl(
      */
     private val reExecutor: DeferredPipelineReExecutor? =
         reExecutorFactory.create(
+            businessModeProvider = { execution.conf.app.getPropertyAsString("oid4vci.business-authorization.mode") },
             tenantIdProvider = {
                 runCatching { execution.sessionContext.context.tenant.tenantId }.getOrNull()
             },

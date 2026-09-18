@@ -171,6 +171,27 @@ class TenantPathPolicyDispatcherTest {
         }
 
     @Test
+    fun wellKnownSuffix_resolvesProtocolIssuerFromRoot_whenTransportTenantIsPlatform() =
+        runTest {
+            val adapter =
+                adapter(
+                    policy = TenantPathPolicy.WellKnownSuffix(maxDepth = 2),
+                    slugLookup = SlugLookupFake(roots = mapOf("acme" to "tenant-acme")),
+                    endpoints = listOf(echoEndpoint(method = HttpMethod.GET, pattern = "/.well-known/openid-configuration")),
+                )
+            val response =
+                adapter.handleSelected(
+                    request(
+                        "GET",
+                        "/.well-known/openid-configuration/as/acme",
+                    ).copy(resolvedTenantId = "platform-tenant"),
+                )
+            assertEquals(200, response.statusCode)
+            assertEquals("/.well-known/openid-configuration", captured.last())
+            assertEquals("tenant-acme", adapter.providerSeen)
+        }
+
+    @Test
     fun wellKnownSuffix_peelsOneTrailingSegment() =
         runTest {
             val adapter =

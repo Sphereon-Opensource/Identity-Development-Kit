@@ -279,6 +279,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                      vcdmDataIntegrityVerifier = RejectingVcdmDataIntegrityVerifierForMdoc,
                     credentialStatusVerifiers = emptySet(),
                     credentialTrustValidators = emptySet(),
+                    businessAuthorizations = emptySet(),
                 )
 
             val claims = command.extractDisclosedClaims(presentation, CredentialFormat.MSO_MDOC)
@@ -321,6 +322,7 @@ class ValidateAuthorizationResponseMdocClaimExtractionTest {
                      vcdmDataIntegrityVerifier = RejectingVcdmDataIntegrityVerifierForMdoc,
                     credentialStatusVerifiers = emptySet(),
                     credentialTrustValidators = emptySet(),
+                    businessAuthorizations = emptySet(),
                 )
 
             // Valid base64url ("notcbor") but not a CBOR DeviceResponse -> graceful empty map.

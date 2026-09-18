@@ -47,6 +47,7 @@ import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.mdocMeta
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
+import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejectionReason
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
 import com.sphereon.openid.oid4vp.verifier.Oid4vpCredentialTrustValidationArgs
@@ -2170,6 +2171,12 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertFalse(result.value.valid)
             assertEquals(listOf("crypto", "status", "crypto", "status"), events)
             assertTrue(result.value.errors.any { it.contains("status", ignoreCase = true) })
+            // A credential nested in the submitted VP reaches the typed rejection channel too, under
+            // the parent DCQL query identity - the child has no query id of its own.
+            val nestedRejection = result.value.rejections.single()
+            assertEquals("presentation", nestedRejection.credentialQueryId)
+            assertEquals(CredentialValidationRejectionReason.REVOKED, nestedRejection.reason)
+            assertEquals(1, nestedRejection.statusValue)
         }
 
     @Test
@@ -2889,6 +2896,7 @@ class ValidateAuthorizationResponseCommandImplTest {
              vcdmDataIntegrityVerifier = vcdmDataIntegrityVerifier,
             credentialStatusVerifiers = credentialStatusVerifiers,
             credentialTrustValidators = credentialTrustValidators,
+            businessAuthorizations = emptySet(),
         )
     }
 

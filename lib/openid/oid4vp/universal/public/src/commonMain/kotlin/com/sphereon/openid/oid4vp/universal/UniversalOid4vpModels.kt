@@ -24,6 +24,7 @@ import com.sphereon.openid.oid4vc.common.SessionError
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.CredentialFormat
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
+import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejection
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.statuslist.CredentialStatusPolicy
 import kotlinx.serialization.EncodeDefault
@@ -391,6 +392,33 @@ data class GetAuthorizationRequestStatusOutput(
      */
     @SerialName("verified_data")
     val verifiedData: VerifiedData? = null,
+    /**
+     * Outcome of the response validation. Present whenever a validation has run, valid or not.
+     */
+    @SerialName("validation")
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val validation: AuthorizationValidationSummary? = null,
+)
+
+/**
+ * Outcome of validating an authorization response, as exposed on the session status.
+ *
+ * Present whenever a validation has run - valid or not - so that a relying party can tell a session
+ * that was rejected apart from one that has not been validated yet. It deliberately carries no
+ * claims, presentation or issuer: a rejected verification records no credential content, and the
+ * verified content of a successful one travels on [VerifiedData] instead.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("AuthorizationValidationSummary", exact = true)
+@JsExportCompat
+@Serializable
+data class AuthorizationValidationSummary(
+    val valid: Boolean,
+    /**
+     * Credentials the verifier discarded on credential-status grounds. Empty on a valid session, and
+     * empty on an invalid one whose failure had nothing to do with credential status.
+     */
+    val rejections: List<CredentialValidationRejection> = emptyList(),
 )
 
 /**

@@ -61,11 +61,12 @@ class AzureKmsProviderFactoryImpl : AzureKmsProviderFactory {
     }
 }
 
+/**
+ * Left at the [KmsProviderFactory] return type (not narrowed to [AzureKeyVaultCryptoProvider]) so
+ * this seam stays fakeable: [AzureKeyVaultCryptoProvider] is a concrete, non-open class that opens
+ * a real Azure SDK client in its constructor, and a narrowed override would force every fake here
+ * to construct one.
+ */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("AzureKmsProviderFactory", exact = true)
-interface AzureKmsProviderFactory : KmsProviderFactory {
-    override fun create(
-        config: KmsProviderConfigBase,
-        execution: SessionExecution,
-    ): AzureKeyVaultCryptoProvider
-}
+interface AzureKmsProviderFactory : KmsProviderFactory

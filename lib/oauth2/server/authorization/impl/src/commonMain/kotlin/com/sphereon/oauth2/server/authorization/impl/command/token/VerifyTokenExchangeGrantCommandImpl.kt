@@ -69,6 +69,7 @@ private const val CLAIM_NOT_BEFORE = "nbf"
 private const val CLAIM_CLIENT_ID = "client_id"
 private const val CLAIM_AUTHORIZED_PARTY = "azp"
 private const val CLAIM_EMAIL = "email"
+private const val PLATFORM_TENANT_ID = "platform"
 
 /**
  * Implementation of VerifyTokenExchangeGrantCommand
@@ -386,7 +387,7 @@ class VerifyTokenExchangeGrantCommandImpl(
         val tokenIssuer = claims.strictStringClaim(CLAIM_ISSUER)
         val kid = jwtHeaderKid(token)
         val localSigningKey =
-            kid?.let { signingKeyStore.findByKid(sessionExecution.tenantId, it).getOrNull() }
+            kid?.let { signingKeyForIssuer(it, expectedIssuer) }
 
         // A token that claims this AS must never escape to the generic JOSE resolver. Otherwise
         // an attacker could present an embedded key under an unknown kid and turn a local issuer
@@ -421,6 +422,7 @@ class VerifyTokenExchangeGrantCommandImpl(
                             trustedJwks = trustedJwks,
                         ),
                     )
+                println("VDX_MONOLITH_SUBJECT_VERIFY isErr=${verifyResult.isErr} isValid=${verifyResult.getOrNull()?.isValid} errors=${verifyResult.getOrNull()?.errorMessages} result=$verifyResult")
                 if (verifyResult.isErr || !verifyResult.value.isValid) {
                     return invalidGrant("$tokenRole token has an invalid local signature")
                 }
@@ -446,6 +448,29 @@ class VerifyTokenExchangeGrantCommandImpl(
 
         return Ok(TokenValidationResult(claims = claims, verified = verified))
     }
+
+    /**
+     * The monolith hosts the platform authorization server and tenant workloads in one process.
+     * A sibling-audience exchange can therefore execute from a tenant session while its subject
+     * token is still issued by the shared platform authority. Resolve that subject key from the
+     * platform tenant only when the configured issuer is demonstrably the platform issuer; a
+     * distinct tenant issuer remains strictly tenant-local.
+     */
+    private suspend fun signingKeyForIssuer(
+        kid: String,
+        expectedIssuer: String,
+    ) = signingKeyStore.findByKid(sessionExecution.tenantId, kid).getOrNull()
+        ?: runCatching {
+            val config = serversConfigProvider.getConfig()
+            val platformIssuer = serversConfigProvider
+                .resolveIssuer(config.defaultServer, PLATFORM_TENANT_ID)
+                .trim()
+            if (expectedIssuer == platformIssuer && sessionExecution.tenantId != PLATFORM_TENANT_ID) {
+                signingKeyStore.findByKid(PLATFORM_TENANT_ID, kid).getOrNull()
+            } else {
+                null
+            }
+        }.getOrNull()
 
     private fun configuredIssuer(): IdkResult<String, AuthorizationServerError> =
         runCatching {

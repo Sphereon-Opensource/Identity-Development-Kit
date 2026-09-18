@@ -43,6 +43,7 @@ import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.oidc.OidcScopeClaimsMapper
 import com.sphereon.oauth2.server.authorization.impl.command.putClaims
 import com.sphereon.oauth2.server.authorization.model.FederationTokenMetadata
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_ID_TOKEN
 import com.sphereon.oauth2.server.authorization.model.SESSION_KEY_OIDC_CLAIMS_USERINFO
 import com.sphereon.oauth2.server.authorization.wallet.accessTokenClaims
@@ -78,6 +79,7 @@ class AuthorizationCodeGrantHandlerImpl(
     private val createRefreshToken: Lazy<CreateRefreshTokenCommand>,
     private val createIdToken: Lazy<CreateIdTokenCommand>,
     private val createTokenResponse: CreateTokenResponseCommand,
+    private val credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
     private val scopeClaimsMapper: OidcScopeClaimsMapper? = null,
 ) : GrantHandler {
     override val grantType: String = GrantHandlerKeys.AUTHORIZATION_CODE
@@ -212,7 +214,10 @@ class AuthorizationCodeGrantHandlerImpl(
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
-                        audience = verified.resource.ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) },
+                        audience =
+                            verified.resource
+                                .ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) }
+                                .ifEmpty { credentialIssuerAudienceResolver.defaultAudiences() },
                         dpopJkt = boundJkt,
                         certificateThumbprintS256 = certThumbprint,
                         authTime = verified.codeData.authTime,

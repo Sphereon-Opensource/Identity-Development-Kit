@@ -355,8 +355,8 @@ class DefaultConfigBinder(
                 val remainingKey = joinConfigPath(path.drop(1))
                 keyedGroups.getOrPut(topKey) { mutableMapOf() }[remainingKey] = value
             } else {
-                // Simple key with primitive value
-                keyedGroups.getOrPut(key) { mutableMapOf() }[""] = value
+                // Simple key with primitive value; a bracket-quoted key is unquoted like a nested one
+                keyedGroups.getOrPut(path.firstOrNull() ?: key) { mutableMapOf() }[""] = value
             }
         }
 

@@ -68,14 +68,12 @@ fun KeyProperties.toKid() = name + (version?.let { "${KEY_NAME_VERSION_SEP}$it" 
 /**
  * Converts Azure Key Vault client configuration to Azure SDK ClientOptions.
  *
- * @return ClientOptions with configured headers and application ID, or null if no headers
+ * @return ClientOptions carrying the application ID and any configured headers
  */
-fun AzureKmsProviderConfig.toClientOptions(): ClientOptions? {
-    if (headers.isNullOrEmpty()) {
-        return null
-    }
-    return ClientOptions().setApplicationId(applicationId).setHeaders(headers.map { Header(it.name, it.values) })
-}
+fun AzureKmsProviderConfig.toClientOptions(): ClientOptions =
+    ClientOptions()
+        .setApplicationId(applicationId)
+        .setHeaders(headers.orEmpty().map { Header(it.name, it.values) })
 
 /**
  * Converts exponential backoff retry options to Azure SDK ExponentialBackoffOptions.

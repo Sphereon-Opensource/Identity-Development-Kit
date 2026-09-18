@@ -160,6 +160,7 @@ private object RefusingSigningKeyNameResolver : StatusListSigningKeyNameResolver
     override suspend fun resolveSigningKeyName(
         tenantId: String,
         statusListId: String,
+        requestedKeyAlias: String?,
     ): String? = null
 }
 

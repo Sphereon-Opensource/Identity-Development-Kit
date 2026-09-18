@@ -67,6 +67,7 @@ class RemoteFeatureResolverTest {
             httpClientFactory = TestHttpClientFactory(engine),
             configProvider = TestThemeClientConfigProvider(baseUrl),
             cache = InMemoryThemeClientCache(),
+            tenantOrigin = ConfiguredBaseUrlThemeClientTenantOriginResolver(),
         )
 
     @Test

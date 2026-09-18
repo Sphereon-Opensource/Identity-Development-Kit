@@ -55,13 +55,62 @@ class RemoteThemeResolverTest {
         engine: MockEngine,
         baseUrl: String? = "http://theme-service:8080",
         cache: ThemeClientCache = InMemoryThemeClientCache(),
+        tenantOrigin: ThemeClientTenantOriginResolver = ConfiguredBaseUrlThemeClientTenantOriginResolver(),
     ): RemoteThemeResolver =
         RemoteThemeResolver(
             execution = TestSessionExecution(),
             httpClientFactory = TestHttpClientFactory(engine),
             configProvider = TestThemeClientConfigProvider(baseUrl),
             cache = cache,
+            tenantOrigin = tenantOrigin,
         )
+
+    @Test
+    fun tenantPublicOriginTakesPrecedenceOverConfiguredBaseUrl() =
+        runTest {
+            val engine =
+                MockEngine { request ->
+                    assertEquals("acme.example", request.url.host)
+                    assertEquals("/api/theme/v1/acme/resolved", request.url.encodedPath)
+                    respond(json.encodeToString(ResolvedTheme.serializer(), theme(ThemeVariant.LIGHT)), headers = jsonHeaders)
+                }
+            val resolver =
+                resolver(
+                    engine,
+                    tenantOrigin =
+                        object : ThemeClientTenantOriginResolver {
+                            override suspend fun publicOrigin(tenantId: String): String? =
+                                if (tenantId == "acme") "https://acme.example/" else null
+                        },
+                )
+
+            val resolved = resolver.resolve(tenant = "acme", variant = ThemeVariant.LIGHT)
+
+            assertEquals("acme", resolved.tenantId)
+            assertEquals(1, engine.requestHistory.size)
+        }
+
+    @Test
+    fun failingTenantOriginLookupFallsBackToConfiguredBaseUrl() =
+        runTest {
+            val engine =
+                MockEngine { request ->
+                    assertEquals("theme-service", request.url.host)
+                    respond(json.encodeToString(ResolvedTheme.serializer(), theme(ThemeVariant.LIGHT)), headers = jsonHeaders)
+                }
+            val resolver =
+                resolver(
+                    engine,
+                    tenantOrigin =
+                        object : ThemeClientTenantOriginResolver {
+                            override suspend fun publicOrigin(tenantId: String): String = error("registry unavailable")
+                        },
+                )
+
+            val resolved = resolver.resolve(tenant = "acme", variant = ThemeVariant.LIGHT)
+
+            assertEquals("acme", resolved.tenantId)
+        }
 
     @Test
     fun resolvesLightAndDarkVariantsRoundTrip() =

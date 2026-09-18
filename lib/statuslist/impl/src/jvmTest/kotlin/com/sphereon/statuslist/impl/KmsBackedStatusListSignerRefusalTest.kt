@@ -42,6 +42,11 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.util.Base64
 
 /**
  * Where the fail-closed refusal lives: in the signers that actually consume the key name.
@@ -102,6 +107,23 @@ class KmsBackedStatusListSignerRefusalTest {
         encodedList = "eNrbuRgAAhcBXQ",
         issuedAtEpochSeconds = 1_700_000_000L,
     )
+
+    @Test
+    fun bitstringCredentialSigningDoesNotInjectAnUnrelatedKeyIdAsIssuer() =
+        runTest {
+            val keyAlias = keyManagerService.generateKeyAsync(alg = SignatureAlgorithm.ECDSA_SHA256)
+                .joseToManagedKeyInfo(KeyVisibility.PRIVATE).alias ?: error("generated key has no alias")
+            val result = signer().signStatusListToken(
+                args(signingKeyName = keyAlias).copy(
+                    spec = StatusListSpec.BITSTRING_STATUS_LIST,
+                    proofFormat = StatusProofFormat.VC_JWT,
+                ),
+            )
+            assertTrue(result.isOk)
+            val payload = Json.parseToJsonElement(String(Base64.getUrlDecoder().decode(result.value.token.split('.')[1]))).jsonObject
+            assertEquals("did:example:issuer", payload["issuer"]?.jsonPrimitive?.content)
+            assertFalse(payload.containsKey("iss"), "VC envelope issuer must not acquire the unrelated signing key ID")
+        }
 
     @Test
     fun everyUnusableBindingRefusesIdentically() =

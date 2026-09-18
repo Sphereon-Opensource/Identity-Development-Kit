@@ -219,6 +219,8 @@ class HandleTokenRequestCommandImplTest {
                         createRefreshToken = lazy { commands.createRefreshToken },
                         createIdToken = lazy { commands.createIdToken },
                         createTokenResponse = commands.createTokenResponse,
+                        credentialIssuerAudienceResolver =
+                            com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
                     )
                 },
             com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.REFRESH_TOKEN to
@@ -231,6 +233,8 @@ class HandleTokenRequestCommandImplTest {
                         createRefreshToken = lazy { commands.createRefreshToken },
                         createIdToken = lazy { commands.createIdToken },
                         createTokenResponse = commands.createTokenResponse,
+                        credentialIssuerAudienceResolver =
+                            com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
                     )
                 },
             com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.CLIENT_CREDENTIALS to

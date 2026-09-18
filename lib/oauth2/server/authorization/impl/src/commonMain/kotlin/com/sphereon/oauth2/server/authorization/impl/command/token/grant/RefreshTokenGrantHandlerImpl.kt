@@ -44,6 +44,7 @@ import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyRefreshTokenGrantCommandImpl
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
 import com.sphereon.oauth2.server.authorization.model.FederationTokenMetadata
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -71,6 +72,7 @@ class RefreshTokenGrantHandlerImpl(
     private val createRefreshToken: Lazy<CreateRefreshTokenCommand>,
     private val createIdToken: Lazy<CreateIdTokenCommand>,
     private val createTokenResponse: CreateTokenResponseCommand,
+    private val credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
 ) : GrantHandler {
     override val grantType: String = GrantHandlerKeys.REFRESH_TOKEN
 
@@ -200,7 +202,10 @@ class RefreshTokenGrantHandlerImpl(
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
-                        audience = verified.resource.ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) },
+                        audience =
+                            verified.resource
+                                .ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) }
+                                .ifEmpty { credentialIssuerAudienceResolver.defaultAudiences() },
                         dpopJkt = refreshBoundJkt,
                         certificateThumbprintS256 = certThumbprint,
                         authTime = verified.authTime,

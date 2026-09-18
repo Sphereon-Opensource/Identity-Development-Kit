@@ -19,6 +19,7 @@ package com.sphereon.openid.oid4vci.issuer.impl.command
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.Err
 import com.sphereon.data.store.credential.design.CredentialDesignService
 import com.sphereon.data.store.credential.design.impl.mapper.Oid4vciDesignMapper
 import com.sphereon.data.store.credential.design.model.ClaimPresentation
@@ -66,6 +67,7 @@ class DeferredPipelineReExecutor(
     private val formatHandlers: Set<CredentialFormatHandler>,
     private val credentialDesignService: CredentialDesignService?,
     private val tenantIdProvider: () -> String?,
+    private val businessModeProvider: () -> String? = { null },
 ) {
     /**
      * Run the DEFERRED pipeline phase, re-check completeness, and if every binding is complete
@@ -129,6 +131,16 @@ class DeferredPipelineReExecutor(
         if (missingMandatoryClaimPaths(issuanceContext.mandatoryClaims, issuanceContext.attributes).isNotEmpty()) {
             return null
         }
+        val businessMode = businessModeProvider()
+        if (businessMode != "ordinary" && businessMode != "required") {
+            return Err(IdkError.FORBIDDEN_ERROR(message = "issuer_business_policy_not_configured"))
+        }
+        com.sphereon.openid.oid4vci.issuer.lifecycle.authorizeIssuerBusinessAction(
+            businessMode == "required",
+            com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciBusinessAuthorizationArgs(
+                session.instanceId, session.sessionId, correlationId, inputs.configId,
+            ), lifecycleHook,
+        ).getOrElse { return Err(it) }
         val preIssueRan =
             contributeOid4vciPhase(
                 correlationId = correlationId,

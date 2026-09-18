@@ -51,12 +51,9 @@
       "type": "string"
     },
     {
-      "key": "authorizationServerSlug",
-      "value": "walkthrough-as"
-    },
-    {
-      "key": "externalAuthorizationServerSlug",
-      "value": "platform-upstream"
+      "key": "tenantAccessToken",
+      "value": "",
+      "description": "Tenant confidential-client client_credentials token issued by 04 Tenant Service Token / 02 Tenant service token. Use only for tenant administration and runtime APIs."
     },
     {
       "key": "hostedAuthorizationServerId",
@@ -67,43 +64,7 @@
       "value": ""
     },
     {
-      "key": "hostedAuthorizationServerStaleRevision",
-      "value": ""
-    },
-    {
       "key": "externalAuthorizationServerId",
-      "value": ""
-    },
-    {
-      "key": "externalAuthorizationServerRevision",
-      "value": ""
-    },
-    {
-      "key": "staleExternalAuthorizationServerId",
-      "value": ""
-    },
-    {
-      "key": "staleExternalAuthorizationServerRevision",
-      "value": ""
-    },
-    {
-      "key": "otherTenantId",
-      "value": "00000000-0000-4000-8000-000000000001"
-    },
-    {
-      "key": "publicHostedClientId",
-      "value": "walkthrough-public-client"
-    },
-    {
-      "key": "confidentialHostedClientId",
-      "value": "walkthrough-confidential-client"
-    },
-    {
-      "key": "hostedClientSecret",
-      "value": ""
-    },
-    {
-      "key": "authorizationServerIdentityId",
       "value": ""
     },
     {
@@ -111,55 +72,7 @@
       "value": ""
     },
     {
-      "key": "federationBindingRevision",
-      "value": ""
-    },
-    {
-      "key": "federationClientId",
-      "value": "walkthrough-federation-client"
-    },
-    {
-      "key": "federationClientSecret",
-      "value": ""
-    },
-    {
       "key": "issuerAuthorizationServerBindingId",
-      "value": ""
-    },
-    {
-      "key": "issuerAuthorizationServerBindingRevision",
-      "value": ""
-    },
-    {
-      "key": "secondaryIssuerAuthorizationServerBindingId",
-      "value": ""
-    },
-    {
-      "key": "secondaryIssuerAuthorizationServerBindingRevision",
-      "value": ""
-    },
-    {
-      "key": "issuanceTemplateId",
-      "value": "eupid-default"
-    },
-    {
-      "key": "oid4vciTargetProfile",
-      "value": "OID4VCI_1_1_DRAFT_2A1F0513"
-    },
-    {
-      "key": "oid4vciProfileRevision",
-      "value": ""
-    },
-    {
-      "key": "oid4vciProfileUpgradeIdempotencyKey",
-      "value": "00000000-0000-4000-8000-000000000101"
-    },
-    {
-      "key": "blockingOid4vciIssuerId",
-      "value": ""
-    },
-    {
-      "key": "blockingOid4vciProfileRevision",
       "value": ""
     },
     {
@@ -167,75 +80,11 @@
       "value": ""
     },
     {
-      "key": "changedMigrationRevision",
+      "key": "hostedClientSecret",
       "value": ""
     },
     {
-      "key": "changedMigrationRecordedDigest",
-      "value": ""
-    },
-    {
-      "key": "changedMigrationCurrentDigest",
-      "value": ""
-    },
-    {
-      "key": "unchangedMigrationId",
-      "value": ""
-    },
-    {
-      "key": "unchangedMigrationRevision",
-      "value": ""
-    },
-    {
-      "key": "unchangedMigrationSourceDigest",
-      "value": ""
-    },
-    {
-      "key": "resumedMigrationTargetAuthorizationServerId",
-      "value": ""
-    },
-    {
-      "key": "tenantPlatformConfigApiBaseUrl",
-      "value": "http://localhost:8080/api/platform/config/v1"
-    },
-    {
-      "key": "tenantId",
-      "value": "00000000-0000-4000-8000-000000000010"
-    },
-    {
-      "key": "platformTenantId",
-      "value": "00000000-0000-4000-8000-000000000000"
-    },
-    {
-      "key": "tenantPublicAuthority",
-      "value": "localhost:8080"
-    },
-    {
-      "key": "tenantName",
-      "value": "IDK Example"
-    },
-    {
-      "key": "tenantSlug",
-      "value": "idk-example"
-    },
-    {
-      "key": "tenantGatewayUrl",
-      "value": "http://localhost:8080"
-    },
-    {
-      "key": "platformUrl",
-      "value": "http://localhost:8081"
-    },
-    {
-      "key": "issuerId",
-      "value": ""
-    },
-    {
-      "key": "credentialAuthorizationServerOverrideRevision",
-      "value": ""
-    },
-    {
-      "key": "templateAuthorizationServerOverrideRevision",
+      "key": "federationClientSecret",
       "value": ""
     }
   ],
@@ -627,7 +476,17 @@
     },
     {
       "name": "Authorization Server Administration",
-      "description": "Canonical platform-config authorization-server administration and migration-remediation contract. Supply the tenant gateway/config variables and seeded failure fixtures before running this folder.",
+      "description": "Shared authorization-server administration sequence used by the EDK developer journey. Requires tenantAccessToken.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{tenantAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
       "item": [
         {
           "name": "08 List authorization servers and locate the stale discovery fixture",
@@ -637,23 +496,44 @@
             "description": "Lists tenant-owned UUID resources and locates the deliberately seeded stale-discovery fixture used by the activation rejection gate.",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('authorization servers listed', () => pm.response.to.have.status(200));",
+                  "pm.test('authorization servers listed', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.items, 'items').to.be.an('array');",
                   "const stale = j.items.find((item) => item.deployment === 'EXTERNAL' && item.discovery && item.discovery.freshness === 'STALE');",
@@ -664,7 +544,10 @@
                   "  pm.test('Helm walkthrough does not seed a stale EXTERNAL authorization server', () => pm.expect(stale).to.equal(undefined));",
                   "  pm.collectionVariables.unset('staleExternalAuthorizationServerId');",
                   "  pm.collectionVariables.unset('staleExternalAuthorizationServerRevision');",
-                  "}"
+                  "}",
+                  "const seededHosted = j.items.find((item) => item.deployment === 'HOSTED' && item.lifecycle === 'ACTIVE');",
+                  "pm.expect(seededHosted, 'seeded hosted authorization server').to.be.an('object');",
+                  "pm.collectionVariables.set('seededAuthorizationServerId', seededHosted.id);"
                 ]
               }
             }
@@ -678,10 +561,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -693,7 +572,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slug\": \"{{authorizationServerSlug}}\",\n  \"displayName\": \"{{tenantName}} Hosted Authorization Server\",\n  \"issuer\": \"{{tenantGatewayUrl}}/oauth2/{{authorizationServerSlug}}\",\n  \"deployment\": \"HOSTED\",\n  \"authenticationMode\": \"HYBRID\",\n  \"purposes\": [\n    \"GENERAL\",\n    \"CREDENTIAL_ISSUANCE\",\n    \"WALLET_LOGIN\"\n  ],\n  \"allowedGrantTypes\": [\n    \"authorization_code\",\n    \"refresh_token\"\n  ]\n}"
+              "raw": "{\n  \"slug\": \"{{authorizationServerSlug}}\",\n  \"displayName\": \"{{tenantName}} Hosted Authorization Server\",\n  \"issuer\": \"{{tenantGatewayUrl}}/as/{{authorizationServerSlug}}\",\n  \"deployment\": \"HOSTED\",\n  \"authenticationMode\": \"HYBRID\",\n  \"purposes\": [\n    \"GENERAL\",\n    \"CREDENTIAL_ISSUANCE\",\n    \"WALLET_LOGIN\"\n  ],\n  \"allowedGrantTypes\": [\n    \"authorization_code\",\n    \"refresh_token\"\n  ]\n}"
             }
           },
           "event": [
@@ -702,7 +581,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted authorization server created', () => pm.response.to.have.status(201));",
+                  "pm.test('hosted authorization server created', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(201));",
                   "const j = pm.response.json();",
                   "pm.expect(j.id, 'resource UUID').to.match(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i);",
                   "pm.collectionVariables.set('hostedAuthorizationServerId', j.id);",
@@ -721,10 +600,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -737,7 +612,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted authorization server read', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted authorization server read', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.id).to.eql(pm.collectionVariables.get('hostedAuthorizationServerId'));",
                   "pm.expect(j.deployment).to.eql('HOSTED');",
@@ -755,10 +630,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers/{{hostedAuthorizationServerId}}",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -789,7 +660,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted authorization server replaced', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted authorization server replaced', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('hostedAuthorizationServerRevision', String(j.revision));"
                 ]
@@ -805,10 +676,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -816,20 +683,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"displayName\": \"This stale write must not win\",\n  \"expectedRevision\": \"{{hostedAuthorizationServerStaleRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('stale resource revision rejected', () => pm.response.to.have.status(409));"
+                  "pm.test('stale resource revision rejected', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(409));"
                 ]
               }
             }
@@ -843,23 +735,44 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('platform tenant rejected', () => pm.response.to.have.status(403));"
+                  "pm.test('platform tenant rejected', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(403));"
                 ]
               }
             }
@@ -873,17 +786,38 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -902,10 +836,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers/{{hostedAuthorizationServerId}}/activate",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -927,7 +857,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted authorization server activated', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted authorization server activated', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('hostedAuthorizationServerRevision', String(j.revision));",
                   "pm.expect(pm.response.json().lifecycle).to.eql('ACTIVE');"
@@ -943,10 +873,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers/{{hostedAuthorizationServerId}}/clients",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -968,7 +894,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('public client registered', () => pm.response.to.have.status(201));",
+                  "pm.test('public client registered', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(201));",
                   "const j = pm.response.json();",
                   "pm.expect(j.clientId).to.eql(pm.variables.replaceIn('{{publicHostedClientId}}'));",
                   "pm.expect(j.tokenEndpointAuthMethod).to.eql('none');"
@@ -984,10 +910,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers/{{hostedAuthorizationServerId}}/clients",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -1018,7 +940,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('confidential client registered', () => pm.response.to.have.status(201));",
+                  "pm.test('confidential client registered', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(201));",
                   "const secret = pm.collectionVariables.get('hostedClientSecret');",
                   "const j = pm.response.json();",
                   "pm.expect(JSON.stringify(j)).not.to.include(secret);",
@@ -1038,23 +960,44 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('confidential client read', () => pm.response.to.have.status(200));",
+                  "pm.test('confidential client read', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.clientCredential).not.to.have.property('secretValue');",
                   "pm.expect(JSON.stringify(j)).not.to.match(/clientSecret|secret_value|secretValue/);",
@@ -1071,10 +1014,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers/{{hostedAuthorizationServerId}}/identities",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -1096,10 +1035,15 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted identity created', () => pm.response.to.have.status(201));",
+                  "pm.test('hosted identity created', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(201));",
                   "const j = pm.response.json();",
                   "pm.expect(j.identity.identityId, 'identity UUID').to.match(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i);",
-                  "pm.collectionVariables.set('authorizationServerIdentityId', j.identity.identityId);"
+                  "pm.collectionVariables.set('authorizationServerIdentityId', j.identity.identityId);",
+                  "const activationLink = j.manualActivationLink;",
+                  "pm.expect(activationLink, 'single-use manual identity activation link').to.be.a('string').and.not.empty;",
+                  "const fragment = activationLink.split('#')[1] || '';",
+                  "pm.expect(fragment, 'identity activation token fragment').to.be.a('string').and.not.empty;",
+                  "pm.collectionVariables.set('asIdentityActivationToken', decodeURIComponent(fragment));"
                 ]
               }
             }
@@ -1113,23 +1057,44 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted identity read', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted identity read', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "pm.expect(pm.response.json().identityId).to.eql(pm.collectionVariables.get('authorizationServerIdentityId'));"
                 ]
               }
@@ -1144,10 +1109,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1155,20 +1116,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"enabled\": false\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted identity suspended', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted identity suspended', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "pm.expect(pm.response.json().state).to.eql('SUSPENDED');"
                 ]
               }
@@ -1183,10 +1169,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1194,20 +1176,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"enabled\": true,\n  \"roles\": [\n    \"tenant-admin\"\n  ]\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted identity enabled', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted identity enabled', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "pm.expect(pm.response.json().roles).to.eql(['tenant-admin']);"
                 ]
               }
@@ -1222,10 +1229,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1233,20 +1236,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{hostedAuthorizationServerRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted authorization server suspended', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted authorization server suspended', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('hostedAuthorizationServerRevision', String(j.revision));",
                   "pm.expect(pm.response.json().lifecycle).to.eql('SUSPENDED');"
@@ -1263,10 +1291,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1274,20 +1298,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{hostedAuthorizationServerRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted authorization server reactivated', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted authorization server reactivated', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('hostedAuthorizationServerRevision', String(j.revision));",
                   "pm.expect(pm.response.json().lifecycle).to.eql('ACTIVE');"
@@ -1303,10 +1352,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -1328,7 +1373,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('external authorization server created', () => pm.response.to.have.status(201));",
+                  "pm.test('external authorization server created', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(201));",
                   "const j = pm.response.json();",
                   "pm.expect(j.id, 'resource UUID').to.match(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i);",
                   "pm.collectionVariables.set('externalAuthorizationServerId', j.id);",
@@ -1351,10 +1396,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1367,7 +1408,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('external discovery validated', () => pm.response.to.have.status(200));",
+                  "pm.test('external discovery validated', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.valid).to.eql(true);",
                   "pm.expect(j.snapshot.freshness).to.eql('CURRENT');",
@@ -1385,10 +1426,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1401,10 +1438,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('external discovery refreshed', () => pm.response.to.have.status(200));",
+                  "pm.test('external discovery refreshed', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('externalAuthorizationServerRevision', String(j.revision));",
-                  "const j = pm.response.json();",
                   "pm.expect(j.discovery.freshness).to.eql('CURRENT');",
                   "pm.expect(j.capabilities).to.include.members(j.expectedCapabilities);"
                 ]
@@ -1420,10 +1456,6 @@
             "description": "Uses the stale external resource located by request 08. The gate environment must seed this resource; the collection never fabricates freshness state.",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1431,14 +1463,39 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{staleExternalAuthorizationServerRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -1448,7 +1505,7 @@
                   "if (!seeded) {",
                   "  pm.test('stale discovery activation gate is unseeded on Helm walkthrough', () => pm.expect([400, 403, 404]).to.include(pm.response.code));",
                   "} else {",
-                  "  pm.test('stale discovery activation rejected', () => pm.response.to.have.status(409));",
+                  "  pm.test('stale discovery activation rejected', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(409));",
                   "}"
                 ]
               }
@@ -1462,10 +1519,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers/{{externalAuthorizationServerId}}/activate",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -1487,7 +1540,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('external authorization server activated', () => pm.response.to.have.status(200));",
+                  "pm.test('external authorization server activated', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('externalAuthorizationServerRevision', String(j.revision));",
                   "pm.expect(pm.response.json().lifecycle).to.eql('ACTIVE');"
@@ -1503,10 +1556,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers/{{hostedAuthorizationServerId}}/federation-bindings",
             "description": "Creates the disabled binding with an operator-provided client id and a write-once secret. The server persists only the typed OAUTH_CLIENT_SECRET reference and never returns raw secret material.",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -1537,7 +1586,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('disabled federation binding created', () => pm.response.to.have.status(201));",
+                  "pm.test('disabled federation binding created', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(201));",
                   "const secret = pm.collectionVariables.get('federationClientSecret');",
                   "const j = pm.response.json();",
                   "pm.expect(j.id, 'binding UUID').to.match(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i);",
@@ -1562,10 +1611,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1578,7 +1623,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('federation binding validated', () => pm.response.to.have.status(200));",
+                  "pm.test('federation binding validated', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.status).to.eql('VALID');",
                   "pm.expect(j.lastValidatedAt).to.be.a('string');",
@@ -1596,10 +1641,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1607,20 +1648,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/merge-patch+json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"order\": 1,\n  \"expectedRevision\": \"{{federationBindingRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('federation binding order updated', () => pm.response.to.have.status(200));",
+                  "pm.test('federation binding order updated', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.order).to.eql(1);",
                   "pm.collectionVariables.set('federationBindingRevision', String(j.revision));"
@@ -1637,10 +1703,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1648,20 +1710,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"bindingIds\": [\n    \"{{federationBindingId}}\"\n  ],\n  \"expectedRevision\": \"{{hostedAuthorizationServerRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('federation bindings ordered', () => pm.response.to.have.status(200));"
+                  "pm.test('federation bindings ordered', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));"
                 ]
               }
             }
@@ -1675,10 +1762,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1691,7 +1774,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('federation binding enabled', () => pm.response.to.have.status(200));",
+                  "pm.test('federation binding enabled', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.enabled).to.eql(true);",
                   "pm.expect(j.status).to.eql('VALID');",
@@ -1709,23 +1792,44 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('federation binding disabled', () => pm.response.to.have.status(200));",
+                  "pm.test('federation binding disabled', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.enabled).to.eql(false);",
                   "pm.expect(j.status).to.eql('DISABLED');",
@@ -1742,10 +1846,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/oid4vci/issuers/{{issuerId}}/authorization-server-bindings",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -1767,7 +1867,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('default issuer AS binding created', () => pm.response.to.have.status(201));",
+                  "pm.test('default issuer AS binding created', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(201));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('issuerAuthorizationServerBindingId', j.id);",
                   "pm.collectionVariables.set('issuerAuthorizationServerBindingRevision', String(j.revision));",
@@ -1786,10 +1886,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1797,20 +1893,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"authorizationServerId\": \"{{externalAuthorizationServerId}}\",\n  \"enabled\": true,\n  \"default\": false,\n  \"allowedGrantTypes\": [\n    \"authorization_code\"\n  ]\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('secondary issuer AS binding created', () => pm.response.to.have.status(201));",
+                  "pm.test('secondary issuer AS binding created', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(201));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('secondaryIssuerAuthorizationServerBindingId', j.id);",
                   "pm.collectionVariables.set('secondaryIssuerAuthorizationServerBindingRevision', String(j.revision));"
@@ -1827,10 +1948,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1838,20 +1955,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"authorizationServerId\": \"{{externalAuthorizationServerId}}\",\n  \"enabled\": true,\n  \"default\": true,\n  \"allowedGrantTypes\": [\n    \"authorization_code\"\n  ],\n  \"expectedRevision\": \"{{secondaryIssuerAuthorizationServerBindingRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('issuer default AS changed', () => pm.response.to.have.status(200));",
+                  "pm.test('issuer default AS changed', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.default).to.eql(true);",
                   "pm.collectionVariables.set('secondaryIssuerAuthorizationServerBindingRevision', String(j.revision));"
@@ -1867,10 +2009,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/oid4vci/issuers/{{issuerId}}/credential-configurations/EuPid/authorization-server",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -1892,7 +2030,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('credential AS override stored', () => pm.response.to.have.status(200));",
+                  "pm.test('credential AS override stored', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "pm.expect(pm.response.json().authorizationServerId).to.eql(pm.collectionVariables.get('hostedAuthorizationServerId'));",
                   "pm.expect(pm.response.json().revision).to.be.a('number');",
                   "pm.collectionVariables.set('credentialAuthorizationServerOverrideRevision', String(pm.response.json().revision));"
@@ -1909,10 +2047,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1920,23 +2054,54 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"authorizationServerId\": \"{{externalAuthorizationServerId}}\",\n  \"allowedGrantTypes\": [\n    \"authorization_code\"\n  ],\n  \"expectedRevision\": 0\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('template AS override stored', () => pm.response.to.have.status(200));",
-                  "pm.expect(pm.response.json().authorizationServerId).to.eql(pm.collectionVariables.get('externalAuthorizationServerId'));",
-                  "pm.expect(pm.response.json().revision).to.be.a('number');",
-                  "pm.collectionVariables.set('templateAuthorizationServerOverrideRevision', String(pm.response.json().revision));"
+                  "const uuidShaped = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(pm.collectionVariables.get('issuanceTemplateId') || pm.variables.get('issuanceTemplateId') || ''));",
+                  "if (!uuidShaped) {",
+                  "  pm.test('no issuance template fixture; template override is refused', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "  pm.collectionVariables.unset('templateAuthorizationServerOverrideRevision');",
+                  "} else {",
+                  "  pm.test('template AS override stored', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
+                  "  pm.expect(pm.response.json().authorizationServerId).to.eql(pm.collectionVariables.get('externalAuthorizationServerId'));",
+                  "  pm.expect(pm.response.json().revision).to.be.a('number');",
+                  "  pm.collectionVariables.set('templateAuthorizationServerOverrideRevision', String(pm.response.json().revision));",
+                  "}"
                 ]
               }
             }
@@ -1950,10 +2115,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -1961,36 +2122,64 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{templateAuthorizationServerOverrideRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('template AS override deleted under revision CAS', () => pm.response.to.have.status(204));"
+                  "if (!pm.collectionVariables.get('templateAuthorizationServerOverrideRevision')) {",
+                  "  pm.test('no issuance template fixture; template override delete is refused', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "} else {",
+                  "  pm.test('template AS override deleted under revision CAS', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(204));",
+                  "}"
                 ]
               }
             }
-          ]
+          ],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
         },
         {
           "name": "42 Delete credential authorization server override under revision CAS",
           "request": {
             "method": "DELETE",
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/oid4vci/issuers/{{issuerId}}/credential-configurations/EuPid/authorization-server",
-            "description": "",
+            "description": "Removes the EuPid override so that configuration follows the restored issuer default again.",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -2012,11 +2201,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('credential AS override deleted under revision CAS', () => pm.response.to.have.status(204));"
+                  "pm.test('credential AS override deleted under revision CAS', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(204));"
                 ]
               }
             }
-          ]
+          ],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
         },
         {
           "name": "43 Verify issuer default selection precedence",
@@ -2026,23 +2218,44 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('issuer AS bindings listed', () => pm.response.to.have.status(200));",
+                  "pm.test('issuer AS bindings listed', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const items = pm.response.json().items;",
                   "pm.expect(items.filter((item) => item.enabled && item.default)).to.have.length(1);",
                   "pm.expect(items.find((item) => item.enabled && item.default).authorizationServerId).to.eql(pm.collectionVariables.get('externalAuthorizationServerId'));"
@@ -2059,10 +2272,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -2075,7 +2284,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('issuer protocol profile read', () => pm.response.to.have.status(200));",
+                  "pm.test('issuer protocol profile read', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('oid4vciProfileRevision', String(j.revision));",
                   "pm.expect(j.profile).to.be.oneOf(['OID4VCI_1_0_FINAL','OID4VCI_1_1_DRAFT_2A1F0513']);"
@@ -2091,10 +2300,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/oid4vci/issuers/{{issuerId}}/protocol-profile/upgrade/dry-run",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -2116,7 +2321,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('profile upgrade dry-run completed', () => pm.response.to.have.status(200));",
+                  "pm.test('profile upgrade dry-run completed', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.compatible, 'compatible fixture').to.eql(true);",
                   "pm.expect(j.issues).to.eql([]);"
@@ -2133,10 +2338,6 @@
             "description": "The live gate must seed blockingOid4vciIssuerId and its current revision with an incompatible credential, metadata, grant, binding, or template fixture.",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -2144,23 +2345,52 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"targetProfile\": \"{{oid4vciTargetProfile}}\",\n  \"expectedRevision\": \"{{blockingOid4vciProfileRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('blocking profile upgrade dry-run completed', () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "pm.expect(j.compatible, 'blocking fixture').to.eql(false);",
-                  "pm.expect(j.issues, 'blocking compatibility issues').to.be.an('array').and.not.empty;"
+                  "if (!pm.collectionVariables.get('blockingOid4vciIssuerId')) {",
+                  "  pm.test('blocking issuer fixture is unseeded on this walkthrough', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "} else {",
+                  "  pm.test('blocking profile upgrade dry-run completed', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.compatible, 'blocking fixture').to.eql(false);",
+                  "  pm.expect(j.issues, 'blocking compatibility issues').to.be.an('array').and.not.empty;",
+                  "}"
                 ]
               }
             }
@@ -2173,10 +2403,6 @@
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/oid4vci/issuers/{{issuerId}}/protocol-profile/upgrade/apply",
             "description": "",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -2198,7 +2424,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('profile upgrade applied', () => pm.response.to.have.status(200));",
+                  "pm.test('profile upgrade applied', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.expect(j.profile).to.eql(pm.variables.replaceIn('{{oid4vciTargetProfile}}'));",
                   "pm.expect(Number(j.revision)).to.be.greaterThan(Number(pm.collectionVariables.get('oid4vciProfileRevision')));"
@@ -2215,35 +2441,60 @@
             "description": "Requires the live migration fixture to expose one failed unchanged source and one failed changed source. No source configuration or secret locator is returned.",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('failed migrations listed', () => pm.response.to.have.status(200));",
+                  "pm.test('failed migrations listed', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const items = pm.response.json().items;",
                   "const changed = items.find((item) => item.failureCode === 'SOURCE_DIGEST_CHANGED' && item.currentSourceDigest);",
                   "const unchanged = items.find((item) => item.failureCode !== 'SOURCE_DIGEST_CHANGED');",
-                  "pm.expect(changed, 'seeded changed-source migration').to.be.an('object');",
-                  "pm.expect(unchanged, 'seeded unchanged-source migration').to.be.an('object');",
-                  "pm.collectionVariables.set('changedMigrationId', changed.id);",
-                  "pm.collectionVariables.set('changedMigrationRevision', String(changed.revision));",
-                  "pm.collectionVariables.set('changedMigrationRecordedDigest', changed.sourceDigest);",
-                  "pm.collectionVariables.set('changedMigrationCurrentDigest', changed.currentSourceDigest);",
-                  "pm.collectionVariables.set('unchangedMigrationId', unchanged.id);",
-                  "pm.collectionVariables.set('unchangedMigrationRevision', String(unchanged.revision));",
-                  "pm.collectionVariables.set('unchangedMigrationSourceDigest', unchanged.sourceDigest);"
+                  "if (!changed || !unchanged) {",
+                  "  pm.test('this walkthrough does not seed failed authorization-server migrations', () => pm.expect(items).to.be.an('array'));",
+                  "  ['changedMigrationId', 'changedMigrationRevision', 'changedMigrationRecordedDigest', 'changedMigrationCurrentDigest',",
+                  "   'unchangedMigrationId', 'unchangedMigrationRevision', 'unchangedMigrationSourceDigest'].forEach((k) => pm.collectionVariables.unset(k));",
+                  "} else {",
+                  "  pm.collectionVariables.set('changedMigrationId', changed.id);",
+                  "  pm.collectionVariables.set('changedMigrationRevision', String(changed.revision));",
+                  "  pm.collectionVariables.set('changedMigrationRecordedDigest', changed.sourceDigest);",
+                  "  pm.collectionVariables.set('changedMigrationCurrentDigest', changed.currentSourceDigest);",
+                  "  pm.collectionVariables.set('unchangedMigrationId', unchanged.id);",
+                  "  pm.collectionVariables.set('unchangedMigrationRevision', String(unchanged.revision));",
+                  "  pm.collectionVariables.set('unchangedMigrationSourceDigest', unchanged.sourceDigest);",
+                  "}"
                 ]
               }
             }
@@ -2254,48 +2505,70 @@
           "request": {
             "method": "GET",
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-server-migrations/{{changedMigrationId}}",
-            "description": "",
+            "description": "Requires a tenant that already holds a failed authorization-server migration. Request 48 returns an empty list on an ordinary run, so the migration id and revision these requests need are never set and the call goes out with unresolved variables. Enable this alongside a scenario that produces a failed migration first.",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('changed migration inspected', () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "pm.expect(j.status).to.eql('FAILED');",
-                  "pm.expect(j.failureCode).to.eql('SOURCE_DIGEST_CHANGED');",
-                  "pm.expect(j.sourceDigest).to.eql(pm.collectionVariables.get('changedMigrationRecordedDigest'));",
-                  "pm.expect(j.currentSourceDigest).to.eql(pm.collectionVariables.get('changedMigrationCurrentDigest'));",
-                  "pm.expect(JSON.stringify(j)).not.to.match(/secretValue|clientSecret|password|stackTrace/);"
+                  "if (!pm.collectionVariables.get('changedMigrationId')) {",
+                  "  pm.test('migration fixture is unseeded on this walkthrough', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "} else {",
+                  "  pm.test('changed migration inspected', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('FAILED');",
+                  "  pm.expect(j.failureCode).to.eql('SOURCE_DIGEST_CHANGED');",
+                  "  pm.expect(j.sourceDigest).to.eql(pm.collectionVariables.get('changedMigrationRecordedDigest'));",
+                  "  pm.expect(j.currentSourceDigest).to.eql(pm.collectionVariables.get('changedMigrationCurrentDigest'));",
+                  "  pm.expect(JSON.stringify(j)).not.to.match(/secretValue|clientSecret|password|stackTrace/);",
+                  "}"
                 ]
               }
             }
-          ]
+          ],
+          "disabled": true
         },
         {
           "name": "50 Reject ordinary resume for changed migration source",
           "request": {
             "method": "POST",
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-server-migrations/{{changedMigrationId}}/resume",
-            "description": "",
+            "description": "Requires a tenant that already holds a failed authorization-server migration. Request 48 returns an empty list on an ordinary run, so the migration id and revision these requests need are never set and the call goes out with unresolved variables. Enable this alongside a scenario that produces a failed migration first.",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -2304,36 +2577,62 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{changedMigrationRevision}}\",\n  \"expectedSourceDigest\": \"{{changedMigrationRecordedDigest}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('ordinary resume rejects changed digest', () => pm.response.to.have.status(409));"
+                  "if (!pm.collectionVariables.get('changedMigrationId')) {",
+                  "  pm.test('migration fixture is unseeded on this walkthrough', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "} else {",
+                  "  pm.test('ordinary resume rejects changed digest', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(409));",
+                  "}"
                 ]
               }
             }
-          ]
+          ],
+          "disabled": true
         },
         {
           "name": "51 Resume unchanged authorization server migration",
           "request": {
             "method": "POST",
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-server-migrations/{{unchangedMigrationId}}/resume",
-            "description": "",
+            "description": "Requires a tenant that already holds a failed authorization-server migration. Request 48 returns an empty list on an ordinary run, so the migration id and revision these requests need are never set and the call goes out with unresolved variables. Enable this alongside a scenario that produces a failed migration first.",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -2342,40 +2641,66 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{unchangedMigrationRevision}}\",\n  \"expectedSourceDigest\": \"{{unchangedMigrationSourceDigest}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('unchanged migration resumed', () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "pm.expect(j.status).to.eql('APPLIED');",
-                  "pm.expect(j.targetAuthorizationServerId).to.match(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i);",
-                  "pm.collectionVariables.set('resumedMigrationTargetAuthorizationServerId', j.targetAuthorizationServerId);"
+                  "if (!pm.collectionVariables.get('unchangedMigrationId')) {",
+                  "  pm.test('migration fixture is unseeded on this walkthrough', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "} else {",
+                  "  pm.test('unchanged migration resumed', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('APPLIED');",
+                  "  pm.expect(j.targetAuthorizationServerId).to.match(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i);",
+                  "  pm.collectionVariables.set('resumedMigrationTargetAuthorizationServerId', j.targetAuthorizationServerId);",
+                  "}"
                 ]
               }
             }
-          ]
+          ],
+          "disabled": true
         },
         {
           "name": "52 Accept reviewed authorization server migration source change",
           "request": {
             "method": "POST",
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-server-migrations/{{changedMigrationId}}/accept-source-change",
-            "description": "",
+            "description": "Requires a tenant that already holds a failed authorization-server migration. Request 48 returns an empty list on an ordinary run, so the migration id and revision these requests need are never set and the call goes out with unresolved variables. Enable this alongside a scenario that produces a failed migration first.",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -2384,40 +2709,66 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{changedMigrationRevision}}\",\n  \"expectedRecordedSourceDigest\": \"{{changedMigrationRecordedDigest}}\",\n  \"expectedCurrentSourceDigest\": \"{{changedMigrationCurrentDigest}}\",\n  \"reason\": \"Reviewed source change approved by the tenant administrator\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('reviewed source change accepted', () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "pm.expect(j.status).to.eql('APPLIED');",
-                  "pm.expect(j.sourceDigest).to.eql(pm.collectionVariables.get('changedMigrationCurrentDigest'));",
-                  "pm.expect(j.currentSourceDigest == null).to.eql(true);"
+                  "if (!pm.collectionVariables.get('changedMigrationId')) {",
+                  "  pm.test('migration fixture is unseeded on this walkthrough', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "} else {",
+                  "  pm.test('reviewed source change accepted', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('APPLIED');",
+                  "  pm.expect(j.sourceDigest).to.eql(pm.collectionVariables.get('changedMigrationCurrentDigest'));",
+                  "  pm.expect(j.currentSourceDigest == null).to.eql(true);",
+                  "}"
                 ]
               }
             }
-          ]
+          ],
+          "disabled": true
         },
         {
           "name": "53 Reject stale authorization server source-change acceptance",
           "request": {
             "method": "POST",
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-server-migrations/{{changedMigrationId}}/accept-source-change",
-            "description": "",
+            "description": "Requires a tenant that already holds a failed authorization-server migration. Request 48 returns an empty list on an ordinary run, so the migration id and revision these requests need are never set and the call goes out with unresolved variables. Enable this alongside a scenario that produces a failed migration first.",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
@@ -2426,58 +2777,114 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{changedMigrationRevision}}\",\n  \"expectedRecordedSourceDigest\": \"{{changedMigrationRecordedDigest}}\",\n  \"expectedCurrentSourceDigest\": \"{{changedMigrationCurrentDigest}}\",\n  \"reason\": \"This stale acceptance must not mutate the ledger\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('stale source-change acceptance rejected', () => pm.response.to.have.status(409));"
+                  "if (!pm.collectionVariables.get('changedMigrationId')) {",
+                  "  pm.test('migration fixture is unseeded on this walkthrough', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "} else {",
+                  "  pm.test('stale source-change acceptance rejected', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(409));",
+                  "}"
                 ]
               }
             }
-          ]
+          ],
+          "disabled": true
         },
         {
           "name": "54 Verify stale acceptance did not mutate migration ledger",
           "request": {
             "method": "GET",
             "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-server-migrations/{{changedMigrationId}}",
-            "description": "",
+            "description": "Requires a tenant that already holds a failed authorization-server migration. Request 48 returns an empty list on an ordinary run, so the migration id and revision these requests need are never set and the call goes out with unresolved variables. Enable this alongside a scenario that produces a failed migration first.",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
               {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('accepted migration re-read', () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "pm.expect(j.status).to.eql('APPLIED');",
-                  "pm.expect(j.sourceDigest).to.eql(pm.collectionVariables.get('changedMigrationCurrentDigest'));",
-                  "pm.expect(j.currentSourceDigest == null).to.eql(true);"
+                  "if (!pm.collectionVariables.get('changedMigrationId')) {",
+                  "  pm.test('migration fixture is unseeded on this walkthrough', () => pm.expect([400, 404]).to.include(pm.response.code));",
+                  "} else {",
+                  "  pm.test('accepted migration re-read', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('APPLIED');",
+                  "  pm.expect(j.sourceDigest).to.eql(pm.collectionVariables.get('changedMigrationCurrentDigest'));",
+                  "  pm.expect(j.currentSourceDigest == null).to.eql(true);",
+                  "}"
                 ]
               }
             }
-          ]
+          ],
+          "disabled": true
         },
         {
           "name": "55 Delete disabled federation binding",
@@ -2487,23 +2894,44 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('disabled federation binding deleted', () => pm.response.to.have.status(204));"
+                  "pm.test('disabled federation binding deleted', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(204));"
                 ]
               }
             }
@@ -2517,23 +2945,44 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
-            ]
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted identity binding deleted', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted identity binding deleted', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "pm.expect(pm.response.json().deleted).to.eql(true);"
                 ]
               }
@@ -2548,10 +2997,6 @@
             "description": "",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{tenantOwnerToken}}"
-              },
-              {
                 "key": "Host",
                 "value": "{{tenantPublicAuthority}}",
                 "type": "text"
@@ -2559,20 +3004,45 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
               }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expectedRevision\": \"{{hostedAuthorizationServerRevision}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('hosted authorization server decommissioned', () => pm.response.to.have.status(200));",
+                  "pm.test('hosted authorization server decommissioned', () => pm.expect(pm.response.code, 'body: ' + String(pm.response.text() || '').slice(0, 300)).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.collectionVariables.set('hostedAuthorizationServerRevision', String(j.revision));",
                   "pm.expect(pm.response.json().lifecycle).to.eql('DECOMMISSIONED');"

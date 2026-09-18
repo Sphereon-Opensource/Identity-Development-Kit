@@ -319,6 +319,10 @@ data class ValidateAuthorizationResponseArgs(
  * @property valid Whether the response is valid
  * @property matchedCredentials Credentials that matched the DCQL query
  * @property errors Validation errors (if any)
+ * @property rejections Credentials discarded on credential-status grounds, typed. Recorded beside the
+ * corresponding prose entry in [errors], never instead of it, and only for credentials whose issuer
+ * signature, holder binding and disclosure integrity had already verified. A credential nested inside
+ * a submitted VCDM presentation is reported under its parent DCQL query identity.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("ValidationResult", exact = true)
@@ -327,6 +331,7 @@ data class ValidationResult(
     val valid: Boolean,
     val matchedCredentials: List<MatchedCredential> = emptyList(),
     val errors: List<String> = emptyList(),
+    val rejections: List<CredentialValidationRejection> = emptyList(),
 )
 
 /**

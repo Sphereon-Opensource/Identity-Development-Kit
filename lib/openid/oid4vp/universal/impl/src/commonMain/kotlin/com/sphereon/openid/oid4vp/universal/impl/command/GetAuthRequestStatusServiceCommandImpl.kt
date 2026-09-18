@@ -30,6 +30,7 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vc.common.SessionError
 import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusInput
 import com.sphereon.openid.oid4vp.universal.GetAuthRequestStatusServiceCommand
+import com.sphereon.openid.oid4vp.universal.AuthorizationValidationSummary
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
 import com.sphereon.openid.oid4vp.universal.UniversalOid4vpEventTypes
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
@@ -114,6 +115,7 @@ class GetAuthRequestStatusServiceCommandImpl(
                 expiresAt = session.expiresAt,
                 error = sessionError,
                 verifiedData = verifiedData,
+                validation = authorizationValidationSummaryOf(session),
                 verificationBinding = com.sphereon.openid.oid4vp.universal.VerificationSessionBinding(session.instanceId, session.templateId, session.templateRevision, session.dcqlQueryId, session.dcqlQueryVersion, session.createdAt, session.expiresAt),
             )
 
@@ -153,3 +155,17 @@ class GetAuthRequestStatusServiceCommandImpl(
             )
     }
 }
+
+/**
+ * Summarizes the validation the verifier stored on [session], or null when none has run.
+ *
+ * Sourced from the stored validation result rather than from the verified data: a rejected session
+ * has no verified data at all, which is precisely the case a relying party needs the summary for.
+ */
+internal fun authorizationValidationSummaryOf(session: AuthorizationSession): AuthorizationValidationSummary? =
+    session.validationResult?.let { validationResult ->
+        AuthorizationValidationSummary(
+            valid = validationResult.valid,
+            rejections = validationResult.rejections,
+        )
+    }

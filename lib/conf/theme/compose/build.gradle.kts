@@ -46,7 +46,7 @@ kotlin {
                 api(projects.libConfThemeCorePublic)
 
                 // Compose runtime — available on ALL targets including JS
-                implementation(sphereonlib.org.jetbrains.compose.runtime.runtime)
+                implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
 
                 // DateTime (for ClientPaletteResolver)
                 implementation(sphereonlib.org.jetbrains.kotlinx.datetime)
@@ -63,8 +63,8 @@ kotlin {
         val composeUiMain by creating {
             dependsOn(commonMain)
             dependencies {
-                implementation(sphereonlib.org.jetbrains.compose.foundation.foundation)
-                implementation(sphereonlib.org.jetbrains.compose.material3.material3)
+                implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
+                implementation("org.jetbrains.compose.material3:material3:1.11.0-alpha07")
             }
         }
         val jvmMain by getting {
@@ -74,8 +74,8 @@ kotlin {
         findByName("wasmJsMain")?.dependsOn(composeUiMain)
         val jvmTest by getting {
             dependencies {
-                implementation(sphereonlib.org.jetbrains.compose.foundation.foundation)
-                implementation(sphereonlib.org.jetbrains.compose.material3.material3)
+                implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
+                implementation("org.jetbrains.compose.material3:material3:1.11.0-alpha07")
             }
         }
         findByName("androidMain")?.dependsOn(composeUiMain)

@@ -20,6 +20,7 @@ import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerTarget
 import dev.zacsweers.metro.ContributesBinding
+import dev.zacsweers.metro.ExposeImplBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
@@ -57,6 +58,7 @@ interface Oid4vciAsInternalClient {
  */
 @Inject
 @SingleIn(SessionScope::class)
+@ExposeImplBinding
 @ContributesBinding(SessionScope::class, binding = binding<Oid4vciAsInternalClient>())
 class LegacyBasicAuthOid4vciAsInternalClient(
     private val execution: SessionExecution,

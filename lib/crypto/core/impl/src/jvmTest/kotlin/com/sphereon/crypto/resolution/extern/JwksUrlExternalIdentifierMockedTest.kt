@@ -455,6 +455,31 @@ class JwksUrlExternalIdentifierMockedTest {
         }
 
     @Test
+    fun testResolveWithoutKidIgnoresEncryptionOnlyKeys() =
+        runTest {
+            val mockExecution = mockk<SessionExecution>(relaxed = true)
+            every { mockExecution.sessionContext } returns mockSessionContext
+            val signingAndEncryptionJwks = """{"keys":[
+                {"kty":"EC","crv":"P-256","use":"enc","x":"AHzxbLBCZH-aMj_JgJlv9HRJVMcdl2dPB3aQl8wANK8","y":"a0lfVhFX8JRrR7bG_ZZaC8I6XjH3VPYJ5Qj9r5-eVLc","kid":"enc-key"},
+                {"kty":"EC","crv":"P-256","use":"sig","x":"WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA","y":"F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I","kid":"sig-key"}
+            ]}"""
+            val httpClient = HttpClient(MockEngine { _ ->
+                respond(signingAndEncryptionJwks, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            }) {
+                install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+            }
+            val factory = mockk<HttpClientFactory>()
+            every { factory.createClient(any<HttpClientOptions>()) } returns httpClient
+            val service = JwksUrlExternalIdentifierResolutionServiceImpl(mockExecution, factory)
+
+            val result = service.resolve(ExternalIdentifierJwksUrlOpts(identifier = "https://example.com/.well-known/jwks.json"))
+
+            assertTrue(result.isOk, "An encryption-only key is not a signature candidate")
+            assertEquals("sig-key", result.value.keyInfo.kid)
+            assertEquals(2, result.value.jwks.size, "The full set is still returned for kid-based verification")
+        }
+
+    @Test
     fun testResolveWithoutKidSelectsTheOnlyUsableKey() =
         runTest {
             val mockExecution = mockk<SessionExecution>(relaxed = true)

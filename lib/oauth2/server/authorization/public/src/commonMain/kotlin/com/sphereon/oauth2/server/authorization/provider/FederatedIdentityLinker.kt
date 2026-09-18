@@ -80,6 +80,13 @@ data class LinkFederatedSessionRequest(
      * carries it. Null = application-agnostic federation login.
      */
     val applicationId: String? = null,
+    /**
+     * The login came through a federation binding of a hosted authorization server, so the
+     * End-User is a user of that upstream provider. The local identity only gives the upstream
+     * subject a stable local identifier; application login policies that govern local accounts
+     * do not apply to it.
+     */
+    val upstreamOwnsIdentity: Boolean = false,
 )
 
 /** Output of a successful link. */

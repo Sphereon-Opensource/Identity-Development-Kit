@@ -53,6 +53,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class AzureKeyVaultProviderTest {
     private lateinit var azureKeyVaultCryptoProvider: AzureKeyVaultCryptoProvider
     private var managedKeyPair: ManagedKeyPair? = null
+    private var liveEnabled = false
 
     private val app = staticMinimalTestAppGraph(application = Any(), appId = "azure-keyvault-test", profile = "test", version = "1.0.0")
     private val session =
@@ -63,6 +64,12 @@ class AzureKeyVaultProviderTest {
 
     @BeforeTest
     fun setupProvider() {
+        if (Env.get("VDX_LIVE_AZURE_KEYVAULT_KMS")?.equals("true", ignoreCase = true) != true) {
+            liveEnabled = false
+            return
+        }
+        liveEnabled = true
+
         fun assertConfigValue(getter: () -> String?): String = getter() ?: throw IllegalStateException("Missing required configuration value")
 
         val azureConfig =
@@ -126,24 +133,28 @@ class AzureKeyVaultProviderTest {
 
     @Test
     fun testSupportedCurves() {
+        if (!liveEnabled) return
         val curves = azureKeyVaultCryptoProvider.supportedCurves()
         assertEquals(listOf(Curve.P_256, Curve.Secp256k1, Curve.P_384, Curve.P_521), curves.toList())
     }
 
     @Test
     fun testSupportedKeyTypes() {
+        if (!liveEnabled) return
         val keyTypes = azureKeyVaultCryptoProvider.supportedKeyTypes()
         assertEquals(listOf(KeyTypeMapping.EC, KeyTypeMapping.RSA), keyTypes.toList())
     }
 
     @Test
     fun testSupportedDigests() {
+        if (!liveEnabled) return
         val digests = azureKeyVaultCryptoProvider.supportedDigests()
         assertEquals(listOf(DigestAlg.SHA256, DigestAlg.SHA384, DigestAlg.SHA512), digests.toList())
     }
 
     @Test
     fun standardKeyVaultAdvertisesReadOnlyCertificateCapabilities() {
+        if (!liveEnabled) return
         val capabilities = azureKeyVaultCryptoProvider.getCapabilities()
 
         assertTrue(capabilities.supportsOperation(KmsProviderOperation.REGISTER_KEY_REFERENCE))
@@ -155,6 +166,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testGenerateKeyAsyncECDSA_SHA256() =
         runTest {
+            if (!liveEnabled) return@runTest
             val kp = getOrCreateTestKeyPair()
             assertNotNull(kp)
             assertNotNull(kp.joseToManagedKeyInfo().key.kid)
@@ -166,6 +178,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testGenerateKeyAsyncECDSA_SHA384() =
         runTest {
+            if (!liveEnabled) return@runTest
             val managedKeyPair =
                 azureKeyVaultCryptoProvider.generateKeyAsync(
                     alg = SignatureAlgorithm.ECDSA_SHA384,
@@ -192,6 +205,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testGenerateKeyAsyncECDSA_SHA512() =
         runTest {
+            if (!liveEnabled) return@runTest
             val managedKeyPair =
                 azureKeyVaultCryptoProvider.generateKeyAsync(
                     alg = SignatureAlgorithm.ECDSA_SHA512,
@@ -218,6 +232,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testValidRawSignatureAndVerification() =
         runTest {
+            if (!liveEnabled) return@runTest
             val keyInfo = getOrCreateTestKeyPair().joseToManagedKeyInfo()
             assertNotNull(keyInfo)
             val signature =
@@ -239,6 +254,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testInvalidRawSignatureAndVerification() =
         runTest {
+            if (!liveEnabled) return@runTest
             val keyInfo = getOrCreateTestKeyPair().joseToManagedKeyInfo()
             assertNotNull(keyInfo)
             val signature =
@@ -260,6 +276,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testGenerateKeyThrowsExceptionForUnsupportedAlgorithm() =
         runTest {
+            if (!liveEnabled) return@runTest
             val unsupportedAlg = SignatureAlgorithm.ED25519
             val exception =
                 assertFailsWith<IllegalArgumentException> {
@@ -270,6 +287,7 @@ class AzureKeyVaultProviderTest {
 
     @Test
     fun testSupportedAlg() {
+        if (!liveEnabled) return
         val algorithms = azureKeyVaultCryptoProvider.supportedSignatureAlgorithms()
         assertEquals(
             listOf(
@@ -290,6 +308,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testCreateAndVerifySignature() =
         runTest {
+            if (!liveEnabled) return@runTest
             val keyInfo = getOrCreateTestKeyPair().joseToManagedKeyInfo()
             assertNotNull(keyInfo)
 
@@ -336,6 +355,7 @@ class AzureKeyVaultProviderTest {
     @Ignore // takes too long in nodejs
     fun testListKeys() =
         runTest(timeout = 60_000.milliseconds) {
+            if (!liveEnabled) return@runTest
             // First ensure we have a test key
             val testKeyPair = getOrCreateTestKeyPair()
 
@@ -351,6 +371,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testGetKey() =
         runTest {
+            if (!liveEnabled) return@runTest
             val keyInfo = getOrCreateTestKeyPair().joseToManagedKeyInfo()
             val retrievedKey = azureKeyVaultCryptoProvider.getKey(keyInfo)
 
@@ -410,6 +431,7 @@ class AzureKeyVaultProviderTest {
     @Test
     fun testKeyVisibility() =
         runTest {
+            if (!liveEnabled) return@runTest
             val visibility = azureKeyVaultCryptoProvider.keyVisibility()
             assertEquals(KeyVisibility.PUBLIC, visibility)
         }
@@ -418,6 +440,7 @@ class AzureKeyVaultProviderTest {
     @Ignore // takse too long in nodejs
     fun testCertificateOperations() =
         runTest(timeout = 60_000.milliseconds) {
+            if (!liveEnabled) return@runTest
             // Skip test if using Managed HSM, which doesn't support certificates
             val config = azureKeyVaultCryptoProvider.config
             if (config.hsmType != HSMType.MANAGED_HSM) {

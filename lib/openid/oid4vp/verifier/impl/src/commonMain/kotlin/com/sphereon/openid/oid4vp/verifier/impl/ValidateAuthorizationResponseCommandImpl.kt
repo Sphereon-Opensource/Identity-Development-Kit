@@ -70,6 +70,8 @@ import com.sphereon.openid.oid4vp.verifier.VerifiedCredentialEvidence
 import com.sphereon.openid.oid4vp.verifier.VerifiedCredentialStatus
 import com.sphereon.openid.oid4vp.verifier.VerifiedCredentialStatusOutcome
 import com.sphereon.openid.oid4vp.verifier.Oid4vpCredentialTrustValidationArgs
+import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejection
+import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejectionReason
 import com.sphereon.openid.oid4vp.verifier.Oid4vpCredentialTrustValidator
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseCommand
@@ -90,6 +92,8 @@ import com.sphereon.statuslist.CredentialStatusMetadata
 import com.sphereon.statuslist.CredentialStatusPolicy
 import com.sphereon.statuslist.CredentialStatusReference
 import com.sphereon.statuslist.MdocCredentialStatusMetadata
+import com.sphereon.statuslist.StatusPurpose
+import com.sphereon.statuslist.StatusValues
 import com.sphereon.statuslist.describeStatus
 import com.sphereon.statuslist.evaluateCredentialStatus
 import com.sphereon.statuslist.spi.CredentialStatusVerifier
@@ -156,6 +160,7 @@ class ValidateAuthorizationResponseCommandImpl(
      * implementations when no trust validator is contributed.
      */
     private val credentialTrustValidators: Set<Oid4vpCredentialTrustValidator>,
+    private val businessAuthorizations: Set<com.sphereon.openid.oid4vp.verifier.Oid4vpBusinessAuthorization>,
     private val eventService: SessionEventService? = null,
 ) : TypedServiceCommandAdapter<ValidateAuthorizationResponseArgs, ValidationResult, IdkError>(
         commandId = ValidateAuthorizationResponseCommand.COMMAND_ID,
@@ -191,10 +196,39 @@ class ValidateAuthorizationResponseCommandImpl(
                         message = "OID4VP authorization session not found",
                     ),
                 )
+        try {
         val result = doExecuteInternal(args, applyDuring)
+        // Record proof validity independently; a later business denial does not falsify this fact.
         emitOutcome(result)
-        pendingHistorySession = null
+        var businessAuthorizationError: IdkError? = null
+        if (result.isOk && result.value.valid) {
+            // An unset mode preserves the historical protocol-only verifier behavior. The
+            // business-authorized path is opt-in through an explicit `required` (or `ordinary`)
+            // deployment setting; `required` still fails closed when no authority is bound.
+            val mode = execution.conf.app.getPropertyAsString("oid4vp.business-authorization.mode")
+                ?.takeUnless { it.isBlank() }
+            if (mode == "required" || mode == "ordinary") {
+                val businessAuthorizationRequired = mode == "required"
+                val authorization = com.sphereon.openid.oid4vp.verifier.authorizeVerifierBusinessAction(
+                    businessAuthorizationRequired, pendingHistorySession, result.value, businessAuthorizations,
+                )
+                if (authorization.isErr) businessAuthorizationError = authorization.error
+            }
+        }
+        val correlation = args.originalRequest.state
+        if (!correlation.isNullOrBlank()) {
+            val previousSession = pendingHistorySession
+            pendingHistorySession = authorizationSessionStore.storeValidationResultDeferred(
+                correlationId = correlation,
+                validationResult = result.getOrElse { return Err(it) },
+            ).getOrElse { return Err(it) }
+            authorizationSessionStore.dispatchDeferredValidation(correlation, previousSession).getOrElse { return Err(it) }
+        }
+        businessAuthorizationError?.let { return Err(it) }
         return result
+        } finally {
+            pendingHistorySession = null
+        }
     }
 
     /**
@@ -229,6 +263,51 @@ class ValidateAuthorizationResponseCommandImpl(
         )
     }
 
+    /**
+     * Map a status REJECT onto the typed rejection channel. Only the credential query identity, the
+     * ground and the raw status value are carried; the status list URI and index stay in the event
+     * emitted by [emitStatusRejected].
+     *
+     * Revocation and suspension are read structurally from the resolved status, in the same
+     * precedence [describeStatus] uses: a declared status purpose wins over the raw value, which is
+     * only interpreted with the canonical Token Status List meanings. A non-accepted value that
+     * asserts neither - an issuer-defined multi-bit state admitted through
+     * [CredentialStatusPolicy.acceptStatusValues] - is
+     * [CredentialValidationRejectionReason.STATUS_NOT_ACCEPTED] with its raw value in `statusValue`,
+     * never a revocation: the policy refused it, the status list did not revoke it.
+     *
+     * [CredentialStatusEvaluation.rejectedStatus] is null for both the required-but-absent and the
+     * unresolvable rejection, and `evaluateCredentialStatus` separates them only by its technical
+     * reason, so the unresolvable reason prefix is matched here.
+     */
+    private fun statusRejection(
+        queryId: String,
+        evaluation: CredentialStatusEvaluation,
+    ): CredentialValidationRejection {
+        val rejected = evaluation.rejectedStatus
+        val reason =
+            when {
+                rejected == null ->
+                    if (evaluation.reason?.startsWith(UNRESOLVABLE_STATUS_REASON_PREFIX) == true) {
+                        CredentialValidationRejectionReason.STATUS_UNRESOLVABLE
+                    } else {
+                        CredentialValidationRejectionReason.STATUS_REQUIRED_BUT_ABSENT
+                    }
+                rejected.purpose == StatusPurpose.SUSPENSION -> CredentialValidationRejectionReason.SUSPENDED
+                rejected.purpose == StatusPurpose.REVOCATION -> CredentialValidationRejectionReason.REVOKED
+                rejected.purpose != null -> CredentialValidationRejectionReason.STATUS_NOT_ACCEPTED
+                rejected.value == StatusValues.SUSPENDED -> CredentialValidationRejectionReason.SUSPENDED
+                rejected.value == StatusValues.INVALID -> CredentialValidationRejectionReason.REVOKED
+                else -> CredentialValidationRejectionReason.STATUS_NOT_ACCEPTED
+            }
+        return CredentialValidationRejection(
+            credentialQueryId = queryId,
+            reason = reason,
+            checkedAtEpochMillis = Clock.System.now().toEpochMilliseconds(),
+            statusValue = rejected?.value,
+        )
+    }
+
     private suspend fun emitOutcome(result: IdkResult<ValidationResult, IdkError>,) {
         val isValid = result.getOrNull()?.valid == true
         val type = if (isValid) EventTypes.OID4VP_RESPONSE_VERIFIED else EventTypes.OID4VP_RESPONSE_FAILED
@@ -260,6 +339,7 @@ class ValidateAuthorizationResponseCommandImpl(
         persistedJwtIssuerAlgorithms: Set<String>?,
         errors: MutableList<String>,
         matchedCredentials: MutableList<MatchedCredential>,
+        rejections: MutableList<CredentialValidationRejection>,
     ) {
         // OID4VP ldp_vc values are JSON objects. The value can be either a credential or
         // a holder-bound presentation, so classify the VCDM document itself before
@@ -335,6 +415,7 @@ class ValidateAuthorizationResponseCommandImpl(
             val verifiedDocument = diResult.value.verifiedDocument
             val renderedPresentation = JSON_LENIENT.encodeToString(JsonElement.serializer(), presentationElement)
             if (documentKind == VcdmDocumentKind.PRESENTATION) {
+                val dataIntegrityRecursionState = VcdmRecursionState()
                 val childFailure = verifyDataIntegrityPresentationChildren(
                     document = verifiedDocument,
                     queryId = queryId,
@@ -349,7 +430,11 @@ class ValidateAuthorizationResponseCommandImpl(
                     trustedAuthentications = processedArgs.trustedAuthentications,
                     verificationMethodResolutionPolicy = processedArgs.verificationMethodResolutionPolicy,
                     issuerAlgAllowlist = persistedJwtIssuerAlgorithms,
+                    state = dataIntegrityRecursionState,
                 )
+                // A nested credential is discarded under its parent's query identity; collect its typed
+                // rejections before the failure return discards the presentation.
+                rejections.addAll(dataIntegrityRecursionState.rejections)
                 if (childFailure != null) {
                     errors.add(
                         "Data Integrity presentation for query '$queryId' at index $presentationIndex rejected at " +
@@ -397,6 +482,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 if (evaluation.decision == CredentialStatusDecision.REJECT) {
                     val rejectedStatus = evaluation.rejectedStatus
                     errors.add(if (rejectedStatus != null) "$queryId is ${describeStatus(rejectedStatus)}" else "$queryId could not be validated")
+                    rejections.add(statusRejection(queryId, evaluation))
                     emitStatusRejected(queryId, evaluation)
                     return
                 }
@@ -652,6 +738,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     verificationMethodResolutionPolicy = processedArgs.verificationMethodResolutionPolicy,
                     issuerAlgAllowlist = persistedJwtIssuerAlgorithms,
                 )
+            rejections.addAll(recursiveResult.rejections)
             if (recursiveResult.error != null) {
                 errors.add(
                     "VCDM presentation for query '$queryId' at index $presentationIndex rejected at " +
@@ -771,6 +858,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 val word = evaluation.rejectedStatus?.let { describeStatus(it) }
                 errors.add(if (word != null) "$queryId is $word" else "$queryId could not be validated")
                 log.warn("Credential '$queryId' rejected by status check: ${evaluation.reason}")
+                rejections.add(statusRejection(queryId, evaluation))
                 emitStatusRejected(queryId, evaluation)
                 return
             }
@@ -828,6 +916,7 @@ class ValidateAuthorizationResponseCommandImpl(
 
         val errors = mutableListOf<String>()
         val matchedCredentials = mutableListOf<MatchedCredential>()
+        val rejections = mutableListOf<CredentialValidationRejection>()
         // Query IDs the wallet actually submitted a presentation for. A required credential that WAS
         // submitted but then discarded (status rejection, holder-binding failure, ...) must not also be
         // reported as "not found" — the specific discard reason is already in `errors`.
@@ -917,6 +1006,7 @@ class ValidateAuthorizationResponseCommandImpl(
                     persistedJwtIssuerAlgorithms = persistedJwtIssuerAlgorithms,
                     errors = errors,
                     matchedCredentials = matchedCredentials,
+                    rejections = rejections,
                 )
             }
         }
@@ -961,16 +1051,8 @@ class ValidateAuthorizationResponseCommandImpl(
                 valid = valid,
                 matchedCredentials = matchedCredentials,
                 errors = errors,
+                rejections = rejections,
             )
-
-        // Best-effort session update using state as session correlation key.
-        val correlationId = originalRequest.state
-        if (!correlationId.isNullOrBlank()) {
-            authorizationSessionStore.storeValidationResult(correlationId = correlationId, validationResult = result).fold(
-                success = { pendingHistorySession = it },
-                failure = { e -> log.warn("Failed to update authorization session with validation result: ${e.message.defaultMessage}") },
-            )
-        }
 
         return Ok(result)
     }
@@ -1191,6 +1273,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 if (credentialStatusVerifiers.isNotEmpty()) {
                     val evaluation = evaluateCredentialStatus(credentialStatusVerifiers, verifiedChild, statusPolicy)
                     if (evaluation.decision == CredentialStatusDecision.REJECT) {
+                        state.rejections.add(statusRejection(queryId, evaluation))
                         emitStatusRejected(queryId, evaluation)
                         return "verifiableCredential child[$index] status rejected"
                     }
@@ -1394,7 +1477,7 @@ class ValidateAuthorizationResponseCommandImpl(
             verifierId, dcqlQueryId, templateId, statusPolicy, trustedAuthentications,
             verificationMethodResolutionPolicy, issuerAlgAllowlist, depth = 0, state = state,
         )
-        return VcdmVerifiedChildren(state.credentialFormats, error)
+        return VcdmVerifiedChildren(state.credentialFormats, error, state.rejections.toList())
     }
 
     private suspend fun verifyVcdmPresentationChildrenRecursive(
@@ -1510,6 +1593,7 @@ class ValidateAuthorizationResponseCommandImpl(
             statusPolicy,
             trustedAuthentications,
             issuerAlgAllowlist,
+            state,
         )
         if (failure == null) state.credentialFormats += requireNotNull(childClassification.credentialFormat)
         return failure
@@ -1567,6 +1651,7 @@ class ValidateAuthorizationResponseCommandImpl(
         if (credentialStatusVerifiers.isNotEmpty()) {
             val evaluation = evaluateCredentialStatus(credentialStatusVerifiers, verifiedDocument, statusPolicy)
             if (evaluation.decision == CredentialStatusDecision.REJECT) {
+                state.rejections.add(statusRejection(queryId, evaluation))
                 emitStatusRejected(queryId, evaluation)
                 return "VCDM 1.1 JSON child status rejected"
             }
@@ -1647,6 +1732,7 @@ class ValidateAuthorizationResponseCommandImpl(
                 statusPolicy,
                 trustedAuthentications,
                 issuerAlgAllowlist,
+                state,
             )
             if (failure == null) state.credentialFormats += requireNotNull(childClassification.credentialFormat)
             return failure
@@ -1758,6 +1844,7 @@ class ValidateAuthorizationResponseCommandImpl(
         if (credentialStatusVerifiers.isNotEmpty()) {
             val evaluation = evaluateCredentialStatus(credentialStatusVerifiers, verifiedChild, statusPolicy)
             if (evaluation.decision == CredentialStatusDecision.REJECT) {
+                state.rejections.add(statusRejection(queryId, evaluation))
                 emitStatusRejected(queryId, evaluation)
                 return "direct Data Integrity child status rejected"
             }
@@ -1843,6 +1930,7 @@ class ValidateAuthorizationResponseCommandImpl(
         statusPolicy: CredentialStatusPolicy,
         trustedAuthentications: List<TrustedAuthenticationResolution>,
         issuerAlgAllowlist: Set<String>?,
+        state: VcdmRecursionState,
     ): String? {
         val format = requireNotNull(classification.credentialFormat)
         val issuer = extractCredentialIssuer(compact, format)
@@ -1859,6 +1947,7 @@ class ValidateAuthorizationResponseCommandImpl(
             val input = credentialStatusInputFor(compact, format) ?: CredentialStatusInput()
             val evaluation = evaluateCredentialStatus(credentialStatusVerifiers, input, statusPolicy)
             if (evaluation.decision == CredentialStatusDecision.REJECT) {
+                state.rejections.add(statusRejection(queryId, evaluation))
                 emitStatusRejected(queryId, evaluation)
                 return "child credential status rejected"
             }
@@ -1879,10 +1968,13 @@ class ValidateAuthorizationResponseCommandImpl(
     private data class VcdmVerifiedChildren(
         val credentialFormats: Set<CredentialFormat>,
         val error: String? = null,
+        /** Typed status rejections collected from nested children, under the parent query identity. */
+        val rejections: List<CredentialValidationRejection> = emptyList(),
     )
 
     private class VcdmRecursionState {
         val artifacts: MutableSet<String> = mutableSetOf()
+        val rejections: MutableList<CredentialValidationRejection> = mutableListOf()
         val credentialFormats: MutableSet<CredentialFormat> = linkedSetOf()
         var nodes: Int = 1
         var decodedBytes: Long = 0
@@ -2562,6 +2654,12 @@ class ValidateAuthorizationResponseCommandImpl(
         }
 
     private companion object {
+        /**
+         * Prefix `evaluateCredentialStatus` uses for a present-but-unresolvable status reference; it is
+         * the only signal separating that rejection from a required-but-absent one.
+         */
+        const val UNRESOLVABLE_STATUS_REASON_PREFIX = "status could not be resolved"
+
         const val MDOC_MIN_ENCODED_LENGTH = 20
         const val VCDM_MAX_RECURSION_DEPTH = 4
         const val VCDM_MAX_RECURSION_NODES = 32

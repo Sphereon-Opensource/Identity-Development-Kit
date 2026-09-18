@@ -19,11 +19,11 @@ package com.sphereon.statuslist.spi
 /**
  * Server-internal seam that yields the key name a status list's token must be signed under.
  *
- * A deployment that manages signing material centrally binds an implementation; it derives the name
- * from its own server-side binding for ([tenantId], [statusListId]) and never from a value a caller
- * supplied. While an implementation is bound it is the only source of the signing key name: a
- * `signingKeyAlias` carried on a definition is ignored, and a null answer means "refuse to sign",
- * never "pick something else".
+ * A deployment that manages signing material centrally binds an implementation. When a management
+ * boundary has already validated an exact tenant-owned key selection, [requestedKeyAlias] is the
+ * validated handoff and must be preserved. When it is absent, the implementation may derive the
+ * name from its own server-side binding for ([tenantId], [statusListId]). A null answer means
+ * "refuse to sign", never "pick something else".
  *
  * Implementations must answer identically for every reason a binding cannot be honoured, so no
  * caller can tell an absent binding apart from one that exists but is not usable, and must never
@@ -36,5 +36,6 @@ interface StatusListSigningKeyNameResolver {
     suspend fun resolveSigningKeyName(
         tenantId: String,
         statusListId: String,
+        requestedKeyAlias: String? = null,
     ): String?
 }

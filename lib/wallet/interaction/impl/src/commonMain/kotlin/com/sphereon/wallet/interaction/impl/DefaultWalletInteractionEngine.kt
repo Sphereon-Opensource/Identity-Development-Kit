@@ -58,6 +58,7 @@ class DefaultWalletInteractionEngine(
     private val sensitiveInputAuthority: com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority,
     private val privateSessionStore: WalletInteractionPrivateSessionStore,
     private val sessionStore: WalletInteractionSessionStore,
+    private val launchAuthorities: Set<com.sphereon.wallet.interaction.WalletInteractionLaunchAuthority> = emptySet(),
 ) : WalletInteractionEngine,
     WalletInteractionStateEventSource {
     private val registry = WalletInteractionProtocolRegistry(adapters)
@@ -76,6 +77,17 @@ class DefaultWalletInteractionEngine(
         sessionStore.listActivity(walletUnitId, afterSequence, limit)
 
     override suspend fun start(input: WalletInteractionInput): WalletInteractionSession {
+        // Admission is before private input, session state, protocol matching or network work.
+        // Missing composition must never silently classify a business wallet as an ordinary one.
+        val authority = launchAuthorities.singleOrNull()
+            ?: com.sphereon.core.api.Err(com.sphereon.core.api.error.IdkError.FORBIDDEN_ERROR(
+                message = "wallet_interaction_launch_authority_missing_or_ambiguous",
+            )).getOrThrow()
+        val admitted = authority.authorize(input).getOrThrow()
+        return startAdmitted(input.copy(processBinding = admitted))
+    }
+
+    private suspend fun startAdmitted(input: WalletInteractionInput): WalletInteractionSession {
         val sessionId = sessionIdGenerator.next()
         storeLaunchInput(sessionId, input)
         val resolving = WalletInteractionState.resolving(sessionId, input)
@@ -276,6 +288,15 @@ class DefaultWalletInteractionEngine(
                 state
             }
         record.state.value = updated
+        val failure = updated.error
+        if (updated.terminal && current.error == null) {
+            failure?.let { error ->
+                println(
+                    "[WARN] [wallet.interaction] session=${updated.sessionId.value} status=${updated.status} " +
+                        "failed code=${error.code} message=${error.message ?: error.messageKey ?: ""}",
+                )
+            }
+        }
         persist(record)
         return updated
     }
@@ -303,7 +324,19 @@ class DefaultWalletInteractionEngine(
         ).also { record -> sessions[sessionId] = record }
     }
 
-    private suspend fun requireRecord(sessionId: WalletInteractionSessionId): SessionRecord = sessions[sessionId] ?: restoreSession(sessionId) ?: throw unknownSession(sessionId)
+    private suspend fun requireRecord(sessionId: WalletInteractionSessionId): SessionRecord {
+        val cached = sessions[sessionId] ?: return restoreSession(sessionId) ?: throw unknownSession(sessionId)
+        // Product authorities can persist a decision between command admission and dispatch.
+        // Re-read through the protected store even at the same revision: read scope may change.
+        val stored = sessionStore.load(sessionId) ?: throw unknownSession(sessionId)
+        require(stored.input.walletUnitId == cached.input.walletUnitId &&
+            stored.input.processBinding == cached.input.processBinding) { "wallet_interaction_persisted_identity_changed" }
+        if (stored.state.revision >= cached.state.value.revision) {
+            cached.state.value = stored.state
+            cached.adapter = stored.adapterId?.let { registry.get(it) }
+        }
+        return cached
+    }
 
     private fun unknownSession(sessionId: WalletInteractionSessionId): IllegalArgumentException = IllegalArgumentException("wallet_interaction_session_unknown")
 

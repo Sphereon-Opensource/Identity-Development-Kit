@@ -342,6 +342,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                         sensitiveInputAuthority = integrationSensitiveInputAuthority(),
                         privateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
                         sessionStore = InMemoryWalletInteractionSessionStore(),
+                        launchAuthorities = setOf(integrationLaunchAuthority()),
                         adapters = listOf(adapter),
                         protocolExecutor =
                             WscdAwareExecutionPlanner(
@@ -491,6 +492,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                 sensitiveInputAuthority = integrationSensitiveInputAuthority(),
                 privateSessionStore = InMemoryWalletInteractionPrivateSessionStore(),
                 sessionStore = InMemoryWalletInteractionSessionStore(),
+                launchAuthorities = setOf(integrationLaunchAuthority()),
                 // Promptless protocol test: the attended security ceremony is exercised by the
                 // wallet-product/runner suites, not here.
                 securityGate = WalletSecurityGate.allow,

@@ -336,6 +336,22 @@ class DefaultConfigBinderMapTest {
     }
 
     @Test
+    fun bindsBracketQuotedMapKeyWithPrimitiveValue() {
+        val binder =
+            createBinder(
+                "jurisdiction-profiles.[NL]" to "eu-standard",
+                "jurisdiction-profiles.[kms.signature.verify]" to "eu-strict",
+                "jurisdiction-profiles.us" to "us-standard",
+            )
+
+        val map = binder.getConfigMap<String>("jurisdiction-profiles")
+
+        assertEquals(setOf("NL", "kms.signature.verify", "us"), map.keys)
+        assertEquals("eu-standard", map["NL"])
+        assertEquals("eu-strict", map["kms.signature.verify"])
+    }
+
+    @Test
     fun returnsEmptyMapForMissingPrefix() {
         val binder = createBinder("other.key" to "value")
 

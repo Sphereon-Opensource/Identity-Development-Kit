@@ -115,6 +115,7 @@ class ConfigDrivenStatusListDefinitionsProvider(
         byId(correlationId)?.let { return Ok(it) }
         val driver = statusListDriver.invoke()
         val persisted = driver.getStatusList(StatusListRef(correlationId = correlationId)).getOrElse { return Err(it) }
+            ?: driver.getStatusList(StatusListRef(id = correlationId)).getOrElse { return Err(it) }
             ?: return Ok(null)
         return Ok(persisted.toDefinition())
     }

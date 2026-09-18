@@ -142,7 +142,13 @@ class JwsStatusListSigner(
                         mode = identifierMode(effectiveArgs.signingKeyMode),
                         // When we built the identifier ourselves, tell the KMS not to add its own
                         // (otherwise a cert-bearing key would also inject x5c, contradicting a DID kid).
-                        opts = CreateJwsOpts(protectedHeader = header, noIdentifierInHeader = identifierHeader != null),
+                        opts = CreateJwsOpts(
+                            protectedHeader = header,
+                            noIdentifierInHeader = identifierHeader != null,
+                            // The VC envelope already carries its issuer. Do not let the
+                            // generic JOSE fallback add the managed key ID as an unrelated iss.
+                            noIssPayloadUpdate = effectiveArgs.spec == StatusListSpec.BITSTRING_STATUS_LIST,
+                        ),
                     ),
                 ).getOrElse { return Err(it) }
         return Ok(StatusListToken(token = result.jwt, contentType = contentType, ttlSeconds = effectiveArgs.ttlSeconds))

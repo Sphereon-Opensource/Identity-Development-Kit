@@ -11,6 +11,8 @@
 package com.sphereon.openid.oid4vp.verifier.impl
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Err
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.events.EventSubsystems
@@ -73,6 +75,22 @@ class EventPublishingAuthorizationSessionStore(
         correlationId: String,
         validationResult: ValidationResult,
     ): IdkResult<AuthorizationSession, IdkError> = transition(correlationId) { delegate.storeValidationResult(correlationId, validationResult) }
+
+    override suspend fun storeValidationResultDeferred(
+        correlationId: String,
+        validationResult: ValidationResult,
+    ): IdkResult<AuthorizationSession, IdkError> = delegate.storeValidationResultDeferred(correlationId, validationResult)
+
+    override suspend fun dispatchDeferredValidation(
+        correlationId: String,
+        previous: AuthorizationSession?,
+    ): IdkResult<Unit, IdkError> {
+        val current = delegate.get(correlationId).getOrElse { return Err(it) } ?: return Ok(Unit)
+        val result = delegate.dispatchDeferredValidation(correlationId, previous)
+        if (result.isErr) return Err(result.error)
+        if (previous?.status != current.status) publish(previous, current)
+        return Ok(Unit)
+    }
 
     override suspend fun getForRequestUri(
         correlationId: String,

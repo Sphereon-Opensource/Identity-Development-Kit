@@ -32,6 +32,7 @@ import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.crypto.core.ResolvedKeyInfo
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.jose.JwkSet
+import com.sphereon.crypto.core.jose.JwkUse
 import com.sphereon.crypto.core.jose.JwkType
 import com.sphereon.crypto.resolution.IdentifierMethodDefaults
 import com.sphereon.di.session.SessionContext
@@ -138,7 +139,11 @@ class JwksUrlExternalIdentifierResolutionServiceImpl private constructor(
                 }
 
                 else -> {
-                    resolvedKeys.singleOrNull()
+                    // Without a kid the caller verifies a signature, so keys published for
+                    // encryption only (RFC 7517 `use: enc`) are not candidates; providers such
+                    // as Keycloak publish one signing and one encryption key side by side.
+                    val encryptionOnlyKids = jwkSet.keys.filter { it.use == JwkUse.enc.value }.mapNotNull { it.kid }.toSet()
+                    resolvedKeys.filter { it.kid == null || it.kid !in encryptionOnlyKids }.singleOrNull()
                         ?: return IdkError
                             .ILLEGAL_ARGUMENT_ERROR(
                                 message = "JWKS from $url must contain exactly one usable key when kid is omitted",

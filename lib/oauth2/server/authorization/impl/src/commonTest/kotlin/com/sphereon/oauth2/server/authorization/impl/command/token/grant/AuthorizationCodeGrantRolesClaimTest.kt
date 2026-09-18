@@ -63,6 +63,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -194,6 +195,7 @@ class AuthorizationCodeGrantRolesClaimTest {
             createRefreshToken = lazy { commands.createRefreshToken },
             createIdToken = lazy { commands.createIdToken },
             createTokenResponse = commands.createTokenResponse,
+            credentialIssuerAudienceResolver = NoCredentialIssuerAudienceResolver(),
         )
 
     private fun walletInstanceAttestationEvidence(): WalletInstanceAttestationEvidence =
@@ -443,6 +445,7 @@ class AuthorizationCodeGrantRolesClaimTest {
                     createRefreshToken = lazy { commands.createRefreshToken },
                     createIdToken = lazy { commands.createIdToken },
                     createTokenResponse = commands.createTokenResponse,
+                    credentialIssuerAudienceResolver = NoCredentialIssuerAudienceResolver(),
                 ).handle(context.tokenRequest.grantParameters, context)
 
             assertTrue(result.isOk)
@@ -479,6 +482,7 @@ class AuthorizationCodeGrantRolesClaimTest {
             verifyRefreshTokenGrant = verifier, createAccessToken = commands.createAccessToken,
             createRefreshToken = lazy { commands.createRefreshToken }, createIdToken = lazy { commands.createIdToken },
             createTokenResponse = commands.createTokenResponse,
+            credentialIssuerAudienceResolver = NoCredentialIssuerAudienceResolver(),
         ).handle(refreshParams, context)
         assertTrue(refreshed.isOk)
         assertEquals(expectedBag, commands.capturedAccessTokenArgs?.additionalClaims?.get("oidc.internal.federation_claims"))
@@ -525,6 +529,7 @@ class AuthorizationCodeGrantRolesClaimTest {
                 verifyRefreshTokenGrant = verifier, createAccessToken = commands.createAccessToken,
                 createRefreshToken = lazy { commands.createRefreshToken }, createIdToken = lazy { commands.createIdToken },
                 createTokenResponse = commands.createTokenResponse,
+                credentialIssuerAudienceResolver = NoCredentialIssuerAudienceResolver(),
             ).handle(params, context)
 
             assertTrue(result.isErr, invalidMetadata)

@@ -133,6 +133,7 @@ class HandleFederationOutcomeCommandImpl(
                         expiresAt = now + flowConfig.sessionTtl,
                         upstreamSid = exchange.upstreamSid,
                         applicationId = pending.applicationId,
+                        upstreamOwnsIdentity = pending.federationBindingId.isNotBlank(),
                     ),
                 ).getOrElse {
                     return Err(

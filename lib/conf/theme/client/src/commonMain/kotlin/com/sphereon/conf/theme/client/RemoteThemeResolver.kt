@@ -51,6 +51,7 @@ class RemoteThemeResolver(
     private val httpClientFactory: HttpClientFactory,
     private val configProvider: ThemeClientConfigProvider,
     private val cache: ThemeClientCache,
+    private val tenantOrigin: ThemeClientTenantOriginResolver,
 ) : ThemeResolver {
     private val http: HttpClient by lazy { httpClientFactory.createClient(HttpClientOptions()) }
 
@@ -60,7 +61,7 @@ class RemoteThemeResolver(
         applicationId: String?,
         principalId: String?,
     ): ResolvedTheme {
-        val baseUrl = requireThemeClientBaseUrl(configProvider, execution, TAG)
+        val baseUrl = themeClientBaseUrl(tenant, tenantOrigin, configProvider, execution, TAG)
         val url = "$baseUrl$THEME_API_BASE_PATH/${tenant.encodeURLPathPart()}/resolved"
         val query =
             buildMap {

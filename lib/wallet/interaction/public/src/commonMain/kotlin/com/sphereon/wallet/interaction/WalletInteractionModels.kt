@@ -164,6 +164,8 @@ data class WalletInteractionInput(
     val executionOwner: ProtocolExecutionOwner = ProtocolExecutionOwner.WALLET_APP,
     val requestedFlowKinds: List<WalletInteractionFlowKind> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
+    /** Claimed local process context; only a host launch authority can admit it. */
+    val processBinding: WalletInteractionProcessBinding? = null,
 ) {
     init {
         require(walletUnitId.isNotBlank()) { "wallet_interaction_wallet_unit_id_blank" }
@@ -353,6 +355,7 @@ data class WalletInteractionActivitySummary(
     val type: WalletInteractionActivityType,
     val counterparty: WalletCounterpartySummary? = null,
     val metadata: Map<String, String> = emptyMap(),
+    val authorizationDecision: WalletAuthorizationDecisionProjection? = null,
 )
 
 @Serializable
@@ -489,6 +492,69 @@ private val selfAssertedAttributeSource = WalletAttributeSource(kind = WalletAtt
 
 fun selfAssertedAttributed(value: String?): WalletAttributedString? =
     value?.takeUnless { it.isBlank() }?.let { WalletAttributedString(value = it, source = selfAssertedAttributeSource) }
+
+/**
+ * One localised string, in the ETSI TS 119 602 JSON binding this codebase already uses for
+ * trust-list content. Registered purposes are multilingual because the registrant must provide them
+ * for every official language of the Member States the intended use is offered in; a wallet picks
+ * the holder's language and never invents a translation.
+ */
+@Serializable
+data class WalletMultiLangString(
+    val lang: String,
+    val value: String,
+) {
+    init {
+        require(lang.isNotBlank()) { "wallet_multi_lang_string_lang_blank" }
+        require(value.isNotBlank()) { "wallet_multi_lang_string_value_blank" }
+    }
+}
+
+/** The purpose in [lang], or null when the registrar recorded no localisation for it. */
+fun List<WalletMultiLangString>.forLang(lang: String): String? = firstOrNull { it.lang.equals(lang, ignoreCase = true) }?.value
+
+/**
+ * A relying party's registered intended use, as a registrar recorded it.
+ *
+ * Modelled on the IntendedUse class of the Commission's TS5, Common Formats and API for Relying
+ * Party Registration Information: a registrar-assigned identifier together with one or more purposes
+ * of the intended data processing under Article 5(1)(b), each localised. The certificate profiles
+ * that carry it are ETSI TS 119 475 for relying party registration certificates and ETSI TS 119
+ * 411-8 for access certificates; OpenID Federation entity metadata may carry it instead where that
+ * is the trust mechanism in play.
+ *
+ * Registered is the whole point. A registrar has checked that this party may ask for these
+ * attributes for this purpose, which is a different assurance from a sentence the verifier put in
+ * its own request. OpenID4VP carries no purpose of its own, and nothing self-asserted may be
+ * presented here, so [source] is
+ * [ACCESS_CERTIFICATE][WalletAttributeSourceKind.ACCESS_CERTIFICATE] or
+ * [REGISTRAR_REGISTERED][WalletAttributeSourceKind.REGISTRAR_REGISTERED] and the naming authority is
+ * therefore always present.
+ */
+@Serializable
+data class WalletRegisteredPurpose(
+    /**
+     * The registrar's unique identifier for this registered intended use. Stable across
+     * presentations, so a holder and an auditor can recognise the same intended use again.
+     */
+    val intendedUseIdentifier: String,
+    /** One or more purposes of the intended data processing, localised. */
+    val purpose: List<WalletMultiLangString>,
+    /** Which certificate or registry this came from, and the authority behind it. */
+    val source: WalletAttributeSource,
+) {
+    init {
+        require(intendedUseIdentifier.isNotBlank()) { "wallet_registered_purpose_intended_use_identifier_blank" }
+        require(purpose.isNotEmpty()) { "wallet_registered_purpose_empty" }
+        require(source.kind in registeredPurposeSourceKinds) { "wallet_registered_purpose_source_kind_invalid" }
+    }
+}
+
+private val registeredPurposeSourceKinds =
+    setOf(
+        WalletAttributeSourceKind.ACCESS_CERTIFICATE,
+        WalletAttributeSourceKind.REGISTRAR_REGISTERED,
+    )
 
 /**
  * RFC 7591 / OIDC Registration fields still present on raw `client_metadata` JSON.
@@ -645,6 +711,11 @@ data class WalletCredentialPreview(
 data class WalletCredentialSelectionRequest(
     val requirements: List<WalletCredentialRequirement>,
     val satisfiable: Boolean,
+    /**
+     * The registered intended use the request as a whole is made under, when one covers every
+     * requirement in it. Null otherwise; see [WalletCredentialRequirement.purpose].
+     */
+    val purpose: WalletRegisteredPurpose? = null,
     val credentialSets: List<WalletCredentialSetRequirement> = emptyList(),
 )
 
@@ -671,6 +742,13 @@ data class WalletCredentialRequirement(
     val candidateCredentialIds: List<String> = emptyList(),
     /** Parallel labelled form of [requiredClaimPaths]. Empty means that form was not produced. */
     val requestedClaims: List<WalletRequestedClaim> = emptyList(),
+    /**
+     * The registered intended use this requirement is asked under. One relying party may register
+     * several, each with its own attribute set, which is why this sits per requirement as well as on
+     * the request. Null when the relying party's certificate registers none for it, and a wallet
+     * must not present a missing purpose as an empty or assumed one.
+     */
+    val purpose: WalletRegisteredPurpose? = null,
     /** Per-candidate cost, keyed to [candidateCredentialIds]. Empty means cost was not computed. */
     val candidateDisclosures: List<WalletCandidateDisclosure> = emptyList(),
 )

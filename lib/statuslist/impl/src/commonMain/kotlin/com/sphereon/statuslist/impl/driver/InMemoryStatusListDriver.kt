@@ -584,9 +584,9 @@ class InMemoryStatusListDriver(
     private fun tenantId(): String = execution.tenantId.takeIf { it.isNotBlank() } ?: DEFAULT_TENANT
 
     /**
-     * The key name to sign [correlationId] under. A bound [StatusListSigningKeyNameResolver] wins
-     * outright, so a `signingKeyAlias` that reached the definition is ignored while one is bound.
-     * Without one, the deployment's own configured key is used.
+     * The key name to sign [correlationId] under. An alias supplied by an authenticated management
+     * boundary is handed to the resolver so that an already validated selection is not discarded.
+     * Without an explicit selection, the deployment's own durable binding is used.
      *
      * A null answer is passed to the signer untouched. Nothing is substituted, defaulted, or derived
      * from the correlation id here; a signer that needs a KMS key refuses, and a signer that derives
@@ -598,7 +598,7 @@ class InMemoryStatusListDriver(
     ): String? {
         val resolver = signingKeyNameResolver?.invoke()
         return if (resolver != null) {
-            resolver.resolveSigningKeyName(tenantId(), correlationId)?.takeIf { it.isNotBlank() }
+            resolver.resolveSigningKeyName(tenantId(), correlationId, definitionKeyAlias)?.takeIf { it.isNotBlank() }
         } else {
             definitionKeyAlias?.takeIf { it.isNotBlank() }
         }

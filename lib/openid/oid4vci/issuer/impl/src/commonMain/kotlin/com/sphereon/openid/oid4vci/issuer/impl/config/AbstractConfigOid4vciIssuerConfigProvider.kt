@@ -807,7 +807,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                     ),
                 )
         return Ok(
-            bindingFromDefinition(listId, definition),
+            bindingFromDefinition(definition),
         )
     }
 
@@ -836,15 +836,14 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
                 reason = "no status list with id '$listId' is defined under the 'statuslists' namespace or in tenant persistence",
             ),
         )
-        return Ok(bindingFromDefinition(listId, definition))
+        return Ok(bindingFromDefinition(definition))
     }
 
     private fun bindingFromDefinition(
-        listId: String,
         definition: com.sphereon.statuslist.CreateStatusListArgs,
     ) =
         StatusListBinding(
-            statusListCorrelationId = listId,
+            statusListCorrelationId = definition.correlationId,
             spec = definition.spec,
             purposes = definition.purposes,
             mdocProfile = definition.mdocProfile,

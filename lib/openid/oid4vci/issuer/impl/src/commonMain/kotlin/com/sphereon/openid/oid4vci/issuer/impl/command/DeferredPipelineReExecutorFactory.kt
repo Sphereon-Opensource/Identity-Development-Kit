@@ -70,7 +70,7 @@ class DeferredPipelineReExecutorFactory(
      *   session execution available to the calling command so this factory itself stays free
      *   of session-context coupling.
      */
-    fun create(tenantIdProvider: () -> String?): DeferredPipelineReExecutor? {
+    fun create(tenantIdProvider: () -> String?, businessModeProvider: () -> String? = { null }): DeferredPipelineReExecutor? {
         val hook = lifecycleHook ?: return null
         return DeferredPipelineReExecutor(
             deferredStore = deferredStore,
@@ -81,6 +81,7 @@ class DeferredPipelineReExecutorFactory(
             formatHandlers = formatDispatch.formatHandlers,
             credentialDesignService = formatDispatch.credentialDesignService,
             tenantIdProvider = tenantIdProvider,
+            businessModeProvider = businessModeProvider,
         )
     }
 }

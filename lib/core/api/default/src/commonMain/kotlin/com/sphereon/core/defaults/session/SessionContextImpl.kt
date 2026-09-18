@@ -21,6 +21,7 @@ import com.sphereon.core.defaults.context.UserContextImpl
 import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.UserContext
+import com.sphereon.di.context.UserSecuredContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
@@ -63,10 +64,16 @@ class SessionContextImpl(
         ) {
             context
         } else {
-            UserContextImpl(
+            (secureDetails ?: context.secureDetails)?.let { secured ->
+                SessionSecuredUserContext(
+                    base = context,
+                    secureDetails = secured,
+                    principalType = principalType ?: context.principalType,
+                )
+            } ?: UserContextImpl(
                 tenant = context.tenant,
                 principal = context.principal,
-                secureDetails = secureDetails ?: context.secureDetails,
+                secureDetails = null,
                 id = context.id,
                 principalType = principalType ?: context.principalType,
             )
@@ -95,4 +102,18 @@ class SessionContextImpl(
         result = 31 * result + sessionId.hashCode()
         return result
     }
+}
+
+/**
+ * Retains the marker interface required by authorization code when a validated bearer is
+ * attached to a cached user-scope context for one session.
+ */
+private class SessionSecuredUserContext(
+    private val base: UserContext,
+    override val secureDetails: SecuredTenantContextDetails,
+    override val principalType: PrincipalType,
+) : UserSecuredContext {
+    override val id: String = base.id
+    override val tenant = base.tenant
+    override val principal: Any? = base.principal
 }

@@ -263,6 +263,7 @@ class WalletInteractionOid4vciRealProtocolE2ETest {
                     // Promptless protocol test: the attended security ceremony is exercised by the
                     // wallet-product/runner suites, not here.
                     securityGate = WalletSecurityGate.allow,
+                    launchAuthorities = setOf(integrationLaunchAuthority()),
                     adapters = listOf(adapter),
                 )
 

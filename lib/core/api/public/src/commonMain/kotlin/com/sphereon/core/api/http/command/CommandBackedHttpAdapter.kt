@@ -448,10 +448,21 @@ abstract class CommandBackedHttpAdapter(
             // Each segment must be slug-shaped before we hit the DB; if any peeled
             // segment isn't a valid slug, this peelCount cannot resolve.
             if (peeled.any { !isSafeSlugSegment(it) }) continue
-            var parent: String? = baseTenantId
+            // A protocol issuer path is mounted as `/as/{issuer}` (or the
+            // equivalent `/oid4vci/{issuer}` / `/oid4vp/{issuer}`). The
+            // protocol prefix is not a tenant-tree segment. In particular,
+            // internal east-west readiness calls carry the platform host as
+            // their transport host, so using [baseTenantId] here would make
+            // `/as/acme` look up `acme` as a child of the platform tenant and
+            // leave the request scoped to the platform when it is actually a
+            // customer root. Resolve the issuer slug from the root in this
+            // form, just as the external tenant host does.
+            val protocolIssuerPath = peeled.firstOrNull() in PROTOCOL_PREFIX_SEGMENTS
+            val lookupSegments = if (protocolIssuerPath) peeled.drop(1) else peeled
+            var parent: String? = if (protocolIssuerPath) null else baseTenantId
             var lastResolved: String? = null
             var allResolved = true
-            for (seg in peeled) {
+            for (seg in lookupSegments) {
                 val resolved =
                     if (parent == null) {
                         routableSlugLookup.findRootBySlug(seg)

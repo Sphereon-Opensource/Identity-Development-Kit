@@ -138,6 +138,33 @@ class StatusListBindingFailClosedTest {
     }
 
     @Test
+    fun issuanceBindingUsesResolvedCorrelationIdWhenConfiguredWithManagementUuid() = runTest {
+        val managementId = "736c1b6d-75f1-42d6-b8fc-0bc39ff2110e"
+        val persisted = object : StatusListDefinitionsProvider {
+            override val definitions: List<CreateStatusListArgs> = emptyList()
+            override fun byId(correlationId: String): CreateStatusListArgs? = null
+            override suspend fun resolve(correlationId: String) = if (correlationId == managementId) {
+                Ok(CreateStatusListArgs(
+                    correlationId = "employee-revocation",
+                    spec = StatusListSpec.BITSTRING_STATUS_LIST,
+                    purposes = listOf(StatusPurpose.REVOCATION),
+                    proofFormat = StatusProofFormat.VC_JWT,
+                    issuer = "https://issuer.example.com",
+                    statusListUri = "https://issuer.example.com/statuslists/employee-revocation",
+                ))
+            } else Ok(null)
+        }
+        val result = provider(
+            issuerProperties + ("oid4vci.issuer.credentials.[EuPid].status.statusListId" to managementId),
+            withDefinitionsSource = false,
+            definitionsSourceOverride = Provider { persisted },
+        ).statusListBindingForIssuance("EuPid")
+
+        assertTrue(result.isOk)
+        assertEquals("employee-revocation", assertNotNull(result.value).statusListCorrelationId)
+    }
+
+    @Test
     fun issuanceResolutionCanUseTenantPersistedDefinition() = runTest {
         val persisted =
             object : StatusListDefinitionsProvider {

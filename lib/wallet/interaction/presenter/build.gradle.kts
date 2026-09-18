@@ -45,7 +45,7 @@ kotlin {
                 api(projects.libWalletInteractionPresenterContracts)
                 api(sphereonlib.software.amazon.app.platform.presenter.molecule.public)
                 implementation(sphereonlib.software.amazon.app.platform.presenter.molecule.impl)
-                implementation(sphereonlib.org.jetbrains.compose.runtime.runtime)
+                implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.core)
             }
         }

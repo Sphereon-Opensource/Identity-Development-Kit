@@ -845,6 +845,18 @@ class HandleCredentialRequestCommandImpl(
         val statusListBinding =
             issuerConfigProvider.statusListBindingForIssuance(configId).getOrElse { return Err(it) }
 
+        val businessMode = execution.conf.app.getPropertyAsString("oid4vci.business-authorization.mode")
+        if (businessMode != "ordinary" && businessMode != "required") {
+            return Err(IdkError.FORBIDDEN_ERROR(message = "issuer_business_policy_not_configured"))
+        }
+        com.sphereon.openid.oid4vci.issuer.lifecycle.authorizeIssuerBusinessAction(
+            required = businessMode == "required",
+            args = com.sphereon.openid.oid4vci.issuer.lifecycle.Oid4vciBusinessAuthorizationArgs(
+                instanceId, session?.sessionId, session?.lifecycleCorrelationId, configId,
+            ),
+            hook = lifecycleHook,
+        ).getOrElse { return Err(it) }
+
         contributeOid4vciPhase(
             session = session,
             phase = Oid4vciIssuancePhase.PRE_ISSUE,

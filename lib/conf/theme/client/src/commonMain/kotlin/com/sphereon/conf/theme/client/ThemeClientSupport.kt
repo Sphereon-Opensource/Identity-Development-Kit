@@ -25,6 +25,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlin.concurrent.Volatile
 import kotlin.time.Clock
@@ -97,6 +98,33 @@ internal fun requireThemeClientBaseUrl(
         )
     }
     return baseUrl
+}
+
+/**
+ * The base the theme service is addressed on for [tenant]: the tenant's public origin when the
+ * [ThemeClientTenantOriginResolver] knows it, so the request carries a host the theme service
+ * resolves to that tenant; otherwise the configured `theme.client.base-url`. A resolver failure
+ * is logged and falls back to the configured base URL rather than failing the page.
+ */
+internal suspend fun themeClientBaseUrl(
+    tenant: String,
+    tenantOrigin: ThemeClientTenantOriginResolver,
+    configProvider: ThemeClientConfigProvider,
+    execution: SessionExecution,
+    tag: String,
+): String {
+    val origin =
+        try {
+            tenantOrigin.publicOrigin(tenant)?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            execution.log.logManager
+                .withTag(tag)
+                .warn("Tenant public origin lookup failed for tenant '$tenant'; using the configured theme base URL: ${failure.message}")
+            null
+        }
+    return origin ?: requireThemeClientBaseUrl(configProvider, execution, tag)
 }
 
 /**

@@ -49,7 +49,8 @@ interface StatusListDefinitionsProvider {
     /**
      * Resolve a definition at an issuance/runtime boundary. Implementations backed by suspend
      * persistence may override this without forcing the synchronous config/metadata surface to
-     * block. The default keeps existing providers source-compatible.
+     * block. Persisted implementations also accept a management resource ID and return its
+     * canonical correlation ID in the definition. The default keeps existing providers source-compatible.
      */
     suspend fun resolve(correlationId: String): IdkResult<CreateStatusListArgs?, IdkError> = Ok(byId(correlationId))
 }

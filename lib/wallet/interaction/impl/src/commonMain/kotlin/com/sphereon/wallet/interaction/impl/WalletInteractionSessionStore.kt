@@ -97,5 +97,6 @@ internal fun WalletInteractionState.activityProjection(
             -> disclosure?.selectedCredentialIds.orEmpty().toSet()
             null -> emptySet()
         },
+        authorizationDecision = activity?.authorizationDecision,
     )
 }

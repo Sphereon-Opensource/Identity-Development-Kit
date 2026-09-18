@@ -18,13 +18,18 @@
 package com.sphereon.core.api.conf
 
 /**
- * JVM implementation of the Env object that uses System.getenv() to get environment variables.
+ * JVM implementation of the Env object.
+ *
+ * Configuration location is also supported as a JVM system property. This is
+ * required for embedded/test runtimes where the location is generated after
+ * the JVM has started and therefore cannot be supplied as an environment
+ * variable.
  */
 actual object Env {
     /**
      * Returns the value of the specified environment variable.
      */
-    actual fun get(name: String): String? = System.getenv(name)
+    actual fun get(name: String): String? = System.getenv(name) ?: System.getProperty(name)
 
     /**
      * Returns all environment variables as a map.

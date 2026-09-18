@@ -52,9 +52,13 @@ import com.sphereon.openid.oid4vp.dcql.store.DcqlQueryConfigurationStore
 import com.sphereon.openid.oid4vp.dcql.store.model.DcqlQueryConfiguration
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionCallbackDispatcher
 import com.sphereon.openid.oid4vp.verifier.callback.AuthorizationSessionStatusUpdate
+import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejection
+import com.sphereon.openid.oid4vp.verifier.CredentialValidationRejectionReason
+import com.sphereon.openid.oid4vp.verifier.ValidationResult
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -103,6 +107,60 @@ class KvAuthorizationSessionStoreTest {
         assertEquals(true, store.storeValidationResult(correlation,
             com.sphereon.openid.oid4vp.verifier.ValidationResult(true, listOf(matched))).isOk)
         assertEquals(evidence, store.get(correlation).value?.validationResult?.matchedCredentials?.single()?.verificationEvidence)
+    }
+
+    /**
+     * A credential-status rejection is only useful to a relying party if it is still there after the
+     * session has been written to the key-value store and read back. The public
+     * [ValidationResult] is not `@Serializable`, so the rejection has to travel through
+     * [KvAuthorizationSessionStore.ValidationResultEntry]; this drives the real store to prove the
+     * entry actually carries it in both directions.
+     */
+    @Test
+    fun rejectionsSurviveAStoreRoundTrip() =
+        runTest {
+            val store = createStore()
+            val correlation = "credential-status-rejection-roundtrip"
+            assertEquals(true, store.put(correlation, session(null, correlation), 600).isOk)
+            val rejection =
+                CredentialValidationRejection(
+                    credentialQueryId = "identity_credential",
+                    reason = CredentialValidationRejectionReason.REVOKED,
+                    checkedAtEpochMillis = 1_764_000_000_000L,
+                    statusValue = 1,
+                )
+
+            val stored =
+                store.storeValidationResult(
+                    correlation,
+                    ValidationResult(
+                        valid = false,
+                        errors = listOf("Credential status asserts revocation"),
+                        rejections = listOf(rejection),
+                    ),
+                )
+
+            assertEquals(true, stored.isOk)
+            assertEquals(listOf(rejection), store.get(correlation).value?.validationResult?.rejections)
+        }
+
+    /**
+     * Sessions written before rejections existed carry no `rejections` key at all. Decoding one must
+     * still succeed and yield an empty list rather than failing the whole session read.
+     */
+    @Test
+    fun storedValidationResultWithoutRejectionsStillDecodes() {
+        val storedBeforeRejectionsExisted = """{"valid":true,"matchedCredentials":[],"errors":[]}"""
+
+        val decoded =
+            Json.decodeFromString(
+                KvAuthorizationSessionStore.ValidationResultEntry.serializer(),
+                storedBeforeRejectionsExisted,
+            )
+
+        assertEquals(emptyList(), decoded.rejections)
+        assertEquals(emptyList(), decoded.toPublic().rejections)
+        assertEquals(true, decoded.toPublic().valid)
     }
 
     private fun createStore(clock: Clock = Clock.System, claimed: Boolean = false): KvAuthorizationSessionStore =

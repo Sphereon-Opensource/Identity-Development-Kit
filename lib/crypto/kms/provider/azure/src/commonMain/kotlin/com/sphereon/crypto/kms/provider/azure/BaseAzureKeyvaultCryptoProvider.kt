@@ -60,7 +60,7 @@ abstract class BaseAzureKeyvaultCryptoProvider(
 //    override val settings: KeyProviderSettings
 ) : KmsProvider,
     KeyStoreService {
-    override val id: String = config.applicationId
+    override val id: String = config.id
 
     /** True only when the platform implementation has a usable certificate client. */
     protected open val supportsProviderCertificateReferenceReads: Boolean

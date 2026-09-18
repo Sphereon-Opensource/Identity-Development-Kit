@@ -45,4 +45,33 @@ class WalletInteractionActivityTaxonomyTest {
         assertEquals("login", state.counterparty?.metadata?.get("interaction_context"))
         assertTrue(encoded.contains("LOGIN"))
     }
+
+    @Test
+    fun authorizationDecisionIsCarriedIntoActivityProjection() {
+        val decision = WalletAuthorizationDecisionProjection(
+            decisionId = "dec-1",
+            caseId = "case-1",
+            tenantId = "tenant-1",
+            outcome = "PERMIT",
+            action = "issue credential",
+            principal = "did:example:holder",
+            policy = "policy@1",
+            recordedAt = "2026-08-25T09:42:00Z",
+            evidenceCount = 2,
+            availability = "available",
+        )
+        val state = WalletInteractionState(
+            sessionId = WalletInteractionSessionId("s-decision"),
+            walletUnitId = "wallet",
+            status = WalletInteractionStatus.Completed,
+            flowKind = WalletInteractionFlowKind.CredentialReceive,
+            activity = WalletInteractionActivitySummary(
+                type = WalletInteractionActivityType.CREDENTIAL_RECEIVE,
+                authorizationDecision = decision,
+            ),
+        )
+
+        assertEquals(decision, state.activity?.authorizationDecision)
+        assertTrue(Json.encodeToString(state).contains("dec-1"))
+    }
 }

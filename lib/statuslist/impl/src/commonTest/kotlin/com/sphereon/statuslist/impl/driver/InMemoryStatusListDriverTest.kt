@@ -667,6 +667,7 @@ private class FixedSigningKeyNameResolver(
     override suspend fun resolveSigningKeyName(
         tenantId: String,
         statusListId: String,
+        requestedKeyAlias: String?,
     ): String? {
         requests += tenantId to statusListId
         return keyName

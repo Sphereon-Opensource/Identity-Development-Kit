@@ -49,6 +49,7 @@ class RemoteFeatureResolver(
     private val httpClientFactory: HttpClientFactory,
     private val configProvider: ThemeClientConfigProvider,
     private val cache: ThemeClientCache,
+    private val tenantOrigin: ThemeClientTenantOriginResolver,
 ) : FeatureResolver {
     private val http: HttpClient by lazy { httpClientFactory.createClient(HttpClientOptions()) }
 
@@ -59,7 +60,7 @@ class RemoteFeatureResolver(
         applicationId: String?,
         variant: ThemeVariant?,
     ): ResolvedFeature? {
-        val baseUrl = requireThemeClientBaseUrl(configProvider, execution, TAG)
+        val baseUrl = themeClientBaseUrl(tenant, tenantOrigin, configProvider, execution, TAG)
         val encodedTenant = tenant.encodeURLPathPart()
         val encodedFeatureId = featureId.encodeURLPathPart()
         val url =

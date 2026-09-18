@@ -17,6 +17,11 @@ import kotlinx.serialization.Serializable
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
+/**
+ * Who runs the authorization server. A [HOSTED] server runs on this platform and is published at
+ * `<tenant origin>/as/<slug>`, so the platform mints its tokens and holds its clients. An [EXTERNAL]
+ * server is a provider the tenant already runs, reached over its own issuer URL.
+ */
 @Serializable
 enum class AuthorizationServerDeployment {
     @SerialName("HOSTED") HOSTED,
@@ -37,6 +42,13 @@ enum class AuthorizationServerCapability {
     @SerialName("OIDC") OIDC,
 }
 
+/**
+ * What the tenant intends a server for. [GENERAL] covers signing users and clients in to the platform
+ * itself, and the tenant default server always carries it. [CREDENTIAL_ISSUANCE] records that a server
+ * is meant to back credential issuance. Purposes describe intent and do not gate issuer binding, which
+ * is the tenant's own choice. [WALLET_LOGIN] is accepted but changes neither authentication routing nor
+ * issuer binding.
+ */
 @Serializable
 enum class AuthorizationServerPurpose {
     @SerialName("GENERAL") GENERAL,
@@ -44,12 +56,29 @@ enum class AuthorizationServerPurpose {
     @SerialName("WALLET_LOGIN") WALLET_LOGIN,
 }
 
+/**
+ * What an external server was registered for. The two values are independent roles and a resource may
+ * carry neither. [OID4VCI_AUTHORIZATION_SERVER] records that the provider serves wallets itself.
+ * [HOSTED_LOGIN_UPSTREAM] records that it authenticates end users on behalf of a hosted server through
+ * a federation binding. Usages describe intent and do not restrict what a credential issuer may be
+ * bound to: any active server of the tenant that allows an OID4VCI grant can be bound. Hosted resources
+ * declare no usages.
+ */
 @Serializable
 enum class AuthorizationServerUsage {
     @SerialName("OID4VCI_AUTHORIZATION_SERVER") OID4VCI_AUTHORIZATION_SERVER,
     @SerialName("HOSTED_LOGIN_UPSTREAM") HOSTED_LOGIN_UPSTREAM,
 }
 
+/**
+ * Where the end user of a hosted server authenticates. [LOCAL_ONLY] keeps the accounts on this
+ * platform, and the tenant default server stays on it so the tenant never loses its own way in.
+ * [FEDERATED_ONLY] holds no local accounts: the authorization endpoint sends the user to an upstream
+ * server named by a federation binding, redirecting straight away when one binding is eligible and
+ * asking the user to choose when several are, then exchanges the upstream token for one of its own.
+ * That is the wallet proxy shape, and a wallet talking to such a server sees an ordinary
+ * authorization server and never learns of the upstream. [HYBRID] offers both.
+ */
 @Serializable
 enum class HostedAuthenticationMode {
     @SerialName("LOCAL_ONLY") LOCAL_ONLY,
@@ -361,7 +390,13 @@ data class FederationBinding(
         require(AuthorizationServerUsage.HOSTED_LOGIN_UPSTREAM in target.usages) {
             "Federation binding target must allow hosted login usage"
         }
-        require(clientAuthentication.method in discovery.tokenEndpointAuthMethodsSupported) {
+        // A public client (`none`) proves itself with PKCE and needs no token-endpoint credential.
+        // Providers rarely list `none` among the supported methods (Keycloak never does), so it is
+        // accepted without an advertisement; a credentialed method must still be advertised.
+        require(
+            clientAuthentication.method == UpstreamClientAuthenticationMethod.NONE ||
+                clientAuthentication.method in discovery.tokenEndpointAuthMethodsSupported,
+        ) {
             "Federation client authentication method was not advertised by the external provider"
         }
     }

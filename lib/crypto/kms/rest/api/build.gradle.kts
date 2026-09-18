@@ -1,7 +1,6 @@
 import com.sphereon.gradle.plugin.configureIosTargetsIfEnabled
 import com.sphereon.gradle.plugin.configureLinuxTargetIfEnabled
 import com.sphereon.gradle.plugin.configureWasmJsTargetIfEnabled
-import com.sphereon.gradle.plugin.openapiSpec
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
 
 plugins {
@@ -18,7 +17,7 @@ metro {
 val kotlinBasePackage = "com.sphereon.crypto.kms.rest.api.generated"
 val kotlinModelPackage = "$kotlinBasePackage.models"
 val kotlinApiPackage = "$kotlinBasePackage.api"
-val inputSpecPath = openapiSpec("kms-openapi.yml").path
+val inputSpecPath = rootProject.layout.projectDirectory.file("openapi/kms-openapi.yml").asFile.path
 val generatedSourcesPath =
     layout.buildDirectory
         .dir("generated/openapi")
@@ -39,8 +38,8 @@ kotlin {
         // external $ref entries. Declare those files explicitly so a component-only contract
         // change cannot restore stale generated models from the Gradle build cache.
         inputs.files(
-            openapiSpec("kms-components.yml"),
-            openapiSpec("common-components.yml"),
+            rootProject.layout.projectDirectory.file("openapi/kms-components.yml").asFile,
+            rootProject.layout.projectDirectory.file("openapi/common-components.yml").asFile,
         )
         outputDir.set(generatedSourcesPath)
         templateDir.set(templatesPath)

@@ -46,7 +46,7 @@ kotlin {
                 api(projects.libConfThemeCompose)
 
                 // Compose runtime — available on ALL targets including JS
-                implementation(sphereonlib.org.jetbrains.compose.runtime.runtime)
+                implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
             }
         }
         val commonTest by getting {
@@ -59,10 +59,10 @@ kotlin {
         val composeUiMain by creating {
             dependsOn(commonMain)
             dependencies {
-                implementation(sphereonlib.org.jetbrains.compose.foundation.foundation)
-                implementation(sphereonlib.org.jetbrains.compose.material3.material3)
-                implementation(sphereonlib.org.jetbrains.compose.ui.ui)
-                implementation(sphereonlib.org.jetbrains.compose.ui.tooling.preview)
+                implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
+                implementation("org.jetbrains.compose.material3:material3:1.11.0-alpha07")
+                implementation("org.jetbrains.compose.ui:ui:1.11.1")
+                implementation("org.jetbrains.compose.ui:ui-tooling-preview:1.11.1")
 
             }
         }
@@ -73,9 +73,9 @@ kotlin {
         findByName("wasmJsMain")?.dependsOn(composeUiMain)
         val jvmTest by getting {
             dependencies {
-                implementation(sphereonlib.org.jetbrains.compose.foundation.foundation)
-                implementation(sphereonlib.org.jetbrains.compose.material3.material3)
-                implementation(sphereonlib.org.jetbrains.compose.ui.test)
+                implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
+                implementation("org.jetbrains.compose.material3:material3:1.11.0-alpha07")
+                implementation("org.jetbrains.compose.ui:ui-test:1.11.1")
                 implementation(composeDesktopRuntime())
             }
         }
@@ -86,10 +86,10 @@ kotlin {
 
 fun composeDesktopRuntime() =
     when {
-        System.getProperty("os.name").startsWith("Windows") -> sphereonlib.org.jetbrains.compose.desktop.jvm.windows.x64
+        System.getProperty("os.name").startsWith("Windows") -> "org.jetbrains.compose.desktop:desktop-jvm-windows-x64:1.11.1"
         System.getProperty("os.name").startsWith("Mac") && System.getProperty("os.arch") == "aarch64" ->
-            sphereonlib.org.jetbrains.compose.desktop.jvm.macos.arm64
-        System.getProperty("os.name").startsWith("Mac") -> sphereonlib.org.jetbrains.compose.desktop.jvm.macos.x64
-        System.getProperty("os.arch") == "aarch64" -> sphereonlib.org.jetbrains.compose.desktop.jvm.linux.arm64
-        else -> sphereonlib.org.jetbrains.compose.desktop.jvm.linux.x64
+            "org.jetbrains.compose.desktop:desktop-jvm-macos-arm64:1.11.1"
+        System.getProperty("os.name").startsWith("Mac") -> "org.jetbrains.compose.desktop:desktop-jvm-macos-x64:1.11.1"
+        System.getProperty("os.arch") == "aarch64" -> "org.jetbrains.compose.desktop:desktop-jvm-linux-arm64:1.11.1"
+        else -> "org.jetbrains.compose.desktop:desktop-jvm-linux-x64:1.11.1"
     }

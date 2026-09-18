@@ -104,6 +104,10 @@ data class Oid4vciCompletenessLifecycleResult(
  */
 @JsExportCompat
 interface Oid4vciIssuanceLifecycleHook {
+    /** Required business offerings invoke this independently of optional pipeline correlation. */
+    @JsExportIgnoreCompat
+    suspend fun authorizeBusinessIssuance(args: Oid4vciBusinessAuthorizationArgs): IdkResult<Unit, IdkError> =
+        com.sphereon.core.api.Err(IdkError.FORBIDDEN_ERROR(message = "issuer_business_authorization_unavailable"))
     @JsExportIgnoreCompat
     suspend fun initializeOffer(args: Oid4vciOfferLifecycleArgs): IdkResult<Oid4vciOfferLifecycleResult, IdkError> = Ok(Oid4vciOfferLifecycleResult())
 
@@ -112,6 +116,27 @@ interface Oid4vciIssuanceLifecycleHook {
 
     @JsExportIgnoreCompat
     suspend fun evaluateCompleteness(args: Oid4vciCompletenessLifecycleArgs): IdkResult<Oid4vciCompletenessLifecycleResult, IdkError> = Ok(Oid4vciCompletenessLifecycleResult())
+}
+
+@Serializable
+data class Oid4vciBusinessAuthorizationArgs(
+    val issuerInstanceId: String,
+    val protocolSessionId: String?,
+    val lifecycleCorrelationId: String?,
+    val credentialConfigurationId: String,
+)
+
+/** The required flag is server policy, never offer/request metadata. */
+suspend fun authorizeIssuerBusinessAction(
+    required: Boolean,
+    args: Oid4vciBusinessAuthorizationArgs,
+    hook: Oid4vciIssuanceLifecycleHook?,
+): IdkResult<Unit, IdkError> {
+    if (!required) return Ok(Unit)
+    if (args.protocolSessionId.isNullOrBlank() || args.lifecycleCorrelationId.isNullOrBlank() || hook == null) {
+        return com.sphereon.core.api.Err(IdkError.FORBIDDEN_ERROR(message = "issuer_business_binding_required"))
+    }
+    return hook.authorizeBusinessIssuance(args)
 }
 
 @ContributesTo(SessionScope::class)
