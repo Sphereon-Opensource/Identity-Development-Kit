@@ -92,6 +92,27 @@ class OAuth2ServersConfigBinderRoundTripTest {
     private val prefix = "${OAuth2ServerInstanceConfig.CONFIG_PREFIX}.$asId"
 
     @Test
+    fun activeServerConfigTracksRequestSelectionWithoutChangingDefault() {
+        val root = OAuth2ServerInstanceConfig.CONFIG_PREFIX
+        val configService = TypeAwarePrincipalConfigService(mapOf(
+            "$root.default-server" to "primary",
+            "$root.primary.issuer" to "https://tenant.example/as/primary",
+            "$root.primary.oidc" to "DISABLED",
+            "$root.proxy.issuer" to "https://tenant.example/as/proxy",
+            "$root.proxy.oidc" to "REQUIRED",
+        ))
+        val selected = com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider()
+        val binder = OAuth2ServersConfigBinder(TestSessionExecution(configService), selected)
+        assertEquals("https://tenant.example/as/primary", binder.serverConfig.issuer)
+        selected.setCurrentAsInstanceId("proxy")
+        assertEquals("https://tenant.example/as/proxy", binder.serverConfig.issuer)
+        assertEquals(FeaturePolicy.REQUIRED, binder.serverConfig.oidc)
+        assertEquals("https://tenant.example/as/primary", binder.getDefaultServer().issuer)
+        selected.clearCurrentAsInstanceId()
+        assertEquals("https://tenant.example/as/primary", binder.serverConfig.issuer)
+    }
+
+    @Test
     fun internalClientRoleResolverReadsOpaqueClientIdWithoutPlaintextSecret() {
         val tenantId = "tenant-123"
         val properties =
@@ -103,7 +124,7 @@ class OAuth2ServersConfigBinderRoundTripTest {
             )
         val configService = TypeAwarePrincipalConfigService(properties)
         val execution = TestSessionExecution(configService, tenantId = tenantId)
-        val serversConfigProvider = OAuth2ServersConfigBinder(execution)
+        val serversConfigProvider = OAuth2ServersConfigBinder(execution, com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider())
         val resolver =
             ConfigBackedInternalClientRoleResolver(
                 execution = execution,
@@ -130,7 +151,7 @@ class OAuth2ServersConfigBinderRoundTripTest {
                     "$prefix.issuer" to "https://before.example.com",
                 ),
             )
-        val binder = OAuth2ServersConfigBinder(TestSessionExecution(configService))
+        val binder = OAuth2ServersConfigBinder(TestSessionExecution(configService), com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider())
 
         val first = binder.getConfig()
         val readsAfterFirstBind = configService.propertyReadCount
@@ -456,7 +477,7 @@ class OAuth2ServersConfigBinderRoundTripTest {
     ): OAuth2ServersConfigBinder {
         val configService = TypeAwarePrincipalConfigService(properties, normalizeKeys = normalizeKeys)
         val execution = TestSessionExecution(configService)
-        return OAuth2ServersConfigBinder(execution)
+        return OAuth2ServersConfigBinder(execution, com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider())
     }
 
     @Test

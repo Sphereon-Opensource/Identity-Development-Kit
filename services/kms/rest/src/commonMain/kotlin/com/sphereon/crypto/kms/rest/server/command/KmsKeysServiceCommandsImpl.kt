@@ -356,7 +356,11 @@ class RegisterKeyReferenceServiceCommandImpl(
 
         val result =
             registrar.registerKeyReference(
-                providerId = input.providerId,
+                // Typed managed resources are addressed by a logical provider id at REST, while
+                // authority-backed execution plans and generated references use the immutable
+                // runtime provider id returned by the inspector. Configured providers return the
+                // same id, so this remains backward-compatible for the non-typed path.
+                providerId = resolvedKey.providerId?.takeIf { it.isNotBlank() } ?: input.providerId,
                 alias = input.alias,
                 kid = resolvedKey.kid ?: resolvedKey.key.getKeyId(false),
                 keyType = resolvedKey.keyType,
@@ -372,7 +376,9 @@ class RegisterKeyReferenceServiceCommandImpl(
             RegisterKeyReferenceResponse(
                 registered = true,
                 alias = record.alias,
-                providerId = record.providerId,
+                // Preserve the caller-facing logical id in the REST response. The persisted
+                // record intentionally carries the runtime id used by execution-plan resolution.
+                providerId = input.providerId,
                 kid = record.kid,
                 origin = record.origin,
                 controlMode = record.controlMode,

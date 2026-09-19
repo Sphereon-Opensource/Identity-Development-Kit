@@ -202,7 +202,7 @@ class FederationBindingTest {
         AuthorizationServerResource(
             id = EXTERNAL_ID,
             tenantId = tenantId,
-            slug = "external",
+            slug = null,
             displayName = "External",
             issuer = "https://login.example.test",
             lifecycle = lifecycle,

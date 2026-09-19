@@ -26,6 +26,7 @@ import com.sphereon.core.api.model.Origin
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ResourceControlMode
+import com.sphereon.crypto.key.persistence.ManagedKeyAuthorityRegistration
 import com.sphereon.crypto.key.persistence.KeyReferenceRecord
 import com.sphereon.crypto.key.persistence.KeyReferenceHistoryCapability
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
@@ -46,6 +47,8 @@ import kotlin.time.Clock
 class ManagedKeyReferenceRegistrar(
     private val keyReferenceStore: KeyReferenceStore,
     private val execution: SessionExecution,
+    private val authorityRegistration: ManagedKeyAuthorityRegistration =
+        ManagedKeyAuthorityRegistration { _, _ -> true },
 ) {
     private val tenantId: String
         get() = execution.sessionContext.context.tenant.tenantId
@@ -159,7 +162,16 @@ class ManagedKeyReferenceRegistrar(
                 deletedAt = null,
                 deletedById = null,
             )
-        return keyReferenceStore.upsert(record)
+        val persisted = keyReferenceStore.upsert(record)
+        if (persisted.isErr) return persisted
+        if (!authorityRegistration.register(providerId, persisted.value.id)) {
+            return Err(
+                IdkError.UNKNOWN_ERROR(
+                    message = "The key reference authority binding could not be registered",
+                ),
+            )
+        }
+        return Ok(persisted.value)
     }
 
     /**

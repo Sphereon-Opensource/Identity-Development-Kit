@@ -118,6 +118,8 @@ data class GenericHttpRequest(
      * `self_signed_tls_client_auth`) and by the resource-server `cnf.x5t#S256` validation.
      */
     val clientCertificateChain: List<ByteArray>? = null,
+    /** Ingress path retained by route dispatch before mount and tenant prefixes are stripped. */
+    val originalPath: String? = null,
 ) {
     /**
      * Request body as String - lazily loaded only when accessed.
@@ -200,6 +202,7 @@ data class GenericHttpRequest(
      *
      * NOTE: This overload shadows the data class auto-generated `copy(...)` because the
      * defaults must explicitly forward [bodySupplier] / [bodyContent] / [multiValueHeaders]
+     * / [originalPath]
      * from `this`. Forgetting to thread any of them silently drops the field on every
      * downstream `request.copy(path = ...)` call (e.g. base-path stripping in
      * [com.sphereon.core.api.http.command.CommandBackedHttpAdapter.stripAdapterBasePath])
@@ -214,6 +217,7 @@ data class GenericHttpRequest(
         resolvedTenantId: String? = this.resolvedTenantId,
         multiValueHeaders: Map<String, List<String>> = this.multiValueHeaders,
         clientCertificateChain: List<ByteArray>? = this.clientCertificateChain,
+        originalPath: String? = this.originalPath,
     ): GenericHttpRequest =
         GenericHttpRequest(
             method = method,
@@ -226,6 +230,7 @@ data class GenericHttpRequest(
             bodySupplier = bodySupplier,
             bodyContent = bodyContent,
             clientCertificateChain = clientCertificateChain,
+            originalPath = originalPath,
         )
 
     companion object {

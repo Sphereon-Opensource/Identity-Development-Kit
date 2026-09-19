@@ -43,6 +43,22 @@ class OAuth2ServersConfigBinderDiscoveryTest {
     private val prefix = OAuth2ServerInstanceConfig.CONFIG_PREFIX
 
     @Test
+    fun normalizedNonDefaultHostedSlugKeepsItsWholeConfiguration() {
+        val binder = newBinder(mapOf(
+            "$prefix.default-server" to "primary",
+            "$prefix.primary.issuer" to "https://tenant.example/as/primary",
+            "$prefix.wallet-proxy.issuer" to "https://tenant.example/as/wallet-proxy",
+            "$prefix.wallet-proxy.mode" to "HOSTED",
+            "$prefix.wallet-proxy.oidc" to "REQUIRED",
+            "$prefix.wallet-proxy.user-provider.mode" to "federated",
+        ), normalizeKeys = true)
+        assertEquals(setOf("primary", "wallet-proxy"), binder.getConfig().servers.keys)
+        assertEquals("https://tenant.example/as/wallet-proxy", binder.getServer("wallet-proxy")?.issuer)
+        assertEquals(binder.getServer("wallet-proxy"), binder.getServer("wallet.proxy"))
+        assertTrue(requireNotNull(binder.getServer("wallet-proxy")).oidc.isEnabled)
+    }
+
+    @Test
     fun discoversOperatorChosenServerIdsViaKeyspaceScan() {
         val properties =
             mapOf<String, Any>(
@@ -168,6 +184,6 @@ class OAuth2ServersConfigBinderDiscoveryTest {
     ): OAuth2ServersConfigBinder {
         val configService = TypeAwarePrincipalConfigService(properties, subPropertiesOverride, normalizeKeys)
         val execution = TestSessionExecution(configService)
-        return OAuth2ServersConfigBinder(execution)
+        return OAuth2ServersConfigBinder(execution, com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider())
     }
 }

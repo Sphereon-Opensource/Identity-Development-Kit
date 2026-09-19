@@ -90,7 +90,7 @@ data class HttpAdapterRouteMatch(
             } else {
                 request.pathParameters + pathParameters + mapOf("tenantId" to effectiveTenantId)
             }
-        return request.copy(path = normalizedPath, pathParameters = effectivePathParameters)
+        return request.copy(path = normalizedPath, pathParameters = effectivePathParameters, originalPath = originalPath)
     }
 }
 

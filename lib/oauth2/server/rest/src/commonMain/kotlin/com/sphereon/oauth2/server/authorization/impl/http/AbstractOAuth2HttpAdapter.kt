@@ -86,7 +86,14 @@ abstract class AbstractOAuth2HttpAdapter(
         args: ResolvedHttpRequest,
         applyDuring: (ResolvedHttpRequest) -> ResolvedHttpRequest,
     ): IdkResult<GenericHttpResponse, IdkError> {
-        val resolution = asInstanceResolver.resolve(args.request)
+        // Resolve against the ingress path even when a mount prefix was normalized.
+        val resolutionRequest =
+            if (args.request.path == args.route.normalizedPath) {
+                args.request.copy(path = args.route.originalPath)
+            } else {
+                args.request
+            }
+        val resolution = asInstanceResolver.resolve(resolutionRequest)
         if (resolution.isErr) {
             return Ok(oauth2ErrorResponse(500, "server_error", resolution.error.message.defaultMessage, errorJson))
         }

@@ -17,6 +17,14 @@ import kotlin.time.Instant
 
 class AuthorizationServerResourceTest {
     @Test
+    fun slugBelongsOnlyToHostedResources() {
+        assertEquals(null, externalResource().slug)
+        assertFailsWith<IllegalArgumentException> { externalResource().copy(slug = "upstream") }
+        assertFailsWith<IllegalArgumentException> { hostedResource().copy(slug = null) }
+        assertFailsWith<IllegalArgumentException> { hostedResource().copy(slug = "") }
+    }
+
+    @Test
     fun discoveryRejectsNonHttpsUserinfoEndpoint() {
         val snapshot = requireNotNull(externalResource().discovery)
 
@@ -96,7 +104,7 @@ class AuthorizationServerResourceTest {
         val migrated = AuthorizationServerResource(
             id = EXTERNAL_ID,
             tenantId = "tenant-a",
-            slug = "migrated-upstream",
+            slug = null,
             displayName = "Migrated upstream",
             issuer = "https://login.example.test/realm/",
             lifecycle = AuthorizationServerLifecycle.SUSPENDED,
@@ -199,7 +207,7 @@ class AuthorizationServerResourceTest {
     ) = AuthorizationServerResource(
         id = EXTERNAL_ID,
         tenantId = "tenant-a",
-        slug = "external",
+        slug = null,
         displayName = "External AS",
         issuer = "https://login.example.test",
         lifecycle = AuthorizationServerLifecycle.ACTIVE,

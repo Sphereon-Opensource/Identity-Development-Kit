@@ -61,6 +61,20 @@ import kotlin.test.assertTrue
  */
 class TenantPathPolicyDispatcherTest {
     private val captured = mutableListOf<String>()
+    private val capturedOriginal = mutableListOf<String?>()
+
+    @Test
+    fun hostedAsDiscoveryRetainsIngressPathAfterPeeling() = runTest {
+        val adapter = adapter(
+            policy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
+            slugLookup = SlugLookupFake(),
+            endpoints = listOf(echoEndpoint(HttpMethod.GET, "/.well-known/openid-configuration")),
+        )
+        val ingressPath = "/as/walkthrough-as/.well-known/openid-configuration"
+        assertEquals(200, adapter.handleSelected(request("GET", ingressPath)).statusCode)
+        assertEquals("/.well-known/openid-configuration", captured.single())
+        assertEquals(ingressPath, capturedOriginal.single())
+    }
 
     @Test
     fun leadingSlug_peelsOneSegment_andDispatches() =
@@ -287,6 +301,7 @@ class TenantPathPolicyDispatcherTest {
 
             override suspend fun execute(args: GenericHttpRequest): IdkResult<GenericHttpResponse, IdkError> {
                 captured += args.path
+                capturedOriginal += args.originalPath
                 return Ok(GenericHttpResponse(statusCode = 200, body = ""))
             }
         }
@@ -317,9 +332,7 @@ class TenantPathPolicyDispatcherTest {
                     relativePattern == "/" -> adapterMount.adapterBasePath
                     else -> adapterMount.adapterBasePath.trimEnd('/') + "/" + relativePattern.trimStart('/')
                 }
-            return handleResolvedRequest(
-                request,
-                HttpAdapterRouteMatch(
+            val route = HttpAdapterRouteMatch(
                     adapterId = id,
                     method = request.method,
                     originalPath = request.path,
@@ -327,8 +340,8 @@ class TenantPathPolicyDispatcherTest {
                     matchedPathPattern = fullPattern,
                     handlerCommandId = endpoint.id,
                     tenantIdFromPath = null,
-                ),
-            )
+                )
+            return handleResolvedRequest(route.applyTo(request), route)
         }
     }
 

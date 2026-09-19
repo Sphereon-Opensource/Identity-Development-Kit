@@ -554,6 +554,262 @@
           ]
         },
         {
+          "name": "08a Reject hosted authorization server without slug",
+          "request": {
+            "method": "POST",
+            "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers",
+            "description": "Invalid slug/deployment combinations must fail at the request boundary before discovery or resource creation.",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{tenantPublicAuthority}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Slug contract rejection\",\n  \"issuer\": \"https://example.invalid/as/slug-contract\",\n  \"deployment\": \"HOSTED\",\n  \"purposes\": [\n    \"WALLET_LOGIN\"\n  ],\n  \"authenticationMode\": \"FEDERATED_ONLY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid deployment slug rejected before creation', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08b Reject hosted authorization server with empty slug",
+          "request": {
+            "method": "POST",
+            "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers",
+            "description": "Invalid slug/deployment combinations must fail at the request boundary before discovery or resource creation.",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{tenantPublicAuthority}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Slug contract rejection\",\n  \"issuer\": \"https://example.invalid/as/slug-contract\",\n  \"deployment\": \"HOSTED\",\n  \"purposes\": [\n    \"WALLET_LOGIN\"\n  ],\n  \"slug\": \"\",\n  \"authenticationMode\": \"FEDERATED_ONLY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid deployment slug rejected before creation', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08c Reject external authorization server with slug",
+          "request": {
+            "method": "POST",
+            "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers",
+            "description": "Invalid slug/deployment combinations must fail at the request boundary before discovery or resource creation.",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{tenantPublicAuthority}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Slug contract rejection\",\n  \"issuer\": \"https://example.invalid/as/slug-contract\",\n  \"deployment\": \"EXTERNAL\",\n  \"purposes\": [\n    \"WALLET_LOGIN\"\n  ],\n  \"slug\": \"not-a-hosted-route\",\n  \"expectedCapabilities\": [\n    \"OAUTH2\",\n    \"OIDC\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid deployment slug rejected before creation', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08d Reject external authorization server with empty slug",
+          "request": {
+            "method": "POST",
+            "url": "{{tenantPlatformConfigApiBaseUrl}}/tenants/{{tenantId}}/authorization-servers",
+            "description": "Invalid slug/deployment combinations must fail at the request boundary before discovery or resource creation.",
+            "header": [
+              {
+                "key": "Host",
+                "value": "{{tenantPublicAuthority}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAccessToken}}",
+                "type": "text",
+                "description": "Explicit wire header. Keep aligned with the request Bearer auth variable."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tenantAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Slug contract rejection\",\n  \"issuer\": \"https://example.invalid/as/slug-contract\",\n  \"deployment\": \"EXTERNAL\",\n  \"purposes\": [\n    \"WALLET_LOGIN\"\n  ],\n  \"slug\": \"\",\n  \"expectedCapabilities\": [\n    \"OAUTH2\",\n    \"OIDC\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Runtime auth resolver: do not rely on imported folder auth state.\n// Prefer an explicitly supplied environment token. The collection declares empty\n// token variables for discoverability, and those must not shadow a pasted token.\nlet resolvedToken = String(pm.environment.get('tenantAccessToken') ?? '').trim();\nif (!resolvedToken) resolvedToken = String(pm.collectionVariables.get('tenantAccessToken') ?? '').trim();\nif (resolvedToken.toLowerCase().startsWith('bearer ')) resolvedToken = resolvedToken.slice(7).trim();\nif (!resolvedToken || resolvedToken.includes('{{')) {\n  throw new Error('Missing or unresolved tenantAccessToken. Run the preceding token request first or set the active Postman variable.');\n}\npm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + resolvedToken });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid deployment slug rejected before creation', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "09 Create hosted authorization server",
           "request": {
             "method": "POST",
@@ -1364,7 +1620,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"slug\": \"{{externalAuthorizationServerSlug}}\",\n  \"displayName\": \"Platform external authorization server\",\n  \"issuer\": \"{{platformUrl}}\",\n  \"deployment\": \"EXTERNAL\",\n  \"expectedCapabilities\": [\n    \"OAUTH2\",\n    \"OIDC\"\n  ],\n  \"purposes\": [\n    \"GENERAL\",\n    \"CREDENTIAL_ISSUANCE\",\n    \"WALLET_LOGIN\"\n  ],\n  \"usages\": [\n    \"OID4VCI_AUTHORIZATION_SERVER\",\n    \"HOSTED_LOGIN_UPSTREAM\"\n  ],\n  \"allowedGrantTypes\": [\n    \"authorization_code\",\n    \"refresh_token\"\n  ]\n}"
+              "raw": "{\n  \"displayName\": \"Platform external authorization server\",\n  \"issuer\": \"{{platformUrl}}\",\n  \"deployment\": \"EXTERNAL\",\n  \"expectedCapabilities\": [\n    \"OAUTH2\",\n    \"OIDC\"\n  ],\n  \"purposes\": [\n    \"GENERAL\",\n    \"CREDENTIAL_ISSUANCE\",\n    \"WALLET_LOGIN\"\n  ],\n  \"usages\": [\n    \"OID4VCI_AUTHORIZATION_SERVER\",\n    \"HOSTED_LOGIN_UPSTREAM\"\n  ],\n  \"allowedGrantTypes\": [\n    \"authorization_code\",\n    \"refresh_token\"\n  ]\n}"
             }
           },
           "event": [

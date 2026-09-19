@@ -159,7 +159,7 @@ data class AuthorizationServerDiscoverySnapshot(
 data class AuthorizationServerResource(
     val id: String,
     val tenantId: String,
-    val slug: String,
+    val slug: String?,
     val displayName: String,
     val issuer: String,
     val lifecycle: AuthorizationServerLifecycle,
@@ -183,7 +183,6 @@ data class AuthorizationServerResource(
         require(UUID.matches(id)) { "Authorization server id must be a UUID" }
         require(tenantId.isNotBlank()) { "Tenant id is required" }
         require(tenantId != PLATFORM_TENANT_ID) { "The platform tenant built-in authorization server is outside this resource model" }
-        require(SLUG.matches(slug)) { "Authorization server slug is invalid" }
         require(displayName.isNotBlank()) { "Authorization server display name is required" }
         requireHttpsUrl(issuer, "Authorization server issuer")
         require(purposes.isNotEmpty()) { "Authorization server must have at least one purpose" }
@@ -196,6 +195,7 @@ data class AuthorizationServerResource(
 
         when (deployment) {
             AuthorizationServerDeployment.HOSTED -> {
+                require(slug != null && SLUG.matches(slug)) { "Hosted authorization server slug is required and must be valid" }
                 require(authenticationMode != null) { "Hosted authorization servers require an authentication mode" }
                 require(discovery == null) { "Hosted authorization servers do not persist external discovery snapshots" }
                 require(usages.isEmpty()) { "Hosted authorization servers do not declare external usages" }
@@ -204,6 +204,7 @@ data class AuthorizationServerResource(
             }
 
             AuthorizationServerDeployment.EXTERNAL -> {
+                require(slug == null) { "External authorization servers cannot have a hosted slug" }
                 require(expectedCapabilities.isNotEmpty()) { "External authorization servers require expected capabilities" }
                 require(AuthorizationServerCapability.OIDC !in expectedCapabilities || AuthorizationServerCapability.OAUTH2 in expectedCapabilities) {
                     "Expected OIDC capability requires OAuth2"

@@ -27,6 +27,7 @@ import com.sphereon.oauth2.common.config.ClientRegistrySourcePrecedence
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.InternalClientConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.PublicClientConfig
@@ -60,6 +61,7 @@ import kotlinx.atomicfu.locks.synchronized
 @ContributesBinding(SessionScope::class, binding = binding<OAuth2ServersConfigProvider?>())
 class OAuth2ServersConfigBinder(
     private val execution: SessionExecution,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider,
 ) : OAuth2ServersConfigProvider {
     private val keyNormalizer = PropertyKeyNormalizerImpl.Default
     private val configCacheLock = SynchronizedObject()
@@ -107,7 +109,19 @@ class OAuth2ServersConfigBinder(
         }
     }
 
-    override fun getServer(id: String): OAuth2ServerInstanceConfig? = getConfig().getServer(id)
+    override fun getServer(id: String): OAuth2ServerInstanceConfig? {
+        val config = getConfig()
+        return config.getServer(id) ?: config.servers.entries
+            .firstOrNull { keyNormalizer.normalize(it.key) == keyNormalizer.normalize(id) }?.value
+    }
+
+    override val serverConfig: OAuth2ServerInstanceConfig
+        get() {
+            val activeId = asInstanceIdProvider.currentAsInstanceId() ?: return getDefaultServer()
+            return requireNotNull(getServer(activeId)) {
+                "Active OAuth2 server '$activeId' not found in configuration"
+            }
+        }
 
     override fun getDefaultServer(): OAuth2ServerInstanceConfig = getConfig().getDefaultServer()
 
@@ -169,7 +183,8 @@ class OAuth2ServersConfigBinder(
 
     /**
      * Discovers configured server ids by scanning every property under the `oauth2.servers.`
-     * keyspace and collecting the first path segment of each stripped key.
+     * keyspace. Property sources normalize hyphenated ids into dotted segments, so issuer
+     * values are used to recover the canonical slug spelling (for example `wallet-proxy`).
      *
      * For a property map of the form
      * ```
@@ -178,8 +193,8 @@ class OAuth2ServersConfigBinder(
      * oauth2.servers.production.mode  = HOSTED
      * oauth2.servers.auth-eu.issuer   = https://auth.eu.example.com
      * ```
-     * the scan strips the `oauth2.servers.` prefix, takes the first dotted segment of each
-     * stripped key (`default-server`, `production`, `production`, `auth-eu`), deduplicates, and
+     * the scan strips the `oauth2.servers.` prefix, identifies configured instance prefixes,
+     * deduplicates, and
      * filters out the reserved [DEFAULT_SERVER_KEY] segment (which selects the default server,
      * not a server named `default-server`). The remaining set is the discovered server ids.
      *
@@ -201,6 +216,18 @@ class OAuth2ServersConfigBinder(
             }
         }
         val normalizedDefaultServer = keyNormalizer.normalize(defaultServer)
+        // Property sources normalize hyphens in instance IDs into dots. An issuer leaf
+        // identifies the whole instance prefix; taking its first segment loses non-default
+        // hosted servers such as `wallet-proxy`. Where the issuer path supplies that same
+        // identifier, retain its original spelling for downstream instance selection.
+        val issuerIds = stripped.entries.mapNotNull { (key, value) ->
+            val suffix = listOf(".issuer-template", ".issuer.template", ".issuer").firstOrNull(key::endsWith)
+                ?: return@mapNotNull null
+            val keyId = key.removeSuffix(suffix)
+            val pathId = value.toString().substringBefore('?').substringBefore('#').trimEnd('/').substringAfterLast('/')
+            val id = if (keyNormalizer.normalize(pathId) == keyNormalizer.normalize(keyId)) pathId else keyId
+            keyNormalizer.normalize(keyId) to id
+        }.toMap()
         return stripped.keys
             .asSequence()
             .filterNot { it == DEFAULT_SERVER_KEY || it == NORMALIZED_DEFAULT_SERVER_KEY }
@@ -208,7 +235,11 @@ class OAuth2ServersConfigBinder(
                 if (normalizedDefaultServer.isNotBlank() && (key == normalizedDefaultServer || key.startsWith("$normalizedDefaultServer."))) {
                     defaultServer
                 } else {
-                    key.substringBefore('.')
+                    val normalizedKey = keyNormalizer.normalize(key)
+                    issuerIds.keys.sortedByDescending(String::length)
+                        .firstOrNull { normalizedKey.startsWith("$it.") }
+                        ?.let(issuerIds::get)
+                        ?: key.substringBefore('.')
                 }
             }.filter { it.isNotEmpty() }
             .toSet()

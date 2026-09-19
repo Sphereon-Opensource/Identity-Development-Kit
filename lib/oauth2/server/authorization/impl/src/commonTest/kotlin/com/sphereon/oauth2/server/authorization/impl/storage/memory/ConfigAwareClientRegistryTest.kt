@@ -418,7 +418,7 @@ class ConfigAwareClientRegistryTest {
                     normalizeKeys = true,
                 )
             val execution = TestSessionExecution(configService)
-            val serversConfigProvider = OAuth2ServersConfigBinder(execution)
+            val serversConfigProvider = OAuth2ServersConfigBinder(execution, com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider())
             val registry =
                 ConfigAwareClientRegistry(
                     execution = execution,
@@ -643,7 +643,7 @@ class ConfigAwareClientRegistryTest {
                         object : OAuth2ServerInstanceIdProvider {
                             override fun currentAsInstanceId(): String = "platform"
                         },
-                    serversConfigProvider = OAuth2ServersConfigBinder(execution),
+                    serversConfigProvider = OAuth2ServersConfigBinder(execution, com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider()),
                     opaqueInternalClientSecretVerifier =
                         DefaultOpaqueInternalClientSecretVerifier(rejectingOpaqueSecrets),
                     clientRegistrationStore = InMemoryClientRegistrationStore(),
@@ -1212,7 +1212,7 @@ class ConfigAwareClientRegistryTest {
                 )
             val execution = TestSessionExecution(configService, tenantId = TENANT_ID)
             val secrets = resolvingOpaqueSecrets(mapOf(CONFIGURED_SECRET_ID to CONFIGURED_SECRET))
-            val serversConfigProvider = OAuth2ServersConfigBinder(execution)
+            val serversConfigProvider = OAuth2ServersConfigBinder(execution, com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceIdProvider())
 
             val serversConfig = serversConfigProvider.getConfig()
             assertEquals("default", serversConfig.defaultServer)
