@@ -51,8 +51,7 @@ lib/did/rest/manager/api/src/openapi/did-manager.postman_collection.json
 *.pid
 *.exit
 bash.exe.stackdump
-
+lib/conf/theme/react/
 .worktrees/
 .worktree-m2/
 .gradle-home/
-
