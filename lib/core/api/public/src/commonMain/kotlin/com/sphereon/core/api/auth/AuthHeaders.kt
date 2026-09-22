@@ -310,7 +310,7 @@ fun com.sphereon.di.session.SessionContext.toAuthContext(
     serviceId: String? = null,
 ): AuthContext =
     AuthContext(
-        token = context.secureDetails?.jwt,
+        token = context.secureDetails?.jwt?.takeIf { it.isNotBlank() },
         tenantId = context.tenant.tenantId.takeIf { !it.isAnonymousIdentityValue() },
         principalId = context.principal?.toString()?.takeIf { !it.isAnonymousIdentityValue() },
         userId = null, // User ID not directly available in SessionContext

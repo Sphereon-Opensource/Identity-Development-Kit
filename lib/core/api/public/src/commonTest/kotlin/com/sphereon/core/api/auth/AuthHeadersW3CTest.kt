@@ -585,6 +585,35 @@ class SessionContextAuthPropagationTest {
         assertNull(headers["X-Principal-Id"])
         assertNull(headers["X-User-Id"])
     }
+
+    @Test
+    fun toAuthContextTreatsBlankJwtAsAbsent() {
+        val session =
+            object : SessionContext {
+                override val context =
+                    object : UserContext {
+                        override val id = "platform:bootstrap"
+                        override val tenant =
+                            object : TenantContextData {
+                                override val tenantId = "platform"
+                            }
+                        override val principal = "<application-bootstrap>"
+                        override val secureDetails =
+                            object : SecuredTenantContextDetails {
+                                override val validFrom = 1L
+                                override val validUntil = 2L
+                                override val iss = "<application-bootstrap>"
+                                override val jwt = ""
+                            }
+                    }
+                override val sessionId = "application-bootstrap"
+            }
+
+        val auth = session.toAuthContext()
+
+        assertNull(auth.token)
+        assertNull(auth.toHeaders()[AuthHeaders.AUTHORIZATION])
+    }
 }
 
 /**
