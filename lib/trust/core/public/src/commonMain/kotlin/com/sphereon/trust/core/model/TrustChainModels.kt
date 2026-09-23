@@ -143,7 +143,6 @@ data class TrustChain(
 @ObjCName("TrustDomainPosture", exact = true)
 enum class TrustDomainPosture {
     FAIL_CLOSED,
-    TRUST_ALL,
     CUSTOM,
 }
 
@@ -153,7 +152,6 @@ enum class TrustDomainPosture {
 @ObjCName("TrustDomainAdmissionOutcome", exact = true)
 enum class TrustDomainAdmissionOutcome {
     ADMITTED_NAMED_DOMAIN,
-    ADMITTED_TRUST_ALL,
     NOT_ADMITTED,
     FAIL_CLOSED,
 }
@@ -162,7 +160,7 @@ enum class TrustDomainAdmissionOutcome {
  * Whether the chain's anchor is admitted by the assigned trust domains.
  *
  * Separate from [TrustChain.links]. A cryptographically perfect chain can terminate at an
- * anchor this deployment does not accept. trust-all acceptance cannot name an admitting domain.
+ * anchor this deployment does not accept. An admitting domain is always explicit.
  */
 @JsExportCompat
 @Serializable
@@ -180,10 +178,6 @@ data class TrustDomainAdmission(
                 require(posture == TrustDomainPosture.CUSTOM) { "trust_named_admission_requires_custom_posture" }
                 require(!admittingDomain.isNullOrBlank()) { "trust_named_admission_requires_admitting_domain" }
             }
-            TrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL -> {
-                require(posture == TrustDomainPosture.TRUST_ALL) { "trust_all_admission_requires_trust_all_posture" }
-                require(admittingDomain == null) { "trust_all_admission_must_not_name_a_domain" }
-            }
             TrustDomainAdmissionOutcome.FAIL_CLOSED -> {
                 require(posture == TrustDomainPosture.FAIL_CLOSED) { "trust_fail_closed_outcome_requires_fail_closed_posture" }
                 require(admittingDomain == null) { "trust_fail_closed_must_not_name_a_domain" }
@@ -197,8 +191,8 @@ data class TrustDomainAdmission(
 
     companion object {
         /**
-         * [posture] is supplied by the caller from the real issuerTrustMode (and the fail-closed
-         * fallback). An empty [assignedAnchorIds] must not be used to infer TRUST_ALL.
+         * [posture] is supplied by the caller from the resolved V2 trust attachment. An empty
+         * [assignedAnchorIds] never grants admission and remains fail-closed.
          */
         fun admit(
             chain: TrustChain?,
@@ -206,11 +200,6 @@ data class TrustDomainAdmission(
             assignedAnchorIds: List<String>,
         ): TrustDomainAdmission =
             when (posture) {
-                TrustDomainPosture.TRUST_ALL ->
-                    TrustDomainAdmission(
-                        posture = TrustDomainPosture.TRUST_ALL,
-                        outcome = TrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL,
-                    )
                 TrustDomainPosture.FAIL_CLOSED ->
                     TrustDomainAdmission(
                         posture = TrustDomainPosture.FAIL_CLOSED,

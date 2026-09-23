@@ -366,6 +366,137 @@ Full module reference: [docs.sphereon.com/idk/guides/modules](https://docs.spher
 
 ---
 
+<!-- generated:module-index:start product=idk -->
+<!-- regenerate: node tooling/module-docs/gen-readme.mjs --product idk; edit docs/module-index/, not this section -->
+
+## Module index
+
+225 modules across 56 domains, generated from the verified module index (`docs/module-index/`): every abstract below passed the four-facet rubric, 44 checks per module.
+Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules).
+
+| Domain | Modules | Scope |
+|---|---:|---|
+| attribute | 2 | `attribute` provides flow-agnostic attribute wiring primitives. `attribute-flow-public` defines `AttributeBag`, `AttributePath`, and related flow-agnostic structures; `attribute-mapping-public` provides generic source→target attribute rename rules and an applier, reused across connectors and presentation flows. |
+| catalog | 6 | `catalog` manages **TS 11 attestation catalogs** (European eIDAS / trusted-list style catalogs). |
+| cbor | 2 | `cbor` implements the CBOR data model and runtime (RFC 8949), split into public API and impl. |
+| compression | 1 | Single-module domain: `lib-compression` provides GZIP / zlib / raw DEFLATE compression primitives used by status lists, JWE `zip` handling, and other compressed payloads. |
+| conf-settings | 1 | Single-module domain: `lib-conf-settings` — a `multiplatform-settings`-backed property source for configuration, usable on mobile/browser targets where file-based config is not available. |
+| conf-theme | 5 | `conf-theme` manages branding and theme metadata: core model/runtime (public/impl), Compose Multiplatform bindings (`lib-conf-theme-compose`), CSS token bindings for web UIs (`lib-conf-theme-web`), and a client module (`lib-conf-theme-client`). |
+| conf-yaml | 1 | Single-module domain: `lib-conf-yaml` — YAML property sources for app, tenant, and principal scopes. |
+| core | 7 | `core` is the shared foundation every IDK module builds on: result monad + command hierarchy + configuration + logging + HTTP adapter + caching + auth contracts (`lib-core-api-public`, with `lib-core-api-default` as the default DI-wired runtime), typed application event hub (`lib-core-events-*`), IDNA/Punycode support (`lib-core-idn-public`, RFC 3492 + IDNA2008), compat annotations for JS exports, and an on-device mobile logger. |
+| credential | 2 | `credential` holds the credential **claims mapper**: a public/impl pair that maps and normalizes claims between credential representations (e.g. |
+| crypto-certificate | 2 | `crypto-certificate` is the tenant-aware **certificate reference store**, parallel to `crypto-key`: the API module defines how X.509 certificate references (not the private keys) are recorded per tenant; the sqlite module provides the durable SQLDelight-backed implementation. |
+| crypto-core | 3 | `crypto-core` is the foundational COSE/JOSE crypto layer for IDK: algorithms, codecs, signing/verification command skeletons, and shared key types. |
+| crypto-data-integrity-proof | 5 | `crypto-data-integrity-proof` implements **W3C Verifiable Credentials Data Integrity 1.0** proof suites. |
+| crypto-key | 3 | `crypto-key` is the tenant-aware **key reference store**: it persists pointers/references to keys (ids, tenant, provider metadata) — **not key material itself**. |
+| crypto-kms | 6 | `crypto-kms` is the Key Management Service abstraction: a provider SPI plus four concrete providers and a REST-facing API. |
+| crypto-secdsa | 2 | `crypto-secdsa` provides Elliptic-Curve Digital Signature Algorithm support split into a public API surface (`lib-crypto-secdsa-public`) and an implementation module (`lib-crypto-secdsa-impl`). |
+| data | 4 | `data` covers credential-definition data and cross-cutting integration taxonomy. |
+| data-link | 6 | `data-link` provides transport/link primitives used across mDoc and wallet flows: HTTP client (public/impl), BLE (public), and NFC APDU/NDEF (public/impl). |
+| data-store-asset | 2 | `data-store-asset` is a tenant asset library: content-addressed, per-tenant deduplicated asset storage (public API + impl). |
+| data-store-blob | 7 | `data-store-blob` is the cross-cutting blob/object storage abstraction: public contracts plus multiple backings — memory, filesystem (`impl-fs`), key-value (`impl-kv`), OKD (`impl-okd`), and an HTTP client (`client-http`) for remote blob services. |
+| data-store-credential-design | 2 | `data-store-credential-design` stores credential design, localization, and render metadata (public/impl): how a credential type is presented (layout, branding, localized labels) independent of the wire format. |
+| data-store-credential-type-binding | 2 | `data-store-credential-type-binding` is a role-independent registry mapping a semantic attribute set to a credential wire-format identity (public/impl). |
+| data-store-kv | 5 | `data-store-kv` is the cross-cutting key-value storage abstraction: public contracts with backings for memory, Kottage, and Android-protected storage (`impl-android-protected`). |
+| data-store-okd-openapi | 1 | Single-module domain: `lib-data-store-okd-openapi` — OpenAPI types for OKD (Onderwijs Koppeling voor Document Management), the Dutch MBO education document-management standard. |
+| data-store-okd-server | 1 | Single-module domain: `lib-data-store-okd-server` — server-side integration for OKD (Dutch MBO) document storage, pairing with `okd-openapi` types and `blob-impl-okd` backing. |
+| data-store-party | 1 | Single-module domain: `lib-data-store-party-public` — shared data models for identity, contact, and tenant (the “party” concept) plus filter/pagination models reused across stores. |
+| data-store-schema-registry | 2 | `data-store-schema-registry` provides versioned schema management backed by a blob store (public/impl): schemas are stored as blobs with version metadata on top. |
+| data-store-vault | 2 | `data-store-vault` defines a provider-neutral protected file/folder contract (public) plus a portability module (`lib-data-store-vault-portability`) for moving vault content across providers/backends. |
+| did | 18 | `did` is the W3C Decentralized Identifier domain: the largest IDK domain (18 modules). |
+| identity | 9 | `identity` groups four capabilities: **matching** (hashed/encrypted identifier matching), **resolution** (identity resolution), **reconciliation** (cross-source attribute reconciliation) — each as public/impl — plus **IDV** (identity verification): a public API with two drivers, `lib-idv-oidc` (OIDC IDP-based verification) and `lib-idv-wallet` (wallet-based verification). |
+| jsonld | 4 | `jsonld` provides JSON-LD 1.1 capability with a two-track design: Track A — loader + validators (`lib-jsonld-loader`, shared public surface); Track B — full processor (`lib-jsonld-processor`). `lib-jsonld-rdf-canon` implements RDF canonicalization (URDNA2015 class algorithms) needed for Data Integrity proofs. |
+| mdoc | 13 | `mdoc` implements ISO 18013 mobile driving license (mDoc) support: document model and CBOR codecs (`core` public/impl), device-engagement orchestration (`datatransfer` public/impl), reader runtime (`lib-mdoc-reader`), and four transports — BLE (public/impl), NFC engagement/handover, REST API, and OID4VP for ISO 18013-7 online flows. |
+| oauth2 | 11 | `oauth2` implements the OAuth2/OIDC stack: shared models (common public/impl), OAuth2 client (with JAR, PAR, token exchange), Authorization Server command graph, Resource Server validation/introspection/DPoP caches, JWT + OIDC discovery validation (api/impl), and a REST-facing server module (`lib-oauth2-server-rest`). |
+| openid-oid4vc | 2 | `openid-oid4vc` holds shared OpenID for Verifiable Credential family types and a QR code service (public/impl), used by both OID4VCI and OID4VP. |
+| openid-oid4vci | 9 | `openid-oid4vci` implements OpenID for Verifiable Credential Issuance: common model and validators, **issuer** runtime, **holder** (wallet) runtime, and a REST-facing issuer service layer (`rest-public`/`rest-impl` plus `issuer-rest`). |
+| openid-oid4vp | 16 | `openid-oid4vp` implements OpenID for Verifiable Presentations (16 modules): common request types, **holder** and **verifier** runtimes (plus a VCDM-specific verifier impl), **DCQL** query/response types and a DCQL store (public/impl/rest with `oid4vp-dcql` REST spec), a **universal** verifier service layer (`oid4vp-universal` REST spec), and an **auth-bridge** that maps OID4VP flows onto traditional authentication. `oid4vp-universal`. |
+| sdjwt | 2 | `sdjwt` implements IETF SD-JWT (Selective Disclosure JWT) issuer, holder, and verifier commands as a public/impl pair. |
+| services-did | 2 | Deployable Ktor REST servers for DID: `services-did-hosting-rest` (DID hosting, REST spec `did-hosting`) and `services-did-manager-rest` (DID lifecycle management API). |
+| services-kms | 1 | Single-module domain: `services-kms-rest` — Ktor wiring a KMS host embeds (per-request DI, JSON negotiation, liveness). |
+| services-ktor | 2 | Ktor server build plugins: `ktor-server-jwt-auth` (JWT auth plugin) and `ktor-server-kotlin-inject` (bridges Metro dependency graphs into request handling — artifact name retained from pre-Metro codebase for compatibility). |
+| services-oauth2-as | 1 | Single-module domain: `services-oauth2-as-rest` — deployable OAuth2/OIDC Authorization Server (Ktor), REST spec `platform-admin`. |
+| services-oid4vci-issuer | 1 | Single-module domain: `services-oid4vci-issuer-rest` — deployable OID4VCI issuer server (Ktor), REST specs `oid4vci-issuer` and `oid4vci-issuer-session`. |
+| services-oid4vp-verifier | 1 | Single-module domain: `services-oid4vp-verifier-rest` — deployable OID4VP verifier server (Ktor), REST spec `oid4vp-verifier`. |
+| services-statuslist | 1 | Single-module domain: `services-statuslist-rest` — public, unauthenticated token-hosting REST that serves the signed JWT/CWT status list token (open-core, so lives in IDK). |
+| software | 2 | `software` defines a unified **software-instance model** with read/write SPIs (`lib-software-registry-public`) and its implementation (`lib-software-registry-impl`). |
+| statuslist | 2 | `statuslist` implements credential status lists covering both **IETF Token Status List** and **W3C Bitstring Status List** (public API carries a `wallet-unit` REST spec). |
+| trust | 7 | `trust` implements trust validation across multiple frameworks: core (entity discovery, trust-anchor refresh, revocation) public/impl; **ETSI** LOTL trust-list support (`lib-trust-etsi` + `lib-trust-etsi-entities-public`); **X.509** trust validation (`lib-trust-x509`); **DID**-based trust validation (`lib-trust-did`); and **OpenID Federation** trust validation (`lib-trust-oidfed`). |
+| ui | 2 | `ui` provides shared Compose Multiplatform UI component token primitives (`lib-ui-compose`) and a blob adapter (`lib-ui-compose-blob-adapter`) for rendering blob-backed content in Compose UIs. |
+| versions | 1 | Single-module domain: `idk-bom` — the Bill-of-Materials that pins IDK library versions for consumers (EDK, VDX, external adopters) so they can import one BOM instead of per-module versions. |
+| wallet | 22 | `wallet` is the largest IDK domain (22 modules): the protocol-neutral headless wallet runtime and SDK. |
+| wallet-app | 3 | `wallet-app` is the wallet application layer: public API + impl plus a REST client for credential operations (`wallet-credential` REST spec). |
+| wallet-cli | 1 | Single-module domain: `wallet-cli` — a command-line wallet runner/tooling module under `wallet/cli`. |
+| wallet-kit | 1 | Single-module domain: `wallet-kit` — higher-level wallet kit assembly under `wallet/kit`, bundling wallet runtime pieces for consumers. |
+| wallet-presentation | 3 | `wallet-presentation` is the wallet presentation layer: contracts, a Molecule-based presentation module, and a presenter — rendering credential/wallet state into UI models consumed by `wallet-ui`. |
+| wallet-profile | 2 | `wallet-profile` provides wallet profile management (public/impl): user profile data, preferences, and profile-scoped state for the wallet app. |
+| wallet-runner | 1 | Single-module domain: `wallet-runner` — the runnable wallet host under `wallet/runner`, bootstrapping and running the wallet application. |
+| wallet-ui | 2 | `wallet-ui` is the wallet’s Compose Multiplatform UI: `wallet-ui-compose` (screens and components) and `wallet-ui-navigation3` (Navigation 3 routing). |
+
+<details>
+<summary><b>Module ids by domain (225)</b></summary>
+
+- **attribute**: `lib-attribute-flow-public`, `lib-attribute-mapping-public`
+- **catalog**: `lib-catalog-impl`, `lib-catalog-persistence-api`, `lib-catalog-persistence-memory`, `lib-catalog-persistence-sqlite`, `lib-catalog-public`, `lib-catalog-ts11-public`
+- **cbor**: `lib-cbor-impl`, `lib-cbor-public`
+- **compression**: `lib-compression`
+- **conf-settings**: `lib-conf-settings`
+- **conf-theme**: `lib-conf-theme-client`, `lib-conf-theme-compose`, `lib-conf-theme-core-impl`, `lib-conf-theme-core-public`, `lib-conf-theme-web`
+- **conf-yaml**: `lib-conf-yaml`
+- **core**: `lib-core-api-default`, `lib-core-api-public`, `lib-core-compat-annotations`, `lib-core-events-impl`, `lib-core-events-public`, `lib-core-idn-public`, `lib-core-loggers-mobile-logger`
+- **credential**: `lib-credential-claims-mapper-impl`, `lib-credential-claims-mapper-public`
+- **crypto-certificate**: `lib-crypto-certificate-persistence-api`, `lib-crypto-certificate-persistence-sqlite`
+- **crypto-core**: `lib-crypto-core`, `lib-crypto-core-impl`, `lib-crypto-core-public`
+- **crypto-data-integrity-proof**: `lib-crypto-data-integrity-proof-ecdsa-rdfc-2019`, `lib-crypto-data-integrity-proof-eddsa-jcs-2022`, `lib-crypto-data-integrity-proof-eddsa-rdfc-2022`, `lib-crypto-data-integrity-proof-impl`, `lib-crypto-data-integrity-proof-public`
+- **crypto-key**: `lib-crypto-key-persistence-api`, `lib-crypto-key-persistence-impl`, `lib-crypto-key-persistence-sqlite`
+- **crypto-kms**: `lib-crypto-kms-provider-aws`, `lib-crypto-kms-provider-azure`, `lib-crypto-kms-provider-mobile`, `lib-crypto-kms-provider-rest`, `lib-crypto-kms-provider-software`, `lib-crypto-kms-rest-api`
+- **crypto-secdsa**: `lib-crypto-secdsa-impl`, `lib-crypto-secdsa-public`
+- **data**: `lib-data-credential-definition-impl`, `lib-data-credential-definition-public`, `lib-data-credential-definition-rest`, `lib-data-integration-public`
+- **data-link**: `lib-data-link-ble-public`, `lib-data-link-http-client`, `lib-data-link-http-client-impl`, `lib-data-link-http-client-public`, `lib-data-link-nfc-impl`, `lib-data-link-nfc-public`
+- **data-store-asset**: `lib-data-store-asset-impl`, `lib-data-store-asset-public`
+- **data-store-blob**: `lib-data-store-blob-client-http`, `lib-data-store-blob-impl`, `lib-data-store-blob-impl-fs`, `lib-data-store-blob-impl-kv`, `lib-data-store-blob-impl-memory`, `lib-data-store-blob-impl-okd`, `lib-data-store-blob-public`
+- **data-store-credential-design**: `lib-data-store-credential-design-impl`, `lib-data-store-credential-design-public`
+- **data-store-credential-type-binding**: `lib-data-store-credential-type-binding-impl`, `lib-data-store-credential-type-binding-public`
+- **data-store-kv**: `lib-data-store-kv-impl`, `lib-data-store-kv-impl-android-protected`, `lib-data-store-kv-impl-kottage`, `lib-data-store-kv-impl-memory`, `lib-data-store-kv-public`
+- **data-store-okd-openapi**: `lib-data-store-okd-openapi`
+- **data-store-okd-server**: `lib-data-store-okd-server`
+- **data-store-party**: `lib-data-store-party-public`
+- **data-store-schema-registry**: `lib-data-store-schema-registry-impl`, `lib-data-store-schema-registry-public`
+- **data-store-vault**: `lib-data-store-vault-portability`, `lib-data-store-vault-public`
+- **did**: `lib-did-core-public`, `lib-did-hosting-impl`, `lib-did-hosting-public`, `lib-did-manager-impl`, `lib-did-manager-public`, `lib-did-methods-jwk`, `lib-did-methods-key`, `lib-did-methods-web`, `lib-did-methods-webvh-provider`, `lib-did-methods-webvh-public`, `lib-did-methods-webvh-resolver`, `lib-did-methods-webvh-rest-server`, `lib-did-persistence-api`, `lib-did-persistence-memory`, `lib-did-persistence-sqlite`, `lib-did-resolver-impl`, `lib-did-resolver-public`, `lib-did-rest-resolver-server`
+- **identity**: `lib-identity-matching-impl`, `lib-identity-matching-public`, `lib-identity-reconciliation-impl`, `lib-identity-reconciliation-public`, `lib-identity-resolution-impl`, `lib-identity-resolution-public`, `lib-idv-oidc`, `lib-idv-public`, `lib-idv-wallet`
+- **jsonld**: `lib-jsonld-loader`, `lib-jsonld-processor`, `lib-jsonld-public`, `lib-jsonld-rdf-canon`
+- **mdoc**: `lib-mdoc-core`, `lib-mdoc-core-impl`, `lib-mdoc-core-public`, `lib-mdoc-datatransfer`, `lib-mdoc-datatransfer-impl`, `lib-mdoc-datatransfer-public`, `lib-mdoc-reader`, `lib-mdoc-transport-ble`, `lib-mdoc-transport-ble-impl`, `lib-mdoc-transport-ble-public`, `lib-mdoc-transport-nfc`, `lib-mdoc-transport-oid4vp`, `lib-mdoc-transport-restapi`
+- **oauth2**: `lib-oauth2-client-impl`, `lib-oauth2-client-public`, `lib-oauth2-common-impl`, `lib-oauth2-common-public`, `lib-oauth2-jwt-validation-api`, `lib-oauth2-jwt-validation-impl`, `lib-oauth2-server-authorization-impl`, `lib-oauth2-server-authorization-public`, `lib-oauth2-server-resource-impl`, `lib-oauth2-server-resource-public`, `lib-oauth2-server-rest`
+- **openid-oid4vc**: `lib-openid-oid4vc-common-impl`, `lib-openid-oid4vc-common-public`
+- **openid-oid4vci**: `lib-openid-oid4vci-common-impl`, `lib-openid-oid4vci-common-public`, `lib-openid-oid4vci-holder-impl`, `lib-openid-oid4vci-holder-public`, `lib-openid-oid4vci-issuer-impl`, `lib-openid-oid4vci-issuer-public`, `lib-openid-oid4vci-issuer-rest`, `lib-openid-oid4vci-rest-impl`, `lib-openid-oid4vci-rest-public`
+- **openid-oid4vp**: `lib-openid-oid4vp-auth-bridge-impl`, `lib-openid-oid4vp-auth-bridge-public`, `lib-openid-oid4vp-common-impl`, `lib-openid-oid4vp-common-public`, `lib-openid-oid4vp-dcql`, `lib-openid-oid4vp-dcql-store-impl`, `lib-openid-oid4vp-dcql-store-public`, `lib-openid-oid4vp-dcql-store-rest`, `lib-openid-oid4vp-holder-impl`, `lib-openid-oid4vp-holder-public`, `lib-openid-oid4vp-universal-impl`, `lib-openid-oid4vp-universal-public`, `lib-openid-oid4vp-verifier-impl`, `lib-openid-oid4vp-verifier-public`, `lib-openid-oid4vp-verifier-rest`, `lib-openid-oid4vp-verifier-vcdm-impl`
+- **sdjwt**: `lib-sdjwt-impl`, `lib-sdjwt-public`
+- **services-did**: `services-did-hosting-rest`, `services-did-manager-rest`
+- **services-kms**: `services-kms-rest`
+- **services-ktor**: `ktor-server-jwt-auth`, `ktor-server-kotlin-inject`
+- **services-oauth2-as**: `services-oauth2-as-rest`
+- **services-oid4vci-issuer**: `services-oid4vci-issuer-rest`
+- **services-oid4vp-verifier**: `services-oid4vp-verifier-rest`
+- **services-statuslist**: `services-statuslist-rest`
+- **software**: `lib-software-registry-impl`, `lib-software-registry-public`
+- **statuslist**: `lib-statuslist-impl`, `lib-statuslist-public`
+- **trust**: `lib-trust-core-impl`, `lib-trust-core-public`, `lib-trust-did`, `lib-trust-etsi`, `lib-trust-etsi-entities-public`, `lib-trust-oidfed`, `lib-trust-x509`
+- **ui**: `lib-ui-compose`, `lib-ui-compose-blob-adapter`
+- **versions**: `idk-bom`
+- **wallet**: `lib-wallet-impl`, `lib-wallet-interaction-client-rest`, `lib-wallet-interaction-holder-wiring`, `lib-wallet-interaction-impl`, `lib-wallet-interaction-presenter`, `lib-wallet-interaction-presenter-contracts`, `lib-wallet-interaction-protocol-iso18013`, `lib-wallet-interaction-protocol-oid4vci`, `lib-wallet-interaction-protocol-oid4vp`, `lib-wallet-interaction-public`, `lib-wallet-party-local`, `lib-wallet-party-public`, `lib-wallet-provider-local`, `lib-wallet-provider-public`, `lib-wallet-public`, `lib-wallet-unit-impl`, `lib-wallet-unit-public`, `lib-wallet-wsca-impl`, `lib-wallet-wsca-public`, `lib-wallet-wscd-mobile`, `lib-wallet-wscd-public`, `lib-wallet-wscd-software`
+- **wallet-app**: `wallet-app-client-rest`, `wallet-app-impl`, `wallet-app-public`
+- **wallet-cli**: `wallet-cli`
+- **wallet-kit**: `wallet-kit`
+- **wallet-presentation**: `wallet-presentation`, `wallet-presentation-contracts`, `wallet-presentation-molecule`
+- **wallet-profile**: `wallet-profile-impl`, `wallet-profile-public`
+- **wallet-runner**: `wallet-runner`
+- **wallet-ui**: `wallet-ui-compose`, `wallet-ui-navigation3`
+
+</details>
+
+<!-- generated:module-index:end -->
+
 ## Services
 
 IDK ships reference services that wrap the core libraries with HTTP adapters. Each has its own page on the documentation site.

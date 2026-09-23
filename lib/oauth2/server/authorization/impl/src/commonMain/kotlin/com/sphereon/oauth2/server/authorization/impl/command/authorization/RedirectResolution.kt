@@ -23,6 +23,7 @@ import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.redirect.RedirectUriMatching
 
 /**
  * Result of the client + grant-type + redirect-URI + response-mode resolution pass. The
@@ -168,35 +169,4 @@ public suspend fun resolveTrustedRedirect(
 internal fun matchesRegisteredRedirectUri(
     requested: String,
     registered: List<String>,
-): Boolean {
-    if (requested in registered) return true
-    val requestedParts = splitUriIntoOriginPathQuery(requested) ?: return false
-    return registered.any { reg ->
-        val regParts = splitUriIntoOriginPathQuery(reg) ?: return@any false
-        regParts.query.isEmpty() &&
-            regParts.scheme.equals(requestedParts.scheme, ignoreCase = true) &&
-            regParts.authority.equals(requestedParts.authority, ignoreCase = true) &&
-            regParts.path == requestedParts.path
-    }
-}
-
-private data class UriParts(
-    val scheme: String,
-    val authority: String,
-    val path: String,
-    val query: String,
-)
-
-private fun splitUriIntoOriginPathQuery(uri: String): UriParts? {
-    val schemeIdx = uri.indexOf("://")
-    if (schemeIdx <= 0) return null
-    val scheme = uri.substring(0, schemeIdx)
-    val rest = uri.substring(schemeIdx + 3)
-    val pathStart = rest.indexOf('/').let { if (it < 0) rest.length else it }
-    val authority = rest.substring(0, pathStart)
-    val pathAndQuery = rest.substring(pathStart)
-    val queryIdx = pathAndQuery.indexOf('?')
-    val path = if (queryIdx < 0) pathAndQuery else pathAndQuery.substring(0, queryIdx)
-    val query = if (queryIdx < 0) "" else pathAndQuery.substring(queryIdx + 1)
-    return UriParts(scheme = scheme, authority = authority, path = path, query = query)
-}
+): Boolean = RedirectUriMatching.matches(requested, registered)

@@ -36,6 +36,7 @@ import com.sphereon.did.manager.DidCreateOptions
 import com.sphereon.did.manager.DidProviderRegistry
 import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.qualifyDidJarVerificationMethodId
 import com.sphereon.openid.oid4vp.verifier.requesturi.RequestObjectSigningConfig
 import com.sphereon.openid.oid4vp.verifier.requesturi.VerifierSignerBinding
 import com.sphereon.openid.oid4vp.verifier.spi.VerifierSigningKeyNameResolver
@@ -443,14 +444,9 @@ internal fun verifierHostOf(value: String): String? {
 internal fun requireAbsoluteVerificationMethodIdForDid(
     did: String,
     verificationMethodId: String,
-): String {
-    require(
-        did.startsWith("did:") &&
-            verificationMethodId.startsWith("$did#") &&
-            verificationMethodId.length > did.length + 1 &&
-            verificationMethodId.substringBefore('#') == did
-    ) {
-        "Verifier request-object kid must be a full assertionMethod id rooted in issuer DID '$did'"
-    }
-    return verificationMethodId
-}
+): String =
+    qualifyDidJarVerificationMethodId(did, verificationMethodId)
+        ?: throw IllegalArgumentException(
+            "Verifier request-object kid must be a full assertionMethod id rooted in issuer DID '$did' " +
+                "or a relative fragment '#…' (got '$verificationMethodId')",
+        )

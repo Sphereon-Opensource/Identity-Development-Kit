@@ -21,6 +21,7 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
+import com.sphereon.openid.oid4vp.common.qualifyDidJarVerificationMethodId
 import kotlinx.serialization.Serializable
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -62,39 +63,36 @@ interface RequestObjectSigningConfig {
     val enabled: Boolean get() = false
 
     /**
-     * Whether the signed Request Object should include a JWT `iss` claim equal to the
-     * verifier's client_id. Defaults to `false`.
+     * Whether the signed Request Object should include a JWT `iss` claim. Defaults to
+     * `false`.
      *
-     * OID4VP 1.0 §5.10 / RFC 9101 §3 list `iss` as SHOULD (not MUST). The §5.9.3
-     * non-normative example omits `iss`. Wallets that cross-check `iss` against JOSE
-     * header identifiers can reject prefixed client_ids (`decentralized_identifier:did:...`)
-     * because `kid` carries the bare DID. Omitting `iss` sidesteps the ambiguity.
-     *
-     * Enable only for interop with peers that strictly require RFC 9101 `iss`. When
-     * enabled, callers emit the bare identifier (via [VerifierSignerBinding.bareIdentifier])
-     * to keep wallet cross-checks happy.
+     * OID4VP 1.0 §5.6: `client_id` is required; `iss` MAY be present for JAR interop
+     * but **wallets MUST ignore `iss`**. The §5.9.3 DID example omits `iss`. When this
+     * flag is enabled for RFC 9101 peers that still require `iss`, the value is the
+     * binding's [VerifierSignerBinding.bareIdentifier] (e.g. bare DID), never a
+     * substitute for `client_id` identity.
      */
     val includeIss: Boolean get() = false
 
     /**
-     * Describes how the verifier self-identifies in the signed JAR, per OID4VP 1.0
-     * §5.9.3 (Client Identifier Prefixes). Returned when JAR signing is enabled;
-     * null when signing is disabled (caller's HTTPS client_id is kept).
+     * How the verifier self-identifies in the signed JAR. Per OID4VP 1.0 §5.9.3,
+     * **`client_id` with its Client Identifier Prefix is the sole client identity /
+     * authentication path** for request-object verification — not JOSE `kid`, not
+     * JWT `iss`, and not credential-issuer claims.
      *
-     * The binding drives three decisions in one go:
-     *   - outer `client_id` (prefixed per §5.9.3, e.g. `decentralized_identifier:did:jwk:...`)
-     *   - JOSE header for the JAR (`kid` for DID, `x5c` for X.509)
-     *   - JAR payload `iss` (equals client_id)
+     * The binding drives:
+     *   - outer / JAR `client_id` (prefixed, e.g. `decentralized_identifier:did:jwk:...`)
+     *   - JOSE header material required by that prefix (`kid` = absolute DID URL for
+     *     `decentralized_identifier`; `x5c` for `x509_*`)
+     *   - optional JAR `iss` (bare identifier only; wallets must ignore it)
      *
-     * The optional [scheme] parameter requests a specific binding: when non-null the
-     * caller is asking for that particular client-identifier prefix (e.g. the wallet
-     * page chose did:jwk vs x509_hash at request time). When null, implementations
-     * fall back to a deployment-configured default. Implementations MAY share one
-     * key + cert across multiple bindings (the JOSE header switches between `kid`
-     * and `x5c` based on [scheme]).
+     * The optional [scheme] parameter requests a specific Client Identifier Prefix
+     * (e.g. did:jwk vs x509_hash). When null, implementations use the deployment
+     * default. Implementations MAY share one key + cert across bindings (JOSE header
+     * switches between `kid` and `x5c`).
      *
      * When signing is enabled and binding resolution fails, implementations MUST
-     * throw — never silently fall back to the HTTPS/redirect_uri client_id.
+     * throw — never silently emit an HTTPS / `redirect_uri` `client_id`.
      *
      * Default: null.
      */
@@ -142,26 +140,39 @@ sealed class VerifierSignerBinding {
     /**
      * The bare identifier without the §5.9.3 prefix (e.g. `did:jwk:...` rather than
      * `decentralized_identifier:did:jwk:...`, or the DNS name rather than
-     * `x509_san_dns:<dnsName>`). This is what wallet validators match against DID
-     * documents, cert SANs, entity identifiers, or attestation `sub` values — and the
-     * correct value for a JAR `iss` claim when one is emitted.
+     * `x509_san_dns:<dnsName>`). Used when resolving DID Documents / cert SANs and as
+     * the optional JAR `iss` value. Wallet authentication still keys off [clientId].
      */
     abstract val bareIdentifier: String
 
     /**
-     * §5.9.3 `decentralized_identifier`: request MUST be signed with a DID-associated key,
-     * JOSE `kid` MUST reference a verification method in the DID Document.
+     * §5.9.3 `decentralized_identifier`: `client_id` is `decentralized_identifier:<did>`;
+     * the request MUST be signed with a key from that DID Document. JOSE `kid` identifies the
+     * verification method — preferably the absolute DID URL (spec example: `did:example:123#1`),
+     * but a document-relative fragment (`#1`) is also accepted and qualified against the DID
+     * from `client_id` on both mint and verify.
      *
      * @param did the bare DID (no fragment), e.g. `did:jwk:eyJr...`
-     * @param verificationMethodId the full DID URL used as JOSE `kid`, e.g. `did:jwk:eyJr...#0`
+     * @param verificationMethodId absolute DID URL or relative `#fragment` used as JOSE `kid`
      */
     data class Did(
         val did: String,
         val verificationMethodId: String,
     ) : VerifierSignerBinding() {
+        init {
+            require(qualifyDidJarVerificationMethodId(did, verificationMethodId) != null) {
+                "OID4VP decentralized_identifier JAR kid must be an absolute DID URL rooted in '$did' " +
+                    "or a relative fragment '#…' (got '$verificationMethodId')"
+            }
+        }
+
         override val clientId: String = "${ClientIdScheme.DECENTRALIZED_IDENTIFIER.prefix}:$did"
         override val scheme: ClientIdScheme = ClientIdScheme.DECENTRALIZED_IDENTIFIER
         override val bareIdentifier: String = did
+
+        /** Absolute verification-method DID URL (relative kids qualified against [did]). */
+        val absoluteVerificationMethodId: String =
+            qualifyDidJarVerificationMethodId(did, verificationMethodId)!!
     }
 
     /**

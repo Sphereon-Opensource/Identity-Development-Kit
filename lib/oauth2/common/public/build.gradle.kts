@@ -50,6 +50,8 @@ kotlin {
 
                 // Core dependencies
                 api(projects.libCoreApiPublic)
+                // IDNA canonicalization is part of the shared issuer identity contract.
+                api(projects.libCoreIdnPublic)
                 api(projects.libCryptoCore)
 
                 // Dependency injection

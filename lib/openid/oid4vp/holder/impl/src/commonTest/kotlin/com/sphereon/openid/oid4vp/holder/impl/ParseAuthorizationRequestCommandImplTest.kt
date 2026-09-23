@@ -29,6 +29,7 @@ import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.Oid4vpJson
 import com.sphereon.openid.oid4vp.common.ParsedTransactionDataEntry
 import com.sphereon.openid.oid4vp.common.TransactionDataEntry
+import com.sphereon.openid.oid4vp.common.qualifyDidJarVerificationMethodId
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.ktor.http.client.getOptional
@@ -269,6 +270,17 @@ class ParseAuthorizationRequestCommandImplTest {
                 clientIdSchemeHint = "x509_san_dns",
             ),
         )
+    }
+
+    @Test
+    fun `DID-bound JAR kid is qualified from client_id DID including relative fragments`() {
+        val did = "did:jwk:eyJhbGciOiJFUzI1NiJ9"
+        val clientId = "decentralized_identifier:$did"
+        assertEquals(ClientIdScheme.DECENTRALIZED_IDENTIFIER, jarVerificationScheme(clientId, null))
+        val bareDid = ClientIdScheme.extractClientIdWithoutScheme(clientId)
+        assertEquals("$did#0", qualifyDidJarVerificationMethodId(bareDid, "#0"))
+        assertEquals("$did#0", qualifyDidJarVerificationMethodId(bareDid, "$did#0"))
+        assertNull(qualifyDidJarVerificationMethodId(bareDid, "did:web:other#0"))
     }
 
     @Test

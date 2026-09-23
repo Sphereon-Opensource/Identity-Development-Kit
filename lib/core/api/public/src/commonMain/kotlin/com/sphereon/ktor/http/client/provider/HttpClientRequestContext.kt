@@ -31,8 +31,6 @@ enum class HttpMinimumTlsVersion {
 @ObjCName("HttpServerTrustMode", exact = true)
 enum class HttpServerTrustMode {
     TRUST_DOMAIN_ONLY,
-    PLATFORM_DEFAULTS,
-    PLATFORM_AND_TRUST_DOMAIN,
 }
 
 enum class HttpRedirectPolicy(
@@ -129,17 +127,6 @@ data class HttpClientRequestContext(
                 }
             }
 
-            HttpServerTrustMode.PLATFORM_DEFAULTS -> {
-                require(serverTrust.includePlatformDefaults && serverTrust.resolvedCertificates.isEmpty()) {
-                    "Platform-default server trust requires platform defaults without TrustDomain anchors"
-                }
-            }
-
-            HttpServerTrustMode.PLATFORM_AND_TRUST_DOMAIN -> {
-                require(serverTrust.includePlatformDefaults && serverTrust.resolvedCertificates.isNotEmpty()) {
-                    "Combined server trust requires platform defaults and resolved TrustDomain anchors"
-                }
-            }
         }
         require(sslClientDefaultCertificate == null) {
             "Governed connector contexts must not configure a default client certificate"
@@ -176,5 +163,4 @@ data class HttpClientRequestContext(
 }
 
 private fun String.normalizedHost(): String = trim().trimEnd('.').lowercase()
-
 

@@ -73,6 +73,19 @@ class SchemaMetaValidatorTest {
         assertTrue(SchemaMetaValidator.validateSlug("webuild-pid").isOk)
     }
 
+    /** Regression: linking an mdoc credential stores its doctype, which is not a URI. */
+    @Test
+    fun acceptsMdocDoctypeAsSchemaUriButNotForOtherFormats() {
+        val mdoc =
+            valid.copy(
+                supportedFormats = listOf("mso_mdoc"),
+                schemaURIs = listOf(SchemaUriRef("mso_mdoc", "org.iso.18013.5.1.mDL")),
+            )
+        assertTrue(SchemaMetaValidator.validate(mdoc).isOk)
+        assertTrue(SchemaMetaValidator.validate(valid.copy(schemaURIs = listOf(SchemaUriRef("dc+sd-jwt", "org.iso.18013.5.1.mDL")))).isErr)
+        assertTrue(SchemaMetaValidator.validate(mdoc.copy(schemaURIs = listOf(SchemaUriRef("mso_mdoc", "not a doctype")))).isErr)
+    }
+
     @Test
     fun rejectsNonUriRulebook() {
         assertTrue(SchemaMetaValidator.validate(valid.copy(rulebookURI = "not a uri")).isErr)

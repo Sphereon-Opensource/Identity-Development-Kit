@@ -70,15 +70,26 @@ class Iso18013MdocDisclosureExecutor(
             )
         }
         return try {
-            val engagement = engagementManager.toApp(rawEntryPoint, autoStart = false)
-            if (engagement.isErr) {
-                return failed(
-                    code = WalletInteractionFailureCodes.ISO18013_ENGAGEMENT_FAILED,
-                    messageKey = "wallet.interaction.error.iso18013_engagement_failed",
-                    providerErrorCode = engagement.error.code,
-                )
-            }
-            val transfer = engagement.value.start()
+            // The protocol adapter validates and materializes the TO_APP engagement during
+            // start(). Reuse that instance for the response so the transfer retains the
+            // ReaderEngagement and its declared ISO 18013-7 WEBSITE retrieval method. Calling
+            // toApp() again would close the active engagement and cancel its event scope before
+            // the response is sent. A direct call remains the fallback for callers that invoke
+            // this executor without the adapter start step.
+            val engagement =
+                engagementManager.toAppEngagement.value
+                    ?: run {
+                        val created = engagementManager.toApp(rawEntryPoint, autoStart = false)
+                        if (created.isErr) {
+                            return failed(
+                                code = WalletInteractionFailureCodes.ISO18013_ENGAGEMENT_FAILED,
+                                messageKey = "wallet.interaction.error.iso18013_engagement_failed",
+                                providerErrorCode = created.error.code,
+                            )
+                        }
+                        created.value
+                    }
+            val transfer = engagement.start()
             val deviceRequest = transfer.receiveDeviceRequest()
             val effectiveDocumentProvider = documentProviderResolver?.resolve(context, state) ?: documentProvider
             if (effectiveDocumentProvider != null) {

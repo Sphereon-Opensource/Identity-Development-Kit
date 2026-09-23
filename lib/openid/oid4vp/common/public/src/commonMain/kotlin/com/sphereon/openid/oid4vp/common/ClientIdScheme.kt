@@ -373,3 +373,31 @@ enum class ClientIdScheme(
         fun fromPrefix(prefix: String?): ClientIdScheme? = entries.find { it.prefix == prefix }
     }
 }
+
+/**
+ * Qualify a JAR JOSE `kid` against the DID taken from `client_id` (bare DID, no §5.9.3 prefix).
+ *
+ * OID4VP §5.9.3 / §5.10: the signing key must be a verification method in the DID Document of
+ * the DID identified by `client_id`. Wallets therefore resolve identity from `client_id` first;
+ * the `kid` only selects the verification method. Accepts:
+ * - Absolute DID URL rooted in [clientDid]: `did:…#fragment`
+ * - Document-relative fragment: `#fragment` → `[clientDid]#fragment`
+ *
+ * @return the absolute verification-method DID URL, or `null` when [kid] cannot be bound to [clientDid]
+ */
+fun qualifyDidJarVerificationMethodId(
+    clientDid: String,
+    kid: String,
+): String? {
+    val did = clientDid.trim()
+    val rawKid = kid.trim()
+    if (!did.startsWith("did:") || rawKid.isBlank()) return null
+    val absolute =
+        when {
+            rawKid.startsWith("#") && rawKid.length > 1 -> "$did$rawKid"
+            else -> rawKid
+        }
+    if (!absolute.startsWith("$did#") || absolute.length <= did.length + 1) return null
+    if (absolute.substringBefore('#') != did) return null
+    return absolute
+}

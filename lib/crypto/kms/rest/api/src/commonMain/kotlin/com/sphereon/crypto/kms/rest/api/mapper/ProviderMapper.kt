@@ -38,11 +38,24 @@ data class KeyProviderPresentation(
     val isDefault: Boolean,
 )
 
+/**
+ * Engine-native providers do not have a management-plane presentation record. They still need
+ * an operator-facing label on the runtime inventory, so derive a stable label from the provider
+ * type instead of serializing a missing display name.
+ */
+internal fun fallbackProviderDisplayName(providerType: String, providerId: String): String =
+    when (providerType.trim().lowercase().replace('-', '_')) {
+        "software" -> "Software KMS"
+        "aws_kms" -> "AWS KMS"
+        "azure_keyvault", "azure_key_vault" -> "Azure Key Vault KMS"
+        else -> providerId.trim().takeIf { it.isNotEmpty() } ?: "KMS Provider"
+    }
+
 fun KmsProvider.toRest(presentation: KeyProviderPresentation? = null): KeyProvider =
     KeyProvider(
         providerId = this.id,
         type = presentation?.type ?: KeyProviderType.valueOf(this.kmsProviderType.uppercase()),
-        displayName = presentation?.displayName,
+        displayName = presentation?.displayName ?: fallbackProviderDisplayName(this.kmsProviderType, this.id),
         ownership = presentation?.ownership,
         sharedFromPlatform = presentation?.sharedFromPlatform,
         isDefault = presentation?.isDefault,

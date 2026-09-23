@@ -67,8 +67,9 @@ class CatalogTypeViewAssembler(
             display.string("name")
                 ?: sdJwt?.obj.string("name")
                 ?: issuerBindings.card?.displayName
-                ?: record.schema.id
-                ?: typeKey.value
+                ?: sdJwt?.obj.string("title")
+                ?: mdoc?.obj.string("title")
+                ?: readableTypeName(typeKey.value)
         val description =
             display.string("description")
                 ?: sdJwt?.obj.string("description")
@@ -296,4 +297,18 @@ class CatalogTypeViewAssembler(
         val bytes: ByteArray,
         val obj: JsonObject,
     )
+}
+
+/**
+ * A readable name for a type that publishes none: the meaningful tail of its VCT, doctype or schema
+ * URI (`eu.europa.ec.eudi.pid.1` becomes `PID`). The internal schema id is never a display name.
+ */
+internal fun readableTypeName(value: String): String {
+    val trimmed = value.trim()
+    val segments = trimmed.split('/', '#', ':', '.').filter { it.isNotEmpty() && !Regex("^v?\\d+$", RegexOption.IGNORE_CASE).matches(it) }
+    val tail = segments.lastOrNull() ?: return trimmed
+    val words = tail.replace(Regex("([a-z])([A-Z])"), "$1 $2").split(Regex("[\\s_+-]+")).filter { it.isNotEmpty() }
+    if (words.isEmpty()) return trimmed
+    if (words.size == 1 && Regex("^[a-z]{2,4}$").matches(words[0])) return words[0].uppercase()
+    return words.joinToString(" ") { word -> word.replaceFirstChar { it.uppercaseChar() } }
 }

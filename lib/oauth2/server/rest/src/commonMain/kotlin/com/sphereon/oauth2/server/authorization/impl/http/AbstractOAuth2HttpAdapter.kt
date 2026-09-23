@@ -98,8 +98,17 @@ abstract class AbstractOAuth2HttpAdapter(
             return Ok(oauth2ErrorResponse(500, "server_error", resolution.error.message.defaultMessage, errorJson))
         }
         asInstanceIdProvider.setCurrentAsInstanceId(resolution.value)
+        // Command-backed endpoint handlers also resolve issuer/base URLs from the request. Keep
+        // the original ingress path when the dispatcher normalized a mounted route; otherwise a
+        // hosted `/as/<slug>` discovery request can resolve the tenant default AS downstream.
+        val effectiveArgs =
+            if (args.request.path == args.route.normalizedPath) {
+                args.copy(request = resolutionRequest)
+            } else {
+                args
+            }
         return try {
-            super.doExecute(args, applyDuring).withSecurityHeadersOnSuccess()
+            super.doExecute(effectiveArgs, applyDuring).withSecurityHeadersOnSuccess()
         } finally {
             asInstanceIdProvider.clearCurrentAsInstanceId()
         }

@@ -34,6 +34,9 @@ kotlin {
                 api(projects.libCoreApiPublic)
                 // Local persisted trust anchors can be supplied as an inline JWK identifier.
                 api(projects.libCryptoCorePublic)
+                // Canonical issuer identity is a neutral OAuth2 common contract. JWT validation
+                // must not depend on the authorization-server implementation/public resource API.
+                api(projects.libOauth2CommonPublic)
 
                 // Kotlin serialization
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.json)

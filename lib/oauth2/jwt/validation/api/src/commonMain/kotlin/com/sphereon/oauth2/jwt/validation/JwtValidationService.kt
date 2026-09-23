@@ -17,6 +17,7 @@
 
 package com.sphereon.oauth2.jwt.validation
 
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import kotlinx.serialization.Serializable
@@ -41,6 +42,18 @@ import kotlinx.serialization.json.JsonElement
  * - Spring: JwtAuthenticationFilter
  */
 interface JwtValidationService {
+    /**
+     * Validates an AS/OP-issued protocol artifact against caller-established trust material.
+     * Implementations must never discover a JWKS endpoint from the token or issuer. The default
+     * remains fail-closed for integrations that have not yet wired the governed AS source path.
+     */
+    suspend fun validateAsIssuedArtifact(
+        compactJwt: String,
+        trustMaterial: AsIssuerTrustMaterial,
+        artifactContext: JwtArtifactContext,
+    ): IdkResult<TokenClaims, JwtValidationError> =
+        Err(JwtValidationError.validationError("AS-issued artifact validation is not configured"))
+
     /**
      * Validates an access token.
      *

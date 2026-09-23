@@ -26,6 +26,8 @@ object SchemaMetaValidator {
     private val uuidRegex =
         Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
     private val uriSchemeRegex = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:.+")
+    /** ISO/IEC 18013-5 doctype: a reverse-domain name such as `org.iso.18013.5.1.mDL`. */
+    private val doctypeRegex = Regex("""^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$""")
     private val semverRegex = Regex("""^\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?$""")
     private val json =
         Json {
@@ -109,6 +111,16 @@ object SchemaMetaValidator {
         return uriSchemeRegex.matches(trimmed)
     }
 
+    /**
+     * An mdoc type is identified by its doctype, which is a reverse-domain name and not a URI. The
+     * platform stores that doctype as the `mso_mdoc` schemaURI (the verification evaluator and the
+     * type keys match on it), so it is accepted next to a URI for that format only.
+     */
+    fun isSchemaUriFor(formatIdentifier: String, value: String): Boolean {
+        if (isUri(value)) return true
+        return formatIdentifier == AttestationFormatIdentifier.MSO_MDOC.toWire() && doctypeRegex.matches(value.trim())
+    }
+
     fun validate(
         schema: SchemaMeta,
         requireId: Boolean = false
@@ -149,7 +161,7 @@ object SchemaMetaValidator {
             if (ref.uri.isBlank()) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "schemaURI uri is required"))
             }
-            if (!isUri(ref.uri)) {
+            if (!isSchemaUriFor(ref.formatIdentifier, ref.uri)) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(arg = ref.uri, message = "schemaURI uri must be a URI"))
             }
             if (ref.formatIdentifier !in schema.supportedFormats) {

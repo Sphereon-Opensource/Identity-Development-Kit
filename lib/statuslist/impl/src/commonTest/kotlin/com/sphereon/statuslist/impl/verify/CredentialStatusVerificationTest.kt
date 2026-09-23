@@ -77,6 +77,10 @@ private object FakeMdocTrustService : X509VerifyService {
     override fun getTrustedCerts(): Array<String>? = arrayOf("configured-root")
 }
 
+private object EmptyTrustAnchorLoader : com.sphereon.trust.x509.X509TrustAnchorLoader {
+    override suspend fun loadTrustedCerts(): List<String> = emptyList()
+}
+
 class CredentialStatusVerificationTest {
     private fun claims(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 
@@ -84,6 +88,9 @@ class CredentialStatusVerificationTest {
         value: Int,
         fail: Boolean = false,
     ): Set<CredentialStatusVerifier> = setOf(TokenStatusListCredentialStatusVerifier(FakeResolver(value, fail)))
+
+    private fun mdocVerifier(resolver: StatusListResolver = FakeResolver(0)): MdocCredentialStatusVerifier =
+        MdocCredentialStatusVerifier(resolver, FakeMdocTrustService, EmptyTrustAnchorLoader)
 
     @Test
     fun tokenReferenceExtraction() {

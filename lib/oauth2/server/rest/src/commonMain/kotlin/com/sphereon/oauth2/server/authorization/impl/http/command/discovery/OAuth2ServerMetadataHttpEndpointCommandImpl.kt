@@ -81,7 +81,10 @@ class OAuth2ServerMetadataHttpEndpointCommandImpl(
     ): IdkResult<GenericHttpResponse, IdkError> {
         val request = applyDuring(args)
         val tenantPath = request.queryParameters["tenant-path"]
-        val baseUrlOverride = baseUrlResolver.resolveBaseUrl(request, configProvider, tenantPath)
+        // See the OIDC discovery endpoint: route matching peels hosted prefixes, while the
+        // base URL resolver needs the retained ingress path to select the requested AS.
+        val baseUrlRequest = request.originalPath?.let { request.copy(path = it) } ?: request
+        val baseUrlOverride = baseUrlResolver.resolveBaseUrl(baseUrlRequest, configProvider, tenantPath)
 
         val result =
             handleDiscoveryRequestCommand.execute(

@@ -27,6 +27,7 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.oauth2.client.command.CreateSignedJarArgs
 import com.sphereon.oauth2.client.command.CreateSignedJarCommand
 import com.sphereon.oauth2.common.model.AuthorizationRequest
+import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
 import com.sphereon.openid.oid4vp.dcql.DcqlCredentialQuery
 import com.sphereon.openid.oid4vp.dcql.sdJwtVcMeta
@@ -43,6 +44,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -51,22 +53,160 @@ class RequestUriHandlerImplTest {
     private val testContext = Oid4vpVerifierTestContext("request-uri-handler-test", this)
 
     @Test
-    fun `did request object iss is the did and kid is its full assertionMethod`() {
+    fun `did binding client_id is decentralized_identifier prefixed and kid may be absolute or relative`() {
         val did = "did:web:verifier.example"
         val binding = VerifierSignerBinding.Did(did = did, verificationMethodId = "$did#verifier-request-object-root")
 
+        assertEquals("decentralized_identifier:$did", binding.clientId)
+        assertEquals(ClientIdScheme.DECENTRALIZED_IDENTIFIER, binding.scheme)
+        assertEquals(did, binding.bareIdentifier)
         assertEquals(did, binding.requestObjectIssuer())
         assertEquals(binding.requestObjectIssuer(), binding.verificationMethodId.substringBefore('#'))
+        assertEquals("$did#verifier-request-object-root", binding.absoluteVerificationMethodId)
+
+        // Relative fragment is accepted and qualified against the client_id DID.
+        val relative = VerifierSignerBinding.Did(did = did, verificationMethodId = "#verifier-request-object-root")
+        assertEquals("#verifier-request-object-root", relative.verificationMethodId)
+        assertEquals("$did#verifier-request-object-root", relative.absoluteVerificationMethodId)
+
         assertFailsWith<IllegalArgumentException> {
             VerifierSignerBinding.Did(
                 did = did,
                 verificationMethodId = "did:web:other.example#verifier-request-object-root",
-            ).requestObjectIssuer()
+            )
         }
         assertFailsWith<IllegalArgumentException> {
-            VerifierSignerBinding.Did(did = did, verificationMethodId = did).requestObjectIssuer()
+            VerifierSignerBinding.Did(did = did, verificationMethodId = did)
         }
     }
+
+    @Test
+    fun `signed DID JAR qualifies relative kid to absolute against client_id DID`() =
+        runTest {
+            val did = "did:jwk:eyJhbGciOiJFUzI1NiJ9"
+            val binding = VerifierSignerBinding.Did(did = did, verificationMethodId = "#0")
+            val capture = CapturingSignedJarCommand(testContext)
+            val store = TestAuthorizationSessionStore()
+            val handler =
+                RequestUriHandlerImpl(
+                    authorizationSessionStore = store,
+                    createSignedJarCommand = capture,
+                    signingConfig = EnabledSigningConfig(binding = binding, includeIss = false),
+                    clock = Clock.System,
+                )
+            val correlationId =
+                preloadSession(
+                    store,
+                    sessionId = "sess-did-relative-kid",
+                    clientId = binding.clientId,
+                )
+
+            val response = handler.handleGet("/oid4vp/request-uri/$correlationId")
+            assertIs<Ok<*>>(response)
+            val args = assertNotNull(capture.lastArgs)
+            assertEquals("$did#0", args.kid)
+            assertEquals(binding.clientId, args.authorizationRequest.clientId)
+        }
+
+    @Test
+    fun `signed DID JAR uses prefixed client_id and absolute kid — never HTTPS client_id`() =
+        runTest {
+            val did = "did:jwk:eyJhbGciOiJFUzI1NiJ9"
+            val vmId = "$did#0"
+            val binding = VerifierSignerBinding.Did(did = did, verificationMethodId = vmId)
+            val capture = CapturingSignedJarCommand(testContext)
+            val store = TestAuthorizationSessionStore()
+            val handler =
+                RequestUriHandlerImpl(
+                    authorizationSessionStore = store,
+                    createSignedJarCommand = capture,
+                    signingConfig = EnabledSigningConfig(binding = binding, includeIss = false),
+                    clock = Clock.System,
+                )
+            val correlationId =
+                preloadSession(
+                    store,
+                    sessionId = "sess-did-jar",
+                    clientId = binding.clientId,
+                )
+
+            val response = handler.handleGet("/oid4vp/request-uri/$correlationId")
+            assertIs<Ok<*>>(response)
+            val args = assertNotNull(capture.lastArgs)
+            assertEquals(binding.clientId, args.authorizationRequest.clientId)
+            assertEquals(vmId, args.kid)
+            assertNull(args.x5c)
+            assertEquals(false, args.includeIss)
+            assertEquals(did, args.issuer)
+            assertTrue(args.authorizationRequest.clientId.startsWith("decentralized_identifier:"))
+            assertTrue(!args.authorizationRequest.clientId.startsWith("https://"))
+        }
+
+    @Test
+    fun `signed x509_san_dns JAR uses prefixed client_id and x5c without DID kid`() =
+        runTest {
+            val binding =
+                VerifierSignerBinding.X509SanDns(
+                    dnsName = "verifier.example.com",
+                    certificateChain = listOf("MIIBdTCCARugAwIBAgIUTestLeaf"),
+                )
+            val capture = CapturingSignedJarCommand(testContext)
+            val store = TestAuthorizationSessionStore()
+            val handler =
+                RequestUriHandlerImpl(
+                    authorizationSessionStore = store,
+                    createSignedJarCommand = capture,
+                    signingConfig = EnabledSigningConfig(binding = binding, includeIss = false),
+                    clock = Clock.System,
+                )
+            val correlationId =
+                preloadSession(
+                    store,
+                    sessionId = "sess-x509-jar",
+                    clientId = binding.clientId,
+                )
+
+            val response = handler.handleGet("/oid4vp/request-uri/$correlationId")
+            assertIs<Ok<*>>(response)
+            val args = assertNotNull(capture.lastArgs)
+            assertEquals("x509_san_dns:verifier.example.com", args.authorizationRequest.clientId)
+            assertNull(args.kid)
+            assertEquals(listOf("MIIBdTCCARugAwIBAgIUTestLeaf"), args.x5c)
+        }
+
+    @Test
+    fun `signed JAR rejects session whose client_id does not match binding prefix identity`() =
+        runTest {
+            val binding =
+                VerifierSignerBinding.Did(
+                    did = "did:jwk:eyJhbGciOiJFUzI1NiJ9",
+                    verificationMethodId = "did:jwk:eyJhbGciOiJFUzI1NiJ9#0",
+                )
+            val capture = CapturingSignedJarCommand(testContext)
+            val store = TestAuthorizationSessionStore()
+            val handler =
+                RequestUriHandlerImpl(
+                    authorizationSessionStore = store,
+                    createSignedJarCommand = capture,
+                    signingConfig = EnabledSigningConfig(binding = binding),
+                    clock = Clock.System,
+                )
+            // Stale HTTPS client_id must not be served under DID signing.
+            val correlationId =
+                preloadSession(
+                    store,
+                    sessionId = "sess-mismatch",
+                    clientId = "https://verifier.example.com",
+                )
+
+            val response = handler.handleGet("/oid4vp/request-uri/$correlationId")
+            assertIs<Err<*>>(response)
+            assertTrue(
+                response.error.message.defaultMessage.contains("does not match"),
+                response.error.message.defaultMessage,
+            )
+            assertNull(capture.lastArgs)
+        }
 
     @Test
     fun `handlePost echoes wallet_nonce as a JAR claim`() =
@@ -159,6 +299,7 @@ class RequestUriHandlerImplTest {
     private suspend fun preloadSession(
         store: TestAuthorizationSessionStore,
         sessionId: String,
+        clientId: String = "https://verifier.example.com",
     ): String {
         val now = Clock.System.now().toEpochMilliseconds()
         val session =
@@ -179,7 +320,7 @@ class RequestUriHandlerImplTest {
                     ),
                 authorizationRequest =
                     AuthorizationRequest(
-                        clientId = "https://verifier.example.com",
+                        clientId = clientId,
                         redirectUri = "https://verifier.example.com/callback",
                         state = "state-1",
                         nonce = "nonce-12345678",
@@ -203,6 +344,49 @@ class RequestUriHandlerImplTest {
         assertTrue(parts.size >= 2, "Expected JWT-shaped JAR, got: $jar")
         val payload = parts[1].decodeFromBase64Url().decodeToString()
         return Json.parseToJsonElement(payload) as JsonObject
+    }
+
+    private class EnabledSigningConfig(
+        private val binding: VerifierSignerBinding,
+        override val includeIss: Boolean = false,
+    ) : RequestObjectSigningConfig {
+        override val enabled: Boolean = true
+        override val audience: String = "https://wallet.example.com"
+        override val expirationSeconds: Long = 60
+
+        override suspend fun resolveSigningKey() =
+            com.sphereon.crypto.core.KeyInfo<Nothing>(alias = "stub-jar-key")
+
+        override suspend fun resolveSignerBinding(scheme: ClientIdScheme?) = binding
+    }
+
+    /**
+     * Captures [CreateSignedJarArgs] so tests can assert OID4VP §5.9.3 client_id / kid / x5c
+     * without needing a real KMS signature.
+     */
+    private class CapturingSignedJarCommand(
+        testContext: Oid4vpVerifierTestContext,
+    ) : TypedServiceCommandAdapter<CreateSignedJarArgs, StringResult, IdkError>(
+            commandId = CreateSignedJarCommand.COMMAND_ID,
+            execution = testContext.execution,
+            inputTypeToken = typeToken<CreateSignedJarArgs>(),
+            outputTypeToken = typeToken<StringResult>(),
+        ),
+        CreateSignedJarCommand {
+        var lastArgs: CreateSignedJarArgs? = null
+            private set
+
+        override val commandId: String get() = CreateSignedJarCommand.COMMAND_ID
+
+        override suspend fun supports(args: Any): Boolean = args is CreateSignedJarArgs
+
+        override suspend fun doExecute(
+            args: CreateSignedJarArgs,
+            applyDuring: (CreateSignedJarArgs) -> CreateSignedJarArgs,
+        ): IdkResult<StringResult, IdkError> {
+            lastArgs = applyDuring(args)
+            return Ok(StringResult("header.payload.signature"))
+        }
     }
 
     /**

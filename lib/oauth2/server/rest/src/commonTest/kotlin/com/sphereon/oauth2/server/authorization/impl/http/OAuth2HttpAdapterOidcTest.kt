@@ -29,6 +29,7 @@ import com.sphereon.oauth2.common.config.DefaultOAuth2ServerInstanceResolver
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.MutableOAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
+import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceResolver
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
@@ -91,6 +92,7 @@ private class FakeOAuth2ServersConfigProvider(
 
 private class FakeHandleDiscoveryRequestCommand(
     private val configProvider: OAuth2ServersConfigProvider,
+    private val asInstanceIdProvider: OAuth2ServerInstanceIdProvider? = null,
 ) : HandleDiscoveryRequestCommand {
     override val commandId: String get() = HandleDiscoveryRequestCommand.COMMAND_ID
     override val inputTypeToken get() =
@@ -104,7 +106,9 @@ private class FakeHandleDiscoveryRequestCommand(
     override suspend fun supports(args: Any): Boolean = args is HandleDiscoveryRequestArgs
 
     override suspend fun execute(args: HandleDiscoveryRequestArgs): IdkResult<AuthorizationServerMetadata, IdkError> {
-        val server = configProvider.getDefaultServer()
+        val server =
+            asInstanceIdProvider?.currentAsInstanceId()?.let(configProvider::getServer)
+                ?: configProvider.getDefaultServer()
         val base =
             server.issuer ?: args.baseUrlOverride
                 ?: return Err(
@@ -203,11 +207,14 @@ private fun resolverFor(configProvider: OAuth2ServersConfigProvider): OAuth2Serv
 
 private fun idProvider(): MutableOAuth2ServerInstanceIdProvider = DefaultOAuth2ServerInstanceIdProvider()
 
-private fun discoveryAdapter(configProvider: OAuth2ServersConfigProvider): TestHttpAdapterRoute {
+private fun discoveryAdapter(
+    configProvider: OAuth2ServersConfigProvider,
+    baseUrlResolver: OAuth2ServerBaseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
+): TestHttpAdapterRoute {
     val exec = execution()
     val handleDiscoveryCommand = FakeHandleDiscoveryRequestCommand(configProvider)
-    val oauth2Metadata = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider, DefaultOAuth2ServerBaseUrlResolver())
-    val openidMetadata = OpenidDiscoveryHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider, DefaultOAuth2ServerBaseUrlResolver())
+    val oauth2Metadata = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider, baseUrlResolver)
+    val openidMetadata = OpenidDiscoveryHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider, baseUrlResolver)
     val jwks = JwksHttpEndpointCommandImpl(exec, FakeHandleJwksRequestCommand())
     val registry = TestHttpEndpointCommandRegistry(oauth2Metadata, openidMetadata, jwks)
     val adapter =
@@ -216,6 +223,33 @@ private fun discoveryAdapter(configProvider: OAuth2ServersConfigProvider): TestH
             endpointCommandRegistry = registry,
             asInstanceResolver = resolverFor(configProvider),
             asInstanceIdProvider = idProvider(),
+            slugLookup = NoOpRoutableSlugLookup(),
+            tenantIdProvider = DefaultResolvedTenantIdProvider(),
+        )
+    return TestHttpAdapterRoute(adapter, registry)
+}
+
+private fun pathIssuerDiscoveryAdapter(
+    configProvider: OAuth2ServersConfigProvider,
+): TestHttpAdapterRoute {
+    val exec = execution()
+    val asInstanceIdProvider = idProvider()
+    val handleDiscoveryCommand = FakeHandleDiscoveryRequestCommand(configProvider, asInstanceIdProvider)
+    val openidMetadata =
+        OpenidDiscoveryHttpEndpointCommandImpl(
+            exec,
+            handleDiscoveryCommand,
+            configProvider,
+            DefaultOAuth2ServerBaseUrlResolver(),
+        )
+    val jwks = JwksHttpEndpointCommandImpl(exec, FakeHandleJwksRequestCommand())
+    val registry = TestHttpEndpointCommandRegistry(openidMetadata, jwks)
+    val adapter =
+        OAuth2OpenidDiscoveryPathIssuerHttpAdapter(
+            execution = exec,
+            endpointCommandRegistry = registry,
+            asInstanceResolver = resolverFor(configProvider),
+            asInstanceIdProvider = asInstanceIdProvider,
             slugLookup = NoOpRoutableSlugLookup(),
             tenantIdProvider = DefaultResolvedTenantIdProvider(),
         )
@@ -259,6 +293,92 @@ class OAuth2HttpAdapterOidcTest {
     // ========================================================================
     // OIDC Discovery
     // ========================================================================
+
+    @Test
+    fun hostedDiscoveryPreservesRequestedAsSlugAfterRouteNormalization() =
+        runTest {
+            var observedPath: String? = null
+            val routeAwareResolver =
+                object : OAuth2ServerBaseUrlResolver {
+                    override suspend fun resolveBaseUrl(
+                        request: GenericHttpRequest,
+                        configProvider: OAuth2ServersConfigProvider,
+                        tenantPath: String?,
+                    ): String {
+                        observedPath = request.path
+                        return request.path.substringBefore("/.well-known").ifEmpty { "https://auth.example.com" }
+                    }
+                }
+            val configProvider =
+                FakeOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(
+                        servers =
+                            mapOf(
+                                "default" to
+                                    OAuth2ServerInstanceConfig(
+                                        issuer = null,
+                                        oidc = FeaturePolicy.SUPPORTED,
+                                    ),
+                            ),
+                    ),
+                )
+            val adapter = discoveryAdapter(configProvider, routeAwareResolver)
+
+            val response =
+                dispatchForTest(
+                    listOf(adapter),
+                    GenericHttpRequest(
+                        method = "GET",
+                        path = "/as/walkthrough-as/.well-known/openid-configuration",
+                        headers = mapOf("host" to "auth.example.com", "x-forwarded-proto" to "https"),
+                    ),
+                )
+
+            assertEquals(200, response.statusCode)
+            assertEquals("/as/walkthrough-as", observedPath?.substringBefore("/.well-known"))
+            val body = json.parseToJsonElement(response.body!!)
+            assertEquals("/as/walkthrough-as", body.jsonObject["issuer"]?.jsonPrimitive?.content)
+        }
+
+    @Test
+    fun pathIssuerDiscoverySelectsHostedServerAfterRouteNormalization() =
+        runTest {
+            val configProvider =
+                FakeOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(
+                        servers =
+                            mapOf(
+                                "default" to
+                                    OAuth2ServerInstanceConfig(
+                                        issuer = "https://auth.example.com/as/phase9cust26",
+                                        oidc = FeaturePolicy.SUPPORTED,
+                                    ),
+                                "walkthrough-as" to
+                                    OAuth2ServerInstanceConfig(
+                                        issuer = "https://auth.example.com/as/walkthrough-as",
+                                        oidc = FeaturePolicy.SUPPORTED,
+                                    ),
+                            ),
+                    ),
+                )
+
+            val response =
+                dispatchForTest(
+                    listOf(pathIssuerDiscoveryAdapter(configProvider)),
+                    GenericHttpRequest(
+                        method = "GET",
+                        path = "/as/walkthrough-as/.well-known/openid-configuration",
+                        headers = mapOf("host" to "auth.example.com", "x-forwarded-proto" to "https"),
+                    ),
+                )
+
+            assertEquals(200, response.statusCode)
+            val body = json.parseToJsonElement(response.body!!)
+            assertEquals(
+                "https://auth.example.com/as/walkthrough-as",
+                body.jsonObject["issuer"]?.jsonPrimitive?.content,
+            )
+        }
 
     @Test
     fun oidcDiscoveryReturns200WhenEnabled() =

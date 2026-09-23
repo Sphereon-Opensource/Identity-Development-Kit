@@ -26,6 +26,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CatalogTypeViewAssemblerTest {
     @Test
@@ -81,7 +82,16 @@ class CatalogTypeViewAssemblerTest {
             assertNull(view.card)
             assertEquals(AttestationTypeKeyKind.DOCTYPE, view.typeKey.kind)
             assertEquals("eu.europa.ec.eudi.pid.1", view.typeKey.value)
+            // Regression: the title fell back to the internal schema id. The mdoc format document's
+            // own title names the type.
+            assertTrue(view.title.contains("Person Identification Data"), view.title)
         }
+
+    @Test
+    fun readableTypeNameNeverReturnsAnInternalId() {
+        assertEquals("PID", readableTypeName("eu.europa.ec.eudi.pid.1"))
+        assertEquals("Employee Badge", readableTypeName("https://issuer.example/vct/employee-badge"))
+    }
 
     @Test
     fun linkedDesignStubUsesLinkedDesignCardSource() =

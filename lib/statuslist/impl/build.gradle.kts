@@ -51,6 +51,12 @@ kotlin {
                 // DID-method resolution so the status-list token can carry the same DID `kid` as the
                 // credentials that reference it (did:jwk / did:key / did:web signing modes).
                 api(projects.libDidManagerPublic)
+                // X509TrustAnchorLoader supplies CA bundles when X509VerifyService has no session-
+                // pinned trustedCerts (production OID4VP verifier path for mdoc_status).
+                api(projects.libTrustX509)
+                // X509TrustAnchorLoaderImpl needs DefaultTrustConfigProvider on every consumer
+                // graph (wallet-runner LiveStack, enterprise-verifier, OID4VP verifier tests).
+                api(projects.libTrustCoreImpl)
                 api(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)
                 api(sphereonlib.io.ktor.client.core)

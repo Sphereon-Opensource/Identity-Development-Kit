@@ -404,6 +404,10 @@ private fun createTestBlobService(): DefaultBlobService {
  * production implementations, while this test's blob/KV backing and body protector are in-memory
  * test implementations.
  */
+private object EmptyTrustAnchorLoader : com.sphereon.trust.x509.X509TrustAnchorLoader {
+    override suspend fun loadTrustedCerts(): List<String> = emptyList()
+}
+
 class MsoMdocIssuerWalletVerifierProductE2ETest {
     @Test
     fun productTransportPreservesProductionHostingStatusContentTypeAndCacheControl() = runTest {
@@ -523,7 +527,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
             expectedUri = uri,
         )
         val resolver = setup.graphStatusResolver(driver, uri)
-        val verifier = ProductStatusVerifierTrace(MdocCredentialStatusVerifier(resolver, setup.x509))
+        val verifier = ProductStatusVerifierTrace(MdocCredentialStatusVerifier(resolver, setup.x509, EmptyTrustAnchorLoader))
         val provider = WalletStoreIso18013DocumentProvider(
             credentialStore = store,
             walletUnitId = "wallet-product",
@@ -633,7 +637,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
             expectedProfile = MdocStatusListProfile.IDENTIFIER_LIST,
             expectedUri = uri,
         )
-        val verifier = ProductStatusVerifierTrace(MdocCredentialStatusVerifier(setup.graphStatusResolver(driver, uri), setup.x509))
+        val verifier = ProductStatusVerifierTrace(MdocCredentialStatusVerifier(setup.graphStatusResolver(driver, uri), setup.x509, EmptyTrustAnchorLoader))
         val provider = WalletStoreIso18013DocumentProvider(
             credentialStore = store,
             walletUnitId = "wallet-product",
@@ -689,7 +693,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
             val record = setup.record(envelope.credential.jsonPrimitive.content, id)
             assertEquals("$id-holder", record.instances.single().holderKeyRef?.alias)
             store.putCredential("wallet-product", record).getOrElse { fail("persist command mdoc: $it") }
-            val statusVerifier = MdocCredentialStatusVerifier(setup.graphStatusResolver(driver, uri), setup.x509)
+            val statusVerifier = MdocCredentialStatusVerifier(setup.graphStatusResolver(driver, uri), setup.x509, EmptyTrustAnchorLoader)
             val documentProvider = WalletStoreIso18013DocumentProvider(
                 credentialStore = store,
                 walletUnitId = "wallet-product",

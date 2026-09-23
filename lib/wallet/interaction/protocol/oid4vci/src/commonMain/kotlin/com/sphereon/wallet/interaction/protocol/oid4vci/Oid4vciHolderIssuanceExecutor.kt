@@ -597,11 +597,16 @@ class Oid4vciHolderIssuanceExecutor(
         val options =
             try {
                 optionsProvider.options(context, state, resolved.value)
-            } catch (_: Exception) {
+            } catch (cause: Exception) {
                 return failed(
                     code = WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE,
                     messageKey = "wallet.interaction.error.oid4vci_options_unavailable",
                     retryable = true,
+                    arguments =
+                        mapOf(
+                            "causeType" to (cause::class.simpleName ?: "Exception"),
+                            "cause" to cause.message.orEmpty(),
+                        ),
                 )
             }
 
@@ -817,8 +822,17 @@ class Oid4vciHolderIssuanceExecutor(
         val baseOptions =
             try {
                 optionsProvider.options(context, state, resolvedOfferForRefresh, existingHolderKeyAliases = holderKeyAliases)
-            } catch (_: Exception) {
-                return failed(code = WalletInteractionFailureCodes.OID4VCI_REFRESH_OPTIONS_UNAVAILABLE, messageKey = "wallet.interaction.error.oid4vci_refresh_options_unavailable", retryable = true)
+            } catch (cause: Exception) {
+                return failed(
+                    code = WalletInteractionFailureCodes.OID4VCI_REFRESH_OPTIONS_UNAVAILABLE,
+                    messageKey = "wallet.interaction.error.oid4vci_refresh_options_unavailable",
+                    retryable = true,
+                    arguments =
+                        mapOf(
+                            "causeType" to (cause::class.simpleName ?: "Exception"),
+                            "cause" to cause.message.orEmpty(),
+                        ),
+                )
             }
         // The options provider may configure algorithms and client authentication, but it is not
         // allowed to mint replacement holder keys during reissuance. Existing aliases are an
@@ -958,22 +972,34 @@ class Oid4vciHolderIssuanceExecutor(
         val options =
             try {
                 optionsProvider.options(context, state, resolved.value)
-            } catch (_: Exception) {
+            } catch (cause: Exception) {
                 return failed(
                     code = WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE,
                     messageKey = "wallet.interaction.error.oid4vci_options_unavailable",
                     retryable = true,
+                    arguments =
+                        mapOf(
+                            "causeType" to (cause::class.simpleName ?: "Exception"),
+                            "cause" to cause.message.orEmpty(),
+                        ),
                 )
             }
         val encryptCredentialRequest =
             context.attributes[Oid4vciInteractionLaunchAttributes.ENCRYPT_CREDENTIAL_REQUEST]
                 ?.trim()
+                ?.takeIf(String::isNotEmpty)
                 ?.lowercase()
                 ?.let { value ->
                     when (value) {
                         "true" -> true
                         "false" -> false
-                        else -> return failed(WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE, "wallet.interaction.error.oid4vci_options_unavailable", retryable = true)
+                        else ->
+                            return failed(
+                                WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE,
+                                "wallet.interaction.error.oid4vci_options_unavailable",
+                                retryable = true,
+                                arguments = mapOf("cause" to "oid4vci.launch_attribute_boolean_invalid:oid4vci.credential.request.encrypt"),
+                            )
                     }
                 } ?: false
         val requestEncryption = credentialRequestEncryption(resolved.value, encryptCredentialRequest)
@@ -1260,11 +1286,16 @@ class Oid4vciHolderIssuanceExecutor(
         val options =
             try {
                 optionsProvider.options(context, state, resolved.value)
-            } catch (_: Exception) {
+            } catch (cause: Exception) {
                 return failed(
                     code = WalletInteractionFailureCodes.OID4VCI_OPTIONS_UNAVAILABLE,
                     messageKey = "wallet.interaction.error.oid4vci_options_unavailable",
                     retryable = true,
+                    arguments =
+                        mapOf(
+                            "causeType" to (cause::class.simpleName ?: "Exception"),
+                            "cause" to cause.message.orEmpty(),
+                        ),
                 )
             }
         return handleIaeResult(context, state, resolved.value, options, result.value)

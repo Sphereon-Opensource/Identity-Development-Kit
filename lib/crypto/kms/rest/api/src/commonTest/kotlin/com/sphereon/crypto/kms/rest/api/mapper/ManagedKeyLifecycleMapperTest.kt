@@ -76,5 +76,13 @@ class ManagedKeyLifecycleMapperTest {
 
         assertNull(rest.origin)
         assertNull(rest.controlMode)
+        assertEquals("Software KMS", fallbackProviderDisplayName("software", "provider-1"))
+    }
+
+    @Test
+    fun fallbackProviderDisplayNameCoversConfiguredProviderTypes() {
+        assertEquals("AWS KMS", fallbackProviderDisplayName("aws-kms", "aws-primary"))
+        assertEquals("Azure Key Vault KMS", fallbackProviderDisplayName("azure_keyvault", "azure-primary"))
+        assertEquals("custom-primary", fallbackProviderDisplayName("custom", "custom-primary"))
     }
 }

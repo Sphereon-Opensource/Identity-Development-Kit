@@ -98,34 +98,22 @@ class TrustChainModelsTest {
     }
 
     @Test
-    fun trustAllAcceptanceCannotCarryANamedAdmittingDomain() {
+    fun failClosedAdmissionNeverNamesAnAdmittingDomain() {
         val admission =
             TrustDomainAdmission.admit(
                 chain = null,
-                posture = TrustDomainPosture.TRUST_ALL,
+                posture = TrustDomainPosture.FAIL_CLOSED,
                 assignedAnchorIds = emptyList(),
             )
-        assertEquals(TrustDomainPosture.TRUST_ALL, admission.posture)
-        assertEquals(TrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL, admission.outcome)
+        assertEquals(TrustDomainAdmissionOutcome.FAIL_CLOSED, admission.outcome)
         assertNull(admission.admittingDomain)
         assertFailsWith<IllegalArgumentException> {
             TrustDomainAdmission(
-                posture = TrustDomainPosture.TRUST_ALL,
-                outcome = TrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL,
+                posture = TrustDomainPosture.FAIL_CLOSED,
+                outcome = TrustDomainAdmissionOutcome.FAIL_CLOSED,
                 admittingDomain = "https://pretend-authority.example",
             )
         }
-    }
-
-    @Test
-    fun failClosedIsNotInferredFromAnEmptyAssignedListWhenPostureIsTrustAll() {
-        val admission =
-            TrustDomainAdmission.admit(
-                chain = null,
-                posture = TrustDomainPosture.TRUST_ALL,
-                assignedAnchorIds = emptyList(),
-            )
-        assertEquals(TrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL, admission.outcome)
     }
 
     @Test

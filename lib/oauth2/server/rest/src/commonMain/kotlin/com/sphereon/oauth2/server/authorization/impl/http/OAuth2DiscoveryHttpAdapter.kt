@@ -21,6 +21,7 @@ import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.HttpAdapter
 import com.sphereon.core.api.http.command.RoutableSlugLookup
+import com.sphereon.core.api.http.command.TenantPathPolicy
 import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.di.context.MutableResolvedTenantIdProvider
 import com.sphereon.di.session.SessionScope
@@ -63,6 +64,10 @@ class OAuth2DiscoveryHttpAdapter(
         asInstanceIdProvider = asInstanceIdProvider,
         slugLookup = slugLookup,
         tenantIdProvider = tenantIdProvider,
+        // Hosted AS discovery is mounted as /as/<slug>/.well-known/...; the
+        // issuer slug is a leading path segment and must be peeled before the
+        // well-known endpoint is selected.
+        tenantPathPolicy = TenantPathPolicy.LeadingSlug(maxDepth = 2),
     ) {
     companion object {
         const val ID: String = OAuth2DiscoveryHttpContract.ADAPTER_ID

@@ -716,7 +716,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"displayName\": \"Slug contract rejection\",\n  \"issuer\": \"https://example.invalid/as/slug-contract\",\n  \"deployment\": \"EXTERNAL\",\n  \"purposes\": [\n    \"WALLET_LOGIN\"\n  ],\n  \"slug\": \"not-a-hosted-route\",\n  \"expectedCapabilities\": [\n    \"OAUTH2\",\n    \"OIDC\"\n  ]\n}",
+              "raw": "{\n  \"displayName\": \"Slug contract rejection\",\n  \"issuer\": \"{{keycloakIssuer}}\",\n  \"deployment\": \"EXTERNAL\",\n  \"purposes\": [\n    \"WALLET_LOGIN\"\n  ],\n  \"slug\": \"not-a-hosted-route\",\n  \"expectedCapabilities\": [\n    \"OAUTH2\",\n    \"OIDC\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -780,7 +780,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"displayName\": \"Slug contract rejection\",\n  \"issuer\": \"https://example.invalid/as/slug-contract\",\n  \"deployment\": \"EXTERNAL\",\n  \"purposes\": [\n    \"WALLET_LOGIN\"\n  ],\n  \"slug\": \"\",\n  \"expectedCapabilities\": [\n    \"OAUTH2\",\n    \"OIDC\"\n  ]\n}",
+              "raw": "{\n  \"displayName\": \"Slug contract rejection\",\n  \"issuer\": \"{{keycloakIssuer}}\",\n  \"deployment\": \"EXTERNAL\",\n  \"purposes\": [\n    \"WALLET_LOGIN\"\n  ],\n  \"slug\": \"\",\n  \"expectedCapabilities\": [\n    \"OAUTH2\",\n    \"OIDC\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

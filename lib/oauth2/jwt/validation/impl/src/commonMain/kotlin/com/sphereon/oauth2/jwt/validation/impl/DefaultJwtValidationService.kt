@@ -24,10 +24,12 @@ import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.jwt.validation.AccessTokenValidationOptions
+import com.sphereon.oauth2.jwt.validation.AsIssuerTrustMaterial
 import com.sphereon.oauth2.jwt.validation.IdTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdpConfig
 import com.sphereon.oauth2.jwt.validation.IdpRegistry
 import com.sphereon.oauth2.jwt.validation.IdpType
+import com.sphereon.oauth2.jwt.validation.JwtArtifactContext
 import com.sphereon.oauth2.jwt.validation.JwtValidationError
 import com.sphereon.oauth2.jwt.validation.JwtValidationService
 import com.sphereon.oauth2.jwt.validation.OidcDiscoveryService
@@ -81,6 +83,88 @@ class DefaultJwtValidationService(
     private val idpRegistry: IdpRegistry,
     private val oidcDiscoveryService: OidcDiscoveryService,
 ) : JwtValidationService {
+    override suspend fun validateAsIssuedArtifact(
+        compactJwt: String,
+        trustMaterial: AsIssuerTrustMaterial,
+        artifactContext: JwtArtifactContext,
+    ): IdkResult<TokenClaims, JwtValidationError> {
+        if (!trustMaterial.admits(artifactContext)) {
+            return Err(
+                JwtValidationError.validationError(
+                    "AS trust material does not admit artifact context ${artifactContext.name}",
+                ),
+            )
+        }
+
+        val trustedIdentifier = trustMaterial.trustedIdentifier
+            ?: return Err(
+                JwtValidationError.idpConfigurationError(
+                    "AS trust material has no caller-established signing identifier",
+                ),
+            )
+
+        val claimsResult = extractClaims(compactJwt)
+        if (claimsResult is Err) {
+            return claimsResult
+        }
+        val claims = (claimsResult as Ok).value
+        if (claims.issuer != trustMaterial.canonicalIssuer.value) {
+            return Err(
+                JwtValidationError.untrustedIssuer(
+                    issuer = claims.issuer ?: "",
+                    trustedIssuers = listOf(trustMaterial.canonicalIssuer.value),
+                ),
+            )
+        }
+
+        val idpConfig =
+            IdpConfig(
+                id = "as-trust",
+                type = IdpType.CUSTOM,
+                issuer = trustMaterial.canonicalIssuer.value,
+            )
+        val verifyResult =
+            verifyJwtCommand.execute(
+                VerifyJwtArgs(
+                    jwt = compactJwt,
+                    authorizationServer = trustMaterial.canonicalIssuer.value,
+                    expectedAudience = null,
+                    jwksUri = null,
+                    trustedIdentifier = trustedIdentifier,
+                ),
+            )
+
+        return verifyResult.fold(
+            success = { jwtPayload ->
+                if (jwtPayload.iss != trustMaterial.canonicalIssuer.value) {
+                    return Err(
+                        JwtValidationError.untrustedIssuer(
+                            issuer = jwtPayload.iss,
+                            trustedIssuers = listOf(trustMaterial.canonicalIssuer.value),
+                        ),
+                    )
+                }
+                when (artifactContext) {
+                    JwtArtifactContext.ID_TOKEN,
+                    JwtArtifactContext.JARM_RESPONSE -> if (jwtPayload.aud.isNullOrEmpty()) {
+                        return Err(JwtValidationError.missingClaim("aud"))
+                    }
+
+                    JwtArtifactContext.LOGOUT_TOKEN ->
+                        if (jwtPayload.additionalClaims["events"] !is JsonObject) {
+                            return Err(JwtValidationError.missingClaim("events"))
+                        }
+
+                    JwtArtifactContext.ACCESS_TOKEN -> Unit
+                }
+                Ok(claims)
+            },
+            failure = { error ->
+                Err(mapVerifyJwtError(error, idpConfig, expectedAudience = null))
+            },
+        )
+    }
+
     override suspend fun validateAccessToken(
         token: String,
         options: AccessTokenValidationOptions,

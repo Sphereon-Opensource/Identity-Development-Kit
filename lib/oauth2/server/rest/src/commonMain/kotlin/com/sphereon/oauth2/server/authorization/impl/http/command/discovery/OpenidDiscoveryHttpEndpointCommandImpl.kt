@@ -92,7 +92,11 @@ class OpenidDiscoveryHttpEndpointCommandImpl(
             )
         }
         val tenantPath = request.queryParameters["tenant-path"]
-        val baseUrlOverride = baseUrlResolver.resolveBaseUrl(request, configProvider, tenantPath)
+        // Dispatch peels hosted `/as/<slug>` prefixes for endpoint matching but keeps the
+        // ingress route in originalPath. Base URL resolution must see that route so discovery
+        // cannot fall back to the tenant default AS.
+        val baseUrlRequest = request.originalPath?.let { request.copy(path = it) } ?: request
+        val baseUrlOverride = baseUrlResolver.resolveBaseUrl(baseUrlRequest, configProvider, tenantPath)
 
         val result =
             handleDiscoveryRequestCommand.execute(

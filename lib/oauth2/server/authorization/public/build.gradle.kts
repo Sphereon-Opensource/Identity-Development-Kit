@@ -50,6 +50,7 @@ kotlin {
 
                 // Core IDK dependencies
                 api(projects.libCoreApiPublic)
+                api(projects.libCoreIdnPublic)
                 api(projects.libCryptoCore)
 
                 // OAuth2 common models (shared between client, AS, RS)

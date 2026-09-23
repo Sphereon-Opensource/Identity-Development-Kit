@@ -55,6 +55,7 @@ import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.ClientMetadata
 import com.sphereon.openid.oid4vp.common.Oid4vpJson
 import com.sphereon.openid.oid4vp.common.Oid4vpRequestTrustMaterialProvider
+import com.sphereon.openid.oid4vp.common.qualifyDidJarVerificationMethodId
 import com.sphereon.openid.oid4vp.holder.DigitalCredentialsAuthorizationRequest
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.holder.ParseAuthorizationRequestCommand
@@ -653,18 +654,35 @@ class ParseAuthorizationRequestCommandImpl(
         val effectiveScheme = jarVerificationScheme(clientId, clientIdSchemeHint)
         when (effectiveScheme) {
             ClientIdScheme.DECENTRALIZED_IDENTIFIER -> {
-                val vmId =
+                val rawKid =
                     requestedKid?.takeIf { it.isNotBlank() } ?: return Err(
                         IdkError.ILLEGAL_ARGUMENT_ERROR(message = "DID-bound JAR missing kid header"),
                     )
-                // OID4VP §5.10.3: kid is a DID URL (verification method id). Strip the
-                // fragment and resolve the DID document; selection by vmId is handled by lookup.
-                val didOnly = vmId.substringBefore('#')
+                // Identity is solely the DID from client_id (§5.9.3). JOSE kid may be an absolute
+                // DID URL or a document-relative fragment (`#vm`); qualify relative kids against
+                // that DID, then resolve that exact verification-method DID URL. Resolving the
+                // bare DID alone picks an arbitrary document key and breaks multi-key did:web
+                // hosts that publish issuer + verifier keys together.
+                val clientDid =
+                    clientId?.let(ClientIdScheme::extractClientIdWithoutScheme)?.takeIf { it.startsWith("did:") }
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message = "DID-bound JAR requires client_id with decentralized_identifier DID",
+                            ),
+                        )
+                val verificationMethodId =
+                    qualifyDidJarVerificationMethodId(clientDid, rawKid)
+                        ?: return Err(
+                            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                                message =
+                                    "DID-bound JAR kid must be an absolute DID URL rooted in client_id DID " +
+                                        "'$clientDid' or a relative fragment '#…' (got '$rawKid')",
+                            ),
+                        )
                 val resolved =
                     externalIdentifierService
                         .resolve(
-                            ExternalIdentifierDidOpts(identifier = didOnly)
-                                .let { it }, // keep call site readable
+                            ExternalIdentifierDidOpts(identifier = verificationMethodId),
                         ).getOrElse { err ->
                             return Err(IdkError.fromString(message = err.message.defaultMessage, code = "DID_KID_RESOLUTION_FAILED"))
                         }

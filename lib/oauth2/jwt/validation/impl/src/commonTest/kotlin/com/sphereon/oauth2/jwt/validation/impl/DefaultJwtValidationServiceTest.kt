@@ -25,9 +25,12 @@ import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwkOpts
+import com.sphereon.oauth2.jwt.validation.AsJwtArtifactScope
+import com.sphereon.oauth2.jwt.validation.AsIssuerTrustMaterial
 import com.sphereon.oauth2.jwt.validation.AccessTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdpConfig
+import com.sphereon.oauth2.jwt.validation.JwtArtifactContext
 import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
 import com.sphereon.oauth2.jwt.validation.JwtValidationError
 import com.sphereon.oauth2.jwt.validation.JwtValidationErrorType
@@ -37,6 +40,7 @@ import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
 import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
 import com.sphereon.oauth2.server.resource.error.ResourceServerError
 import com.sphereon.oauth2.server.resource.model.TokenPayload
+import com.sphereon.oauth2.common.model.CanonicalAuthorizationServerIssuer
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -148,6 +152,44 @@ class DefaultJwtValidationServiceTest {
             oidcDiscoveryService = discovery,
         )
     }
+
+    @Test
+    fun testAsIssuedArtifactFailsClosedWithoutCallerEstablishedTrustMaterial() =
+        runTest {
+            val issuer = CanonicalAuthorizationServerIssuer.parse("https://as.example.com")
+            val trustMaterial =
+                AsIssuerTrustMaterial(
+                    canonicalIssuer = issuer,
+                    artifactScopes = setOf(AsJwtArtifactScope.ACCESS_TOKEN),
+                )
+            val stub = StubVerifyJwtCommand.neverInvoked()
+            val svc = service(stub = stub)
+
+            val result = svc.validateAsIssuedArtifact("not-a-jwt", trustMaterial, JwtArtifactContext.ACCESS_TOKEN)
+
+            assertTrue(result.isErr)
+            assertEquals("IDP_CONFIGURATION_ERROR", result.error.type.name)
+            assertEquals(0, stub.invocationCount)
+        }
+
+    @Test
+    fun testAsIssuedArtifactRejectsUnadmittedArtifactContextBeforeVerification() =
+        runTest {
+            val issuer = CanonicalAuthorizationServerIssuer.parse("https://as.example.com")
+            val trustMaterial =
+                AsIssuerTrustMaterial(
+                    canonicalIssuer = issuer,
+                    artifactScopes = setOf(AsJwtArtifactScope.ACCESS_TOKEN),
+                )
+            val stub = StubVerifyJwtCommand.neverInvoked()
+            val svc = service(stub = stub)
+
+            val result = svc.validateAsIssuedArtifact("not-a-jwt", trustMaterial, JwtArtifactContext.ID_TOKEN)
+
+            assertTrue(result.isErr)
+            assertEquals("VALIDATION_ERROR", result.error.type.name)
+            assertEquals(0, stub.invocationCount)
+        }
 
     @Test
     fun testOidcIdpDiscoversJwksWhenUriIsAbsent() =

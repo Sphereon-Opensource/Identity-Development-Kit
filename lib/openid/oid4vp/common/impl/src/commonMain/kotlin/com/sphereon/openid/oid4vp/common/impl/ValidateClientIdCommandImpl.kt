@@ -35,6 +35,7 @@ import com.sphereon.did.resolver.DidResolutionOptions
 import com.sphereon.did.resolver.DidResolverRegistry
 import com.sphereon.openid.oid4vp.common.ClientIdScheme
 import com.sphereon.openid.oid4vp.common.Oid4vpRequestTrustMaterialProvider
+import com.sphereon.openid.oid4vp.common.qualifyDidJarVerificationMethodId
 import com.sphereon.openid.oid4vp.common.ClientIdValidationError
 import com.sphereon.openid.oid4vp.common.ClientIdValidationErrorType
 import com.sphereon.openid.oid4vp.common.JarConstants
@@ -619,15 +620,15 @@ class ValidateClientIdCommandImpl(
             )
         }
 
-        // Extract the DID from the kid (format: did:method:id#key-1 or just did:method:id)
-        val signerDid = signerKid.substringBefore('#')
-
-        if (signerDid != clientId) {
+        // Identity is the DID from client_id; kid may be absolute (`did:…#vm`) or relative (`#vm`).
+        // Qualify relative kids by concatenating with the client_id DID before matching / lookup.
+        val absoluteSignerKid = qualifyDidJarVerificationMethodId(clientId, signerKid)
+        if (absoluteSignerKid == null) {
             errors.add(
                 ClientIdValidationError(
                     type = ClientIdValidationErrorType.JAR_SIGNER_DID_MISMATCH,
-                    message = "JAR signer DID does not match client_id",
-                    details = "client_id='$clientId', signer DID='$signerDid'",
+                    message = "JAR kid is not a verification method of the client_id DID",
+                    details = "client_id='$clientId', kid='$signerKid' (expected absolute DID URL rooted in client_id or relative '#fragment')",
                 ),
             )
             return Ok(
@@ -739,23 +740,16 @@ class ValidateClientIdCommandImpl(
             )
         }
 
-        // 5. Find the verification method by kid fragment
-        val kidFragment =
-            if (signerKid.contains('#')) {
-                signerKid.substringAfter('#')
-            } else {
-                null
-            }
+        // 5. Find the verification method by (possibly relative) kid fragment
+        val kidFragment = absoluteSignerKid.substringAfter('#')
         val (verificationMethod, verificationMethodId) =
-            if (!kidFragment.isNullOrEmpty()) {
-                // Look for verification method by fragment
+            if (kidFragment.isNotEmpty()) {
                 val vm =
                     didDocument.verificationMethod?.find { vm ->
-                        vm.id == signerKid || vm.id.endsWith("#$kidFragment")
+                        vm.id == absoluteSignerKid || vm.id.endsWith("#$kidFragment")
                     }
-                vm to (vm?.id ?: signerKid)
+                vm to (vm?.id ?: absoluteSignerKid)
             } else {
-                // If no fragment, use first authentication method
                 val authMethods = resolution.verificationMethodsByPurpose[VerificationPurpose.AUTHENTICATION]
                 val vm = authMethods?.firstOrNull()
                 vm to (vm?.id ?: clientId)
@@ -766,7 +760,7 @@ class ValidateClientIdCommandImpl(
                 ClientIdValidationError(
                     type = ClientIdValidationErrorType.DID_VERIFICATION_METHOD_NOT_FOUND,
                     message = "Verification method not found",
-                    details = "No verification method found for kid: $signerKid in DID document",
+                    details = "No verification method found for kid: $signerKid (absolute='$absoluteSignerKid') in DID document",
                 ),
             )
             return Ok(

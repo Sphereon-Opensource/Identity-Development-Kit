@@ -536,9 +536,8 @@ class VerifyHolderBindingCommandImpl(
 
         // Certificate trust is intentionally evaluated later by the shared OID4VP
         // credential-trust validator, consistently with SD-JWT and W3C credentials. Empty
-        // effective trust domains reject every issuer by default (fail-closed); only an
-        // explicitly configured issuerTrustMode=UNRESTRICTED trusts every issuer, while
-        // issuer-auth and device-auth signatures still have to verify.
+        // effective trust domains reject every issuer by default (fail-closed); issuer-auth and
+        // device-auth signatures still have to verify.
 
         // Track issuer-auth signature failures separately from document content/validity failures.
         var anyIssuerAuthSignatureFailed = false

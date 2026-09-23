@@ -168,9 +168,9 @@ class RequestUriHandlerImpl(
             )
         }
 
-        // A DID-signed request object identifies the bare DID in `iss`; the client_id keeps its
-        // OID4VP Client Identifier Prefix. The JOSE kid is the full assertion-method DID URL and
-        // must be rooted in exactly that issuer DID.
+        // OID4VP §5.9.3: client_id (+ prefix) is the sole client identity. JOSE kid / x5c only
+        // supply the key material that prefix requires. Optional iss (when includeIss) is the
+        // bare identifier — wallets MUST ignore iss (§5.6).
         val jarArgs =
             CreateSignedJarArgs(
                 authorizationRequest = requestForJar,
@@ -178,7 +178,7 @@ class RequestUriHandlerImpl(
                 issuer = binding.requestObjectIssuer(),
                 audience = signingConfig.audience,
                 expirationSeconds = signingConfig.expirationSeconds,
-                kid = (binding as? VerifierSignerBinding.Did)?.verificationMethodId,
+                kid = (binding as? VerifierSignerBinding.Did)?.absoluteVerificationMethodId,
                 x5c =
                     (binding as? VerifierSignerBinding.X509SanDns)?.certificateChain
                         ?: (binding as? VerifierSignerBinding.X509Hash)?.certificateChain,

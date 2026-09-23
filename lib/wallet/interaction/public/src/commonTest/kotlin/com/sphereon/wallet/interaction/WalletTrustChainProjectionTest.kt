@@ -40,20 +40,20 @@ class WalletTrustChainProjectionTest {
     }
 
     @Test
-    fun trustAllAdmissionCannotNameADomain() {
+    fun failClosedAdmissionCannotNameADomain() {
         assertFailsWith<IllegalArgumentException> {
             WalletTrustDomainAdmission(
-                posture = WalletTrustDomainPosture.TRUST_ALL,
-                outcome = WalletTrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL,
+                posture = WalletTrustDomainPosture.FAIL_CLOSED,
+                outcome = WalletTrustDomainAdmissionOutcome.FAIL_CLOSED,
                 admittingDomain = "https://named.example",
             )
         }
         val admission =
             WalletTrustDomainAdmission(
-                posture = WalletTrustDomainPosture.TRUST_ALL,
-                outcome = WalletTrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL,
+                posture = WalletTrustDomainPosture.FAIL_CLOSED,
+                outcome = WalletTrustDomainAdmissionOutcome.FAIL_CLOSED,
             )
         assertNull(admission.admittingDomain)
-        assertEquals(WalletTrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL, admission.outcome)
+        assertEquals(WalletTrustDomainAdmissionOutcome.FAIL_CLOSED, admission.outcome)
     }
 }

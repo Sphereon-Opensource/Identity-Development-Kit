@@ -188,14 +188,12 @@ data class WalletTrustChain(
 @Serializable
 enum class WalletTrustDomainPosture {
     FAIL_CLOSED,
-    TRUST_ALL,
     CUSTOM,
 }
 
 @Serializable
 enum class WalletTrustDomainAdmissionOutcome {
     ADMITTED_NAMED_DOMAIN,
-    ADMITTED_TRUST_ALL,
     NOT_ADMITTED,
     FAIL_CLOSED,
 }
@@ -212,10 +210,6 @@ data class WalletTrustDomainAdmission(
             WalletTrustDomainAdmissionOutcome.ADMITTED_NAMED_DOMAIN -> {
                 require(posture == WalletTrustDomainPosture.CUSTOM) { "wallet_trust_named_admission_requires_custom_posture" }
                 require(!admittingDomain.isNullOrBlank()) { "wallet_trust_named_admission_requires_admitting_domain" }
-            }
-            WalletTrustDomainAdmissionOutcome.ADMITTED_TRUST_ALL -> {
-                require(posture == WalletTrustDomainPosture.TRUST_ALL) { "wallet_trust_all_admission_requires_trust_all_posture" }
-                require(admittingDomain == null) { "wallet_trust_all_admission_must_not_name_a_domain" }
             }
             WalletTrustDomainAdmissionOutcome.FAIL_CLOSED -> {
                 require(posture == WalletTrustDomainPosture.FAIL_CLOSED) { "wallet_trust_fail_closed_outcome_requires_fail_closed_posture" }

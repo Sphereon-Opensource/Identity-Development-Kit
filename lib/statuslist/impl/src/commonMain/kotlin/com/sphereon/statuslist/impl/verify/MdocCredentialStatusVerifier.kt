@@ -27,6 +27,7 @@ import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.spi.CredentialStatusVerifier
 import com.sphereon.statuslist.spi.StatusListResolver
+import com.sphereon.trust.x509.X509TrustAnchorLoader
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -44,6 +45,10 @@ import kotlinx.serialization.json.intOrNull
  * status-list claim shape. The resolver receives the session's configured trust
  * anchors explicitly; a protected x5chain in the fetched CWT is evidence, never a
  * new trust root.
+ *
+ * Trust roots come from [X509VerifyService.getTrustedCerts] when a caller has already
+ * pinned them on the session service, otherwise from [X509TrustAnchorLoader] (static CA
+ * bundles / additional [com.sphereon.trust.x509.X509TrustAnchorSource] contributions).
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -51,6 +56,7 @@ import kotlinx.serialization.json.intOrNull
 class MdocCredentialStatusVerifier(
     private val resolver: StatusListResolver,
     private val x509VerifyService: X509VerifyService,
+    private val trustAnchorLoader: X509TrustAnchorLoader,
 ) : CredentialStatusVerifier {
     override val mechanism: String = MECHANISM
 
@@ -118,8 +124,8 @@ class MdocCredentialStatusVerifier(
         // The certificate carried by the MSO is an authenticated chain pin, not a trust anchor.
         // Never replace the tenant's configured trust roots with an arbitrary certificate fetched
         // from a credential or a status-list response.
-        val trustedCerts = x509VerifyService.getTrustedCerts()
-        if (trustedCerts.isNullOrEmpty()) {
+        val trustedCerts = resolveTrustedCerts()
+        if (trustedCerts.isEmpty()) {
             return Err(
                 StatusListErrors.verificationFailed(
                     reference.uri,
@@ -155,6 +161,14 @@ class MdocCredentialStatusVerifier(
                 expectedCertificate = reference.certificate,
             ),
         )
+    }
+
+    private suspend fun resolveTrustedCerts(): Array<String> {
+        val pinned = x509VerifyService.getTrustedCerts()?.filter { it.isNotBlank() }.orEmpty()
+        if (pinned.isNotEmpty()) {
+            return pinned.toTypedArray()
+        }
+        return trustAnchorLoader.loadTrustedCerts().filter { it.isNotBlank() }.toTypedArray()
     }
 
     companion object {
