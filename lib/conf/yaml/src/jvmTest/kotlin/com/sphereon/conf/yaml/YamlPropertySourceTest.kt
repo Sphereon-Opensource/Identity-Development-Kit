@@ -18,6 +18,7 @@ package com.sphereon.conf.yaml
 
 import com.sphereon.core.api.conf.ConfigLevel
 import kotlinx.io.files.Path
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -274,6 +275,27 @@ class YamlPropertySourceTest {
             source.getPropertyAsString("branding.primary.color"),
             "Hyphenated YAML key primary-color should be normalized to primary.color",
         )
+    }
+
+    @Test
+    fun shouldLeaveTheLoadedYamlFileDeletable() {
+        val configDir = Files.createTempDirectory("yaml-property-source")
+        val yamlFile = configDir.resolve("application.yml")
+        Files.writeString(yamlFile, "database:\n  host: released.example.com\n")
+
+        val source =
+            YamlPropertySourceImpl(
+                name = "yaml.app",
+                sourceLevel = ConfigLevel.APP,
+                configLocation = Path(configDir.toString()),
+                filePrefix = "application",
+            )
+
+        assertEquals("released.example.com", source.getPropertyAsString("database.host"))
+        // Windows refuses to delete a file that an unclosed source still holds open; other platforms
+        // delete regardless, so this assertion only bites where the leak is observable.
+        assertTrue(Files.deleteIfExists(yamlFile), "the loaded YAML file must be deletable right after loading")
+        Files.deleteIfExists(configDir)
     }
 
     @Test

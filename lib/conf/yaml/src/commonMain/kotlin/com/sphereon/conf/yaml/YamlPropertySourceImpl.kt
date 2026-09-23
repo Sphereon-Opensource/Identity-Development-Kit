@@ -145,7 +145,9 @@ open class YamlPropertySourceImpl(
             if (!SystemFileSystem.exists(path)) {
                 return false
             }
-            val content = SystemFileSystem.source(path).buffered().readString()
+            // Closing the source releases the file handle as soon as the text is read; left to the
+            // garbage collector, the handle keeps the file locked against deletion on Windows.
+            val content = SystemFileSystem.source(path).buffered().use { it.readString() }
             parseYamlString(load, content, target)
             return true
         }
