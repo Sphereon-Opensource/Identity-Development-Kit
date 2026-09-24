@@ -171,7 +171,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                         ),
                     dcqlQuery = dcqlQuery,
                     expectedNonce = "nonce123",
-                    verifierId = "verifier-a",
+                    verifierId = "verifier-party-uuid",
                     dcqlQueryId = "employee-vp",
                 )
             val result =
@@ -184,7 +184,7 @@ class ValidateAuthorizationResponseCommandImplTest {
             assertIs<Ok<*>>(result)
             assertTrue(result.value.valid)
             val validationArgs = assertNotNull(trustValidator.lastArgs)
-            assertEquals("verifier-a", validationArgs.verifierId)
+            assertEquals("verifier-instance-trust-validation", validationArgs.verifierId)
             assertEquals("employee-vp", validationArgs.dcqlQueryId)
             assertEquals("identity_credential", validationArgs.credentialQueryId)
         }
@@ -976,6 +976,57 @@ class ValidateAuthorizationResponseCommandImplTest {
         }
 
     @Test
+    fun `VCDM non-DID issuer cannot resolve crypto key from holder-purpose source`() =
+        runTest {
+            val issuer = "https://issuer.example"
+            val presentation = validUnsignedVcLdJwt(
+                headerJson = """{"alg":"ES256","typ":"vc+jwt","cty":"vc","kid":"issuer-key"}""",
+                issuer = issuer,
+            )
+            val dcqlQuery = DcqlQuery(
+                credentials = listOf(
+                    DcqlCredentialQuery(
+                        id = "credential",
+                        format = "jwt_vc_json-ld",
+                        meta = JsonObject(emptyMap()),
+                        require_cryptographic_holder_binding = false,
+                    ),
+                ),
+            )
+            val state = "vcdm-non-did-holder-purpose-key"
+            val verifier = FixedVerifyJwsCommand(valid = true)
+            val result = validateWithPersistedSession(
+                ValidateAuthorizationResponseArgs(
+                    parsedResponse = ParsedAuthorizationResponse(
+                        vpToken = vpTokenOf("credential", presentation),
+                        state = state,
+                        rawVpToken = """{"credential":["$presentation"]}""",
+                    ),
+                    originalRequest = AuthorizationRequest(
+                        clientId = "https://verifier.example.com",
+                        redirectUri = "https://verifier.example.com/callback",
+                        state = state,
+                    ),
+                    dcqlQuery = dcqlQuery,
+                    expectedNonce = "nonce-is-not-a-vp-claim",
+                    trustedAuthentications = listOf(
+                        TrustedAuthenticationResolution(
+                            controller = issuer,
+                            trustedJwks = testTrustedJwks(),
+                            purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.HOLDER,
+                        ),
+                    ),
+                ),
+                instanceId = "verifier-instance-non-did-holder-purpose",
+                verifyJwsCommand = verifier,
+            )
+
+            assertIs<Ok<*>>(result)
+            assertFalse(result.value.valid, "holder-purpose material must not authenticate a non-DID credential issuer")
+            assertEquals(0, verifier.calls, "issuer verification must fail before invoking crypto without issuer-purpose material")
+        }
+
+    @Test
     fun `VCDM 2 JOSE credential accepts an omitted recommended typ header`() =
         runTest {
             val dcqlQuery =
@@ -1445,6 +1496,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                                     TrustedAuthenticationResolution(
                                         controller = issuer,
                                         trustedJwks = testTrustedJwks(),
+                                        purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
                                     ),
                                 ),
                         ),
@@ -1504,6 +1556,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                                     TrustedAuthenticationResolution(
                                         controller = issuer,
                                         identifier = ExternalIdentifierX5cOpts(listOf("Y29uZmlndXJlZA")),
+                                        purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
                                     ),
                                 ),
                         ),
@@ -1563,6 +1616,7 @@ class ValidateAuthorizationResponseCommandImplTest {
                                     TrustedAuthenticationResolution(
                                         controller = issuer,
                                         identifier = ExternalIdentifierX5cOpts(listOf("cHJlc2VudGVk")),
+                                        purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
                                     ),
                                 ),
                         ),

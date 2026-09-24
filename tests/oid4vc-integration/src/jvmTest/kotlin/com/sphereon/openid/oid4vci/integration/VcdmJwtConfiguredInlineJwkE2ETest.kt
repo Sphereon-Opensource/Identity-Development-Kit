@@ -48,6 +48,7 @@ import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.oauth2.common.model.AuthorizationRequest
@@ -99,7 +100,7 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
                 val flow = createFlow("configured-jwk-valid-${version.name.lowercase()}", version)
                 val issuerJwk = publicJwk(flow.issuerKey, issuerJwtKid(flow.credential))
                 val holderJwk = flow.holderKey.publicJwk
-                val issuerTrust = admit(issuer, issuerJwk)
+                val issuerTrust = admit(issuer, issuerJwk, TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
                 val holderTrust = admit(holder, holderJwk)
 
                 val validation = validate(flow, issuerTrust, holderTrust)
@@ -124,7 +125,7 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
                     val attackerKey = generateKey("configured-jwk-token-attacker")
                     addEmbeddedJwk(credential, publicJwk(attackerKey, "attacker-kid"))
                 }
-            val issuerTrust = admit(issuer, publicJwk(flow.issuerKey, issuerJwtKid(flow.credential)))
+            val issuerTrust = admit(issuer, publicJwk(flow.issuerKey, issuerJwtKid(flow.credential)), TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
             val holderTrust = admit(holder, flow.holderKey.publicJwk)
 
             val validation = validate(flow, issuerTrust, holderTrust)
@@ -138,7 +139,7 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         runTest {
             val flow = createFlow("configured-jwk-wrong-key")
             val unrelatedKey = generateKey("configured-jwk-unrelated")
-            val wrongIssuerTrust = admit(issuer, publicJwk(unrelatedKey, issuerJwtKid(flow.credential)))
+            val wrongIssuerTrust = admit(issuer, publicJwk(unrelatedKey, issuerJwtKid(flow.credential)), TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
             val holderTrust = admit(holder, flow.holderKey.publicJwk)
 
             val validation = validate(flow, wrongIssuerTrust, holderTrust)
@@ -237,7 +238,7 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         return result.value.credential.jsonPrimitive.content
     }
 
-    private suspend fun admit(controller: String, jwk: Jwk): TrustedAuthenticationResolution {
+    private suspend fun admit(controller: String, jwk: Jwk, purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER): TrustedAuthenticationResolution {
         val opts = ExternalIdentifierJwkOpts(identifier = jwk)
         val resolution = identifierService().resolve(opts)
         assertTrue(
@@ -248,7 +249,7 @@ class VcdmJwtConfiguredInlineJwkE2ETest {
         val resolvedJwk = assertIs<Jwk>(result.keyInfo.key)
         assertEquals(jwk.x, resolvedJwk.x, "resolved configured JWK must retain the admitted public key")
         assertEquals(jwk.y, resolvedJwk.y, "resolved configured JWK must retain the admitted public key")
-        return TrustedAuthenticationResolution(controller = controller, identifier = opts)
+        return TrustedAuthenticationResolution(controller = controller, identifier = opts, purpose = purpose)
     }
 
     private suspend fun validate(

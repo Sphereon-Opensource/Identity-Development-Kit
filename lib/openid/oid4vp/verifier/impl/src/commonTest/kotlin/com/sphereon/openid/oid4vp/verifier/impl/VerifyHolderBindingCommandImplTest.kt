@@ -234,6 +234,7 @@ class VerifyHolderBindingCommandImplTest {
                 TrustedAuthenticationResolution(
                     controller = "https://issuer.example",
                     trustedJwks = testTrustedJwks(),
+                    purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
                 )
 
             val optionalResult =
@@ -267,6 +268,22 @@ class VerifyHolderBindingCommandImplTest {
             assertIs<Ok<*>>(requiredResult)
             assertFalse(requiredResult.value.verified)
             assertTrue(requiredResult.value.errors.any { it.contains("no Key Binding JWT") })
+
+            val verifierOnlySource = verifier.execute(
+                VerifyHolderBindingArgs(
+                    presentation = sdJwtWithoutKb,
+                    credentialFormat = CredentialFormat.SD_JWT_VC,
+                    expectedNonce = "nonce123",
+                    expectedAudience = "https://verifier.example.com",
+                    requireCryptographicHolderBinding = false,
+                    trustedAuthentications = listOf(
+                        issuerAuthentication.copy(purpose = com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose.HOLDER),
+                    ),
+                ),
+            )
+            assertIs<Ok<*>>(verifierOnlySource)
+            assertFalse(verifierOnlySource.value.verified)
+            assertTrue(verifierOnlySource.value.errors.any { it.contains("exact configured authentication source") })
         }
 
     // ============================================================================

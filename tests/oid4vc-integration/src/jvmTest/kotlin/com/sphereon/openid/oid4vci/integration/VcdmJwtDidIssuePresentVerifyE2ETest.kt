@@ -59,6 +59,7 @@ import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.oauth2.common.model.AuthorizationResponse
 import com.sphereon.wallet.unit.SecureComponentUsage
@@ -222,6 +223,7 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
                     TrustedAuthenticationResolution(
                         controller = flow.issuerDid,
                         identifier = ExternalIdentifierDidOpts(unrelatedVm),
+                        purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
                     ),
                     holderTrust(flow),
                 ),
@@ -236,6 +238,7 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
                     TrustedAuthenticationResolution(
                         controller = flow.holderDid,
                         identifier = ExternalIdentifierDidOpts("did:unknown:unresolved-holder"),
+                        purpose = TrustedAuthenticationPurpose.HOLDER,
                     ),
                 ),
             )
@@ -278,6 +281,7 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
                     TrustedAuthenticationResolution(
                         controller = flow.holderDid,
                         identifier = nullDocumentIdentifier,
+                        purpose = TrustedAuthenticationPurpose.HOLDER,
                     ),
                 ),
             )
@@ -296,6 +300,7 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
             val mismatchedHolderSource = TrustedAuthenticationResolution(
                 controller = flow.holderDid,
                 identifier = ExternalIdentifierDidOpts(flow.issuerVerificationMethod),
+                purpose = TrustedAuthenticationPurpose.HOLDER,
             )
             val validation = validate(
                 flow,
@@ -487,6 +492,7 @@ class VcdmJwtDidIssuePresentVerifyE2ETest {
     private fun holderTrust(flow: Flow) = TrustedAuthenticationResolution(
         controller = flow.holderDid,
         identifier = ExternalIdentifierDidOpts(flow.holderVerificationMethod),
+        purpose = TrustedAuthenticationPurpose.HOLDER,
     )
 
     private suspend fun assertDidResolution(graph: VcdmJwtDidTestGraph, verificationMethod: String) {

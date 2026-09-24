@@ -55,6 +55,7 @@ import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.oauth2.common.model.AuthorizationRequest
@@ -118,7 +119,7 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
             assertTrustedResolution(issuerResolution, assertIs<Jwk>(flow.issuerKey.toManagedPublicKeyInfo().key))
             assertTrustedResolution(holderResolution, flow.holderKey.publicJwk)
 
-            val validation = validate(flow, trusted(issuer, flow.issuerChain), trusted(holder, flow.holderChain))
+            val validation = validate(flow, trusted(issuer, flow.issuerChain, purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER), trusted(holder, flow.holderChain))
             assertTrue(
                 validation.isOk,
                 "production verifier must return a structured result: ${if (validation.isErr) validation.error else ""}",
@@ -147,7 +148,7 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
     fun x509IdentityAdmittedForItsIntendedIssuerPurposeVerifiesCredentialAndVp() =
         runTest {
             val flow = createFlow("x509-vcdm-purpose-positive", JwtVersion.V20)
-            val issuerSource = trusted(issuer, flow.issuerChain)
+            val issuerSource = trusted(issuer, flow.issuerChain, purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
             val holderSource = trusted(holder, flow.holderChain)
 
             // Establish the issuer chain independently before composing the OID4VP validation.
@@ -175,7 +176,7 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
             val validation =
                 validate(
                     flow,
-                    TrustedAuthenticationResolution(controller = issuer, identifier = disabledIssuer),
+                    TrustedAuthenticationResolution(controller = issuer, identifier = disabledIssuer, purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER),
                     trusted(holder, flow.holderChain),
                 )
 
@@ -200,7 +201,7 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
                 "a malformed certificate must be rejected by X.509 resolution: $malformedResolution",
             )
 
-            val invalidIssuer = validate(flow, trusted(issuer, malformed), trusted(holder, flow.holderChain))
+            val invalidIssuer = validate(flow, trusted(issuer, malformed, purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER), trusted(holder, flow.holderChain))
             assertTrue(invalidIssuer.isOk, "malformed X.509 validation must return a structured result: ${if (invalidIssuer.isErr) invalidIssuer.error else ""}")
             assertFalse(invalidIssuer.value.valid, "a malformed configured issuer certificate must fail closed: ${invalidIssuer.value.errors}")
 
@@ -214,7 +215,7 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
             val x5c = assertIs<ExternalIdentifierResult.X5c>(untrustedResolution.value)
             assertTrue(x5c.verificationResult.error || x5c.verificationResult.critical, "wrong trust anchor must fail path validation")
 
-            val untrustedIssuer = validate(flow, trusted(issuer, flow.issuerChain, unrelatedChain), trusted(holder, flow.holderChain))
+            val untrustedIssuer = validate(flow, trusted(issuer, flow.issuerChain, unrelatedChain, TrustedAuthenticationPurpose.CREDENTIAL_ISSUER), trusted(holder, flow.holderChain))
             assertTrue(untrustedIssuer.isOk, "untrusted X.509 validation must return a structured result: ${if (untrustedIssuer.isErr) untrustedIssuer.error else ""}")
             assertFalse(untrustedIssuer.value.valid, "an issuer chain not anchored by the configured trust root must fail: ${untrustedIssuer.value.errors}")
         }
@@ -228,7 +229,7 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
             // reused as the holder source. The verifier must keep the two protocol identities
             // bound to their exact controller and never promote an issuer trust decision into
             // holder trust merely because the X.509 path is valid.
-            val issuerSource = trusted(issuer, flow.issuerChain)
+            val issuerSource = trusted(issuer, flow.issuerChain, purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
             val wrongPurposeHolderSource = trusted(holder, flow.issuerChain)
             val resolution = resolve(flow.issuerChain, flow.issuerChain)
             assertTrustedResolution(resolution, assertIs<Jwk>(flow.issuerKey.toManagedPublicKeyInfo().key))
@@ -467,9 +468,10 @@ class VcdmJwtX509IdentifierNeutralE2ETest {
         assertEquals(key.y, resolvedJwk.y, "certificate public key must match WSCA public material")
     }
 
-    private fun trusted(controller: String, chain: List<String>, anchors: List<String> = chain) =
+    private fun trusted(controller: String, chain: List<String>, anchors: List<String> = chain, purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER) =
         TrustedAuthenticationResolution(
             controller = controller,
+            purpose = purpose,
             identifier = ExternalIdentifierX5cOpts(chain, verify = true, trustAnchors = anchors),
         )
 

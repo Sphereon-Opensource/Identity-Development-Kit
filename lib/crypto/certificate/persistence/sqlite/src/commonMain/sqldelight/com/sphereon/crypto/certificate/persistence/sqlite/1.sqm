@@ -1,0 +1,8 @@
+-- Durable cross-process claims serialize direct certificate alias creation.
+CREATE TABLE IF NOT EXISTS certificate_reference_alias_claim (
+    tenant_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    alias TEXT NOT NULL,
+    claim_id TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, provider_id, alias)
+);

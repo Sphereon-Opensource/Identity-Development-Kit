@@ -43,6 +43,7 @@ import com.sphereon.openid.oid4vp.verifier.CreateAuthorizationRequestArgs
 import com.sphereon.openid.oid4vp.verifier.Oid4vpVerifierService
 import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.wallet.unit.SecureComponentUsage
 import com.sphereon.wallet.interaction.protocol.oid4vp.SecureComponentOid4vpJwtVpSigningProvider
@@ -416,6 +417,7 @@ class VcdmJwtNestedPresentationE2ETest {
             add(
                 TrustedAuthenticationResolution(
                     controller = issuer,
+                    purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
                     trustedJwks = JsonObject(mapOf("keys" to JsonArray(credentials.map(::publicJwk)))),
                 ),
             )
@@ -423,6 +425,7 @@ class VcdmJwtNestedPresentationE2ETest {
         add(
             TrustedAuthenticationResolution(
                 controller = holder,
+                purpose = TrustedAuthenticationPurpose.HOLDER,
                 trustedJwks = JsonObject(mapOf("keys" to JsonArray(holders.map { it.publicJwk.toJsonObject() }))),
             ),
         )

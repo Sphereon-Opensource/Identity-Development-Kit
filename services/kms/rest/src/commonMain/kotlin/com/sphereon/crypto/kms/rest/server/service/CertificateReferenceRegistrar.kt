@@ -62,6 +62,64 @@ class CertificateReferenceRegistrar(
         get() = execution.sessionContext.context.tenant.tenantId
 
     suspend fun register(input: RegisterCertificateReferenceInput): IdkResult<CertificateReferenceRecord, IdkError> {
+        return register(input, ResourceControlMode.EXTERNALLY_MANAGED, reserveManaged = false)
+    }
+
+    /**
+     * Stores an invisible tombstone reservation for material that this REST operation is about to
+     * write. The caller must first prove absence through the exact destination certificate store.
+     * Insert-only persistence prevents taking over an existing reference; activation happens only
+     * after the provider accepts the write.
+     */
+    suspend fun reservePlatformManaged(
+        input: RegisterCertificateReferenceInput,
+    ): IdkResult<CertificateReferenceRecord, IdkError> {
+        val availability = requireDurableStore()
+        if (availability != null) return Err(availability)
+        if (input.providerId.isBlank() || input.alias.isBlank()) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "providerId and alias must not be blank"))
+        }
+        if (input.source != CertificateReferenceSource.STORED_PUBLIC_MATERIAL) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Platform-managed certificate stores require submitted public material"))
+        }
+        val existing = certificateReferenceStore
+            .findLatestByAliasIncludingDeleted(tenantId, input.alias, input.providerId, input.kind)
+            .getOrElse { return Err(it) }
+        if (existing?.deletedAt == null && existing != null) {
+            return Err(managedStoreConflict())
+        }
+        val reservation = register(
+            input,
+            ResourceControlMode.PLATFORM_MANAGED,
+            reserveManaged = true,
+            recordId = Uuid.random().toString(),
+        )
+        return reservation
+    }
+
+    /** Makes a pre-store tombstone visible only after the provider accepted the object. */
+    suspend fun activatePlatformManagedReservation(
+        reservation: CertificateReferenceRecord,
+    ): IdkResult<CertificateReferenceRecord, IdkError> {
+        if (reservation.controlMode != ResourceControlMode.PLATFORM_MANAGED || reservation.deletedAt == null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "The certificate ownership reservation is invalid"))
+        }
+        val activated = certificateReferenceStore
+            .activateAliasReservation(tenantId, reservation.id, Clock.System.now())
+            .getOrElse { return Err(it) }
+            ?: return Err(IdkError.UNKNOWN_ERROR(message = "The certificate alias reservation could not be activated"))
+        certificateReferenceStore
+            .releaseAliasClaim(tenantId, reservation.providerId, reservation.alias, reservation.id)
+            .getOrElse { return Err(it) }
+        return Ok(activated)
+    }
+
+    private suspend fun register(
+        input: RegisterCertificateReferenceInput,
+        controlMode: ResourceControlMode,
+        reserveManaged: Boolean,
+        recordId: String? = null,
+    ): IdkResult<CertificateReferenceRecord, IdkError> {
         val availability = requireDurableStore()
         if (availability != null) return Err(availability)
         if (input.providerId.isBlank() || input.alias.isBlank()) {
@@ -103,6 +161,14 @@ class CertificateReferenceRegistrar(
         val existing = certificateReferenceStore
             .findByAlias(tenantId, input.alias, input.providerId, input.kind)
             .getOrElse { return Err(it) }
+        if (existing != null && existing.controlMode != controlMode) {
+            return Err(
+                IdkError.fromString(
+                    code = CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT,
+                    message = "The certificate reference ownership cannot be changed in place",
+                ),
+            )
+        }
         val providerCertificateId = material.providerCertificateId ?: input.providerCertificateId
         if (providerCertificateId != null) {
             val identityMatches = certificateReferenceStore
@@ -121,14 +187,14 @@ class CertificateReferenceRegistrar(
         val now = Clock.System.now()
         val record = try {
             CertificateReferenceRecord(
-                id = existing?.id ?: Uuid.random().toString(),
+                id = existing?.id ?: recordId ?: Uuid.random().toString(),
                 tenantId = tenantId,
                 alias = input.alias,
                 providerId = input.providerId,
                 providerCertificateId = providerCertificateId,
                 kind = input.kind,
                 source = input.source,
-                controlMode = ResourceControlMode.EXTERNALLY_MANAGED,
+                controlMode = controlMode,
                 linkedKeyReferenceId = linkedKeyReferenceId,
                 certificateChainDer = if (input.source == CertificateReferenceSource.STORED_PUBLIC_MATERIAL) {
                     CertificateReferenceRecord.encodeCertificateChain(material.chainDer)
@@ -141,14 +207,37 @@ class CertificateReferenceRegistrar(
                 createdById = existing?.createdById,
                 updatedAt = now,
                 updatedById = null,
+                deletedAt = now.takeIf { reserveManaged },
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "The certificate reference material is invalid"))
         }
-        return certificateReferenceStore.upsert(record)
+        val aliasClaim = reserveManaged || (!reserveManaged && existing == null)
+        if (aliasClaim) {
+            val acquired = certificateReferenceStore
+                .tryAcquireAliasClaim(tenantId, record.providerId, record.alias, record.id)
+                .getOrElse { return Err(it) }
+            if (!acquired) return Err(managedStoreConflict())
+        }
+        val saved = if (reserveManaged) certificateReferenceStore.save(record) else certificateReferenceStore.upsert(record)
+        if (!reserveManaged && saved.isOk) {
+            val ownerId = saved.value.id
+            certificateReferenceStore.releaseAliasClaim(tenantId, record.providerId, record.alias, record.id)
+                .getOrElse { return Err(it) }
+            if (ownerId != record.id) {
+                certificateReferenceStore.releaseAliasClaim(tenantId, record.providerId, record.alias, ownerId)
+                    .getOrElse { return Err(it) }
+            }
+        }
+        return saved
     }
+
+    private fun managedStoreConflict() = IdkError.fromString(
+        code = "KMS_CERTIFICATE_REFERENCE_MANAGED_STORE_CONFLICT",
+        message = "The certificate alias is already owned or exists at the provider",
+    )
 
     suspend fun findLatest(
         alias: String,
@@ -199,8 +288,14 @@ class CertificateReferenceRegistrar(
     ): IdkResult<KeyReferenceRecord?, IdkError> =
         record.linkedKeyReferenceId?.let { keyReferenceStore.findById(tenantId, it) } ?: Ok(null)
 
-    suspend fun softDelete(record: CertificateReferenceRecord): IdkResult<Boolean, IdkError> =
-        certificateReferenceStore.deleteById(tenantId, record.id)
+    suspend fun softDelete(record: CertificateReferenceRecord): IdkResult<Boolean, IdkError> {
+        val deleted = certificateReferenceStore.deleteById(tenantId, record.id).getOrElse { return Err(it) }
+        if (deleted) {
+            certificateReferenceStore.releaseAliasClaim(tenantId, record.providerId, record.alias, record.id)
+                .getOrElse { return Err(it) }
+        }
+        return Ok(deleted)
+    }
 
     suspend fun inspectProvider(record: CertificateReferenceRecord): IdkResult<ProviderCertificateReference, IdkError> =
         providerInspector.inspect(record.providerId, record.alias, record.providerCertificateId, record.kind)

@@ -11,6 +11,7 @@ package com.sphereon.crypto.kms.rest.server.service
 
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.core.compat.LocalDateTimeKMP
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyType
@@ -58,6 +59,9 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atTime
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
@@ -180,7 +184,21 @@ class CertificatesRestServiceImpl(
         providerId: String?,
     ): CertificateBytesResponse {
         val cert = certificateFromDer(request.certificate.value)
-        certificateStore(providerId).storeTrustedCertificate(alias, cert)
+        val effectiveProviderId = providerId ?: kms.defaultProviderId()
+        val store = certificateStore(providerId)
+        ensureCertificateAliasAbsent(store, alias, CertificateReferenceKind.TRUSTED_CERTIFICATE)
+        val reservation = certificateReferenceRegistrar.reservePlatformManaged(
+            RegisterCertificateReferenceInput(
+                providerId = effectiveProviderId,
+                alias = alias,
+                kind = CertificateReferenceKind.TRUSTED_CERTIFICATE,
+                source = CertificateReferenceSource.STORED_PUBLIC_MATERIAL,
+                certificateChain = listOf(Base64ByteArray(cert.der)),
+            ),
+        ).getOrThrowReference()
+        storeWithReservation(reservation) {
+            store.storeTrustedCertificate(alias, cert)
+        }
         return CertificateBytesResponse(certificate = Base64ByteArray(cert.der))
     }
 
@@ -191,12 +209,12 @@ class CertificatesRestServiceImpl(
         val record = certificateReferenceRegistrar
             .findLatest(alias, providerId, CertificateReferenceKind.TRUSTED_CERTIFICATE)
             .getOrThrowReference()
-        if (record == null) return certificateStore(providerId).deleteCertificate(alias)
+        if (record == null) return false
         if (record.deletedAt != null) return record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
         if (record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED) {
             return certificateReferenceRegistrar.softDelete(record).getOrThrowReference()
         }
-        val deleted = certificateStore(providerId).deleteCertificate(alias)
+        val deleted = certificateStore(record.providerId).deleteCertificate(alias)
         if (deleted) certificateReferenceRegistrar.softDelete(record).getOrThrowReference()
         return deleted
     }
@@ -246,7 +264,23 @@ class CertificatesRestServiceImpl(
         providerId: String?,
     ): CertificateChainResponse {
         val chain = certificateChainFromDer(request.certificates.map { it.value }.toTypedArray())
-        certificateStore(providerId).storeCertificateChain(alias, chain, request.keyInfo?.toSdk())
+        val effectiveProviderId = providerId ?: kms.defaultProviderId()
+        val store = certificateStore(providerId)
+        ensureCertificateAliasAbsent(store, alias, CertificateReferenceKind.KEY_CERTIFICATE_CHAIN)
+        val keyInfo = request.keyInfo?.toSdk()
+        val reservation = certificateReferenceRegistrar.reservePlatformManaged(
+            RegisterCertificateReferenceInput(
+                providerId = effectiveProviderId,
+                alias = alias,
+                kind = CertificateReferenceKind.KEY_CERTIFICATE_CHAIN,
+                source = CertificateReferenceSource.STORED_PUBLIC_MATERIAL,
+                linkedKeyAlias = keyInfo?.alias ?: alias,
+                certificateChain = chain.map { Base64ByteArray(it.der) },
+            ),
+        ).getOrThrowReference()
+        storeWithReservation(reservation) {
+            store.storeCertificateChain(alias, chain, keyInfo)
+        }
         return CertificateChainResponse(certificates = chain.map { Base64ByteArray(it.der) }.toTypedArray())
     }
 
@@ -257,12 +291,12 @@ class CertificatesRestServiceImpl(
         val record = certificateReferenceRegistrar
             .findLatest(alias, providerId, CertificateReferenceKind.KEY_CERTIFICATE_CHAIN)
             .getOrThrowReference()
-        if (record == null) return certificateStore(providerId).deleteCertificateChain(alias)
+        if (record == null) return false
         if (record.deletedAt != null) return record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
         if (record.controlMode == ResourceControlMode.EXTERNALLY_MANAGED) {
             return certificateReferenceRegistrar.softDelete(record).getOrThrowReference()
         }
-        val deleted = certificateStore(providerId).deleteCertificateChain(alias)
+        val deleted = certificateStore(record.providerId).deleteCertificateChain(alias)
         if (deleted) certificateReferenceRegistrar.softDelete(record).getOrThrowReference()
         return deleted
     }
@@ -288,6 +322,49 @@ class CertificatesRestServiceImpl(
             ?: throw IllegalArgumentException(
                 "Unsupported operation: ${providerId?.let { "provider '$it'" } ?: "default key store"} does not support certificate store operations.",
             )
+    }
+
+    private suspend fun ensureCertificateAliasAbsent(
+        store: CertificateStoreService,
+        alias: String,
+        kind: CertificateReferenceKind,
+    ) {
+        try {
+            when (kind) {
+                CertificateReferenceKind.TRUSTED_CERTIFICATE -> store.getCertificate(alias)
+                CertificateReferenceKind.KEY_CERTIFICATE_CHAIN -> store.getCertificateChain(alias)
+            }
+            throw CertificateReferenceResolutionException(
+                "KMS_CERTIFICATE_REFERENCE_MANAGED_STORE_CONFLICT",
+                "The certificate alias already exists at the provider",
+            )
+        } catch (_: NotFoundException) {
+            // Only the provider's explicit not-found result proves the alias is unused.
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (conflict: CertificateReferenceResolutionException) {
+            throw conflict
+        } catch (_: Exception) {
+            throw CertificateReferenceResolutionException(
+                "KMS_CERTIFICATE_PROVIDER_PREFLIGHT_FAILED",
+                "The provider certificate alias could not be safely checked",
+            )
+        }
+    }
+
+    private suspend fun storeWithReservation(
+        reservation: CertificateReferenceRecord,
+        store: suspend () -> Unit,
+    ) {
+        // A thrown provider call can be ambiguous (the provider may have written before the
+        // connection failed). Keep only the invisible tombstone; deleting by alias here could
+        // remove an object that was not created by this operation.
+        store()
+        // If activation fails after a successful provider call, leave the object unindexed instead
+        // of deleting by alias: CertificateStoreService has no create receipt or conditional delete.
+        withContext(NonCancellable) {
+            certificateReferenceRegistrar.activatePlatformManagedReservation(reservation).getOrThrowReference()
+        }
     }
 
     private fun X509DistinguishedName.toSdk(): X509DistinguishedNameElements =

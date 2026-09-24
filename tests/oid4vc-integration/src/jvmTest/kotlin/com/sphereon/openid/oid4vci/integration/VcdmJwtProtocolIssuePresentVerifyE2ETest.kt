@@ -37,6 +37,7 @@ import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestInput
 import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.crypto.jose.jws.command.VerifyJwsCommand
 import com.sphereon.sdjwt.vc.command.VerifySdJwtVcCommand
@@ -231,10 +232,12 @@ class VcdmJwtProtocolIssuePresentVerifyE2ETest {
                 listOf(
                     TrustedAuthenticationResolution(
                         controller = HOLDER,
+                        purpose = TrustedAuthenticationPurpose.HOLDER,
                         trustedJwks = jwks(holderKey.copy(kid = "$HOLDER/keys/$HOLDER_KEY")),
                     ),
                     TrustedAuthenticationResolution(
                         controller = ISSUER,
+                        purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
                         trustedJwks = jwks(
                             Jwk.fromJsonObject(issuerKey.publicJwk)
                                 .copy(kid = generateJwkThumbprintUri(Jwk.fromJsonObject(issuerKey.publicJwk))),

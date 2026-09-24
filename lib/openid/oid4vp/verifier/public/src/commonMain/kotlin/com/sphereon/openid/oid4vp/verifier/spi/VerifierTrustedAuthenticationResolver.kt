@@ -17,6 +17,7 @@
 package com.sphereon.openid.oid4vp.verifier.spi
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.oauth2.common.model.AuthorizationRequest
 import com.sphereon.openid.oid4vp.dcql.DcqlQuery
@@ -51,4 +52,12 @@ interface VerifierTrustedAuthenticationResolver {
     suspend fun resolveTrustedAuthentications(
         request: VerifierTrustedAuthenticationRequest,
     ): IdkResult<List<TrustedAuthenticationResolution>, IdkError>
+
+    /**
+     * Credential-issuer signing sources are resolved under credential-issuer trust policy.
+     * Older implementations safely provide none until they implement this distinct source.
+     */
+    suspend fun resolveTrustedCredentialIssuerAuthentications(
+        request: VerifierTrustedAuthenticationRequest,
+    ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> = Ok(emptyList())
 }

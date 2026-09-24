@@ -19,7 +19,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * Verifier-admitted authentication material for one exact VCDM controller.
+ * Trust-admitted authentication material for one exact VCDM controller and one use.
  *
  * The controller is the issuer for a VC or the holder for a VP. It is selected from the
  * authenticated VCDM claims and is never taken from JOSE header key material. [identifier] is
@@ -35,6 +35,8 @@ data class TrustedAuthenticationResolution(
     val controller: String,
     @Transient val identifier: IdentifierOptsOrResult? = null,
     val trustedJwks: JsonObject? = null,
+    /** Keeps holder authentication separate from credential-issuer authentication policy. */
+    val purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER,
 ) {
     init {
         require(controller.isNotBlank()) { "trusted_authentication_resolution_controller_blank" }
@@ -62,4 +64,13 @@ data class TrustedAuthenticationResolution(
             }
         }
     }
+}
+
+@Serializable
+@JsExportCompat
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("TrustedAuthenticationPurpose", exact = true)
+enum class TrustedAuthenticationPurpose {
+    HOLDER,
+    CREDENTIAL_ISSUER,
 }

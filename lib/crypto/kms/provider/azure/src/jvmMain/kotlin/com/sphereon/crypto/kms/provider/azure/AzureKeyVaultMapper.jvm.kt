@@ -19,6 +19,8 @@ package com.sphereon.crypto.kms.provider.azure
 
 import com.azure.core.credential.TokenCredential
 import com.azure.core.http.policy.ExponentialBackoffOptions
+import com.azure.core.http.policy.HttpLogDetailLevel
+import com.azure.core.http.policy.HttpLogOptions
 import com.azure.core.util.ClientOptions
 import com.azure.core.util.Header
 import com.azure.identity.ClientCertificateCredential
@@ -76,6 +78,24 @@ fun AzureKmsProviderConfig.toClientOptions(): ClientOptions =
         .setHeaders(headers.orEmpty().map { Header(it.name, it.values) })
 
 /**
+ * HTTP log options for every Azure SDK client and credential this provider builds.
+ *
+ * Bodies are never logged: Key Vault bodies carry imported private key material, digests and
+ * signatures, and identity token requests carry client secrets and passwords. Logging is off unless
+ * an operator opts in through the standard `AZURE_HTTP_LOG_DETAIL_LEVEL` setting, which the SDK
+ * reads into [requested]. A body level there is downgraded to its body-free counterpart.
+ */
+internal fun azureHttpLogOptions(requested: HttpLogDetailLevel = HttpLogOptions().logLevel): HttpLogOptions =
+    HttpLogOptions().setLogLevel(requested.withoutBody())
+
+private fun HttpLogDetailLevel.withoutBody(): HttpLogDetailLevel =
+    when (this) {
+        HttpLogDetailLevel.BODY -> HttpLogDetailLevel.BASIC
+        HttpLogDetailLevel.BODY_AND_HEADERS -> HttpLogDetailLevel.HEADERS
+        else -> this
+    }
+
+/**
  * Converts exponential backoff retry options to Azure SDK ExponentialBackoffOptions.
  *
  * @return Configured ExponentialBackoffOptions with retry parameters
@@ -118,7 +138,8 @@ fun CredentialOpts.toTokenCredential(tenantId: String): TokenCredential {
 fun SecretCredentialOpts.toClientSecretCredential(tenantId: String): ClientSecretCredential {
     val material = clientSecretMaterial
         ?: throw SignClientException("Client secret material was not resolved by the server-owned secret runtime")
-    return ClientSecretCredentialBuilder().clientId(clientId).clientSecret(material).tenantId(tenantId).build()
+    return ClientSecretCredentialBuilder().clientId(clientId).clientSecret(material).tenantId(tenantId)
+        .httpLogOptions(azureHttpLogOptions()).build()
 }
 
 /**
@@ -131,7 +152,8 @@ fun CertificateCredentialOpts.toClientCertificateCredential(tenantId: String): C
     val material = certificateMaterial
         ?: throw SignClientException("Client certificate material was not resolved by the server-owned secret runtime")
     return ByteArrayInputStream(material).use { stream ->
-        ClientCertificateCredentialBuilder().clientId(clientId).pemCertificate(stream).tenantId(tenantId).build()
+        ClientCertificateCredentialBuilder().clientId(clientId).pemCertificate(stream).tenantId(tenantId)
+            .httpLogOptions(azureHttpLogOptions()).build()
     }
 }
 
@@ -142,7 +164,8 @@ fun CertificateCredentialOpts.toClientCertificateCredential(tenantId: String): C
  * @return Configured UsernamePasswordCredential
  */
 fun UsernamePasswordCredentialOpts.toUsernamePasswordCredential(tenantId: String): UsernamePasswordCredential {
-    return UsernamePasswordCredentialBuilder().clientId(clientId).username(userName).password(password).tenantId(tenantId).build()
+    return UsernamePasswordCredentialBuilder().clientId(clientId).username(userName).password(password).tenantId(tenantId)
+        .httpLogOptions(azureHttpLogOptions()).build()
 }
 
 /**
@@ -152,7 +175,8 @@ fun UsernamePasswordCredentialOpts.toUsernamePasswordCredential(tenantId: String
  * @return Configured InteractiveBrowserCredential
  */
 fun InteractiveBrowserCredentialOpts.toInteractiveBrowserCredential(tenantId: String): InteractiveBrowserCredential {
-    return InteractiveBrowserCredentialBuilder().clientId(clientId).redirectUrl(redirectUrl).tenantId(tenantId).build()
+    return InteractiveBrowserCredentialBuilder().clientId(clientId).redirectUrl(redirectUrl).tenantId(tenantId)
+        .httpLogOptions(azureHttpLogOptions()).build()
 }
 
 /**

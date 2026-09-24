@@ -308,8 +308,9 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
 
     @OptIn(ExperimentalUuidApi::class)
     override fun credentialAuthorizationServerId(credentialConfigurationId: String): Uuid? =
-        credentialAuthorizationServerOverride(credentialConfigurationId)
-            ?.get("authorizationServerId")?.jsonPrimitive?.content
+        (credentialProperty(credentialConfigurationId, "authorizationServerId")
+            ?: credentialAuthorizationServerOverride(credentialConfigurationId)
+                ?.get("authorizationServerId")?.jsonPrimitive?.content)
             ?.takeIf(String::isNotBlank)?.let(Uuid::parse)
 
     override fun credentialAuthorizationServerAllowedGrants(credentialConfigurationId: String): Set<com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant>? =

@@ -68,6 +68,27 @@ import kotlin.test.assertTrue
  */
 class InstanceNamespaceOid4vciIssuerConfigProviderTest {
     @Test
+    fun credentialAuthorizationServerReadsTypedScalarBindingAndLegacyOverride() = runTest {
+        val namespace = "oid4vci.issuers.00000000-0000-4000-8000-000000000031"
+        val scalarId = "00000000-0000-4000-8000-000000000041"
+        val legacyId = "00000000-0000-4000-8000-000000000042"
+        val properties =
+            mapOf<String, Any>(
+                "$namespace.identifier" to "https://acme.example.com",
+                "$namespace.credentialConfigurationIds" to "Scalar,Legacy,Unbound",
+                "$namespace.credentials.[Scalar].authorizationServerId" to scalarId,
+                "$namespace.credentials.[Legacy].authorizationServerOverride" to
+                    "{\"authorizationServerId\":\"$legacyId\",\"allowedGrantTypes\":[\"authorization_code\"]}",
+            )
+        val (provider, holder) = newRegistryProvider(properties)
+        holder.setCurrentInstanceId("00000000-0000-4000-8000-000000000031")
+
+        assertEquals(kotlin.uuid.Uuid.parse(scalarId), provider.credentialAuthorizationServerId("Scalar"))
+        assertEquals(kotlin.uuid.Uuid.parse(legacyId), provider.credentialAuthorizationServerId("Legacy"))
+        assertNull(provider.credentialAuthorizationServerId("Unbound"))
+    }
+
+    @Test
     fun registryProviderResolvesCanonicalPartyIdThroughDurableConfigBindingProjection() = runTest {
         val partyId = "00000000-0000-4000-8000-000000000031"
         val logicalInstanceId = "acme-issuer"

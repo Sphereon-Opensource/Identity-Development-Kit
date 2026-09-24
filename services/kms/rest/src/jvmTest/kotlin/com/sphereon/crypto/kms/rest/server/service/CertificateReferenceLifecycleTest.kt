@@ -20,6 +20,7 @@ import com.sphereon.core.api.context.IdkScope
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.core.api.log.AsyncLogService
 import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.LogService
@@ -42,6 +43,7 @@ import com.sphereon.crypto.core.ManagedKeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.ManagedKeyReference
 import com.sphereon.crypto.core.ManagedKeyReferenceFilter
+import com.sphereon.crypto.core.PKIException
 import com.sphereon.crypto.core.ResolvedKeyInfoType
 import com.sphereon.crypto.core.ResourceControlMode
 import com.sphereon.crypto.core.interop.derPublicKeyToJwk
@@ -57,10 +59,15 @@ import com.sphereon.crypto.key.persistence.KeyReferenceRecord
 import com.sphereon.crypto.key.persistence.KeyReferenceStore
 import com.sphereon.crypto.kms.rest.api.command.RegisterCertificateReferenceInput
 import com.sphereon.crypto.kms.rest.api.generated.infrastructure.Base64ByteArray
+import com.sphereon.crypto.kms.rest.api.generated.models.StoreCertificateChainRequest
+import com.sphereon.crypto.kms.rest.api.generated.models.StoreCertificateRequest
 import com.sphereon.di.context.TenantContextData
 import com.sphereon.di.context.UserContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
@@ -81,6 +88,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlin.time.Duration.Companion.days
 
 class CertificateReferenceLifecycleTest {
@@ -137,6 +145,27 @@ class CertificateReferenceLifecycleTest {
             assertTrue(fixture.service.deleteTrustedCertificate("provider-cert", PROVIDER_ID))
             assertEquals(0, fixture.platformStore.deleteCertificateCalls)
             assertEquals(0, fixture.kmsProviderLookups)
+        }
+
+    @Test
+    fun omittedProviderDeleteUsesPersistedProviderAndPreservesSameAliasInDefaultStore() =
+        runTest {
+            val fixture = Fixture()
+            val otherProviderId = "provider-non-default"
+            val otherStore = RecordingPlatformCertificateStore()
+            fixture.providerStores[otherProviderId] = otherStore
+            val leaf = certificateFor(generateKeyPair("EC"), "same-alias")
+            fixture.platformStore.trusted["same-alias"] = leaf
+            fixture.service.storeTrustedCertificate(
+                "same-alias",
+                StoreCertificateRequest(certificate = Base64ByteArray(leaf.der)),
+                otherProviderId,
+            )
+
+            assertTrue(fixture.service.deleteTrustedCertificate("same-alias"))
+
+            assertTrue(fixture.platformStore.trusted.containsKey("same-alias"))
+            assertFalse(otherStore.trusted.containsKey("same-alias"))
         }
 
     @Test
@@ -284,7 +313,7 @@ class CertificateReferenceLifecycleTest {
         }
 
     @Test
-    fun defaultPlatformManagedStoreRetainsLegacyListReadAndDeleteFallback() =
+    fun defaultPlatformManagedStoreRetainsLegacyReadButRefusesDeleteWithoutOwnershipRecord() =
         runTest {
             val fixture = Fixture()
             val legacy = certificateFor(generateKeyPair("RSA"), "legacy")
@@ -293,10 +322,265 @@ class CertificateReferenceLifecycleTest {
 
             assertEquals(listOf("legacy-managed"), fixture.service.listTrustedCertificateAliases().aliases.toList())
             assertContentEquals(legacy.der, fixture.service.getTrustedCertificate("legacy-managed").certificate.value)
-            assertTrue(fixture.service.deleteTrustedCertificate("legacy-managed"))
+            assertFalse(fixture.service.deleteTrustedCertificate("legacy-managed"))
             assertEquals(1, fixture.platformAliasLister.listTrustedCalls)
             assertEquals(0, fixture.platformStore.listCertificateAliasesCalls)
+            assertEquals(0, fixture.platformStore.deleteCertificateCalls)
+        }
+
+    @Test
+    fun directTrustedCertificateStorePersistsManagedOwnershipAndDeletesProviderObject() =
+        runTest {
+            val fixture = Fixture()
+            val certificate = certificateFor(generateKeyPair("EC"), "direct-managed")
+
+            fixture.service.storeTrustedCertificate(
+                "direct-managed",
+                StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                PROVIDER_ID,
+            )
+
+            val listed = fixture.service.listCertificateReferences(PROVIDER_ID, CertificateReferenceKind.TRUSTED_CERTIFICATE, null)
+            assertEquals(1, listed.references.size)
+            assertEquals(ResourceControlMode.PLATFORM_MANAGED, listed.references.single().controlMode)
+            assertEquals(Origin.MANAGED, listed.references.single().origin)
+            assertContentEquals(certificate.der, fixture.service.getTrustedCertificate("direct-managed", PROVIDER_ID).certificate.value)
+            assertTrue(fixture.service.deleteTrustedCertificate("direct-managed", PROVIDER_ID))
             assertEquals(1, fixture.platformStore.deleteCertificateCalls)
+            assertTrue(fixture.service.listCertificateReferences(PROVIDER_ID, CertificateReferenceKind.TRUSTED_CERTIFICATE, null).references.isEmpty())
+        }
+
+    @Test
+    fun directCertificateChainStorePersistsManagedOwnershipAndLinkedKey() =
+        runTest {
+            val fixture = Fixture()
+            val keyPair = generateKeyPair("EC")
+            val leaf = certificateFor(keyPair, "direct-chain")
+            fixture.addLinkedKey("direct-chain", keyPair)
+
+            fixture.service.storeCertificateChain(
+                "direct-chain",
+                StoreCertificateChainRequest(certificates = arrayOf(Base64ByteArray(leaf.der))),
+                PROVIDER_ID,
+            )
+
+            val listed = fixture.service.listCertificateReferences(PROVIDER_ID, CertificateReferenceKind.KEY_CERTIFICATE_CHAIN, null)
+            assertEquals(1, listed.references.size)
+            assertEquals(ResourceControlMode.PLATFORM_MANAGED, listed.references.single().controlMode)
+            assertEquals("tenant-1-direct-chain-id", listed.references.single().linkedKeyReferenceId)
+            assertTrue(fixture.service.deleteCertificateChain("direct-chain", PROVIDER_ID))
+            assertEquals(1, fixture.platformStore.deleteCertificateChainCalls)
+        }
+
+    @Test
+    fun directStoreFailureLeavesOnlyInvisibleReservation() =
+        runTest {
+            val fixture = Fixture()
+            val certificate = certificateFor(generateKeyPair("EC"), "failed-store")
+            fixture.platformStore.trustedStoreFailure = IllegalStateException("provider write failed")
+
+            assertFailsWith<IllegalStateException> {
+                fixture.service.storeTrustedCertificate(
+                    "failed-store",
+                    StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                    PROVIDER_ID,
+                )
+            }
+
+            assertTrue(fixture.service.listCertificateReferences(PROVIDER_ID, CertificateReferenceKind.TRUSTED_CERTIFICATE, null).references.isEmpty())
+            assertTrue(fixture.certificateStore.rows.values.single().deletedAt != null)
+            assertEquals(ResourceControlMode.PLATFORM_MANAGED, fixture.certificateStore.rows.values.single().controlMode)
+            assertEquals(0, fixture.platformStore.deleteCertificateCalls)
+        }
+
+    @Test
+    fun ambiguousProviderWriteFailureLeavesNoManagedRecordAndRetryFailsClosed() =
+        runTest {
+            val fixture = Fixture()
+            val certificate = certificateFor(generateKeyPair("EC"), "ambiguous-store")
+            fixture.platformStore.trustedStoreFailure = IllegalStateException("connection lost after provider write")
+            fixture.platformStore.trustedStoreFailureAfterWrite = true
+
+            assertFailsWith<IllegalStateException> {
+                fixture.service.storeTrustedCertificate(
+                    "ambiguous-store",
+                    StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                    PROVIDER_ID,
+                )
+            }
+
+            assertTrue(fixture.service.listCertificateReferences(PROVIDER_ID, CertificateReferenceKind.TRUSTED_CERTIFICATE, null).references.isEmpty())
+            assertTrue(fixture.certificateStore.rows.values.single().deletedAt != null)
+            assertEquals(0, fixture.platformStore.deleteCertificateCalls)
+            assertEquals(1, fixture.platformStore.storeTrustedCalls)
+
+            val retry = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.storeTrustedCertificate(
+                    "ambiguous-store",
+                    StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                    PROVIDER_ID,
+                )
+            }
+            assertEquals("KMS_CERTIFICATE_REFERENCE_MANAGED_STORE_CONFLICT", retry.code)
+            assertEquals(1, fixture.platformStore.storeTrustedCalls)
+        }
+
+    @Test
+    fun ownershipIndexFailureLeavesNoManagedRecordAndDoesNotDeleteProviderObject() =
+        runTest {
+            val fixture = Fixture()
+            val certificate = certificateFor(generateKeyPair("EC"), "index-failure")
+            fixture.certificateStore.failActivation = true
+
+            val failure = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.storeTrustedCertificate(
+                    "index-failure",
+                    StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                    PROVIDER_ID,
+                )
+            }
+
+            assertEquals("UNKNOWN_ERROR", failure.code)
+            assertTrue(fixture.platformStore.trusted.containsKey("index-failure"))
+            assertEquals(0, fixture.platformStore.deleteCertificateCalls)
+            assertTrue(fixture.service.listCertificateReferences(PROVIDER_ID, CertificateReferenceKind.TRUSTED_CERTIFICATE, null).references.isEmpty())
+            assertTrue(fixture.certificateStore.rows.values.single().deletedAt != null)
+        }
+
+    @Test
+    fun directStoreFailsClosedForProviderLookupErrorsAndUnregisteredObjects() =
+        runTest {
+            val fixture = Fixture()
+            val certificate = certificateFor(generateKeyPair("EC"), "provider-conflict")
+            fixture.platformStore.certificateLookupFailure = IllegalStateException("provider lookup unavailable")
+            val lookupFailure = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.storeTrustedCertificate(
+                    "lookup-error",
+                    StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                    PROVIDER_ID,
+                )
+            }
+            assertEquals("KMS_CERTIFICATE_PROVIDER_PREFLIGHT_FAILED", lookupFailure.code)
+
+            fixture.platformStore.certificateLookupFailure = null
+            fixture.platformStore.trusted["provider-conflict"] = certificate
+            val existingObject = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.storeTrustedCertificate(
+                    "provider-conflict",
+                    StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                    PROVIDER_ID,
+                )
+            }
+            assertEquals("KMS_CERTIFICATE_REFERENCE_MANAGED_STORE_CONFLICT", existingObject.code)
+            assertEquals(0, fixture.platformStore.storeTrustedCalls)
+            assertTrue(fixture.certificateStore.rows.isEmpty())
+        }
+
+    @Test
+    fun byocReferenceCannotBeTakenOverByDirectManagedStore() =
+        runTest {
+            val fixture = Fixture()
+            val certificate = certificateFor(generateKeyPair("EC"), "external-byoc")
+            fixture.service.registerCertificateReference(
+                RegisterCertificateReferenceInput(
+                    providerId = PROVIDER_ID,
+                    alias = "external-byoc",
+                    kind = CertificateReferenceKind.TRUSTED_CERTIFICATE,
+                    source = CertificateReferenceSource.STORED_PUBLIC_MATERIAL,
+                    certificateChain = listOf(Base64ByteArray(certificate.der)),
+                ),
+            )
+
+            val conflict = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.storeTrustedCertificate(
+                    "external-byoc",
+                    StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                    PROVIDER_ID,
+                )
+            }
+
+            assertEquals("KMS_CERTIFICATE_REFERENCE_MANAGED_STORE_CONFLICT", conflict.code)
+            assertEquals(0, fixture.platformStore.storeTrustedCalls)
+            assertTrue(fixture.service.deleteTrustedCertificate("external-byoc", PROVIDER_ID))
+            assertEquals(0, fixture.platformStore.deleteCertificateCalls)
+        }
+
+    @Test
+    fun managedCertificateCannotBeDowngradedByByocRegistration() =
+        runTest {
+            val fixture = Fixture()
+            val certificate = certificateFor(generateKeyPair("EC"), "managed-owner")
+            fixture.service.storeTrustedCertificate(
+                "managed-owner",
+                StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                PROVIDER_ID,
+            )
+
+            val conflict = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.registerCertificateReference(
+                    RegisterCertificateReferenceInput(
+                        providerId = PROVIDER_ID,
+                        alias = "managed-owner",
+                        kind = CertificateReferenceKind.TRUSTED_CERTIFICATE,
+                        source = CertificateReferenceSource.STORED_PUBLIC_MATERIAL,
+                        certificateChain = listOf(Base64ByteArray(certificate.der)),
+                    ),
+                )
+            }
+
+            assertEquals(CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT, conflict.code)
+            assertEquals(ResourceControlMode.PLATFORM_MANAGED, fixture.certificateStore.rows.values.single().controlMode)
+            assertTrue(fixture.service.deleteTrustedCertificate("managed-owner", PROVIDER_ID))
+            assertEquals(1, fixture.platformStore.deleteCertificateCalls)
+        }
+
+    @Test
+    fun concurrentByocRegistrationAndManagedStoreHaveOneAliasOwner() =
+        runTest {
+            val fixture = Fixture()
+            val certificate = certificateFor(generateKeyPair("EC"), "claim-race")
+            val start = CompletableDeferred<Unit>()
+            val byoc = async(Dispatchers.Default) {
+                start.await()
+                runCatching {
+                    fixture.service.registerCertificateReference(
+                        RegisterCertificateReferenceInput(
+                            providerId = PROVIDER_ID,
+                            alias = "claim-race",
+                            kind = CertificateReferenceKind.TRUSTED_CERTIFICATE,
+                            source = CertificateReferenceSource.STORED_PUBLIC_MATERIAL,
+                            certificateChain = listOf(Base64ByteArray(certificate.der)),
+                        ),
+                    )
+                }
+            }
+            val managed = async(Dispatchers.Default) {
+                start.await()
+                runCatching {
+                    fixture.service.storeTrustedCertificate(
+                        "claim-race",
+                        StoreCertificateRequest(certificate = Base64ByteArray(certificate.der)),
+                        PROVIDER_ID,
+                    )
+                }
+            }
+
+            start.complete(Unit)
+            val outcomes = listOf(byoc.await(), managed.await())
+            val active = fixture.certificateStore.rows.values.filter { it.deletedAt == null }
+            assertEquals(1, outcomes.count { it.isSuccess })
+            assertEquals(1, outcomes.count { it.isFailure })
+            assertEquals(1, active.size)
+            when (active.single().controlMode) {
+                ResourceControlMode.EXTERNALLY_MANAGED -> {
+                    assertEquals(0, fixture.platformStore.storeTrustedCalls)
+                    assertTrue(fixture.platformStore.trusted.isEmpty())
+                }
+                ResourceControlMode.PLATFORM_MANAGED -> {
+                    assertEquals(1, fixture.platformStore.storeTrustedCalls)
+                    assertTrue(fixture.platformStore.trusted.containsKey("claim-race"))
+                }
+            }
         }
 
     @Test
@@ -585,6 +869,7 @@ class CertificateReferenceLifecycleTest {
         val platformStore: RecordingPlatformCertificateStore = RecordingPlatformCertificateStore(),
         val platformAliasLister: RecordingPlatformAliasLister = RecordingPlatformAliasLister(),
     ) {
+        val providerStores: MutableMap<String, RecordingPlatformCertificateStore> = mutableMapOf(PROVIDER_ID to platformStore)
         private val execution = testSessionExecution(tenantId)
         private val keyStore = InMemoryKeyReferenceStore()
         private val inspectedKeys = linkedMapOf<String, ManagedKeyInfoType<*>>()
@@ -614,7 +899,10 @@ class CertificateReferenceLifecycleTest {
             execution = execution,
         )
         val service = CertificatesRestServiceImpl(
-            kms = keyManagerProxy(platformStore) { kmsProviderLookups++ },
+            kms = keyManagerProxy(platformStore, providerLookup = { providerId ->
+                kmsProviderLookups++
+                providerStores[providerId] ?: throw PKIException("unknown provider")
+            }),
             certificateService = unusedProxy(CertificateService::class.java),
             certificateReferenceRegistrar = registrar,
             platformManagedCertificateAliasLister = platformAliasLister,
@@ -717,6 +1005,8 @@ class CertificateReferenceLifecycleTest {
         override val ownershipHistoryCapability: CertificateReferenceHistoryCapability = CertificateReferenceHistoryCapability.DURABLE,
     ) : CertificateReferenceStore {
         val rows = linkedMapOf<String, CertificateReferenceRecord>()
+        private val aliasClaims = mutableMapOf<Triple<String, String, String>, String>()
+        var failActivation = false
 
         override suspend fun save(record: CertificateReferenceRecord): IdkResult<CertificateReferenceRecord, IdkError> {
             rows[record.id] = record
@@ -802,6 +1092,46 @@ class CertificateReferenceLifecycleTest {
         override suspend fun deleteById(tenantId: String, id: String): IdkResult<Boolean, IdkError> =
             softDelete { it.tenantId == tenantId && it.id == id }
 
+        override suspend fun tryAcquireAliasClaim(
+            tenantId: String,
+            providerId: String,
+            alias: String,
+            claimId: String,
+        ): IdkResult<Boolean, IdkError> {
+            return synchronized(aliasClaims) {
+                val key = Triple(tenantId, providerId, alias)
+                if (active(tenantId).any { it.providerId == providerId && it.alias == alias }) return@synchronized Ok(false)
+                val existing = aliasClaims[key]
+                if (existing == null) aliasClaims[key] = claimId
+                Ok(aliasClaims[key] == claimId)
+            }
+        }
+
+        override suspend fun releaseAliasClaim(
+            tenantId: String,
+            providerId: String,
+            alias: String,
+            claimId: String,
+        ): IdkResult<Boolean, IdkError> {
+            return synchronized(aliasClaims) {
+                val key = Triple(tenantId, providerId, alias)
+                if (aliasClaims[key] != claimId) return@synchronized Ok(false)
+                aliasClaims.remove(key)
+                Ok(true)
+            }
+        }
+
+        override suspend fun activateAliasReservation(
+            tenantId: String,
+            id: String,
+            updatedAt: Instant,
+        ): IdkResult<CertificateReferenceRecord?, IdkError> {
+            if (failActivation) return Err(IdkError.UNKNOWN_ERROR(message = "injected reservation activation failure"))
+            val row = rows[id]?.takeIf { it.tenantId == tenantId && it.deletedAt != null }
+                ?: return Ok(null)
+            return Ok(row.copy(deletedAt = null, deletedById = null, updatedAt = updatedAt).also { rows[id] = it })
+        }
+
         private fun active(tenantId: String): List<CertificateReferenceRecord> =
             rows.values.filter { it.tenantId == tenantId && it.deletedAt == null }
 
@@ -866,6 +1196,12 @@ class CertificateReferenceLifecycleTest {
         var listCertificateChainAliasesCalls = 0
         var deleteCertificateCalls = 0
         var deleteCertificateChainCalls = 0
+        var storeTrustedCalls = 0
+        var storeCertificateChainCalls = 0
+        var trustedStoreFailure: Exception? = null
+        var trustedStoreFailureAfterWrite = false
+        var chainStoreFailure: Exception? = null
+        var certificateLookupFailure: Exception? = null
 
         override val settings: KeyProviderSettings? = null
         override suspend fun listKeys(): Array<ManagedKeyReference> = emptyArray()
@@ -884,6 +1220,8 @@ class CertificateReferenceLifecycleTest {
             certificates: Array<Certificate>,
             keyInfo: ResolvedKeyInfoType<*>?,
         ) {
+            storeCertificateChainCalls++
+            chainStoreFailure?.let { throw it }
             chains[alias] = certificates
         }
 
@@ -892,7 +1230,11 @@ class CertificateReferenceLifecycleTest {
             return chains.keys.toTypedArray()
         }
 
-        override suspend fun getCertificateChain(alias: String): Array<Certificate> = chains.getValue(alias)
+        override suspend fun getCertificateChain(alias: String): Array<Certificate> {
+            certificateLookupFailure?.let { throw it }
+            return chains[alias] ?: trusted[alias]?.let(::arrayOf)
+                ?: throw NotFoundException("certificate chain missing")
+        }
 
         override suspend fun deleteCertificateChain(alias: String): Boolean {
             deleteCertificateChainCalls++
@@ -900,7 +1242,12 @@ class CertificateReferenceLifecycleTest {
         }
 
         override suspend fun storeTrustedCertificate(alias: String, certificate: Certificate) {
+            storeTrustedCalls++
             trusted[alias] = certificate
+            trustedStoreFailure?.let { failure ->
+                if (!trustedStoreFailureAfterWrite) trusted.remove(alias)
+                throw failure
+            }
         }
 
         override suspend fun listCertificateAliases(): Array<String> {
@@ -908,7 +1255,10 @@ class CertificateReferenceLifecycleTest {
             return trusted.keys.toTypedArray()
         }
 
-        override suspend fun getCertificate(alias: String): Certificate = trusted.getValue(alias)
+        override suspend fun getCertificate(alias: String): Certificate {
+            certificateLookupFailure?.let { throw it }
+            return trusted[alias] ?: chains[alias]?.firstOrNull() ?: throw NotFoundException("certificate missing")
+        }
 
         override suspend fun deleteCertificate(alias: String): Boolean {
             deleteCertificateCalls++
@@ -1029,16 +1379,16 @@ class CertificateReferenceLifecycleTest {
 
         fun keyManagerProxy(
             platformStore: RecordingPlatformCertificateStore,
-            providerLookup: () -> Unit,
+            providerLookup: (String) -> Any,
         ): KeyManagerService = Proxy.newProxyInstance(
             KeyManagerService::class.java.classLoader,
             arrayOf(KeyManagerService::class.java),
-        ) { _, method, _ ->
+        ) { _, method, args ->
             when (method.name) {
+                "defaultProviderId" -> PROVIDER_ID
                 "getKeyStore" -> platformStore
                 "getProviderById" -> {
-                    providerLookup()
-                    error("Provider-wide certificate store access is forbidden in this test")
+                    providerLookup(args?.firstOrNull() as? String ?: error("provider id is required"))
                 }
                 else -> error("KeyManagerService.${method.name} must not be called")
             }

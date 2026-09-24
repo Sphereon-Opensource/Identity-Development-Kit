@@ -41,6 +41,7 @@ import com.sphereon.openid.oid4vp.universal.CreateAuthorizationRequestOutput
 import com.sphereon.openid.oid4vp.universal.GetAuthorizationRequestStatusOutput
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSessionStatus
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.sdjwt.vc.command.VerifySdJwtVcCommand
 import com.sphereon.wallet.WalletIdentityResolver
 import com.sphereon.wallet.credential.CredentialLifecycleState
@@ -304,6 +305,7 @@ class WalletInteractionOid4vpDcqlRealProtocolE2ETest {
                     listOf(
                         TrustedAuthenticationResolution(
                             controller = issuerUrl,
+                            purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
                             trustedJwks =
                                 JsonObject(
                                     mapOf(

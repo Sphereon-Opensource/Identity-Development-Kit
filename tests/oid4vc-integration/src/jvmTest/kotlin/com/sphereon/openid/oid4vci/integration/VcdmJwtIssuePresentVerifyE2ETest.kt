@@ -40,6 +40,7 @@ import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.wallet.unit.SecureComponentUsage
 import dev.zacsweers.metro.ContributesTo
 import kotlinx.coroutines.test.runTest
@@ -498,11 +499,12 @@ class VcdmJwtIssuePresentVerifyE2ETest {
     }
 
     private fun issuerAuthentication(issued: IssuedCredential): TrustedAuthenticationResolution =
-        authentication(issuer, issued.issuerKey, issuerJwtKid(issued.credential))
+        authentication(issuer, issued.issuerKey, issuerJwtKid(issued.credential), TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
 
     private fun issuerAuthentication(vararg issued: IssuedCredential): TrustedAuthenticationResolution =
         TrustedAuthenticationResolution(
             controller = issuer,
+            purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
             trustedJwks =
                 JsonObject(
                     mapOf(
@@ -526,13 +528,15 @@ class VcdmJwtIssuePresentVerifyE2ETest {
     private fun holderAuthentication(holderKey: HolderMaterial): TrustedAuthenticationResolution =
         TrustedAuthenticationResolution(
             controller = holderKey.controller,
+            purpose = TrustedAuthenticationPurpose.HOLDER,
             trustedJwks = JsonObject(mapOf("keys" to kotlinx.serialization.json.JsonArray(listOf(holderKey.publicJwk.toJsonObject())))),
         )
 
-    private fun authentication(controller: String, key: ManagedKeyInfoType<*>, kid: String): TrustedAuthenticationResolution {
+    private fun authentication(controller: String, key: ManagedKeyInfoType<*>, kid: String, purpose: TrustedAuthenticationPurpose = TrustedAuthenticationPurpose.HOLDER): TrustedAuthenticationResolution {
         val publicJwk = assertNotNull(key.toManagedPublicKeyInfo().key as? Jwk).copy(kid = kid)
         return TrustedAuthenticationResolution(
             controller = controller,
+            purpose = purpose,
             trustedJwks = JsonObject(mapOf("keys" to kotlinx.serialization.json.JsonArray(listOf(publicJwk.toJsonObject())))),
         )
     }

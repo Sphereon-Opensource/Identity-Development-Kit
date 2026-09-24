@@ -43,6 +43,7 @@ import com.sphereon.openid.oid4vc.common.vcdm.VcdmProfiles
 import com.sphereon.openid.oid4vc.common.vcdm.VcdmVersion
 import com.sphereon.openid.oid4vp.verifier.HolderBindingResult
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingArgs
 import com.sphereon.openid.oid4vp.verifier.VerifyHolderBindingCommand
 import com.sphereon.sdjwt.VerifySdJwtArgs
@@ -224,7 +225,9 @@ class VerifyHolderBindingCommandImpl(
         log.debug("Verifying SD-JWT holder binding with KB-JWT verification")
 
         val issuer = sdJwtIssuer(presentation)
-        val matchingSources = trustedAuthentications.filter { it.controller == issuer }
+        val matchingSources = trustedAuthentications.filter {
+            it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER && it.controller == issuer
+        }
         if (matchingSources.size > 1) {
             return holderBindingFailure("multiple configured issuer authentication sources match controller '$issuer'")
         }
@@ -715,7 +718,9 @@ class VerifyHolderBindingCommandImpl(
 
         val holder = vcdmHolderController(classification)
             ?: return holderBindingFailure("VCDM VP holder/controller is required for compact holder binding")
-        val matchingSources = trustedAuthentications.filter { it.controller == holder }
+        val matchingSources = trustedAuthentications.filter {
+            it.purpose == TrustedAuthenticationPurpose.HOLDER && it.controller == holder
+        }
         if (matchingSources.size > 1) {
             return holderBindingFailure("multiple configured holder authentication sources match controller '$holder'")
         }

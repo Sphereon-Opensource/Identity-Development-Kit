@@ -65,6 +65,7 @@ import com.sphereon.openid.oid4vp.verifier.CredentialIssuerRef
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidation
 import com.sphereon.openid.oid4vp.verifier.CredentialTrustValidationMode
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.MatchedCredential
 import com.sphereon.openid.oid4vp.verifier.VerifiedCredentialEvidence
 import com.sphereon.openid.oid4vp.verifier.VerifiedCredentialStatus
@@ -933,7 +934,10 @@ class ValidateAuthorizationResponseCommandImpl(
         // caller must not replace the requested mdoc document type (or any other query contract)
         // by supplying a different query alongside the response.
         val dcqlQuery = authorizationSession.dcqlQuery
-        val effectiveVerifierId = processedArgs.verifierId ?: authorizationSession.verifierId
+        // Trust-domain attachments for OID4VP_VERIFIER are keyed by the tenant runtime instance
+        // id. Keep the persisted verifier party UUID for authentication/session identity, but do
+        // not send it as the trust consumer id.
+        val effectiveVerifierId = authorizationSession.instanceId
         val effectiveDcqlQueryId = processedArgs.dcqlQueryId ?: authorizationSession.dcqlQueryId
         val effectiveTemplateId = processedArgs.templateId ?: authorizationSession.templateId
         val persistedRequest = authorizationSession.authorizationRequest
@@ -1313,7 +1317,9 @@ class ValidateAuthorizationResponseCommandImpl(
         issuerAlgAllowlist: Set<String>?,
     ): String? {
         val resolvedClassification = classification ?: return "VCDM credential classification is missing"
-        val matchingTrustedAuthentications = trustedAuthentications.filter { it.controller == issuer?.issuer }
+        val matchingTrustedAuthentications = trustedAuthentications.filter {
+            it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER && it.controller == issuer?.issuer
+        }
         if (matchingTrustedAuthentications.size > 1) {
             return "multiple configured issuer-authentication sources match the credential issuer"
         }

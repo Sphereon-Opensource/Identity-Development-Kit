@@ -107,4 +107,27 @@ interface CertificateReferenceStore {
         tenantId: String,
         id: String,
     ): IdkResult<Boolean, IdkError>
+
+    /** Atomically claims a provider alias across certificate kinds for a managed direct store. */
+    suspend fun tryAcquireAliasClaim(
+        tenantId: String,
+        providerId: String,
+        alias: String,
+        claimId: String,
+    ): IdkResult<Boolean, IdkError> = unsupportedHistoryResult()
+
+    /** Releases only the claim held by [claimId]. */
+    suspend fun releaseAliasClaim(
+        tenantId: String,
+        providerId: String,
+        alias: String,
+        claimId: String,
+    ): IdkResult<Boolean, IdkError> = unsupportedHistoryResult()
+
+    /** Activates a persisted reservation without changing its owner/claim id. */
+    suspend fun activateAliasReservation(
+        tenantId: String,
+        id: String,
+        updatedAt: kotlin.time.Instant,
+    ): IdkResult<CertificateReferenceRecord?, IdkError> = unsupportedHistoryResult()
 }

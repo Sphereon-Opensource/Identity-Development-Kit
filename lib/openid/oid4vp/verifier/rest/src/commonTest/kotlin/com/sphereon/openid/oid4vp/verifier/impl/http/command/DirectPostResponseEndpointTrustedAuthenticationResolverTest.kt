@@ -39,6 +39,7 @@ import com.sphereon.openid.oid4vp.verifier.DirectPostHandledResponse
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseArgs
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseCommand
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.config.ResponseEncryptionKeyConfig
 import com.sphereon.openid.oid4vp.verifier.impl.http.command.DirectPostResponseEndpointCommandImpl
 import com.sphereon.openid.oid4vp.verifier.model.AuthorizationSession
@@ -60,7 +61,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * Contract tests for the direct_post trust-resolution seam.
@@ -74,22 +75,30 @@ class DirectPostResponseEndpointTrustedAuthenticationResolverTest {
     fun `resolver receives authoritative tenant and persisted session context and list is forwarded`() =
         runTest {
             val fixture = fixture()
-            var received: VerifierTrustedAuthenticationRequest? = null
-            val trusted = trustedAuthentication()
+            val received = mutableListOf<VerifierTrustedAuthenticationRequest>()
+            val trustedHolder = trustedAuthentication("https://holder.example", TrustedAuthenticationPurpose.HOLDER)
+            val trustedIssuer = trustedAuthentication("https://issuer.example", TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
             val resolver =
                 object : VerifierTrustedAuthenticationResolver {
                     override suspend fun resolveTrustedAuthentications(
                         request: VerifierTrustedAuthenticationRequest,
                     ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> {
-                        received = request
-                        return Ok(listOf(trusted))
+                        received += request
+                        return Ok(listOf(trustedHolder))
+                    }
+
+                    override suspend fun resolveTrustedCredentialIssuerAuthentications(
+                        request: VerifierTrustedAuthenticationRequest,
+                    ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> {
+                        received += request
+                        return Ok(listOf(trustedIssuer))
                     }
                 }
 
             val result = fixture.endpoint(resolver).execute(request())
 
             assertTrueOk(result)
-            val receivedRequest = assertNotNull(received)
+            val receivedRequest = received.first()
             assertEquals("tenant-from-session-execution", receivedRequest.tenantId)
             assertEquals("verifier-instance-persisted", receivedRequest.verifierInstanceId)
             assertEquals("verifier-business-id", receivedRequest.verifierId)
@@ -97,9 +106,10 @@ class DirectPostResponseEndpointTrustedAuthenticationResolverTest {
             assertEquals("template-id", receivedRequest.templateId)
             assertEquals(fixture.session.authorizationRequest, receivedRequest.originalRequest)
             assertEquals(fixture.session.dcqlQuery, receivedRequest.dcqlQuery)
+            assertEquals(listOf(receivedRequest, receivedRequest), received)
 
             assertEquals(1, fixture.handle.invocations)
-            assertEquals(listOf(trusted), fixture.handle.lastArgs!!.trustedAuthentications)
+            assertEquals(listOf(trustedHolder, trustedIssuer), fixture.handle.lastArgs!!.trustedAuthentications)
             // Request transport data cannot override the authenticated execution tenant.
             assertEquals("attacker-supplied-tenant", request().resolvedTenantId)
         }
@@ -124,8 +134,97 @@ class DirectPostResponseEndpointTrustedAuthenticationResolverTest {
             assertEquals(0, fixture.handle.invocations)
         }
 
-    private fun fixture(): Fixture {
-        val session = testSession()
+    @Test
+    fun `holder resolver cannot label its source as credential issuer authentication`() = runTest {
+        val fixture = fixture()
+        val mislabeled = trustedAuthentication("https://issuer.example", TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
+        val resolver = object : VerifierTrustedAuthenticationResolver {
+            override suspend fun resolveTrustedAuthentications(
+                request: VerifierTrustedAuthenticationRequest,
+            ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> = Ok(listOf(mislabeled))
+        }
+
+        val result = fixture.endpoint(resolver).execute(request())
+
+        assertFalse(result.isOk)
+        assertEquals("TRUST_AUTHENTICATION_PURPOSE_MISMATCH", result.error.code)
+        assertEquals(0, fixture.handle.invocations)
+    }
+
+    @Test
+    fun `legacy resolver sources are not reused for credential issuer authentication`() = runTest {
+        val fixture = fixture()
+        val holder = trustedAuthentication("https://shared.example", TrustedAuthenticationPurpose.HOLDER)
+        val legacyResolver = object : VerifierTrustedAuthenticationResolver {
+            override suspend fun resolveTrustedAuthentications(
+                request: VerifierTrustedAuthenticationRequest,
+            ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> = Ok(listOf(holder))
+        }
+
+        val result = fixture.endpoint(legacyResolver).execute(request())
+
+        assertTrueOk(result)
+        assertEquals(listOf(holder), fixture.handle.lastArgs!!.trustedAuthentications)
+        assertTrue(fixture.handle.lastArgs!!.trustedAuthentications.none {
+            it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER
+        })
+    }
+
+    @Test
+    fun `all dcql credentials opting out skips holder resolution and still forwards issuer material`() = runTest {
+        val fixture = fixture(session = testSession(requireHolderBinding = false))
+        val calls = mutableListOf<String>()
+        val trustedIssuer = trustedAuthentication("https://issuer.example", TrustedAuthenticationPurpose.CREDENTIAL_ISSUER)
+        val resolver = object : VerifierTrustedAuthenticationResolver {
+            override suspend fun resolveTrustedAuthentications(
+                request: VerifierTrustedAuthenticationRequest,
+            ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> {
+                calls += "holder"
+                return IdkResult.err(IdkError.fromString("holder trust unavailable", code = "HOLDER_TRUST_UNAVAILABLE"))
+            }
+
+            override suspend fun resolveTrustedCredentialIssuerAuthentications(
+                request: VerifierTrustedAuthenticationRequest,
+            ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> {
+                calls += "issuer"
+                return Ok(listOf(trustedIssuer))
+            }
+        }
+
+        val result = fixture.endpoint(resolver).execute(request())
+
+        assertTrueOk(result)
+        assertEquals(listOf("issuer"), calls)
+        assertEquals(listOf(trustedIssuer), fixture.handle.lastArgs!!.trustedAuthentications)
+    }
+
+    @Test
+    fun `any credential requiring holder binding keeps holder resolution fail closed`() = runTest {
+        val fixture = fixture(session = testSession(requireHolderBinding = true))
+        var issuerResolverCalled = false
+        val resolverError = IdkError.fromString("holder trust unavailable", code = "HOLDER_TRUST_UNAVAILABLE")
+        val resolver = object : VerifierTrustedAuthenticationResolver {
+            override suspend fun resolveTrustedAuthentications(
+                request: VerifierTrustedAuthenticationRequest,
+            ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> = IdkResult.err(resolverError)
+
+            override suspend fun resolveTrustedCredentialIssuerAuthentications(
+                request: VerifierTrustedAuthenticationRequest,
+            ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> {
+                issuerResolverCalled = true
+                return Ok(emptyList())
+            }
+        }
+
+        val result = fixture.endpoint(resolver).execute(request())
+
+        assertFalse(result.isOk)
+        assertEquals("HOLDER_TRUST_UNAVAILABLE", result.error.code)
+        assertFalse(issuerResolverCalled)
+        assertEquals(0, fixture.handle.invocations)
+    }
+
+    private fun fixture(session: AuthorizationSession = testSession()): Fixture {
         return Fixture(
             session = session,
             execution = TestSessionExecution(),
@@ -142,16 +241,17 @@ class DirectPostResponseEndpointTrustedAuthenticationResolverTest {
             headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
         ).copy(resolvedTenantId = "attacker-supplied-tenant")
 
-    private fun trustedAuthentication(): TrustedAuthenticationResolution =
+    private fun trustedAuthentication(controller: String, purpose: TrustedAuthenticationPurpose): TrustedAuthenticationResolution =
         TrustedAuthenticationResolution(
-            controller = "https://holder.example",
+            controller = controller,
             trustedJwks =
                 Json.parseToJsonElement(
                     """{"keys":[{"kty":"EC","crv":"P-256","x":"WbbFpp0eS8_rJlvpuX_qEyU1J2PNmXYnqPCBJTqqiBA","y":"F8kbfVPRQc5M9kJA1fy3c_0Q6vCqHy1X7CZQC6XQy9I","kid":"holder-key"}]}""",
                 ) as JsonObject,
+            purpose = purpose,
         )
 
-    private fun testSession(): AuthorizationSession {
+    private fun testSession(requireHolderBinding: Boolean = true): AuthorizationSession {
         val dcql =
             DcqlQuery(
                 credentials =
@@ -160,6 +260,7 @@ class DirectPostResponseEndpointTrustedAuthenticationResolverTest {
                             id = "credential-query",
                             format = "jwt_vc_json",
                             meta = Json.parseToJsonElement("""{"type_values":[["VerifiableCredential"]]}""") as JsonObject,
+                            require_cryptographic_holder_binding = requireHolderBinding,
                         ),
                     ),
             )

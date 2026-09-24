@@ -17,6 +17,10 @@ import com.sphereon.crypto.certificate.persistence.CertificateReferenceStoreErro
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -74,6 +78,57 @@ class SqliteCertificateReferenceStoreImplTest {
         assertContentEquals(tenantA.certificateFingerprint, found.certificateFingerprint)
         assertContentEquals(tenantA.publicKeyFingerprint, found.publicKeyFingerprint)
         assertEquals(ResourceControlMode.EXTERNALLY_MANAGED, found.controlMode)
+    }
+
+    @Test
+    fun concurrentAliasClaimsAllowOnlyOneOwnerAcrossCertificateKinds() = runTest {
+        val tenant = "claim-tenant-${Uuid.random()}"
+        val alias = "claim-alias-${Uuid.random()}"
+        val provider = "claim-provider-${Uuid.random()}"
+        val contenders = listOf(Uuid.random().toString(), Uuid.random().toString())
+
+        val results = coroutineScope {
+            contenders.map { claimId ->
+                async(Dispatchers.IO) {
+                    store.tryAcquireAliasClaim(tenant, provider, alias, claimId)
+                }
+            }.awaitAll()
+        }
+
+        assertTrue(results.all { it.isOk })
+        assertEquals(1, results.count { it.isOk && it.value })
+        val winner = contenders[results.indexOfFirst { it.isOk && it.value }]
+        assertTrue(store.releaseAliasClaim(tenant, provider, alias, winner).isOk)
+        assertTrue(store.tryAcquireAliasClaim(tenant, provider, alias, "next-owner").value)
+        assertTrue(store.releaseAliasClaim(tenant, provider, alias, "next-owner").value)
+
+        val activeTrusted = record(
+            tenantId = tenant,
+            alias = alias,
+            providerId = provider,
+            kind = CertificateReferenceKind.TRUSTED_CERTIFICATE,
+            linkedKeyReferenceId = null,
+        )
+        assertTrue(store.save(activeTrusted).isOk)
+        assertTrue(store.tryAcquireAliasClaim(tenant, provider, alias, "cross-kind-owner").value.not())
+    }
+
+    @Test
+    fun reservationCannotActivateWithoutItsDurableAliasClaim() = runTest {
+        val tenant = "reservation-tenant-${Uuid.random()}"
+        val id = Uuid.random().toString()
+        val reservation = record(
+            id = id,
+            tenantId = tenant,
+            alias = "reservation-alias-${Uuid.random()}",
+            providerId = "reservation-provider-${Uuid.random()}",
+            linkedKeyReferenceId = null,
+            deletedAt = Clock.System.now(),
+        ).copy(controlMode = ResourceControlMode.PLATFORM_MANAGED)
+
+        assertTrue(store.save(reservation).isOk)
+        assertTrue(store.activateAliasReservation(tenant, id, Clock.System.now()).value == null)
+        assertTrue(store.findById(tenant, id).value == null)
     }
 
     @Test
@@ -495,6 +550,9 @@ class SqliteCertificateReferenceStoreImplTest {
                 }
                 statement.executeQuery("SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'certificate_reference' ORDER BY name").use { rows ->
                     while (rows.next()) add("index:${rows.getString(1)}:${rows.getString(2)}")
+                }
+                statement.executeQuery("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'certificate_reference_alias_claim'").use { rows ->
+                    if (rows.next()) add("table:${rows.getString(1)}")
                 }
             }
         }

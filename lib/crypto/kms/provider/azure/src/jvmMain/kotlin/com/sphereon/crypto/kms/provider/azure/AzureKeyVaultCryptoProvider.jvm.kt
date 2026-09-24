@@ -42,11 +42,9 @@ package com.sphereon.crypto.kms.provider.azure
  */
 
 import com.azure.core.exception.ResourceNotFoundException
-import com.azure.core.http.policy.HttpLogDetailLevel
-import com.azure.core.http.policy.HttpLogOptions
-import com.azure.core.http.policy.HttpLoggingPolicy
 import com.azure.core.http.policy.RetryOptions
 import com.azure.core.http.policy.RetryPolicy
+import com.azure.security.keyvault.certificates.CertificateAsyncClient
 import com.azure.security.keyvault.certificates.CertificateClientBuilder
 import com.azure.security.keyvault.certificates.CertificateServiceVersion
 import com.azure.security.keyvault.certificates.models.KeyVaultCertificate
@@ -174,6 +172,31 @@ internal fun interface AzureCertificateClientReader {
     ): AzureCertificateClientRead
 }
 
+private fun AzureKmsProviderConfig.retryPolicyOrNull(): RetryPolicy? =
+    exponentialBackoffRetryOpts?.let { RetryPolicy(RetryOptions(it.toExponentialBackoffOptions())) }
+
+/** Builds the Key Vault key client. HTTP logging never includes bodies, see [azureHttpLogOptions]. */
+internal fun AzureKmsProviderConfig.buildKeyAsyncClient(): KeyAsyncClient =
+    KeyClientBuilder()
+        .serviceVersion(KeyServiceVersion.V7_3)
+        .vaultUrl(keyvaultUrl)
+        .clientOptions(toClientOptions())
+        .httpLogOptions(azureHttpLogOptions())
+        .retryPolicy(retryPolicyOrNull())
+        .credential(credentialOpts.toTokenCredential(tenantId))
+        .buildAsyncClient()
+
+/** Builds the Key Vault certificate client. HTTP logging never includes bodies, see [azureHttpLogOptions]. */
+internal fun AzureKmsProviderConfig.buildCertificateAsyncClient(): CertificateAsyncClient =
+    CertificateClientBuilder()
+        .serviceVersion(CertificateServiceVersion.V7_3)
+        .vaultUrl(keyvaultUrl)
+        .clientOptions(toClientOptions())
+        .httpLogOptions(azureHttpLogOptions())
+        .retryPolicy(retryPolicyOrNull())
+        .credential(credentialOpts.toTokenCredential(tenantId))
+        .buildAsyncClient()
+
 /**
  * Implementation of the Azure Key Vault Crypto Provider for JVM environments.
  * Handles key creation, signature operations, key listing, and importing via the Azure SDK for JS.
@@ -187,17 +210,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
     BackendKeyOperationProofProvider,
     BackendSymmetricKmsKeyLifecycle {
 
-    private val keyClient: KeyAsyncClient = KeyClientBuilder()
-        .serviceVersion(KeyServiceVersion.V7_3)
-        .vaultUrl(config.keyvaultUrl)
-        .clientOptions(config.toClientOptions())
-        .addPolicy(HttpLoggingPolicy(HttpLogOptions().setLogLevel(HttpLogDetailLevel.BODY_AND_HEADERS)))
-        .retryPolicy(
-            if (config.exponentialBackoffRetryOpts == null) null
-            else RetryPolicy(RetryOptions(config.exponentialBackoffRetryOpts.toExponentialBackoffOptions()))
-        )
-        .credential(config.credentialOpts.toTokenCredential(config.tenantId))
-        .buildAsyncClient()
+    private val keyClient: KeyAsyncClient = config.buildKeyAsyncClient()
 
 
     private val hasCertsApi = config.hsmType == HSMType.KEYVAULT
@@ -218,20 +231,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
             )
         }
 
-    private val certClient = if (hasCertsApi) {
-        with(config) {
-            CertificateClientBuilder()
-                .serviceVersion(CertificateServiceVersion.V7_3)
-                .vaultUrl(keyvaultUrl)
-                .clientOptions(toClientOptions())
-                .retryPolicy(
-                    if (exponentialBackoffRetryOpts == null) null
-                    else RetryPolicy(RetryOptions(exponentialBackoffRetryOpts.toExponentialBackoffOptions()))
-                )
-                .credential(credentialOpts.toTokenCredential(tenantId))
-                .buildAsyncClient()
-        }
-    } else null
+    private val certClient = if (hasCertsApi) config.buildCertificateAsyncClient() else null
 
     private var certificateClientReader: AzureCertificateClientReader? =
         certClient?.let { client ->

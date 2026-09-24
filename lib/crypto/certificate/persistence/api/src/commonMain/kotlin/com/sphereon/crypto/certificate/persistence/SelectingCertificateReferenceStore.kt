@@ -20,6 +20,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Multibinds
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlin.time.Instant
 
 @ContributesTo(AppScope::class)
 interface CertificateReferenceStoreFactoryMultibindings {
@@ -135,4 +136,13 @@ class SelectingCertificateReferenceStore(
     ) = delegate.delete(tenantId, alias, providerId, kind)
 
     override suspend fun deleteById(tenantId: String, id: String) = delegate.deleteById(tenantId, id)
+
+    override suspend fun tryAcquireAliasClaim(tenantId: String, providerId: String, alias: String, claimId: String) =
+        delegate.tryAcquireAliasClaim(tenantId, providerId, alias, claimId)
+
+    override suspend fun releaseAliasClaim(tenantId: String, providerId: String, alias: String, claimId: String) =
+        delegate.releaseAliasClaim(tenantId, providerId, alias, claimId)
+
+    override suspend fun activateAliasReservation(tenantId: String, id: String, updatedAt: Instant) =
+        delegate.activateAliasReservation(tenantId, id, updatedAt)
 }

@@ -12,6 +12,7 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.di.session.SessionScope
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.spi.VerifierTrustedAuthenticationRequest
 import com.sphereon.openid.oid4vp.verifier.spi.VerifierTrustedAuthenticationResolver
 import dev.zacsweers.metro.ContributesBinding
@@ -26,7 +27,13 @@ import dev.zacsweers.metro.binding
 class WalletE2ETestTrustedAuthenticationResolver : VerifierTrustedAuthenticationResolver {
     override suspend fun resolveTrustedAuthentications(
         request: VerifierTrustedAuthenticationRequest,
-    ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> = Ok(configuredSources)
+    ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> =
+        Ok(configuredSources.filter { it.purpose == TrustedAuthenticationPurpose.HOLDER })
+
+    override suspend fun resolveTrustedCredentialIssuerAuthentications(
+        request: VerifierTrustedAuthenticationRequest,
+    ): IdkResult<List<TrustedAuthenticationResolution>, IdkError> =
+        Ok(configuredSources.filter { it.purpose == TrustedAuthenticationPurpose.CREDENTIAL_ISSUER })
 
     companion object {
         @Volatile

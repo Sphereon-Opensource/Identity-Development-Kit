@@ -52,6 +52,7 @@ import com.sphereon.openid.oid4vp.verifier.ParseAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.verifier.ValidateAuthorizationResponseArgs
 import com.sphereon.openid.oid4vp.holder.VerifierInfo
 import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationResolution
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
@@ -389,6 +390,7 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
     private fun holderAuthentication(holderKey: HolderMaterial): TrustedAuthenticationResolution {
         return TrustedAuthenticationResolution(
             controller = holder,
+            purpose = TrustedAuthenticationPurpose.HOLDER,
             trustedJwks = JsonObject(mapOf("keys" to JsonArray(listOf(holderKey.publicJwk.toJsonObject())))),
         )
     }
@@ -434,6 +436,7 @@ class VcdmJwtJwksIdentifierNeutralE2ETest {
             )
         return TrustedAuthenticationResolution(
             controller = issuer,
+            purpose = TrustedAuthenticationPurpose.CREDENTIAL_ISSUER,
             trustedJwks = resolvedJwks,
         )
     }

@@ -43,6 +43,7 @@ import com.sphereon.openid.oid4vp.common.clientMetadata
 import com.sphereon.openid.oid4vp.common.ResponseMode
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseArgs
 import com.sphereon.openid.oid4vp.verifier.HandleDirectPostResponseCommand
+import com.sphereon.openid.oid4vp.verifier.TrustedAuthenticationPurpose
 import com.sphereon.openid.oid4vp.verifier.config.ResponseEncryptionKeyConfig
 import com.sphereon.openid.oid4vp.verifier.spi.VerifierTrustedAuthenticationRequest
 import com.sphereon.openid.oid4vp.verifier.spi.VerifierTrustedAuthenticationResolver
@@ -263,11 +264,7 @@ class DirectPostResponseEndpointCommandImpl(
                 null
             }
 
-        val trustedAuthentications =
-            trustedAuthenticationResolver
-                ?.invoke()
-                ?.resolveTrustedAuthentications(
-                    VerifierTrustedAuthenticationRequest(
+        val trustRequest = VerifierTrustedAuthenticationRequest(
                         tenantId = execution.tenantId,
                         verifierInstanceId = session.instanceId,
                         verifierId = session.verifierId,
@@ -275,10 +272,36 @@ class DirectPostResponseEndpointCommandImpl(
                         templateId = session.templateId,
                         originalRequest = session.authorizationRequest,
                         dcqlQuery = session.dcqlQuery,
-                    ),
-                )
-                ?.getOrElse { return Err(it) }
-                .orEmpty()
+                    )
+        val authenticationResolver = trustedAuthenticationResolver?.invoke()
+        // A persisted DCQL query with every credential explicitly opting out of
+        // cryptographic holder binding does not need holder trust material. Missing,
+        // empty, or partially/default-bound queries retain the fail-closed holder path.
+        val requiresHolderAuthentication =
+            session.dcqlQuery
+                ?.credentials
+                ?.takeIf { it.isNotEmpty() }
+                ?.all { !it.require_cryptographic_holder_binding } != true
+        val holderAuthentications =
+            if (requiresHolderAuthentication) {
+                authenticationResolver
+                    ?.resolveTrustedAuthentications(trustRequest)
+                    ?.getOrElse { return Err(it) }
+                    .orEmpty()
+            } else {
+                emptyList()
+            }
+        if (holderAuthentications.any { it.purpose != TrustedAuthenticationPurpose.HOLDER }) {
+            return Err(IdkError.fromString("holder authentication resolver returned credential-issuer material", code = "TRUST_AUTHENTICATION_PURPOSE_MISMATCH"))
+        }
+        val issuerAuthentications = authenticationResolver
+            ?.resolveTrustedCredentialIssuerAuthentications(trustRequest)
+            ?.getOrElse { return Err(it) }
+            .orEmpty()
+        if (issuerAuthentications.any { it.purpose != TrustedAuthenticationPurpose.CREDENTIAL_ISSUER }) {
+            return Err(IdkError.fromString("credential issuer authentication resolver returned holder material", code = "TRUST_AUTHENTICATION_PURPOSE_MISMATCH"))
+        }
+        val trustedAuthentications = holderAuthentications + issuerAuthentications
 
         // Build args for the direct_post handler
         val directPostArgs =

@@ -20,6 +20,7 @@ import com.sphereon.crypto.certificate.persistence.CertificateReferenceStoreErro
 import com.sphereon.crypto.core.ResourceControlMode
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -229,6 +230,67 @@ class SqliteCertificateReferenceStoreImpl(
             Ok(changed)
         } catch (e: Exception) {
             Err(IdkError.UNKNOWN_ERROR(message = "Failed to delete certificate reference by id: ${e.message}", exception = e))
+        }
+    }
+
+    override suspend fun tryAcquireAliasClaim(
+        tenantId: String,
+        providerId: String,
+        alias: String,
+        claimId: String,
+    ): IdkResult<Boolean, IdkError> = withContext(IO) {
+        try {
+            val acquired = database.transactionWithResult {
+                queries.tryAcquireAliasClaim(tenantId, providerId, alias, claimId)
+                queries.findAliasClaim(tenantId, providerId, alias).executeAsOneOrNull() == claimId
+            }
+            Ok(acquired)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            Err(IdkError.UNKNOWN_ERROR(message = "Failed to claim certificate alias: ${e.message}", exception = e))
+        }
+    }
+
+    override suspend fun releaseAliasClaim(
+        tenantId: String,
+        providerId: String,
+        alias: String,
+        claimId: String,
+    ): IdkResult<Boolean, IdkError> = withContext(IO) {
+        try {
+            val released = database.transactionWithResult {
+                if (queries.findAliasClaim(tenantId, providerId, alias).executeAsOneOrNull() != claimId) {
+                    false
+                } else {
+                    queries.releaseAliasClaim(tenantId, providerId, alias, claimId)
+                    true
+                }
+            }
+            Ok(released)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            Err(IdkError.UNKNOWN_ERROR(message = "Failed to release certificate alias claim: ${e.message}", exception = e))
+        }
+    }
+
+    override suspend fun activateAliasReservation(
+        tenantId: String,
+        id: String,
+        updatedAt: Instant,
+    ): IdkResult<CertificateReferenceRecord?, IdkError> = withContext(IO) {
+        try {
+            Ok(
+                database.transactionWithResult {
+                    queries.activateAliasReservation(tenantId, id, updatedAt.toString())
+                    queries.findActivatedAliasReservation(tenantId, id).executeAsOneOrNull()?.toRecord()
+                },
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            Err(IdkError.UNKNOWN_ERROR(message = "Failed to activate certificate alias reservation: ${e.message}", exception = e))
         }
     }
 

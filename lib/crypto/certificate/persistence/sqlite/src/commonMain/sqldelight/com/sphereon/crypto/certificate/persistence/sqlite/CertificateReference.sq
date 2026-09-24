@@ -32,6 +32,46 @@ CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant_provider_certificate
 CREATE INDEX IF NOT EXISTS idx_cert_ref_tenant_linked_key
     ON certificate_reference(tenant_id, linked_key_reference_id);
 
+CREATE TABLE IF NOT EXISTS certificate_reference_alias_claim (
+    tenant_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    alias TEXT NOT NULL,
+    claim_id TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, provider_id, alias)
+);
+
+tryAcquireAliasClaim:
+INSERT INTO certificate_reference_alias_claim(tenant_id, provider_id, alias, claim_id)
+SELECT :tenantId, :providerId, :alias, :claimId
+WHERE NOT EXISTS (
+    SELECT 1 FROM certificate_reference
+    WHERE tenant_id = :tenantId AND provider_id = :providerId AND alias = :alias AND deleted_at IS NULL
+)
+ON CONFLICT(tenant_id, provider_id, alias) DO NOTHING;
+
+findAliasClaim:
+SELECT claim_id FROM certificate_reference_alias_claim
+WHERE tenant_id = :tenantId AND provider_id = :providerId AND alias = :alias;
+
+releaseAliasClaim:
+DELETE FROM certificate_reference_alias_claim
+WHERE tenant_id = :tenantId AND provider_id = :providerId AND alias = :alias AND claim_id = :claimId;
+
+activateAliasReservation:
+UPDATE certificate_reference SET deleted_at = NULL, deleted_by_id = NULL, updated_at = :updatedAt
+WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NOT NULL AND control_mode = 'platform_managed'
+  AND EXISTS (
+      SELECT 1 FROM certificate_reference_alias_claim claim
+      WHERE claim.tenant_id = certificate_reference.tenant_id
+        AND claim.provider_id = certificate_reference.provider_id
+        AND claim.alias = certificate_reference.alias
+        AND claim.claim_id = :id
+  );
+
+findActivatedAliasReservation:
+SELECT * FROM certificate_reference
+WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL;
+
 findById:
 SELECT * FROM certificate_reference
 WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL;

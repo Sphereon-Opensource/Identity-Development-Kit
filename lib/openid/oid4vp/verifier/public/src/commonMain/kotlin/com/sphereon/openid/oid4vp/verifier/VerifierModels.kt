@@ -282,8 +282,8 @@ data class ValidateAuthorizationResponseArgs(
      */
     val templateId: String? = null,
     /**
-     * Trusted authentication material resolved from verifier configuration. Entries are selected
-     * by exact controller, allowing one presentation to contain credentials from multiple
+     * Trusted authentication material resolved from persisted trust-domain policy. Entries are selected
+     * by exact controller and purpose, allowing one presentation to contain credentials from multiple
      * issuers and a holder source. They are deliberately
      * separate from [CredentialIssuerRef], which is extracted from the untrusted credential. The
      * verifier command passes this admitted source to the canonical JWS verifier; it never builds
@@ -378,7 +378,7 @@ data class VerifyHolderBindingArgs(
     val expectedNonce: String,
     val expectedAudience: String,
     val requireCryptographicHolderBinding: Boolean = true,
-    /** Verifier-admitted exact-controller sources for VP holder authentication. */
+    /** Purpose-tagged sources admitted for holder or credential-issuer authentication. */
     val trustedAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
     /**
      * mDoc-only: the verifier's OID4VP `client_id` (after §5.9.3 prefixing). Used with
@@ -636,9 +636,8 @@ data class HandleDirectPostResponseArgs(
      */
     val verifierEncryptionJwkThumbprint: ByteArray? = null,
     /**
-     * Verifier-admitted holder and credential-issuer authentication sources.
-     * These are selected from trusted verifier configuration and must never be
-     * synthesized from key material in the submitted token.
+     * Purpose-tagged holder and credential-issuer authentication sources resolved from persisted
+     * trust-domain policy. They must never be synthesized from key material in the submitted token.
      */
     val trustedAuthentications: List<TrustedAuthenticationResolution> = emptyList(),
     /** Exact-reference trust policy for non-DID Data Integrity verification methods. */
