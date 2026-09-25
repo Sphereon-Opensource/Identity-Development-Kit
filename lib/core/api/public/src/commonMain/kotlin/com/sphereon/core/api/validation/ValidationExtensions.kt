@@ -24,6 +24,7 @@ import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.compat.JsExportCompat
 import io.konform.validation.Invalid
 import io.konform.validation.Valid
+import io.konform.validation.Validation
 import io.konform.validation.ValidationResult
 
 /**
@@ -73,7 +74,25 @@ fun <T, E : IdkErrorType> ValidationResult<T>.toIdkResult(createError: (List<Val
  * Validate and convert to IdkResult in one step
  */
 fun <T, E : IdkErrorType> validate(
-    validator: io.konform.validation.Validation<T>,
+    validator: Validation<T>,
     value: T,
     createError: (List<ValidationErrorDetail>) -> E,
 ): IdkResult<T, E> = validator(value).toIdkResult(createError)
+
+/**
+ * Runs [validation] against the receiver and throws [IllegalArgumentException] when it fails, returning
+ * the receiver unchanged when it passes.
+ *
+ * The constructor-invariant companion to [validate]: where [validate] hands a caller a result to check,
+ * this keeps an invalid instance unconstructible. Call it from an `init` block, so a type's rules live in
+ * one [Validation] next to it and a request carrying the same type can still be checked with [validate]
+ * for field-level details. The message names each failing path, or `value` for the receiver as a whole,
+ * with its message, separated by `; `.
+ */
+fun <T> T.validateOrThrow(validation: Validation<T>): T {
+    val errors = validation(this).errors
+    require(errors.isEmpty()) {
+        errors.joinToString("; ") { error -> "${error.dataPath.removePrefix(".").ifEmpty { "value" }}: ${error.message}" }
+    }
+    return this
+}
