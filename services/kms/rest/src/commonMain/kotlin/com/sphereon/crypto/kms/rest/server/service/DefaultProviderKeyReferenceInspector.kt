@@ -11,6 +11,7 @@ import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.jose.JwaKeyType
@@ -21,6 +22,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 
 /**
@@ -54,7 +56,9 @@ class DefaultProviderKeyReferenceInspector(
                 )
             }
 
-        val aliasKey = resolve(provider, KeyInfo<Jwk>(alias = alias))
+        val aliasResolution = resolve(provider, KeyInfo<Jwk>(alias = alias))
+        if (aliasResolution.isErr) return Err(aliasResolution.error)
+        val aliasKey = aliasResolution.value
             ?: return Err(
                 IdkError.fromString(
                     code = "KMS_EXTERNAL_KEY_NOT_FOUND",
@@ -66,7 +70,9 @@ class DefaultProviderKeyReferenceInspector(
             // The alias-resolved key is authoritative. A provider that does not index its keys by
             // kid still has to satisfy the identity check: the requested kid must be the canonical
             // kid of the key the alias resolves to.
-            val kidKey = resolve(provider, KeyInfo<Jwk>(kid = kid))
+            val kidResolution = resolve(provider, KeyInfo<Jwk>(kid = kid))
+            if (kidResolution.isErr) return Err(kidResolution.error)
+            val kidKey = kidResolution.value
             if (kidKey == null) {
                 if (canonicalKid(aliasKey) != kid) {
                     return Err(
@@ -105,11 +111,15 @@ class DefaultProviderKeyReferenceInspector(
     private suspend fun resolve(
         provider: com.sphereon.crypto.core.kms.KmsProvider,
         keyInfo: KeyInfo<Jwk>,
-    ): ManagedKeyInfoType<*>? =
+    ): IdkResult<ManagedKeyInfoType<*>?, IdkError> =
         try {
-            provider.getKey(keyInfo)
+            Ok(provider.getKey(keyInfo))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: NotFoundException) {
+            Ok(null)
         } catch (_: Exception) {
-            null
+            Err(IdkError.UNKNOWN_ERROR(message = "External provider key lookup failed"))
         }
 
     private fun canonicalKid(key: ManagedKeyInfoType<*>): String? = key.kid ?: key.key.getKeyId(false)

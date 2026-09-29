@@ -36,10 +36,7 @@ private val ENVIRONMENT_PLACEHOLDER =
 
 internal fun forbiddenExternalReferenceError(value: String): IdkError? =
     if (FORBIDDEN_EXTERNAL_PLACEHOLDER.containsMatchIn(value) || FORBIDDEN_EXTERNAL_URI.containsMatchIn(value)) {
-        ConfigErrors.interpolationError(
-            key = "external-source",
-            reason = "secret-provider references are forbidden",
-        )
+        ConfigErrors.interpolationDenied("secret-provider references are forbidden")
     } else {
         null
     }
@@ -594,10 +591,7 @@ class DefaultPropertyInterpolator(
 
                         PlaceholderType.FORBIDDEN_EXTERNAL_SOURCE -> {
                             Err(
-                                ConfigErrors.interpolationError(
-                                    "external-source",
-                                    "secret-provider references are forbidden",
-                                ),
+                                ConfigErrors.interpolationDenied("secret-provider references are forbidden"),
                             )
                         }
                 }
@@ -831,16 +825,10 @@ class DefaultPropertyInterpolator(
         }
 
     private fun propertyReferenceDenied(): IdkError =
-        ConfigErrors.interpolationError(
-            key = "property",
-            reason = "property reference is not permitted",
-        )
+        ConfigErrors.interpolationDenied("property reference is not permitted")
 
     private fun interpolationPolicyDenied(): IdkError =
-        ConfigErrors.interpolationError(
-            key = "policy",
-            reason = "interpolation is not permitted for this configuration field",
-        )
+        ConfigErrors.interpolationDenied("interpolation is not permitted for this configuration field")
 
     override fun containsPlaceholders(value: String): Boolean {
         // Check if there's any complete ${...} pattern (with matching closing brace)

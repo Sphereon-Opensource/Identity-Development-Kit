@@ -280,7 +280,10 @@ class SqliteDidRepositoryImpl(
 
     // ============ Child-row ops ============
 
-    override suspend fun saveVerificationMethod(vm: DidVerificationMethodRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveVerificationMethod(
+        tenantId: String?,
+        vm: DidVerificationMethodRecord,
+    ): IdkResult<Unit, IdkError> =
         io {
             runCatchingQuery("saveVerificationMethod") {
                 queries.upsertVm(
@@ -335,7 +338,10 @@ class SqliteDidRepositoryImpl(
             }
         }
 
-    override suspend fun saveVerificationRelationship(rel: DidVerificationRelationshipRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveVerificationRelationship(
+        tenantId: String?,
+        rel: DidVerificationRelationshipRecord,
+    ): IdkResult<Unit, IdkError> =
         io {
             runCatchingQuery("saveVerificationRelationship") {
                 queries.upsertRel(
@@ -359,7 +365,10 @@ class SqliteDidRepositoryImpl(
             runCatchingQuery("deleteVerificationRelationship") { queries.deleteRelById(relationshipId, tenantId) }
         }
 
-    override suspend fun saveService(service: DidServiceRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveService(
+        tenantId: String?,
+        service: DidServiceRecord,
+    ): IdkResult<Unit, IdkError> =
         io {
             runCatchingQuery("saveService") {
                 queries.upsertService(
@@ -386,7 +395,10 @@ class SqliteDidRepositoryImpl(
             runCatchingQuery("deleteService") { queries.deleteServiceById(serviceId, tenantId) }
         }
 
-    override suspend fun saveKeyMapping(mapping: DidKeyMappingRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveKeyMapping(
+        tenantId: String?,
+        mapping: DidKeyMappingRecord,
+    ): IdkResult<Unit, IdkError> =
         io {
             runCatchingQuery("saveKeyMapping") {
                 queries.upsertKeyMapping(
@@ -413,7 +425,10 @@ class SqliteDidRepositoryImpl(
             runCatchingQuery("deleteKeyMapping") { queries.deleteKeyMappingById(mappingId, tenantId) }
         }
 
-    override suspend fun saveController(controller: DidControllerRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveController(
+        tenantId: String?,
+        controller: DidControllerRecord,
+    ): IdkResult<Unit, IdkError> =
         io {
             runCatchingQuery("saveController") { insertControllerRow(controller, upsert = true) }
         }
@@ -426,7 +441,10 @@ class SqliteDidRepositoryImpl(
             runCatchingQuery("deleteController") { queries.deleteControllerById(controllerId, tenantId) }
         }
 
-    override suspend fun saveAlsoKnownAs(aka: DidAlsoKnownAsRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveAlsoKnownAs(
+        tenantId: String?,
+        aka: DidAlsoKnownAsRecord,
+    ): IdkResult<Unit, IdkError> =
         io {
             runCatchingQuery("saveAlsoKnownAs") { insertAkaRow(aka, upsert = true) }
         }
@@ -439,7 +457,10 @@ class SqliteDidRepositoryImpl(
             runCatchingQuery("deleteAlsoKnownAs") { queries.deleteAkaById(akaId, tenantId) }
         }
 
-    override suspend fun saveEquivalentId(eq: DidEquivalentIdRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveEquivalentId(
+        tenantId: String?,
+        eq: DidEquivalentIdRecord,
+    ): IdkResult<Unit, IdkError> =
         io {
             runCatchingQuery("saveEquivalentId") { insertEquivalentIdRow(eq, upsert = true) }
         }
@@ -454,7 +475,10 @@ class SqliteDidRepositoryImpl(
 
     // ============ Context ops ============
 
-    override suspend fun getContexts(didRecordId: String): IdkResult<List<DidDocumentContextRecord>, IdkError> =
+    override suspend fun getContexts(
+        tenantId: String?,
+        didRecordId: String,
+    ): IdkResult<List<DidDocumentContextRecord>, IdkError> =
         io {
             try {
                 Ok(queries.selectContextsByDidRecord(didRecordId).executeAsList().map { row -> row.toRecord() })
@@ -464,6 +488,7 @@ class SqliteDidRepositoryImpl(
         }
 
     override suspend fun replaceContexts(
+        tenantId: String?,
         didRecordId: String,
         contexts: List<DidDocumentContextRecord>,
     ): IdkResult<Unit, IdkError> =

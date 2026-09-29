@@ -37,6 +37,7 @@ import com.sphereon.core.api.http.describe.HttpAdapterMount
 import com.sphereon.core.api.http.describe.HttpEndpointDescriptor
 import com.sphereon.core.api.http.describe.HttpMethod
 import com.sphereon.core.api.http.describe.MediaType
+import com.sphereon.core.api.http.describe.StaticPublicApiDescriptor
 import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
 import com.sphereon.core.api.http.response.errorResponse
 import com.sphereon.core.api.http.response.jsonResponse
@@ -306,6 +307,47 @@ class CommandBackedHttpAdapterTest {
                 )
 
             assertEquals(200, response.statusCode)
+        }
+
+    @Test
+    fun emptyEndpointPatternAcceptsTheBasePathRouteThatTheCatalogSelects() =
+        runTest {
+            val endpoint =
+                TestEndpointCommand(
+                    id = "test.things.list",
+                    endpoint =
+                        HttpEndpointDescriptor(
+                            method = HttpMethod.GET,
+                            pathPattern = "",
+                            handlerCommandId = "test.things.list",
+                        ),
+                    responseProvider = { jsonResponse(200, "[]") },
+                )
+            val mount = HttpAdapterMount(serverPrefix = "", adapterBasePath = "/api/things/v1/things")
+            val catalogPattern =
+                object : StaticPublicApiDescriptor("test.things.http", mount, listOf(endpoint.endpoint)) {}
+                    .describe()
+                    .endpoints
+                    .single()
+                    .pathPatterns
+                    .single()
+            val adapter =
+                object : CommandBackedHttpAdapter(
+                    id = "test.things.http",
+                    execution = TestSessionExecution(),
+                    mount = mount,
+                    endpointCommandRegistry = TestEndpointRegistry(mapOf(endpoint.id to lazyOf(endpoint))),
+                    tenantPathPolicy = TenantPathPolicy.None,
+                ) {}
+
+            val response =
+                adapter.handleCommand(
+                    request = GenericHttpRequest(method = "GET", path = "/api/things/v1/things"),
+                    handlerCommandId = endpoint.id,
+                    matchedPathPattern = catalogPattern,
+                )
+
+            assertEquals(200, response.statusCode, response.body)
         }
 
     // ========== Test fixtures ==========

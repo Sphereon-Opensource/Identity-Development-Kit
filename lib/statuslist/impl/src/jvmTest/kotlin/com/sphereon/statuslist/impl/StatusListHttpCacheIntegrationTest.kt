@@ -131,7 +131,7 @@ class StatusListHttpCacheIntegrationTest {
     @Test
     fun validatedSequentialReusePerformsOneGetAndRevalidatesSignature() = runBlocking {
         val gets = AtomicInteger()
-        val uri = "https://issuer.example/statuslists/cache-sequential"
+        val uri = "https://issuer.example/statuslists/cache-main"
         val resolver = resolver(uri, gets)
         assertTrue(resolver.resolveStatus(args(uri)).isOk)
         assertTrue(resolver.resolveStatus(args(uri)).isOk)
@@ -141,7 +141,7 @@ class StatusListHttpCacheIntegrationTest {
     @Test
     fun malformedCachedEnvelopeIsEvictedAndRefetched() = runBlocking {
         val gets = AtomicInteger()
-        val uri = "https://issuer.example/statuslists/cache-malformed"
+        val uri = "https://issuer.example/statuslists/cache-main"
         val resolver = resolver(uri, gets)
         assertTrue(resolver.resolveStatus(args(uri)).isOk)
         val cache = cacheService.getCache(CacheRequirements.localOnly("statuslist.resolver.http"))
@@ -155,7 +155,7 @@ class StatusListHttpCacheIntegrationTest {
     @Test
     fun expectedFormatAndTenantAreCacheIsolated() = runBlocking {
         val gets = AtomicInteger()
-        val uri = "https://issuer.example/statuslists/cache-isolation"
+        val uri = "https://issuer.example/statuslists/cache-main"
         val resolver = resolver(uri, gets)
         assertTrue(resolver.resolveStatus(args(uri)).isOk)
         assertTrue(resolver.resolveStatus(args(uri, expectedFormat = StatusProofFormat.CWT)).isErr)
@@ -168,7 +168,7 @@ class StatusListHttpCacheIntegrationTest {
     @Test
     fun concurrentMissesShareOneValidatedFetch() = runBlocking {
         val gets = AtomicInteger()
-        val uri = "https://issuer.example/statuslists/cache-concurrent"
+        val uri = "https://issuer.example/statuslists/cache-main"
         val resolver = resolver(uri, gets)
         val results = (0 until 8).map { index -> async { resolver.resolveStatus(args(uri, index = index % 2)) } }.awaitAll()
         assertTrue(results.all { it.isOk })
@@ -180,7 +180,7 @@ class StatusListHttpCacheIntegrationTest {
     @Test
     fun noStoreResponseIsNotReusedAndUnavailableRefetchFailsClosed() = runBlocking {
         val gets = AtomicInteger()
-        val uri = "https://issuer.example/statuslists/cache-no-store"
+        val uri = "https://issuer.example/statuslists/cache-main"
         var available = true
         val resolver = resolver(uri, gets, execution, { available }, "no-store")
         assertTrue(resolver.resolveStatus(args(uri)).isOk)
@@ -194,7 +194,7 @@ class StatusListHttpCacheIntegrationTest {
         val gets = AtomicInteger()
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        val uri = "https://issuer.example/statuslists/cache-owner-cancel"
+        val uri = "https://issuer.example/statuslists/cache-main"
         val resolver = resolver(uri, gets, requestStarted = started, requestGate = release)
         val owner = async(start = CoroutineStart.UNDISPATCHED) { resolver.resolveStatus(args(uri)) }
         try {
@@ -229,7 +229,7 @@ class StatusListHttpCacheIntegrationTest {
         val cacheSetCalls = AtomicInteger()
         val cacheSetEntered = CompletableDeferred<Unit>()
         val releaseCacheSet = CompletableDeferred<Unit>()
-        val uri = "https://issuer.example/statuslists/cache-owner-cache-cancel"
+        val uri = "https://issuer.example/statuslists/cache-main"
         val blockedCacheService =
             DefaultCacheService(
                 DefaultCacheManager().apply {
@@ -260,6 +260,21 @@ class StatusListHttpCacheIntegrationTest {
             releaseCacheSet.complete(Unit)
             owner.cancelAndJoin()
         }
+    }
+
+    @Test
+    fun tokenStatusListJwtServedUnderAnotherUriIsRejected() = runBlocking {
+        val gets = AtomicInteger()
+        val uri = "https://issuer.example/statuslists/cache-substituted"
+        val resolver = resolver(uri, gets)
+
+        val result = resolver.resolveStatus(args(uri))
+
+        assertTrue(result.isErr, "a status-list JWT whose sub names another list must be rejected")
+        assertTrue(
+            (result as com.sphereon.core.api.Err).error.message.defaultMessage.contains("subject does not match"),
+            "the rejection must name the subject mismatch",
+        )
     }
 
     @Test

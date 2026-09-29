@@ -233,12 +233,25 @@ fun getNpmVersion(): String {
         return baseVersion
     }
 
-    // Get git commit hash (workingDir needed for composite builds)
-    val gitCommitHash = providers.exec {
-        workingDir = rootDir
-        isIgnoreExitValue = true
-        commandLine("git", "rev-parse", "--short=7", "HEAD")
-    }.standardOutput.asText.get().replace("\n", "").trim().ifEmpty { "nogit" }
+    // Immutable source exports provide the captured repository identity without
+    // copying Git internals. Never query a different checkout for their version.
+    val sourceProperties = rootProject.extensions.extraProperties
+    val gitCommitHash = if (sourceProperties.has("sphereon.source.repository")) {
+        val repository = sourceProperties.get("sphereon.source.repository") as? Map<*, *>
+        val head = repository?.get("head") as? String
+        require(head != null && Regex("(?:[a-f0-9]{40}|[a-f0-9]{64})").matches(head)) {
+            "Snapshot repository HEAD is missing or invalid for $rootDir"
+        }
+        head.take(7)
+    } else if (!rootDir.resolve(".git").exists()) {
+        "nogit"
+    } else {
+        providers.exec {
+            workingDir = rootDir
+            isIgnoreExitValue = true
+            commandLine("git", "rev-parse", "--short=7", "HEAD")
+        }.standardOutput.asText.get().trim().ifEmpty { "nogit" }
+    }
 
     // npm registry rejects republishing the same version, so each SNAPSHOT publish
     // must produce a unique version. Add a monotonic build id (CI run number, or

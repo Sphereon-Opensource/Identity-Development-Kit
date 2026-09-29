@@ -33,11 +33,12 @@ import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocat
 import com.sphereon.oauth2.server.authorization.command.revocation.HandleRevocationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.revocation.RevocationHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ErrorEndpoint
 import com.sphereon.oauth2.server.authorization.impl.http.isBasicAuthorizationHeaderInternal
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.http.withWwwAuthenticateIfBasicInternal
+import com.sphereon.oauth2.server.authorization.impl.http.withWwwAuthenticateIfMissingInternal
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.ContributesIntoMap
@@ -48,8 +49,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * HTTP shell over [HandleRevocationRequestCommand] (RFC 7009). On success returns 200 with empty
- * body per RFC 7009 §2.2. On client-auth failure with Basic auth attempted, emits
- * `WWW-Authenticate: Basic` per RFC 6749 §5.2.
+ * body per RFC 7009 §2.2. Every 401 response includes an applicable `WWW-Authenticate` challenge,
+ * including requests without credentials.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -117,7 +118,13 @@ class RevocationHttpEndpointCommandImpl(
                     body = "",
                 )
             } else {
-                mapOAuth2ErrorToResponse(result.error, json, execution).withWwwAuthenticateIfBasicInternal(basicAuthWasAttempted)
+                mapOAuth2ErrorToResponse(
+                    result.error,
+                    json,
+                    execution,
+                    endpoint = OAuth2ErrorEndpoint.REVOCATION,
+                    httpAuthenticationAttempted = basicAuthWasAttempted,
+                ).withWwwAuthenticateIfMissingInternal()
             }
         return Ok(response)
     }

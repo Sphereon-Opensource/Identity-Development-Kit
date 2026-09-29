@@ -31,7 +31,7 @@ import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlRes
 import com.sphereon.oauth2.server.authorization.impl.http.ResponseCategory
 import com.sphereon.oauth2.server.authorization.impl.http.newCspNonce
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
-import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
+import com.sphereon.oauth2.server.authorization.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.provider.AccountActionPageContext
 import com.sphereon.oauth2.server.authorization.provider.AccountActionPageRenderer
 import com.sphereon.software.registry.SoftwareInstanceRegistry

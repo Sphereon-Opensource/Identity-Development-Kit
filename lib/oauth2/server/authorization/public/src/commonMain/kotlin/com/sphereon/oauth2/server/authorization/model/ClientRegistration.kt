@@ -295,6 +295,12 @@ data class ClientRegistration(
      * Additional client metadata
      */
     val additionalMetadata: Map<String, @Contextual Any> = emptyMap(),
+    /**
+     * Registration-controlled token-exchange authority. Attribute names and values are interpreted
+     * only by the deployment's token-exchange profile. They are bound from server-side
+     * configuration, are never accepted from dynamic registration and are never minted as claims.
+     */
+    val tokenExchangeAuthority: Map<String, String> = emptyMap(),
 )
 
 /**

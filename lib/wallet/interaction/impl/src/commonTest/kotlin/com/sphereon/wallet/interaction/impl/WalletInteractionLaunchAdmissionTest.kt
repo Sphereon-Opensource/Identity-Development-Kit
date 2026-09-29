@@ -12,6 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 /** Missing admission must not silently select ordinary-wallet compatibility. */
 class WalletInteractionLaunchAdmissionTest {
@@ -87,7 +88,9 @@ class WalletInteractionLaunchAdmissionTest {
             privateSessionStore = privateSessions,
             sessionStore = sessions,
         )
-        val result = runCatching {
+        val error = assertFailsWith<IllegalStateException>(
+            "No contributed authority must not grant launch permission",
+        ) {
             engine.start(
                 WalletInteractionInput(
                     "wallet-b",
@@ -99,6 +102,6 @@ class WalletInteractionLaunchAdmissionTest {
 
         assertNull(sessions.load(sessionId), "Admission must precede persisted interaction state")
         assertTrue(sessions.events(sessionId).isEmpty(), "Unadmitted launches must not emit history")
-        assertTrue(result.isFailure, "No contributed authority must not grant launch permission")
+        assertEquals("wallet_interaction_launch_authority_missing_or_ambiguous", error.message)
     }
 }

@@ -21,7 +21,6 @@ import com.sphereon.core.api.Ok
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
-import com.sphereon.oauth2.common.config.PublicClientConfig
 import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.OAuth2ResponseMode
@@ -41,8 +40,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Tests for PKCE default + server-policy enforcement, the public-client permissive-redirect-URI
- * fallback flag, and response_mode resolution.
+ * Tests for PKCE default + server-policy enforcement, unregistered-client admission,
+ * and response_mode resolution.
  */
 class VerifyAuthorizationRequestPkceResponseModeTest {
     private val ctx = OAuth2ServerTestContext("verify-pkce-rmode-test", this)
@@ -51,7 +50,6 @@ class VerifyAuthorizationRequestPkceResponseModeTest {
         registry: ClientRegistry,
         pkcePolicy: FeaturePolicy = FeaturePolicy.REQUIRED,
         pkceMethodsSupported: Set<String> = setOf("S256"),
-        publicClients: PublicClientConfig = PublicClientConfig(),
     ): VerifyAuthorizationRequestCommandImpl {
         val serverConfig =
             OAuth2ServerInstanceConfig(
@@ -59,7 +57,6 @@ class VerifyAuthorizationRequestPkceResponseModeTest {
                 responseTypesSupported = setOf("code"),
                 pkce = pkcePolicy,
                 pkceMethodsSupported = pkceMethodsSupported,
-                publicClients = publicClients,
             )
         val servers = OAuth2ServersConfig(servers = mapOf("default" to serverConfig), defaultServer = "default")
         return VerifyAuthorizationRequestCommandImpl(
@@ -67,6 +64,8 @@ class VerifyAuthorizationRequestPkceResponseModeTest {
             registry,
             TestOAuth2ServersConfigProvider(servers),
             emptySet(),
+            com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
+            Oid4vciUnregisteredWalletAdmissionRule(),
         )
     }
 
@@ -186,101 +185,14 @@ class VerifyAuthorizationRequestPkceResponseModeTest {
             assertEquals(null, result.value.resolvedPkceMethod)
         }
 
-    // ─── permissive public-client fallback flag ──────────────────
+    // ─── unregistered-client admission ──────────────────────────
 
     @Test
-    fun publicClientFallbackDisabledRejectsUnregisteredClient() =
-        runTest {
-            // Default config: permissiveRedirectUri=false. An unregistered clientId with allowAny
-            // in the admin config should still be rejected because the fallback is gated.
-            val cmd =
-                createCommand(
-                    EmptyRegistry(),
-                    publicClients = PublicClientConfig(allowAny = true, permissiveRedirectUri = false),
-                )
-            val result =
-                cmd.execute(
-                    request(
-                        clientId = "some-wallet-client",
-                        redirectUri = "com.example.wallet://callback",
-                    ),
-                )
-            assertTrue(result.isErr, "permissive fallback disabled must reject unregistered public clients even with allowAny=true")
-            assertEquals("unauthorized_client", extractCode(result))
-        }
-
-    @Test
-    fun publicClientFallbackEnabledAcceptsUnregisteredClientWithAllowAny() =
-        runTest {
-            val cmd =
-                createCommand(
-                    EmptyRegistry(),
-                    publicClients = PublicClientConfig(allowAny = true, permissiveRedirectUri = true),
-                )
-            val result =
-                cmd.execute(
-                    request(
-                        clientId = "wallet-client-xyz",
-                        redirectUri = "com.example.wallet://callback",
-                    ),
-                )
-            assertTrue(result.isOk, "permissive fallback with allowAny should accept the wallet flow: ${if (!result.isOk) result.error else ""}")
-            assertEquals("com.example.wallet://callback", result.value.redirectUri)
-        }
-
-    @Test
-    fun publicClientFallbackEnabledWithAllowListAcceptsListed() =
-        runTest {
-            val cmd =
-                createCommand(
-                    EmptyRegistry(),
-                    publicClients =
-                        PublicClientConfig(
-                            allowAny = false,
-                            allowedClientIds = listOf("wallet-alpha"),
-                            permissiveRedirectUri = true,
-                        ),
-                )
-            val ok =
-                cmd.execute(
-                    request(
-                        clientId = "wallet-alpha",
-                        redirectUri = "com.example.wallet://callback",
-                    ),
-                )
-            assertTrue(ok.isOk, "listed wallet client should pass with permissive on: ${if (!ok.isOk) ok.error else ""}")
-
-            val rejected =
-                cmd.execute(
-                    request(
-                        clientId = "wallet-not-listed",
-                        redirectUri = "com.example.wallet://callback",
-                    ),
-                )
-            assertTrue(rejected.isErr, "unlisted wallet client must be rejected even with permissive on")
-        }
-
-    @Test
-    fun publicClientFallbackEnabledButClientNotAllowedRejects() =
-        runTest {
-            val cmd =
-                createCommand(
-                    EmptyRegistry(),
-                    publicClients =
-                        PublicClientConfig(
-                            allowAny = false,
-                            allowedClientIds = emptyList(),
-                            permissiveRedirectUri = true,
-                        ),
-                )
-            val result =
-                cmd.execute(
-                    request(clientId = "any-random-client", redirectUri = "https://x/cb"),
-                )
-            assertTrue(result.isErr, "permissive on but empty allow-list + allowAny=false still rejects")
-        }
-
-    // ─── response_mode resolution ────────────────────────────────
+    fun unregisteredClientIsRejectedWithoutAnAdmissionRule() = runTest {
+        val result = createCommand(EmptyRegistry()).execute(request(clientId = "unregistered", redirectUri = "https://wallet.example/cb"))
+        assertTrue(result.isErr)
+        assertEquals("unauthorized_client", extractCode(result))
+    }
 
     @Test
     fun verifyResponseModeAbsentDefaultsToQueryForCodeFlow() =

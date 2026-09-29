@@ -131,7 +131,9 @@ class VcLdJsonJwtFormatHandler(
         if (context.statusListBinding?.spec == StatusListSpec.TOKEN_STATUS_LIST) {
             return Err(invalidVcdm("VCDM 2.0 JWT credentials require a Bitstring Status List credentialStatus"))
         }
-        val credentialTypes = resolveCredentialTypes(context)
+        val credentialTypes =
+            vcdmCredentialTypes(context.credentialConfiguration.credentialDefinition?.type)
+                .getOrElse { return Err(it) }
         val primaryType = pickPrimaryType(credentialTypes)
         val nowEpochSeconds = now.epochSeconds
         val validFrom = context.validFrom ?: now
@@ -220,10 +222,6 @@ class VcLdJsonJwtFormatHandler(
             }
         }
     }
-
-    private fun resolveCredentialTypes(context: IssuanceContext): List<String> =
-        context.credentialConfiguration.credentialDefinition?.type
-            ?: listOf(WellKnownCredentialTypes.VERIFIABLE_CREDENTIAL)
 
     private fun pickPrimaryType(credentialTypes: List<String>): String =
         credentialTypes.firstOrNull { it != WellKnownCredentialTypes.VERIFIABLE_CREDENTIAL }

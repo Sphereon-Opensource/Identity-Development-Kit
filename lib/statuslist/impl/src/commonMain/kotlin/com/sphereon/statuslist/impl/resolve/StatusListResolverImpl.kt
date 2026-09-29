@@ -58,9 +58,11 @@ import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.StatusValues
+import com.sphereon.statuslist.MIN_BITSTRING_STATUS_LIST_ENTRIES
 import com.sphereon.statuslist.MdocStatusListPayload
 import com.sphereon.statuslist.impl.codec.MdocRevocationCwtClaimsCodecImpl
 import com.sphereon.statuslist.impl.codec.StatusListCodec
+import com.sphereon.statuslist.impl.codec.untagStatusListCoseSign1
 import com.sphereon.statuslist.impl.envelope.BitstringStatusListEnvelope
 import com.sphereon.statuslist.impl.envelope.TokenStatusListEnvelope
 import com.sphereon.statuslist.spi.StatusListResolver
@@ -88,6 +90,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant as KotlinInstant
@@ -96,6 +99,7 @@ private typealias ResolveResult = IdkResult<ResolvedStatus, IdkError>
 
 private const val MDOC_STATUS_LIST_CWT_SHORT_TYP = "statuslist+cwt"
 private const val MDOC_IDENTIFIER_LIST_CWT_SHORT_TYP = "identifierlist+cwt"
+private const val TOKEN_STATUS_LIST_JWT_TYP = "statuslist+jwt"
 
 private fun isMdocStatusListType(type: String?): Boolean =
     type == StatusListContentTypes.STATUSLIST_CWT || type == MDOC_STATUS_LIST_CWT_SHORT_TYP
@@ -442,16 +446,41 @@ class StatusListResolverImpl(
             val (encodedList, bits, purpose) =
                 when (spec) {
                     StatusListSpec.TOKEN_STATUS_LIST -> {
+                        val typ = decodeJwtHeader(token)?.get("typ")?.let { it as? JsonPrimitive }?.contentOrNull
+                        if (typ != TOKEN_STATUS_LIST_JWT_TYP && typ != StatusListContentTypes.STATUSLIST_JWT) {
+                            return ValidatedFetch(Err(StatusListErrors.verificationFailed(args.uri, "status-list JWT typ must be $TOKEN_STATUS_LIST_JWT_TYP")))
+                        }
+                        if ((payload["sub"] as? JsonPrimitive)?.contentOrNull != args.uri) {
+                            return ValidatedFetch(Err(StatusListErrors.verificationFailed(args.uri, "status-list JWT subject does not match requested URI")))
+                        }
                         val content = TokenStatusListEnvelope.parse(payload)
                         Triple(content.encodedList, content.bitsPerStatus, null)
                     }
 
                     StatusListSpec.BITSTRING_STATUS_LIST -> {
                         val content = BitstringStatusListEnvelope.parse(payload)
-                        Triple(content.encodedList, content.statusSize, StatusPurpose.fromValue(content.statusPurpose))
+                        val expectedPurpose = args.expectedPurpose
+                        if (expectedPurpose != null && expectedPurpose.value !in content.statusPurposes) {
+                            return ValidatedFetch(Err(StatusListErrors.verificationFailed(args.uri, "status purpose is not declared by the list")))
+                        }
+                        val listStatusSize = content.declaredStatusSize
+                        val entryStatusSize = args.expectedStatusSize
+                        if (entryStatusSize != null && listStatusSize != null && entryStatusSize != listStatusSize) {
+                            return ValidatedFetch(Err(StatusListErrors.verificationFailed(args.uri, "credential statusSize does not match the list statusSize")))
+                        }
+                        Triple(
+                            content.encodedList,
+                            entryStatusSize ?: listStatusSize ?: 1,
+                            args.expectedPurpose ?: content.statusPurposes.singleOrNull()?.let { StatusPurpose.fromValue(it) },
+                        )
                     }
                 }
             val bitset = StatusListCodec.decode(encodedList, bits, spec)
+            if (spec == StatusListSpec.BITSTRING_STATUS_LIST && bitset.length < MIN_BITSTRING_STATUS_LIST_ENTRIES) {
+                return ValidatedFetch(
+                    Err(StatusListErrors.verificationFailed(args.uri, "Bitstring Status List holds fewer than $MIN_BITSTRING_STATUS_LIST_ENTRIES entries")),
+                )
+            }
             val value = bitset.get(args.index)
             ValidatedFetch(
                 Ok(
@@ -752,7 +781,13 @@ class StatusListResolverImpl(
     ): IdkResult<ResolvedStatus, IdkError> {
         val cose =
             coseSign1Codec
-                .decode(encoded)
+                .decode(
+                    try {
+                        encoded.untagStatusListCoseSign1()
+                    } catch (e: IllegalArgumentException) {
+                        return Err(StatusListErrors.verificationFailed(args.uri, e.message ?: "malformed status-list CWT envelope"))
+                    },
+                )
                 .getOrElse { return Err(StatusListErrors.verificationFailed(args.uri, "malformed status-list CWT: $it")) }
                 .value
         val payload = cose.payload?.value
@@ -764,10 +799,9 @@ class StatusListResolverImpl(
                 return Err(StatusListErrors.verificationFailed(args.uri, "malformed status-list CWT payload: ${e.message}"))
             }
         val type = cose.protectedHeader.typ?.value
-        val hasMdocClaims = looksLikeMdocClaims(claimsPayload)
         return when {
             isMdocIdentifierListType(type) -> resolveMdocCwt(args, cose, claimsPayload)
-            isMdocStatusListType(type) && hasMdocClaims -> resolveMdocCwt(args, cose, claimsPayload)
+            args.trustedCerts != null && isMdocStatusListType(type) -> resolveMdocCwt(args, cose, claimsPayload)
             type == StatusListContentTypes.STATUSLIST_CWT -> resolveGenericCwt(args, cose, claimsPayload)
             else -> Err(StatusListErrors.verificationFailed(args.uri, "status-list CWT has an unsupported protected typ"))
         }
@@ -784,18 +818,6 @@ class StatusListResolverImpl(
             else -> encoded
         }
     }
-
-    private fun looksLikeMdocClaims(encoded: ByteArray): Boolean =
-        try {
-            val map = Cbor.tryDecode(encoded).getOrThrow() as? CborMap<*, *> ?: return false
-            fun item(label: Long): CborItem<*>? =
-                map.value.entries.firstOrNull { (key, _) -> key is CborUInt && key.value == label }?.value
-            if (item(65530L) != null) return true
-            val status = item(65533L) as? CborMap<*, *> ?: return false
-            status.value.keys.any { it is CborString }
-        } catch (_: Exception) {
-            false
-        }
 
     private suspend fun resolveGenericCwt(
         args: ResolveStatusArgs,
@@ -817,8 +839,8 @@ class StatusListResolverImpl(
             fun item(label: Long): CborItem<*>? =
                 map.value.entries.firstOrNull { (key, _) -> key is CborUInt && key.value == label }?.value
             val subject = (item(2L) as? CborString)?.value
-                ?: if (item(2L) == null) null else error("status-list CWT sub must be text")
-            if (subject != null && subject != args.uri) {
+                ?: return Err(StatusListErrors.verificationFailed(args.uri, "status-list CWT sub is required"))
+            if (subject != args.uri) {
                 return Err(StatusListErrors.verificationFailed(args.uri, "status-list CWT subject does not match requested URI"))
             }
             val exp = (item(4L) as? CborUInt)?.value
@@ -828,10 +850,12 @@ class StatusListResolverImpl(
                 .getOrElse { return Err(StatusListErrors.verificationFailed(args.uri, it)) }
             val statusList = item(65533L) as? CborMap<*, *>
                 ?: error("status-list CWT status_list claim is missing")
-            val bits = (statusList.value.entries.firstOrNull { (key, _) -> key is CborUInt && key.value == 0L }?.value as? CborUInt)?.value
+            fun field(name: String): CborItem<*>? =
+                statusList.value.entries.firstOrNull { (key, _) -> key is CborString && key.value == name }?.value
+            val bits = (field("bits") as? CborUInt)?.value
                 ?: error("status-list CWT bits claim is missing or invalid")
             require(bits in setOf(1L, 2L, 4L, 8L)) { "status-list CWT bits must be one of 1, 2, 4, or 8" }
-            val list = statusList.value.entries.firstOrNull { (key, _) -> key is CborUInt && key.value == 1L }?.value as? CborByteString
+            val list = field("lst") as? CborByteString
                 ?: error("status-list CWT lst claim is missing or invalid")
             val bitset = StatusListCodec.decode(list.value.encodeToBase64Url(), bits.toInt(), StatusListSpec.TOKEN_STATUS_LIST)
             val value = bitset.get(args.index)
@@ -968,10 +992,16 @@ class StatusListResolverImpl(
                     if (args.identifier != null) {
                         return Err(StatusListErrors.verificationFailed(args.uri, "identifier was supplied for an mdoc Token Status List"))
                     }
-                    if (args.index < 0 || args.index / 8 >= payload.list.size) {
+                    val bitset =
+                        try {
+                            StatusListCodec.decode(payload.list.encodeToBase64Url(), 1, StatusListSpec.TOKEN_STATUS_LIST)
+                        } catch (e: Exception) {
+                            return Err(StatusListErrors.verificationFailed(args.uri, "invalid compressed mdoc status list: ${e.message}"))
+                        }
+                    if (args.index < 0 || args.index >= bitset.length) {
                         return Err(StatusListErrors.resolutionFailed(args.uri, "status index ${args.index} is outside the mdoc status list"))
                     }
-                    (payload.list[args.index / 8].toInt() ushr (args.index % 8)) and 1
+                    bitset.get(args.index)
                 }
 
                 is MdocStatusListPayload.IdentifierList -> {
@@ -1010,6 +1040,13 @@ class StatusListResolverImpl(
             null
         }
     }
+
+    private fun decodeJwtHeader(jwt: String): JsonObject? =
+        try {
+            JwsUtils.decodeBase64UrlToJson(jwt.substringBefore('.'))
+        } catch (_: Exception) {
+            null
+        }
 
     private data class HttpFetchResult(
         val body: ByteArray,

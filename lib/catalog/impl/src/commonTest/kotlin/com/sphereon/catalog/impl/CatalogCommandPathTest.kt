@@ -46,6 +46,7 @@ import com.sphereon.catalog.model.AttestationTypeKeyKind
 import com.sphereon.catalog.model.CatalogDocument
 import com.sphereon.catalog.model.CatalogDocumentKind
 import com.sphereon.catalog.model.CatalogListingWindow
+import com.sphereon.catalog.model.CatalogTypeKeys
 import com.sphereon.catalog.model.CatalogVerificationMode
 import com.sphereon.catalog.model.CatalogVerificationOutcome
 import com.sphereon.catalog.model.PaginatedSchemaList
@@ -80,9 +81,12 @@ import com.sphereon.di.session.SessionContextManager
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.minutes
 
 class CatalogCommandPathTest {
     @Test
@@ -413,6 +417,253 @@ class CatalogCommandPathTest {
         }
 
     @Test
+    fun linkPersistsTheTypeIdentityAsFormatDocuments() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("typed-pid", "Typed")).value
+            val sdJwt = env.link.execute(issuerLink(created.id, vct = "urn:eudi:pid:1")).value
+            val mdoc = env.link.execute(issuerLink(created.id, doctype = "org.iso.18013.5.1.mDL")).value
+            val stored = env.store.listSchemas("acme", created.id).value
+            val sdJwtRecord = stored.single { it.schema.id == sdJwt.id }
+            val mdocRecord = stored.single { it.schema.id == mdoc.id }
+            assertEquals(
+                "urn:eudi:pid:1",
+                FormatDocumentValidator.vctValue(sdJwtRecord.documents.single { it.formatIdentifier == "dc+sd-jwt" }.bytes),
+            )
+            assertEquals(
+                "org.iso.18013.5.1.mDL",
+                FormatDocumentValidator.docTypeValue(mdocRecord.documents.single { it.formatIdentifier == "mso_mdoc" }.bytes),
+            )
+            assertEquals(AttestationTypeKey(AttestationTypeKeyKind.VCT, "urn:eudi:pid:1"), CatalogTypeKeys.of(sdJwtRecord))
+            assertEquals(AttestationTypeKey(AttestationTypeKeyKind.DOCTYPE, "org.iso.18013.5.1.mDL"), CatalogTypeKeys.of(mdocRecord))
+        }
+
+    @Test
+    fun linkedTypeKeepsItsIdentityAfterPublish() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("keep-mdl", "Keep")).value
+            val linked = env.link.execute(issuerLink(created.id, doctype = "org.iso.18013.5.1.mDL")).value
+            env.updateSchema
+                .execute(
+                    UpdateSchemaArgs(
+                        catalogId = created.id,
+                        schemaId = linked.id!!,
+                        schema = linked,
+                        documents = listOf(rulebook()),
+                        listing = CatalogListingWindow.open(Clock.System.now() - 1.days),
+                    ),
+                ).value
+            env.publish.execute(CatalogIdArgs(created.id)).value
+            val record = env.store.listSchemas("acme", created.id).value.single()
+            assertEquals(AttestationTypeKey(AttestationTypeKeyKind.DOCTYPE, "org.iso.18013.5.1.mDL"), CatalogTypeKeys.of(record))
+        }
+
+    @Test
+    fun linkedTypeIsListedOnceARulebookIsSuppliedAndKeepsItsFormatDocument() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("list-linked", "List")).value
+            val linked = env.link.execute(issuerLink(created.id, vct = "urn:eudi:pid:1")).value
+            val withoutRulebook =
+                env.updateSchema.execute(
+                    UpdateSchemaArgs(
+                        catalogId = created.id,
+                        schemaId = linked.id!!,
+                        schema = linked,
+                        listing = CatalogListingWindow.open(Clock.System.now() - 1.days),
+                    ),
+                )
+            assertTrue(withoutRulebook.isErr)
+            assertEquals("A RULEBOOK document is required for listed schemas", withoutRulebook.error.message.defaultMessage)
+            val listed =
+                env.updateSchema.execute(
+                    UpdateSchemaArgs(
+                        catalogId = created.id,
+                        schemaId = linked.id!!,
+                        schema = linked,
+                        documents = listOf(rulebook()),
+                        listing = CatalogListingWindow.open(Clock.System.now() - 1.days),
+                    ),
+                )
+            assertTrue(listed.isOk, listed.toString())
+            val record = env.store.listSchemas("acme", created.id).value.single()
+            assertEquals(setOf(CatalogDocumentKind.RULEBOOK, CatalogDocumentKind.FORMAT), record.documents.map { it.kind }.toSet())
+            env.publish.execute(CatalogIdArgs(created.id)).value
+            val publicList = env.listSchemas.execute(ListSchemasArgs(slug = "list-linked", publishedOnly = true, listedOnly = true))
+            assertEquals(listOf(linked.id), publicList.value.data.map { it.id })
+        }
+
+    @Test
+    fun importLinkWithOpenListingAndRulebookIsServedAtOnce() =
+        runTest {
+            // Regression: the admin console import linked without a listing window, so every entry
+            // was stored with CatalogListingWindow.never and served only after a manual edit.
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("import-served", "Import")).value
+            env.publish.execute(CatalogIdArgs(created.id)).value
+            val vct = "https://acme.example/public/schema/vct/EuPidE2E-1"
+            val linked =
+                env.link.execute(
+                    issuerLink(created.id, vct = vct).copy(
+                        documents = listOf(rulebook()),
+                        listing = CatalogListingWindow(start = Clock.System.now() - 1.minutes, end = null),
+                    ),
+                )
+            assertTrue(linked.isOk, linked.toString())
+            val record = env.store.listSchemas("acme", created.id).value.single()
+            assertFalse(record.listing.isEmpty())
+            assertNull(record.listing.end)
+            assertEquals(AttestationTypeKey(AttestationTypeKeyKind.VCT, vct), CatalogTypeKeys.of(record))
+            val publicList = env.listSchemas.execute(ListSchemasArgs(slug = "import-served", publishedOnly = true, listedOnly = true))
+            assertEquals(listOf(linked.value.id), publicList.value.data.map { it.id })
+        }
+
+    @Test
+    fun suppliedRulebookKeepsTheLinkedTypeFormatDocument() =
+        runTest {
+            // Supplying a rulebook with a link must not drop the type metadata the linked source resolves.
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("hosted-meta", "Hosted")).value
+            val linked =
+                env.link.execute(
+                    LinkSchemaArgs(
+                        catalogId = created.id,
+                        vctId = "EuPidMeta",
+                        version = "1.0.0",
+                        attestationLoS = "iso_18045_high",
+                        bindingType = "key",
+                        supportedFormats = listOf("dc+sd-jwt"),
+                        documents = listOf(rulebook()),
+                        listing = CatalogListingWindow.open(Clock.System.now() - 1.minutes),
+                    ),
+                )
+            assertTrue(linked.isOk, linked.toString())
+            val record = env.store.listSchemas("acme", created.id).value.single()
+            val format = record.documents.single { it.kind == CatalogDocumentKind.FORMAT }
+            assertTrue(format.bytes.decodeToString().contains("Hosted PID"), format.bytes.decodeToString())
+            assertEquals(1, record.documents.count { it.kind == CatalogDocumentKind.RULEBOOK })
+        }
+
+    @Test
+    fun relinkListsAnEntryThatWasOnlyEverAMember() =
+        runTest {
+            // Entries imported before the fix are unlisted and have no rulebook. Importing again with a
+            // listing and a rulebook lists them in place instead of returning them unchanged.
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("relink", "Relink")).value
+            val first = env.link.execute(issuerLink(created.id, vct = "urn:eudi:pid:1")).value
+            assertTrue(env.store.listSchemas("acme", created.id).value.single().listing.isEmpty())
+            val again =
+                env.link.execute(
+                    issuerLink(created.id, vct = "urn:eudi:pid:1").copy(
+                        documents = listOf(rulebook()),
+                        listing = CatalogListingWindow.open(Clock.System.now() - 1.minutes),
+                    ),
+                )
+            assertTrue(again.isOk, again.toString())
+            assertEquals(first.id, again.value.id)
+            val record = env.store.listSchemas("acme", created.id).value.single()
+            assertTrue(record.listing.includes(Clock.System.now()))
+            assertEquals(setOf(CatalogDocumentKind.RULEBOOK, CatalogDocumentKind.FORMAT), record.documents.map { it.kind }.toSet())
+        }
+
+    @Test
+    fun relinkKeepsTheListingOfAnEntryThatHasARulebook() =
+        runTest {
+            // A withdrawn entry that was listed before (it has a rulebook) stays withdrawn on re-import.
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("withdrawn", "Withdrawn")).value
+            val first = env.link.execute(issuerLink(created.id, vct = "urn:eudi:pid:1")).value
+            env.updateSchema
+                .execute(
+                    UpdateSchemaArgs(
+                        catalogId = created.id,
+                        schemaId = first.id!!,
+                        schema = first,
+                        documents = listOf(rulebook()),
+                        listing = CatalogListingWindow.never(Clock.System.now()),
+                    ),
+                ).value
+            val again =
+                env.link.execute(
+                    issuerLink(created.id, vct = "urn:eudi:pid:1").copy(
+                        documents = listOf(rulebook()),
+                        listing = CatalogListingWindow.open(Clock.System.now() - 1.minutes),
+                    ),
+                )
+            assertTrue(again.isOk, again.toString())
+            assertTrue(env.store.listSchemas("acme", created.id).value.single().listing.isEmpty())
+        }
+
+    @Test
+    fun legacyLinkedRecordWithoutFormatDocumentIsBackfilledWhenListed() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("legacy-link", "Legacy")).value
+            val legacy =
+                SchemaMeta(
+                    id = "22222222-2222-2222-2222-222222222222",
+                    version = "1.0.0",
+                    rulebookURI = "about:blank",
+                    attestationLoS = "iso_18045_high",
+                    bindingType = "key",
+                    supportedFormats = listOf("mso_mdoc"),
+                    schemaURIs = listOf(SchemaUriRef("mso_mdoc", "org.iso.18013.5.1.mDL")),
+                )
+            env.store.saveSchema(
+                "acme",
+                com.sphereon.catalog.model.AttestationSchemaRecord(
+                    catalogId = created.id,
+                    schema = legacy,
+                    provenance = com.sphereon.catalog.model.CatalogSchemaProvenance.LINKED_DESIGN,
+                    listing = CatalogListingWindow.never(Clock.System.now()),
+                    documents = emptyList(),
+                ),
+            )
+            assertEquals(
+                AttestationTypeKey(AttestationTypeKeyKind.DOCTYPE, "org.iso.18013.5.1.mDL"),
+                CatalogTypeKeys.of(env.store.listSchemas("acme", created.id).value.single()),
+            )
+            val listed =
+                env.updateSchema.execute(
+                    UpdateSchemaArgs(
+                        catalogId = created.id,
+                        schemaId = legacy.id!!,
+                        schema = legacy,
+                        documents = listOf(rulebook()),
+                        listing = CatalogListingWindow.open(Clock.System.now() - 1.days),
+                    ),
+                )
+            assertTrue(listed.isOk, listed.toString())
+            val record = env.store.listSchemas("acme", created.id).value.single()
+            assertEquals(
+                "org.iso.18013.5.1.mDL",
+                FormatDocumentValidator.docTypeValue(record.documents.single { it.formatIdentifier == "mso_mdoc" }.bytes),
+            )
+        }
+
+    @Test
+    fun linkedTypeIdentityCannotBeChanged() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("fixed-type", "Fixed")).value
+            val linked = env.link.execute(issuerLink(created.id, vct = "urn:eudi:pid:1")).value
+            val changed =
+                env.updateSchema.execute(
+                    UpdateSchemaArgs(
+                        catalogId = created.id,
+                        schemaId = linked.id!!,
+                        schema = linked.copy(schemaURIs = listOf(SchemaUriRef("dc+sd-jwt", "urn:other:type"))),
+                    ),
+                )
+            assertTrue(changed.isErr)
+            assertEquals("ILLEGAL_ARGUMENT_ERROR", changed.error.code)
+            val record = env.store.listSchemas("acme", created.id).value.single()
+            assertEquals(AttestationTypeKey(AttestationTypeKeyKind.VCT, "urn:eudi:pid:1"), CatalogTypeKeys.of(record))
+        }
+
+    @Test
     fun linkWithoutBoundVctSourceFailsClosed() =
         runTest {
             val env = Env()
@@ -628,6 +879,32 @@ class CatalogCommandPathTest {
             schemaURIs = listOf(SchemaUriRef("dc+sd-jwt", uri)),
         )
 
+    /** A link as the admin console's issuer import sends it: the type named explicitly, no design. */
+    private fun issuerLink(
+        catalogId: String,
+        vct: String? = null,
+        doctype: String? = null,
+    ): LinkSchemaArgs {
+        val format = if (doctype != null) "mso_mdoc" else "dc+sd-jwt"
+        return LinkSchemaArgs(
+            catalogId = catalogId,
+            vct = vct,
+            doctype = doctype,
+            version = "1.0.0",
+            attestationLoS = "iso_18045_high",
+            bindingType = "key",
+            supportedFormats = listOf(format),
+            schemaURIs = listOf(SchemaUriRef(format, vct ?: doctype!!)),
+        )
+    }
+
+    private fun rulebook() =
+        AttestationSchemaDocument(
+            kind = CatalogDocumentKind.RULEBOOK,
+            mediaType = "text/markdown",
+            bytes = "# rulebook".encodeToByteArray(),
+        )
+
     private fun documents() =
         listOf(
             AttestationSchemaDocument(
@@ -647,7 +924,23 @@ class CatalogCommandPathTest {
         override suspend fun resolve(
             designId: String?,
             vctId: String?
-        ) = if (vctId == "EuPid") {
+        ) = if (vctId == "EuPidMeta") {
+            Ok(
+                LinkedTypeSnapshot(
+                    vct = "https://acme.example/public/schema/vct/EuPid",
+                    schemaURIs = listOf(SchemaUriRef("dc+sd-jwt", "https://acme.example/public/schema/vct/EuPid")),
+                    documents =
+                        listOf(
+                            AttestationSchemaDocument(
+                                kind = CatalogDocumentKind.FORMAT,
+                                formatIdentifier = "dc+sd-jwt",
+                                mediaType = "application/json",
+                                bytes = """{"vct":"https://acme.example/public/schema/vct/EuPid","name":"Hosted PID"}""".encodeToByteArray(),
+                            ),
+                        ),
+                ),
+            )
+        } else if (vctId == "EuPid") {
             Ok(
                 LinkedTypeSnapshot(
                     vct = "/public/schema/vct/EuPid",

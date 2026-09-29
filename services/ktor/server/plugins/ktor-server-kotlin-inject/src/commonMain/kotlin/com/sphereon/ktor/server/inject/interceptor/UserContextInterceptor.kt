@@ -19,15 +19,17 @@ package com.sphereon.ktor.server.inject.interceptor
 
 import com.sphereon.core.api.app.CoreApiAppExtensionGraph
 import com.sphereon.core.api.log.LogService
-import com.sphereon.core.defaults.context.DefaultPrincipalInputString
 import com.sphereon.core.defaults.context.toSecuredDetails
 import com.sphereon.di.app.AppGraph
+import com.sphereon.di.context.ClassifiedPrincipalInput
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.IdentityMetadata
 import com.sphereon.di.context.IdentityResolutionInput
 import com.sphereon.di.context.IdentityResolutionResult
+import com.sphereon.di.context.PrincipalInputString
 import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.ResolutionSource
+import com.sphereon.ktor.server.inject.AuthoritativePrincipalTypeAttribute
 import com.sphereon.ktor.server.inject.BaseTenantIdAttribute
 import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
 import com.sphereon.ktor.server.inject.context.RequestScopedContext
@@ -100,11 +102,12 @@ class UserContextInterceptor(
             // must not be forced through a user-claim resolver that requires `sub` or `email`.
             val tenantInput = tenantResolver.resolve(call)
             val validatedJwt = call.attributes.getOrNull(ValidatedJwtClaimsAttribute)
+            val authoritativePrincipalType = call.attributes.getOrNull(AuthoritativePrincipalTypeAttribute)
             val identityResolution =
                 validatedJwt?.let {
-                    coreGraph.identityResolutionPipeline.resolve(
-                        IdentityResolutionInput(tokenClaims = it.claimsInput.claims),
-                    )
+                    coreGraph.identityResolutionPipeline
+                        .resolve(IdentityResolutionInput(tokenClaims = it.claimsInput.claims))
+                        .withAuthoritativePrincipalType(authoritativePrincipalType)
                 }
             val transportPrincipalInput = if (identityResolution == null) principalResolver.resolve(call) else null
             val effectiveIdentityResolution =
@@ -125,10 +128,12 @@ class UserContextInterceptor(
                     }
             val principalInput =
                 identityResolution?.let {
-                    DefaultPrincipalInputString(
-                        requireNotNull(effectiveIdentityResolution.principalId) {
-                            "Authoritative ${effectiveIdentityResolution.principalType} identity has no principal"
-                        },
+                    ResolvedPrincipalInput(
+                        principal =
+                            requireNotNull(effectiveIdentityResolution.principalId) {
+                                "Authoritative ${effectiveIdentityResolution.principalType} identity has no principal"
+                            },
+                        principalType = effectiveIdentityResolution.principalType,
                     )
                 } ?: requireNotNull(transportPrincipalInput)
 
@@ -196,6 +201,29 @@ class UserContextInterceptor(
         }
     }
 }
+
+/** A token-derived principal whose classification is already decided, so it is never defaulted to USER. */
+private data class ResolvedPrincipalInput(
+    override val principal: String,
+    override val principalType: PrincipalType,
+) : PrincipalInputString,
+    ClassifiedPrincipalInput
+
+/**
+ * Applies the host's ingress classification for a validated token. An anonymous token identity has
+ * no principal to reclassify and is left as is.
+ */
+internal fun IdentityResolutionResult.withAuthoritativePrincipalType(
+    authoritativePrincipalType: PrincipalType?,
+): IdentityResolutionResult =
+    if (authoritativePrincipalType == null ||
+        authoritativePrincipalType == principalType ||
+        principalType == PrincipalType.ANONYMOUS
+    ) {
+        this
+    } else {
+        copy(principalType = authoritativePrincipalType)
+    }
 
 internal fun IdentityResolutionResult.withAnonymousPrincipalSentinel(): IdentityResolutionResult =
     if (principalId == null && principalType == PrincipalType.ANONYMOUS) {

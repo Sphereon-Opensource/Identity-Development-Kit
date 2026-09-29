@@ -31,6 +31,8 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.config.isRequired
 import com.sphereon.oauth2.common.model.PkceMethod
+import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
+import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationCodeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
@@ -39,6 +41,7 @@ import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.clientauth.toVerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.storage.AuthorizationCodeStorage
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.impl.time.OAUTH2_ARTIFACT_CLOCK
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -151,11 +154,19 @@ class VerifyAuthorizationCodeGrantCommandImpl(
             // the first redemption so a downstream resource-server introspection returns
             // `active = false` and rejects any in-flight access. Best-effort: a revoke
             // failure here is logged but does not change the InvalidGrant we return.
-            authorizationCodeStorage.findAuthorizationCode(code).getOrElse { null }?.let { stored ->
+            val storedCode = authorizationCodeStorage.findAuthorizationCode(code).getOrElse { null }
+            storedCode?.let { stored ->
                 if (stored.used) {
                     stored.issuedAccessToken?.let { tokenStorage.revokeAccessToken(it) }
                     stored.issuedRefreshToken?.let { tokenStorage.revokeRefreshToken(it) }
                 }
+            }
+            val matchingAdmission = storedCode?.let { it.clientId == clientId && it.admittedClient?.clientId == clientId } == true
+            val registeredClient = clientRegistry.getClient(clientId).getOrElse { error ->
+                return Err(AuthorizationServerError.ServerError(details = "Failed to retrieve client registration: $error"))
+            }
+            if (!matchingAdmission && registeredClient == null) {
+                return Err(AuthorizationServerError.InvalidClient(details = "Unknown client '$clientId'"))
             }
             return Err(
                 AuthorizationServerError.InvalidGrant(
@@ -184,6 +195,31 @@ class VerifyAuthorizationCodeGrantCommandImpl(
                     exception = null,
                 ),
             )
+        }
+
+        val admittedClient = codeData.admittedClient
+        if (admittedClient != null) {
+            if (admittedClient.clientId != clientId ||
+                admittedClient.clientType != ClientType.PUBLIC ||
+                admittedClient.tokenEndpointAuthMethod != ClientAuthenticationMethod.NONE ||
+                GrantType.AUTHORIZATION_CODE !in admittedClient.grantTypes ||
+                !admittedClient.requirePkce
+            ) {
+                return Err(AuthorizationServerError.InvalidClient(details = "Authorization code admission does not match this client"))
+            }
+            if (codeData.codeChallenge.isNullOrBlank() || codeData.codeChallengeMethod != PkceMethod.S256) {
+                return Err(AuthorizationServerError.InvalidGrant(details = "Admitted wallet authorization code requires PKCE S256"))
+            }
+        } else if (clientAuthorization == null) {
+            val registeredClient = clientRegistry.getClient(clientId).getOrElse { error ->
+                return Err(AuthorizationServerError.ServerError(details = "Failed to retrieve client registration: $error"))
+            }
+            if (registeredClient == null ||
+                registeredClient.clientType != ClientType.PUBLIC ||
+                registeredClient.tokenEndpointAuthMethod != ClientAuthenticationMethod.NONE
+            ) {
+                return Err(AuthorizationServerError.InvalidClient(details = "Client authentication is required"))
+            }
         }
 
         // RFC 8707: a token request may repeat the resource indicator only when it is the
@@ -271,6 +307,8 @@ class VerifyAuthorizationCodeGrantCommandImpl(
                     ),
                 )
             }
+        } else if (admittedClient != null) {
+            return Err(AuthorizationServerError.InvalidGrant(details = "Admitted wallet authorization code requires PKCE"))
         } else {
             // No PKCE was used - check if it's required for this client
             if (clientAuthorization != null && clientAuthorization.clientId != clientId) {

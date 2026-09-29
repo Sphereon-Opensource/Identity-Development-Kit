@@ -16,6 +16,8 @@
 
 package com.sphereon.statuslist.impl.codec
 
+import com.sphereon.core.api.decodeFromBase64Url
+import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusValues
 import com.sphereon.statuslist.MdocRevocationCwtClaims
@@ -86,6 +88,25 @@ class StatusListCodecTest {
         }
 
     @Test
+    fun bitstringRejectsMissingMultibasePrefix() =
+        runTest {
+            val bitset = StatusBitset.create(131_072, 1, BitOrder.MSB_FIRST)
+            val encoded = StatusListCodec.encode(bitset, StatusListSpec.BITSTRING_STATUS_LIST)
+            assertFailsWith<IllegalArgumentException> {
+                StatusListCodec.decode(encoded.removePrefix("u"), 1, StatusListSpec.BITSTRING_STATUS_LIST)
+            }
+        }
+
+    @Test
+    fun cwtEnvelopeRequiresTaggedCoseSign1() {
+        val bare = byteArrayOf(0x84.toByte(), 0x40, 0xa0.toByte(), 0x40, 0x40)
+        val tagged = bare.tagStatusListCoseSign1()
+        assertEquals(0xd2, tagged[0].toInt() and 0xff)
+        assertTrue(bare.contentEquals(tagged.untagStatusListCoseSign1()))
+        assertFailsWith<IllegalArgumentException> { bare.untagStatusListCoseSign1() }
+    }
+
+    @Test
     fun tokenStatusListSuspendedMultiBitRoundTrips() =
         runTest {
             val bs = StatusBitset.create(100, 2, BitOrder.LSB_FIRST)
@@ -99,18 +120,25 @@ class StatusListCodecTest {
         }
 
     @Test
-    fun mdocTokenStatusListUsesTextKeysAndPreservesBinaryList() {
+    fun mdocTokenStatusListUsesTextKeysAndCompressedBinaryList() = runTest {
+        val bitset = StatusBitset.create(24, 1, BitOrder.LSB_FIRST)
+        bitset.set(0, 1)
+        bitset.set(9, 1)
+        val compressed = StatusListCodec.encode(bitset, StatusListSpec.TOKEN_STATUS_LIST).decodeFromBase64Url()
         val encoded =
             MdocStatusListCodec.encode(
                 MdocStatusListPayload.Token(
                     bits = 1,
-                    list = byteArrayOf(0x01, 0x7f, 0x00),
+                    list = compressed,
                     aggregationUri = "https://status.example/aggregate",
                 ),
             )
 
         val decoded = MdocStatusListCodec.decode(encoded)
-        assertEquals(MdocStatusListPayload.Token(1, byteArrayOf(0x01, 0x7f, 0x00), "https://status.example/aggregate"), decoded)
+        val token = decoded as MdocStatusListPayload.Token
+        assertEquals(1, StatusListCodec.decode(token.list.encodeToBase64Url(), 1, StatusListSpec.TOKEN_STATUS_LIST).get(0))
+        assertEquals(1, StatusListCodec.decode(token.list.encodeToBase64Url(), 1, StatusListSpec.TOKEN_STATUS_LIST).get(9))
+        assertEquals("https://status.example/aggregate", token.aggregationUri)
         val inner = Cbor.tryDecode(encoded).getOrThrow() as com.sphereon.cbor.CborMap<*, *>
         val keys = inner.value.keys.map { (it as com.sphereon.cbor.CborString).value }.toSet()
         assertEquals(setOf("bits", "lst", "aggregation_uri"), keys)

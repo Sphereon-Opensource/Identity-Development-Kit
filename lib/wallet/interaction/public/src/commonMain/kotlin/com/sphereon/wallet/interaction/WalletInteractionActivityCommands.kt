@@ -27,7 +27,7 @@ data class WalletAuthorizationDecisionProjection(
     val recordedAt: String,
     val evidenceCount: Int,
     val availability: String,
-    val adl: JsonObject = JsonObject(emptyMap()),
+    val adl: JsonObject? = null,
 ) {
     init {
         require(decisionId.isNotBlank()) { "wallet_authorization_decision_id_blank" }

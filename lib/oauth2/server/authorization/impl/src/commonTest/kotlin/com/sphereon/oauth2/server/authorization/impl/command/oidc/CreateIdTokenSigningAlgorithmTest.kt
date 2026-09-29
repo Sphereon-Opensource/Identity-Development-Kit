@@ -59,12 +59,13 @@ class CreateIdTokenSigningAlgorithmTest {
                     alg = SignatureAlgorithm.ECDSA_SHA384,
                     keyVisibility = KeyVisibility.PRIVATE,
                 )
+            val expectedKid = requireNotNull(keyPair.kid)
             val signingIdentifier =
                 ManagedOptsKeyInfo(
                     identifier =
                         KeyInfo<KeyType>(
                             alias = keyPair.alias,
-                            kid = "sts-es384-store-kid",
+                            kid = expectedKid,
                             providerId = keyPair.providerId,
                             signatureAlgorithm = SignatureAlgorithm.ECDSA_SHA384,
                         ),
@@ -116,7 +117,7 @@ class CreateIdTokenSigningAlgorithmTest {
             assertEquals(3, segments.size)
             val header = Json.parseToJsonElement(segments[0].decodeFromBase64Url().decodeToString()) as JsonObject
             assertEquals("ES384", header["alg"]?.jsonPrimitive?.contentOrNull)
-            assertEquals("sts-es384-store-kid", header["kid"]?.jsonPrimitive?.contentOrNull)
+            assertEquals(expectedKid, header["kid"]?.jsonPrimitive?.contentOrNull)
         }
 
     private class RecordingSigningIdentifierResolver(

@@ -136,4 +136,7 @@ data class AuthorizationCodeData(
      * first successful redemption.
      */
     val issuedRefreshToken: String? = null,
+    /** Admission context for an unregistered OID4VCI wallet. */
+    val admittedClient: ClientRegistration? = null,
+    val admittedAudiences: List<String>? = null,
 )

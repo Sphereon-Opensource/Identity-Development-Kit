@@ -37,6 +37,7 @@ import com.sphereon.crypto.jose.jws.command.VerifyJwsArgs
 import com.sphereon.crypto.resolution.managed.ManagedOptsAlias
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
+import com.sphereon.oauth2.common.model.ActorClaim
 import com.sphereon.oauth2.server.authorization.command.CreateAccessTokenArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.config.OAuth2SigningKeyUnavailableException
@@ -48,9 +49,11 @@ import com.sphereon.oauth2.server.authorization.impl.testutil.fixedSigningIdenti
 import com.sphereon.oauth2.server.authorization.signing.AsServerSigningIdentifierResolver
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -195,6 +198,56 @@ class CreateAccessTokenAzpClaimTest {
                 payload.containsKey("azp"),
                 "human user token (sub != client_id) MUST NOT carry azp, or it would be mistaken for a workload token",
             )
+        }
+
+    @Test
+    fun mintedAccessTokenSerializesNestedActorClaimAsJsonObjects() =
+        runTest {
+            val jwtService = RecordingJwtService()
+            val trustedActor =
+                ActorClaim(
+                    sub = "acting-service",
+                    act = ActorClaim(sub = "original-actor"),
+                    additionalClaims = mapOf(
+                        "iss" to JsonPrimitive("https://actor.example.test"),
+                        "client_id" to JsonPrimitive("acting-service-client"),
+                        "actor_context" to JsonPrimitive("organization-a"),
+                    ),
+                )
+            val result =
+                newCommand(jwtService).execute(
+                    CreateAccessTokenArgs(
+                        subject = "delegated-user",
+                        clientId = SERVICE_CLIENT_ID,
+                        audience = listOf("https://api.example.test"),
+                        additionalClaims = mapOf("act" to trustedActor),
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            val actor = decodePayload(result.value.value)["act"]!!.jsonObject
+            assertEquals("acting-service", actor["sub"]!!.jsonPrimitive.content)
+            assertEquals("https://actor.example.test", actor["iss"]!!.jsonPrimitive.content)
+            assertEquals("acting-service-client", actor["client_id"]!!.jsonPrimitive.content)
+            assertEquals("organization-a", actor["actor_context"]!!.jsonPrimitive.content)
+            assertEquals("original-actor", actor["act"]!!.jsonObject["sub"]!!.jsonPrimitive.content)
+        }
+
+    @Test
+    fun resourceIndicatorAudienceIsWrittenIntoMintedAccessToken() =
+        runTest {
+            val resource = "https://resource.example.test"
+            val result =
+                newCommand(RecordingJwtService()).execute(
+                    CreateAccessTokenArgs(
+                        subject = "delegated-user",
+                        clientId = SERVICE_CLIENT_ID,
+                        audience = listOf(resource),
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(resource, decodePayload(result.value.value)["aud"]!!.jsonPrimitive.content)
         }
 
     @Test

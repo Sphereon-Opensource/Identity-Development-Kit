@@ -45,9 +45,9 @@ import com.sphereon.oauth2.server.authorization.impl.http.loginCsrfCookieHeader
 import com.sphereon.oauth2.server.authorization.impl.http.loginCsrfCookiePath
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
-import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
-import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
+import com.sphereon.oauth2.server.authorization.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.provider.FederationLoginOption
+import com.sphereon.oauth2.server.authorization.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.provider.LoginPageContext
 import com.sphereon.oauth2.server.authorization.provider.LoginPageRenderer
 import com.sphereon.oauth2.server.authorization.storage.PendingAuthorizationSessionStore

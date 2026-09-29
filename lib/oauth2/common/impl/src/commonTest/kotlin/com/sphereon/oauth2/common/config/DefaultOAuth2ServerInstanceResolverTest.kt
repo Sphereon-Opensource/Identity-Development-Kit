@@ -79,6 +79,29 @@ class DefaultOAuth2ServerInstanceResolverTest {
         }
 
     @Test
+    fun wellKnownMetadataRequestsSelectTheIssuerNamedAfterTheWellKnownSegment() =
+        runTest {
+            val provider =
+                providerOf(
+                    OAuth2ServersConfig(
+                        defaultServer = "acme",
+                        servers =
+                            mapOf(
+                                "acme" to OAuth2ServerInstanceConfig(issuer = "https://acme.example.com/as/acme"),
+                                "wallet-proxy" to OAuth2ServerInstanceConfig(issuer = "https://acme.example.com/as/wallet-proxy"),
+                            ),
+                    ),
+                )
+            val resolver = DefaultOAuth2ServerInstanceResolver(provider)
+
+            for (wellKnown in listOf("/.well-known/oauth-authorization-server", "/.well-known/openid-configuration")) {
+                val result = resolver.resolve(request(path = "$wellKnown/as/wallet-proxy", host = "acme.example.com"))
+                assertTrue(result.isOk)
+                assertEquals("wallet-proxy", result.value, "$wellKnown must select the issuer after the well-known name")
+            }
+        }
+
+    @Test
     fun multiAsMatchesByIssuerPrefix() =
         runTest {
             val provider =
@@ -190,7 +213,7 @@ class DefaultOAuth2ServerInstanceResolverTest {
             val result = resolver.resolve(request(host = "totally-unrelated.example.com"))
 
             assertTrue(result.isErr)
-            assertEquals("NOT_FOUND_ERROR", result.error.code)
+            assertEquals("INVALID_STATE", result.error.code)
             assertTrue(
                 result.error.message.defaultMessage
                     .contains("totally-unrelated.example.com"),
@@ -204,4 +227,150 @@ class DefaultOAuth2ServerInstanceResolverTest {
                 "error should mention configured server ids",
             )
         }
+
+    @Test
+    fun serverCreatedAfterTheSnapshotIsResolvedAfterAReload() =
+        runTest {
+            val provider =
+                SnapshotProvider(
+                    snapshot = tenantServers("globex"),
+                    backingStore = tenantServers("globex", "wallet-proxy"),
+                )
+            val resolver = DefaultOAuth2ServerInstanceResolver(provider)
+
+            val result = resolver.resolve(request(path = "/as/wallet-proxy/authorize", host = "globex.example.com"))
+
+            assertTrue(result.isOk)
+            assertEquals("wallet-proxy", result.value)
+            assertEquals(1, provider.reloads)
+        }
+
+    @Test
+    fun wellKnownRequestForAServerCreatedAfterTheSnapshotIsResolvedAfterAReload() =
+        runTest {
+            val provider =
+                SnapshotProvider(
+                    snapshot = tenantServers("globex", "other"),
+                    backingStore = tenantServers("globex", "other", "wallet-proxy"),
+                )
+            val resolver = DefaultOAuth2ServerInstanceResolver(provider)
+
+            val result =
+                resolver.resolve(
+                    request(path = "/.well-known/oauth-authorization-server/as/wallet-proxy", host = "globex.example.com"),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals("wallet-proxy", result.value)
+            assertEquals(1, provider.reloads)
+        }
+
+    @Test
+    fun unknownSiblingIssuerIsNotFoundAfterOneReload() =
+        runTest {
+            val provider = SnapshotProvider(snapshot = tenantServers("globex", "other"), backingStore = tenantServers("globex", "other"))
+            val resolver = DefaultOAuth2ServerInstanceResolver(provider)
+
+            val result = resolver.resolve(request(path = "/as/never-created/authorize", host = "globex.example.com"))
+
+            assertTrue(result.isErr)
+            assertEquals("NOT_FOUND_ERROR", result.error.code)
+            assertEquals(1, provider.reloads)
+        }
+
+    @Test
+    fun unknownSiblingIssuerIsNotFoundEvenWithASingleConfiguredServer() =
+        runTest {
+            val provider = SnapshotProvider(snapshot = tenantServers("globex"), backingStore = tenantServers("globex"))
+            val resolver = DefaultOAuth2ServerInstanceResolver(provider)
+
+            val authorize = resolver.resolve(request(path = "/as/never-created/authorize", host = "globex.example.com"))
+            val wellKnown =
+                resolver.resolve(
+                    request(path = "/.well-known/oauth-authorization-server/as/never-created", host = "globex.example.com"),
+                )
+
+            assertEquals("NOT_FOUND_ERROR", authorize.error.code)
+            assertEquals("NOT_FOUND_ERROR", wellKnown.error.code)
+        }
+
+    @Test
+    fun issuerPrefixOfAnotherSlugDoesNotMatchIt() =
+        runTest {
+            val provider = SnapshotProvider(snapshot = tenantServers("globex", "other"), backingStore = tenantServers("globex", "other"))
+            val resolver = DefaultOAuth2ServerInstanceResolver(provider)
+
+            val collision = resolver.resolve(request(path = "/as/globex2/authorize", host = "globex.example.com"))
+            val exact = resolver.resolve(request(path = "/as/globex", host = "globex.example.com"))
+            val nested = resolver.resolve(request(path = "/as/globex/authorize", host = "globex.example.com"))
+
+            assertEquals("NOT_FOUND_ERROR", collision.error.code)
+            assertEquals("globex", exact.value)
+            assertEquals("globex", nested.value)
+        }
+
+    @Test
+    fun issuerPrefixOfAConfiguredSlugResolvesToThatSlug() =
+        runTest {
+            val provider =
+                SnapshotProvider(snapshot = tenantServers("globex", "globex2"), backingStore = tenantServers("globex", "globex2"))
+            val resolver = DefaultOAuth2ServerInstanceResolver(provider)
+
+            val result = resolver.resolve(request(path = "/as/globex2/token", host = "globex.example.com"))
+
+            assertEquals("globex2", result.value)
+            assertEquals(0, provider.reloads)
+        }
+
+    @Test
+    fun requestsOutsideTheIssuerPathsNeverReload() =
+        runTest {
+            val provider = SnapshotProvider(snapshot = tenantServers("globex", "other"), backingStore = tenantServers("globex", "other"))
+            val resolver = DefaultOAuth2ServerInstanceResolver(provider)
+
+            val token = resolver.resolve(request(path = "/token", host = "globex.example.com"))
+            val authorize = resolver.resolve(request(path = "/authorize", host = "globex.example.com"))
+            val discovery = resolver.resolve(request(path = "/.well-known/openid-configuration", host = "globex.example.com"))
+            val metadata = resolver.resolve(request(path = "/.well-known/oauth-authorization-server", host = "globex.example.com"))
+            val known = resolver.resolve(request(path = "/as/other/token", host = "globex.example.com"))
+
+            assertEquals("globex", token.value)
+            assertEquals("globex", authorize.value)
+            assertEquals("globex", discovery.value)
+            assertEquals("globex", metadata.value)
+            assertEquals("other", known.value)
+            assertEquals(0, provider.reloads)
+        }
+
+    private fun tenantServers(vararg slugs: String): OAuth2ServersConfig =
+        OAuth2ServersConfig(
+            defaultServer = slugs.first(),
+            servers = slugs.associateWith { OAuth2ServerInstanceConfig(issuer = "https://globex.example.com/as/$it") },
+        )
+
+    private class SnapshotProvider(
+        snapshot: OAuth2ServersConfig,
+        private val backingStore: OAuth2ServersConfig,
+    ) : OAuth2ServersConfigProvider {
+        private var current: OAuth2ServersConfig = snapshot
+        var reloads = 0
+            private set
+
+        override fun getConfig(): OAuth2ServersConfig = current
+
+        override suspend fun reloadConfig(): OAuth2ServersConfig {
+            reloads++
+            current = backingStore
+            return current
+        }
+
+        override fun getServer(id: String): OAuth2ServerInstanceConfig? = current.getServer(id)
+
+        override fun getDefaultServer(): OAuth2ServerInstanceConfig = current.getDefaultServer()
+
+        override fun resolveIssuer(
+            serverId: String,
+            tenantId: String,
+        ): String = current.getServer(serverId)?.issuer ?: error("server '$serverId' not found")
+    }
 }

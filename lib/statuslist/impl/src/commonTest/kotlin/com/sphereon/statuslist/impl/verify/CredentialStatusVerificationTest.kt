@@ -34,6 +34,7 @@ import com.sphereon.statuslist.CredentialStatusPolicy
 import com.sphereon.statuslist.ResolveStatusArgs
 import com.sphereon.statuslist.ResolvedStatus
 import com.sphereon.statuslist.StatusProofFormat
+import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.StatusValues
 import com.sphereon.statuslist.evaluateCredentialStatus
 import com.sphereon.statuslist.spi.CredentialStatusVerifier
@@ -104,7 +105,7 @@ class CredentialStatusVerificationTest {
 
     @Test
     fun mdocReferenceExtractionKeepsStatusMechanismsDistinct() {
-        val verifier = MdocCredentialStatusVerifier(FakeResolver(0), FakeMdocTrustService)
+        val verifier = MdocCredentialStatusVerifier(FakeResolver(0), FakeMdocTrustService, EmptyTrustAnchorLoader)
         val statusList = verifier.references(claims("""{"status":{"mdoc_status_list":{"uri":"https://x/mdoc","idx":5}}}"""))
         assertEquals(1, statusList.size)
         assertEquals("mdoc_status", statusList.single().mechanism)
@@ -120,7 +121,7 @@ class CredentialStatusVerificationTest {
 
     @Test
     fun mdocVerifierConsumesAuthenticatedMetadataWithoutReadingOrdinaryClaims() {
-        val verifier = MdocCredentialStatusVerifier(FakeResolver(0), FakeMdocTrustService)
+        val verifier = MdocCredentialStatusVerifier(FakeResolver(0), FakeMdocTrustService, EmptyTrustAnchorLoader)
         val authenticatedReference =
             CredentialStatusReference(
                 mechanism = MdocCredentialStatusVerifier.MECHANISM,
@@ -141,7 +142,7 @@ class CredentialStatusVerificationTest {
 
     @Test
     fun mdocReferenceExtractionHandlesEveryDocumentInAResponse() {
-        val verifier = MdocCredentialStatusVerifier(FakeResolver(0), FakeMdocTrustService)
+        val verifier = MdocCredentialStatusVerifier(FakeResolver(0), FakeMdocTrustService, EmptyTrustAnchorLoader)
         val references = verifier.references(
             claims(
                 """{"status":{"mdoc_status_list":[{"uri":"https://x/one","idx":1},{"uri":"https://x/two","idx":2}]}}""",
@@ -157,7 +158,7 @@ class CredentialStatusVerificationTest {
     fun malformedMdocCertificateDoesNotFallBackToConfiguredTrustRoots() =
         runTest {
             val resolver = FakeResolver(StatusValues.VALID)
-            val verifier = MdocCredentialStatusVerifier(resolver, FakeMdocTrustService)
+            val verifier = MdocCredentialStatusVerifier(resolver, FakeMdocTrustService, EmptyTrustAnchorLoader)
             val reference =
                 verifier.references(
                     claims("""{"status":{"mdoc_status_list":{"uri":"https://x/mdoc","idx":1,"certificate":"%%%"}}}"""),
@@ -171,7 +172,7 @@ class CredentialStatusVerificationTest {
 
     @Test
     fun malformedMdocIdentifierCannotResolveAsAnEmptyIdentifier() {
-        val verifier = MdocCredentialStatusVerifier(FakeResolver(StatusValues.VALID), FakeMdocTrustService)
+        val verifier = MdocCredentialStatusVerifier(FakeResolver(StatusValues.VALID), FakeMdocTrustService, EmptyTrustAnchorLoader)
         val reference =
             verifier.references(
                 claims("""{"status":{"mdoc_identifier_list":{"uri":"https://x/ids","id":"%%%"}}}"""),
@@ -185,7 +186,7 @@ class CredentialStatusVerificationTest {
     fun mdocIdentifierListDoesNotDeclareGenericTokenStatusList() =
         runTest {
             val resolver = FakeResolver(StatusValues.VALID)
-            val verifier = MdocCredentialStatusVerifier(resolver, FakeMdocTrustService)
+            val verifier = MdocCredentialStatusVerifier(resolver, FakeMdocTrustService, EmptyTrustAnchorLoader)
             val reference = verifier.references(claims("""{"status":{"mdoc_identifier_list":{"uri":"https://x/ids","id":"AQID"}}}""")).single()
 
             verifier.resolve(reference)
@@ -199,7 +200,7 @@ class CredentialStatusVerificationTest {
     fun mdocCertificatePinsTheCwtChainWithoutReplacingConfiguredTrustRoots() =
         runTest {
             val resolver = FakeResolver(StatusValues.VALID)
-            val verifier = MdocCredentialStatusVerifier(resolver, FakeMdocTrustService)
+            val verifier = MdocCredentialStatusVerifier(resolver, FakeMdocTrustService, EmptyTrustAnchorLoader)
             val certificate = certificateFromPem(TEST_CERTIFICATE_PEM).der
             val reference =
                 CredentialStatusReference(
@@ -243,6 +244,33 @@ class CredentialStatusVerificationTest {
             verifier.references(claims("""{"credentialStatus":{"type":"OtherEntry","statusListCredential":"https://x/bs","statusListIndex":"1"}}""")).isEmpty(),
         )
     }
+
+    @Test
+    fun bitstringEntryStatusSizeIsPassedToTheResolver() =
+        runTest {
+            val resolver = FakeResolver(0)
+            val verifier = BitstringStatusListCredentialStatusVerifier(resolver)
+            val reference =
+                verifier.references(
+                    claims(
+                        """{"credentialStatus":{"type":"BitstringStatusListEntry","statusListCredential":"https://x/bs","statusListIndex":"5","statusPurpose":"revocation","statusSize":2}}""",
+                    ),
+                ).single()
+            assertEquals(2, reference.statusSize)
+
+            verifier.resolve(reference)
+            assertEquals(2, resolver.lastArgs?.expectedStatusSize)
+            assertEquals(StatusPurpose.REVOCATION, resolver.lastArgs?.expectedPurpose)
+
+            assertTrue(
+                verifier.references(
+                    claims(
+                        """{"credentialStatus":{"type":"BitstringStatusListEntry","statusListCredential":"https://x/bs","statusListIndex":"5","statusSize":0}}""",
+                    ),
+                ).isEmpty(),
+                "a non-positive statusSize is not a valid Bitstring entry",
+            )
+        }
 
     @Test
     fun acceptanceMatrix() =

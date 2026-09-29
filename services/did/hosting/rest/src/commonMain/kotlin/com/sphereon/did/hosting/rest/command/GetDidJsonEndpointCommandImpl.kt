@@ -45,8 +45,10 @@ import dev.zacsweers.metro.binding
 /**
  * Serves the hosted `did.json` for the request's host + path.
  *
- * - The host comes from the `Host` header (already validated/punycode'd at the edge); the tenant is
- *   attached as typed in-process state by the tenant-resolution layer (null in single-tenant IDK).
+ * - The host comes from the `Host` header (already validated/punycode'd at the edge); the tenant comes
+ *   only from the request (the resolved tenant stamped on it, else the session tenant derived from the
+ *   request's subdomain/path). With no concrete tenant the request is refused with a generic 404 and
+ *   no DID lookup is made; there is no configured fallback tenant.
  * - The path segments come from the matched depth pattern's `s1..sN` params (empty for `.well-known`).
  * - These compose a [WebLocation], resolved by the method-agnostic [DidHostingRegistry].
  *
@@ -58,12 +60,12 @@ import dev.zacsweers.metro.binding
 @ContributesIntoMap(SessionScope::class, binding = binding<HttpEndpointCommand>())
 @StringKey(GetDidJsonEndpointCommand.COMMAND_ID)
 class GetDidJsonEndpointCommandImpl(
-    execution: SessionExecution,
+    private val sessionExecution: SessionExecution,
     private val registry: DidHostingRegistry,
     private val hostingConfig: DidHostingConfig,
 ) : HttpEndpointCommandAdapter(
         id = GetDidJsonEndpointCommand.COMMAND_ID,
-        execution = execution,
+        execution = sessionExecution,
         endpoint = GetDidJsonEndpointCommand.ENDPOINT,
     ),
     GetDidJsonEndpointCommand {
@@ -79,9 +81,9 @@ class GetDidJsonEndpointCommandImpl(
         val (host, port) = parseHostPort(hostHeader)
 
         val tenantId =
-            request.resolvedTenantId
-                ?.takeIf { it.isNotBlank() && it != IdentityConstants.ANONYMOUS_TENANT_ID }
-                ?: hostingConfig.publicFallbackTenantId
+            concreteTenant(request.resolvedTenantId)
+                ?: concreteTenant(sessionExecution.tenantId)
+                ?: return Ok(ResponseBuilder.notFound(NOT_HOSTED_MESSAGE))
         val pathSegments = DidHostingApiConstants.PATH_SEGMENT_PARAMS.mapNotNull { request.pathParameters[it] }
         val candidateLocations =
             if (port == null) {
@@ -121,6 +123,9 @@ class GetDidJsonEndpointCommandImpl(
         )
     }
 
+    private fun concreteTenant(tenantId: String?): String? =
+        tenantId?.trim()?.takeIf { it.isNotEmpty() && it != IdentityConstants.ANONYMOUS_TENANT_ID }
+
     /**
      * Split a `Host` header into host + optional numeric port. IPv6 literals are not split (did:web
      * forbids IP hosts), and a non-numeric tail is treated as part of the host.
@@ -132,5 +137,9 @@ class GetDidJsonEndpointCommandImpl(
         if (idx <= 0) return trimmed to null
         val port = trimmed.substring(idx + 1).toIntOrNull() ?: return trimmed to null
         return trimmed.substring(0, idx) to port
+    }
+
+    private companion object {
+        const val NOT_HOSTED_MESSAGE = "No DID document is hosted at this location"
     }
 }

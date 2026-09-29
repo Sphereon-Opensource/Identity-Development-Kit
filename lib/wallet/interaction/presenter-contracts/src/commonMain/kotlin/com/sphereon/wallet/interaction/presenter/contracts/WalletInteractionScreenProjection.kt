@@ -56,6 +56,10 @@ sealed interface WalletInteractionScreenProjection {
         val expectedLength: Int?,
         val descriptionKey: String?,
         val descriptionArguments: Map<String, String>,
+        /** The issuer rejected the last code; the step stays open for another attempt. */
+        val rejected: Boolean = false,
+        /** Two or more codes in a row were rejected; the offer may have expired. */
+        val possiblyExpired: Boolean = false,
     ) : WalletInteractionScreenProjection
 
     @Serializable
@@ -189,6 +193,8 @@ data class WalletCredentialOfferInfoPresentation(
     val infoId: String,
     val path: List<String>,
     val displayName: String,
+    /** Issuer display names keyed by BCP 47 locale; pick one with [bestLanguageMatch]. */
+    val localizedDisplayNames: Map<String, String> = emptyMap(),
 )
 
 @Serializable

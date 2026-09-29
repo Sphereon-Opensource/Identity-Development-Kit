@@ -25,6 +25,14 @@ object CatalogTypeKeys {
         if (!vct.isNullOrBlank()) return AttestationTypeKey(AttestationTypeKeyKind.VCT, vct)
         val docType = formatBytes(record, "mso_mdoc")?.let(::docTypeValue)
         if (!docType.isNullOrBlank()) return AttestationTypeKey(AttestationTypeKeyKind.DOCTYPE, docType)
+        // A record without format documents still names its type in schemaURIs: the URI of a
+        // dc+sd-jwt entry is the VCT and the URI of an mso_mdoc entry is the doctype.
+        record.schema.schemaURIs.firstOrNull { it.formatIdentifier == "dc+sd-jwt" && it.uri.isNotBlank() }?.let {
+            return AttestationTypeKey(AttestationTypeKeyKind.VCT, it.uri.trim())
+        }
+        record.schema.schemaURIs.firstOrNull { it.formatIdentifier == "mso_mdoc" && it.uri.isNotBlank() }?.let {
+            return AttestationTypeKey(AttestationTypeKeyKind.DOCTYPE, it.uri.trim())
+        }
         val uri =
             record.schema.schemaURIs
                 .firstOrNull()

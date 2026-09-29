@@ -51,6 +51,8 @@ import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionIdProvider
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSessionStore
 import com.sphereon.oauth2.server.authorization.storage.PendingAuthorizationSessionStore
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
+import com.sphereon.oauth2.server.authorization.provider.UnregisteredClientAdmissionRule
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -90,6 +92,8 @@ class StandardAuthorizeRequestCommandImpl(
     private val authenticationRoutePlanner: AuthenticationRoutePlanner,
     private val verifyRequestObjectCommand: VerifyRequestObjectCommand,
     private val clock: Clock,
+    private val credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
+    private val unregisteredClientAdmissionRule: UnregisteredClientAdmissionRule,
 ) : TypedServiceCommandAdapter<HandleAuthorizeRequestArgs, AuthorizationRequestOutcome, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
@@ -212,6 +216,14 @@ class StandardAuthorizeRequestCommandImpl(
                     )
                 }
                 val storedVerified = retrieveResult.value
+                if (storedVerified.admittedClient != null && parsed.redirectUri != storedVerified.request.redirectUri) {
+                    return Ok(
+                        AuthorizationRequestOutcome.PreRedirectError(
+                            error = "invalid_request",
+                            errorDescription = "redirect_uri does not match the pushed authorization request",
+                        ),
+                    )
+                }
                 // Reject mismatched client_id between `client_id` query param and the pushed
                 // request, per RFC 9126 §4 (client_id MUST match). The PAR-stored client is the
                 // authenticated party; surface the error via its registered redirect_uri so the
@@ -247,7 +259,7 @@ class StandardAuthorizeRequestCommandImpl(
                     )
                 }
                 val resolved =
-                    when (val resolution = resolveTrustedRedirect(storedVerified.request, clientRegistry, serversConfigProvider)) {
+                    when (val resolution = resolveTrustedRedirect(storedVerified.request.copy(requestUri = parsedRequestUri), clientRegistry, serversConfigProvider, unregisteredClientAdmissionRule, credentialIssuerAudienceResolver)) {
                         is RedirectResolution.RejectPreRedirect -> {
                             return Ok(
                                 AuthorizationRequestOutcome.PreRedirectError(
@@ -266,12 +278,16 @@ class StandardAuthorizeRequestCommandImpl(
                 // by atomically consuming it (FAPI 2.0 SP §5.3.2.2 Note 3 + RFC 9126 §7.3).
                 // The PAR push doesn't set this field — the URI is generated server-side
                 // *after* the push — so we have to thread it through here.
-                val storedWithUri = storedVerified.copy(request = storedVerified.request.copy(requestUri = parsedRequestUri))
+                val storedWithUri = storedVerified.copy(
+                    request = storedVerified.request.copy(requestUri = parsedRequestUri),
+                    admittedAudiences = resolved.admission?.audiences?.toList(),
+                    admittedClient = resolved.admission?.client,
+                )
                 storedWithUri to resolved
             } else {
                 // Resolve trusted redirect (shared with verifier)
                 val resolved =
-                    when (val resolution = resolveTrustedRedirect(parsed, clientRegistry, serversConfigProvider)) {
+                    when (val resolution = resolveTrustedRedirect(parsed, clientRegistry, serversConfigProvider, unregisteredClientAdmissionRule, credentialIssuerAudienceResolver)) {
                         is RedirectResolution.RejectPreRedirect -> {
                             return Ok(
                                 AuthorizationRequestOutcome.PreRedirectError(
@@ -664,7 +680,7 @@ class StandardAuthorizeRequestCommandImpl(
         errorDescription: String,
         parsed: com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData,
     ): AuthorizationRequestOutcome =
-        when (val resolution = resolveTrustedRedirect(parsed, clientRegistry, serversConfigProvider)) {
+        when (val resolution = resolveTrustedRedirect(parsed, clientRegistry, serversConfigProvider, unregisteredClientAdmissionRule, credentialIssuerAudienceResolver)) {
             is RedirectResolution.Trusted -> {
                 AuthorizationRequestOutcome.PostRedirectError(
                     error = error,

@@ -72,7 +72,8 @@ class OpenidDiscoveryHttpEndpointCommandImpl(
     override suspend fun supports(args: Any): Boolean =
         if (args is GenericHttpRequest) {
             args.matches(endpoint.method.name, endpoint.pathPattern) ||
-                args.matches(endpoint.method.name, OpenidDiscoveryHttpEndpointCommand.TENANT_PATH_PATTERN)
+                args.matches(endpoint.method.name, OpenidDiscoveryHttpEndpointCommand.TENANT_PATH_PATTERN) ||
+                args.matches(endpoint.method.name, OpenidDiscoveryHttpEndpointCommand.ISSUER_PATH_PATTERN)
         } else {
             false
         }

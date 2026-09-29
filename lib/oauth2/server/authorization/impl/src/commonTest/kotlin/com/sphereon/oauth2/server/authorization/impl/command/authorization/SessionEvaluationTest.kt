@@ -408,6 +408,8 @@ class SessionEvaluationTest {
                 authenticationRoutePlanner = StubAuthenticationRoutePlanner { request -> routeDecision(route, request) },
                 verifyRequestObjectCommand = StubVerifyRequestObjectCommand(ctx.execution),
                 clock = FixedClock(NOW),
+                credentialIssuerAudienceResolver = com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
+                unregisteredClientAdmissionRule = Oid4vciUnregisteredWalletAdmissionRule(),
             )
         val result =
             command.execute(
@@ -545,7 +547,6 @@ class SessionEvaluationTest {
         override val verifyAuthorizationCodeGrant get() = throw NotImplementedError()
         override val verifyRefreshTokenGrant get() = throw NotImplementedError()
         override val verifyClientCredentialsGrant get() = throw NotImplementedError()
-        override val verifyTokenExchangeGrant get() = throw NotImplementedError()
         override val verifyPreAuthorizedCodeGrant get() = throw NotImplementedError()
         override val createAccessToken get() = throw NotImplementedError()
         override val createRefreshToken get() = throw NotImplementedError()

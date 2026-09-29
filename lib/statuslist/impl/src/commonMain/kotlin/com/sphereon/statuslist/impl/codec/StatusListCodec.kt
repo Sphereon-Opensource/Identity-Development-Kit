@@ -59,6 +59,7 @@ object StatusListCodec {
                 }
 
                 StatusListSpec.BITSTRING_STATUS_LIST -> {
+                    require(encoded.startsWith(MULTIBASE_BASE64URL)) { "Bitstring encodedList must use multibase base64url" }
                     CompressionAlgorithm.GZIP to encoded.removePrefix(MULTIBASE_BASE64URL)
                 }
             }

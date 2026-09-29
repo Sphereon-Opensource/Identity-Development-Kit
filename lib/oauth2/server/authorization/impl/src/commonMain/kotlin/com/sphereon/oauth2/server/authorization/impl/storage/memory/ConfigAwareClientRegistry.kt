@@ -252,6 +252,7 @@ class ConfigAwareClientRegistry(
                         allowedAccessTokenAudiences = credentials.allowedAccessTokenAudiences,
                         tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
                         additionalMetadata = credentials.tenantId?.let { mapOf(TENANT_ID_CLAIM to it) }.orEmpty(),
+                        tokenExchangeAuthority = credentials.tokenExchangeAuthority,
                     )
             }
         }
@@ -266,6 +267,25 @@ class ConfigAwareClientRegistry(
         val configured = configuredClientSet()
         return if (configured.isOk) configured.value.activeServerId else OAuth2ServersConfig().defaultServer
     }
+
+    /**
+     * Token-exchange authority is registration-controlled only through server-side configuration.
+     * The durable dynamic store has no field for it, and a dynamic registration must never be able
+     * to grant itself delegation authority, so a dynamic write carrying it is refused rather than
+     * silently dropped.
+     */
+    private fun rejectDynamicExchangeAuthority(
+        operation: String,
+        registration: ClientRegistration,
+    ): AuthorizationServerError.StorageError? =
+        if (registration.tokenExchangeAuthority.isEmpty()) {
+            null
+        } else {
+            AuthorizationServerError.StorageError(
+                operation = operation,
+                details = "Token-exchange authority can only be configured for server-configured clients",
+            )
+        }
 
     /** Tenant the durable dynamic registrations partition under (same discipline as signing keys). */
     private fun dynamicTenantId(): String = execution.tenantId
@@ -404,6 +424,7 @@ class ConfigAwareClientRegistry(
     }
 
     override suspend fun registerClient(registration: ClientRegistration): IdkResult<ClientRegistration, AuthorizationServerError.StorageError> {
+        rejectDynamicExchangeAuthority("registerClient", registration)?.let { return Err(it) }
         val configured = configuredClients()
         if (configured.isErr) return Err(configured.error)
         val loadedConfiguredClients = configured.value
@@ -455,6 +476,8 @@ class ConfigAwareClientRegistry(
     ): IdkResult<ClientRegistration, AuthorizationServerError> =
         withConfiguredClients { configured ->
             when {
+                registration.tokenExchangeAuthority.isNotEmpty() -> Err(rejectDynamicExchangeAuthority("updateClient", registration)!!)
+
                 configured.containsKey(clientId) -> {
                     Err(
                         AuthorizationServerError.StorageError(

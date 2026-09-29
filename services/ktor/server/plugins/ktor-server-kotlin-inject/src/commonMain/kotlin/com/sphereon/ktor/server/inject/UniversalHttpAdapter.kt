@@ -73,6 +73,21 @@ val BaseTenantIdAttribute: AttributeKey<String> = AttributeKey("sphereon.tenant.
 val ValidatedJwtClaimsAttribute: AttributeKey<com.sphereon.core.defaults.context.ValidatedJwtClaimsInput> =
     AttributeKey("sphereon.auth.validatedJwtClaims")
 
+/**
+ * Per-call attribute holding the principal classification that the plugin which validated the
+ * bearer token derived for it.
+ *
+ * The identity pipeline classifies a token from its claims alone. A host may apply its own
+ * ingress policy on top of that (for example treating an external tenant service client as a
+ * tenant principal rather than a workload). When the host's command transport keys the same
+ * `tenant:principal` user context with that policy, the request-scoped context created here must
+ * use the identical classification, or whichever path runs second is rejected with
+ * "Principal classification mismatch for existing context". Set this next to
+ * [ValidatedJwtClaimsAttribute]; when absent, the pipeline's classification is used.
+ */
+val AuthoritativePrincipalTypeAttribute: AttributeKey<com.sphereon.di.context.PrincipalType> =
+    AttributeKey("sphereon.auth.authoritativePrincipalType")
+
 /** Marks Ktor routes whose method/path must be selected from the AppScope HTTP catalog. */
 val UniversalHttpAdapterRouteAttribute: AttributeKey<Boolean> =
     AttributeKey("sphereon.http.universalAdapterRoute")

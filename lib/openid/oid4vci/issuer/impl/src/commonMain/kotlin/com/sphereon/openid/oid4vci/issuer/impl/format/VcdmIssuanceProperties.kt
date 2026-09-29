@@ -60,6 +60,25 @@ internal fun mergeVcdmIssuanceProperties(
 internal fun invalidVcdmIssuance(message: String): IdkError =
     IdkError.fromString(code = "invalid_vcdm_credential", message = message)
 
+internal const val VERIFIABLE_CREDENTIAL_TYPE: String = "VerifiableCredential"
+
+/**
+ * The `type` of an issued VCDM 1.1 or 2.0 credential: `VerifiableCredential` followed by the
+ * configured specific types. A credential typed only as `VerifiableCredential` says nothing about
+ * what it attests, so issuance is refused instead of producing one.
+ */
+internal fun vcdmCredentialTypes(configured: List<String>?): IdkResult<List<String>, IdkError> {
+    val specific =
+        configured.orEmpty()
+            .map(String::trim)
+            .filter { it.isNotEmpty() && it != VERIFIABLE_CREDENTIAL_TYPE }
+            .distinct()
+    if (specific.isEmpty()) {
+        return Err(invalidVcdmIssuance("credential_definition.type must name at least one type besides $VERIFIABLE_CREDENTIAL_TYPE"))
+    }
+    return Ok(listOf(VERIFIABLE_CREDENTIAL_TYPE) + specific)
+}
+
 /** Fields that issuance always derives from trusted protocol/configuration state. */
 internal val SERVER_CONTROLLED_VCDM_KEYS: Set<String> = setOf(
     "@context", "type", "issuer", "credentialSubject", "validFrom", "validUntil",

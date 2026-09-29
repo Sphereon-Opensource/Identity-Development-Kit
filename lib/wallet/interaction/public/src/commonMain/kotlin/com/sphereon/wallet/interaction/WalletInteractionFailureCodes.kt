@@ -75,6 +75,8 @@ object WalletInteractionFailureCodes {
     const val OID4VCI_ACCESS_TOKEN_MISSING: String = "oid4vci.access_token_missing"
     const val OID4VCI_DEFERRED_DPOP_PROOF_FAILED: String = "oid4vci.deferred_dpop_proof_failed"
     const val OID4VCI_DEFERRED_REQUEST_FAILED: String = "oid4vci.deferred_request_failed"
+    /** The authorization for a deferred credential lapsed and cannot be refreshed; the offer has to be restarted. */
+    const val OID4VCI_OFFER_EXPIRED: String = "oid4vci.offer_expired"
     const val OID4VCI_UNSUPPORTED_GRANT: String = "oid4vci.unsupported_grant"
     const val OID4VCI_CLIENT_ID_MISSING: String = "oid4vci.client_id_missing"
     const val OID4VCI_REDIRECT_URI_MISSING: String = "oid4vci.redirect_uri_missing"
@@ -207,6 +209,7 @@ val DISPOSITIONS: Map<String, WalletFailureDisposition> =
         WalletInteractionFailureCodes.OID4VCI_ACCESS_TOKEN_MISSING to WalletFailureDisposition.TERMINAL,
         WalletInteractionFailureCodes.OID4VCI_DEFERRED_DPOP_PROOF_FAILED to WalletFailureDisposition.RESUMABLE,
         WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED to WalletFailureDisposition.RESUMABLE,
+        WalletInteractionFailureCodes.OID4VCI_OFFER_EXPIRED to WalletFailureDisposition.TERMINAL,
         WalletInteractionFailureCodes.OID4VCI_UNSUPPORTED_GRANT to WalletFailureDisposition.TERMINAL,
         WalletInteractionFailureCodes.OID4VCI_CLIENT_ID_MISSING to WalletFailureDisposition.TERMINAL,
         WalletInteractionFailureCodes.OID4VCI_REDIRECT_URI_MISSING to WalletFailureDisposition.TERMINAL,

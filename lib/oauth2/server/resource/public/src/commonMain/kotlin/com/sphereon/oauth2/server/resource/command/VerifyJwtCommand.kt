@@ -17,12 +17,14 @@
 package com.sphereon.oauth2.server.resource.command
 
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.service.ServiceCommand
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.oauth2.server.resource.model.TokenPayload
 import com.sphereon.crypto.resolution.IdentifierOptsOrResult
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -31,7 +33,7 @@ import kotlin.native.ObjCName
  *
  * @property jwt The JWT string (compact serialization)
  * @property authorizationServer The expected issuer (authorization server URL)
- * @property expectedAudience The expected audience (this resource server)
+ * @property expectedAudience The expected audience for the selected context (resource server for access tokens, client for ID/JARM/logout artifacts)
  * @property clockSkewSeconds Per-request override for the tolerance window applied to `exp` and
  *   `nbf`. When `null` (the default) the impl resolves it from `ConfigService` at key
  *   [CONFIG_KEY_CLOCK_SKEW], falling back to [DEFAULT_CLOCK_SKEW_SECONDS] when unset. Raise with
@@ -61,6 +63,25 @@ data class VerifyJwtArgs(
         /** Fallback skew used when neither the args nor config supply a value. */
         public const val DEFAULT_CLOCK_SKEW_SECONDS: Long = 60
     }
+}
+
+/**
+ * Explicit in-process verification contexts for signed protocol artifacts which are not OAuth
+ * resource access tokens. This context is deliberately separate from the serialized command args:
+ * resource-server requests always use [VerifyJwtCommand.execute] and always enforce RFC 9068 typ.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("StandardJwtArtifactContext", exact = true)
+@JsExportCompat
+enum class StandardJwtArtifactContext {
+    /** OIDC ID Token claims, including `sub`, `aud`, `exp`, and `iat`. */
+    ID_TOKEN,
+
+    /** JARM response claims; `sub` and `iat` are not required by JARM. */
+    JARM_RESPONSE,
+
+    /** OIDC Back-Channel Logout Token claims and event requirements. */
+    LOGOUT_TOKEN,
 }
 
 /**
@@ -98,6 +119,16 @@ data class VerifyJwtArgs(
 @JsExportCompat
 interface VerifyJwtCommand : ServiceCommand<VerifyJwtArgs, TokenPayload.Jwt, IdkError> {
     override val commandId: String get() = COMMAND_ID
+
+    /**
+     * Verify a non-access protocol artifact under an explicit trusted caller context and return
+     * its verified claims. Implementors must apply that context's claim requirements plus signature,
+     * issuer, audience, and time checks.
+     */
+    suspend fun verifyStandardArtifact(
+        args: VerifyJwtArgs,
+        context: StandardJwtArtifactContext,
+    ): IdkResult<JsonObject, IdkError>
 
     companion object {
         const val COMMAND_ID = "oauth2.resource.verifyjwt"

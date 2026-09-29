@@ -32,7 +32,7 @@ import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.server.authorization.command.device.DeviceVerificationApprovalHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
-import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
+import com.sphereon.oauth2.server.authorization.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.provider.DeviceApprovalContext
 import com.sphereon.oauth2.server.authorization.provider.DeviceResultContext
 import com.sphereon.oauth2.server.authorization.provider.DeviceResultOutcome

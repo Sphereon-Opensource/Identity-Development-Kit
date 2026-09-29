@@ -16,8 +16,8 @@ class KmsOpenApiContractMirrorTest {
                 .resolve("lib/crypto/kms/rest/api/build.gradle.kts")
                 .readText()
 
-        assertTrue(buildScript.contains("openapiSpec(\"kms-components.yml\")"))
-        assertTrue(buildScript.contains("openapiSpec(\"common-components.yml\")"))
+        assertTrue(buildScript.contains("file(\"openapi/kms-components.yml\")"))
+        assertTrue(buildScript.contains("file(\"openapi/common-components.yml\")"))
     }
 
     @Test
@@ -63,6 +63,8 @@ class KmsOpenApiContractMirrorTest {
         assertTrue(combinedContract.contains("The provider resource remains untouched."))
         assertTrue(normalizedContract.contains("already deleted externally managed local reference is idempotent and returns 204"))
         assertTrue(combinedContract.contains("Registration does not create/import key material."))
+        assertTrue(normalizedContract.contains("Registration never changes a certificate reference that is already known."))
+        assertTrue(normalizedContract.contains("returns 409 with a message naming the difference, and changes nothing"))
         assertTrue(combinedContract.contains("ResourceControlMode"))
 
         val requestStart = spec.indexOf("    RegisterKeyReferenceRequest:\n", spec.indexOf("components:"))

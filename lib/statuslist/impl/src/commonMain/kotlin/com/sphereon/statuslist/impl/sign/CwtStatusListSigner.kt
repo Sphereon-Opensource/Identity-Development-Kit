@@ -52,6 +52,7 @@ import com.sphereon.did.models.VerificationPurpose
 import com.sphereon.statuslist.StatusListContentTypes
 import com.sphereon.statuslist.StatusListErrors
 import com.sphereon.statuslist.StatusListToken
+import com.sphereon.statuslist.impl.codec.tagStatusListCoseSign1
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -62,9 +63,10 @@ import dev.zacsweers.metro.SingleIn
  * (`signingKeyMode` → DID `kid` or `x5chain`). The JWT form lives in [JwsStatusListSigner], which
  * delegates the `TOKEN_STATUS_LIST` + `CWT` case here.
  *
- * CWT claims (RFC 8392 + the status-list draft, integer keys):
+ * CWT claims (RFC 8392 + the status-list draft, integer claim keys):
  * `1`=iss, `2`=sub (= the list URI), `6`=iat, `4`=exp?, `65534`=ttl?,
- * `65533`=status_list `{ 0: bits, 1: lst }` where `lst` is the RAW zlib-compressed byte string.
+ * `65533`=status_list `{ "bits": bits, "lst": lst, "aggregation_uri"?: uri }` with text keys, where
+ * `lst` is the raw zlib-compressed byte string.
  * The protected header carries `alg`, the `typ` (label 16) = `application/statuslist+cwt`, and the
  * key reference (`kid` for DID mode, `x5chain` for x5c mode).
  */
@@ -142,7 +144,7 @@ class CwtStatusListSigner(
                     ),
                 )
             }
-        val bytes = coseSign1Codec.encode(signResult.coseSign1).getOrElse { return Err(it) }
+        val bytes = coseSign1Codec.encode(signResult.coseSign1).getOrElse { return Err(it) }.tagStatusListCoseSign1()
         return Ok(
             StatusListToken(
                 token = bytes.encodeToBase64Url(),
@@ -158,13 +160,13 @@ class CwtStatusListSigner(
         args: SignStatusListTokenArgs,
         issuer: String,
     ): CborMap<NumberLabel, CborItem<*>> {
-        val statusList =
-            CborMap<NumberLabel, CborItem<*>>(
-                mutableMapOf(
-                    NumberLabel(0) to CborUInt(args.bitsPerStatus.toLong()),
-                    NumberLabel(1) to CborByteString(args.encodedList.decodeFromBase64Url()),
-                ),
+        val statusListEntries =
+            mutableMapOf<CborString, CborItem<*>>(
+                CborString("bits") to CborUInt(args.bitsPerStatus.toLong()),
+                CborString("lst") to CborByteString(args.encodedList.decodeFromBase64Url()),
             )
+        args.aggregationUri?.let { statusListEntries[CborString("aggregation_uri")] = CborString(it) }
+        val statusList = CborMap<CborString, CborItem<*>>(statusListEntries)
         val claims =
             mutableMapOf<NumberLabel, CborItem<*>>(
                 NumberLabel(CWT_ISS) to CborString(issuer),

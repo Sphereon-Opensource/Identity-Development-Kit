@@ -67,6 +67,7 @@ internal data class ConfiguredOAuth2Client(
     val tlsClientAuthSanIp: String? = null,
     val tlsClientAuthSanUri: String? = null,
     val tlsClientCertificateBoundAccessTokens: Boolean = false,
+    val tokenExchangeAuthority: Map<String, String> = emptyMap(),
 ) {
     fun toClientRegistration(resolvedClientSecret: String?): ClientRegistration =
         ClientRegistration(
@@ -111,5 +112,6 @@ internal data class ConfiguredOAuth2Client(
             tlsClientAuthSanIp = tlsClientAuthSanIp,
             tlsClientAuthSanUri = tlsClientAuthSanUri,
             tlsClientCertificateBoundAccessTokens = tlsClientCertificateBoundAccessTokens,
+            tokenExchangeAuthority = tokenExchangeAuthority,
         )
 }

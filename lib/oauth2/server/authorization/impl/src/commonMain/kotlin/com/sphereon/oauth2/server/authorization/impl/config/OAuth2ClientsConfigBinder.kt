@@ -176,6 +176,7 @@ class OAuth2ClientsConfigBinder(
                             principalRoles = readStringList(properties, "principalRoles").orEmpty(),
                             tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
                             additionalMetadata = mapOf(TENANT_ID_CLAIM to tenantId),
+                            tokenExchangeAuthority = readTokenExchangeAuthority(properties),
                         )
                     parsed[entryKey] =
                         OpaqueInternalClientRegistration(
@@ -424,7 +425,20 @@ class OAuth2ClientsConfigBinder(
             tlsClientAuthSanIp = readString(properties, "tlsClientAuthSanIp"),
             tlsClientAuthSanUri = readString(properties, "tlsClientAuthSanUri"),
             tlsClientCertificateBoundAccessTokens = readBoolean(properties, "tlsClientCertificateBoundAccessTokens") ?: false,
+            tokenExchangeAuthority = readTokenExchangeAuthority(properties),
         )
+    }
+
+    /**
+     * Reads the `token-exchange.<attribute>` block. Attribute names are single words, so the
+     * normalized key after the block prefix is the attribute name itself.
+     */
+    private fun readTokenExchangeAuthority(properties: Map<String, Any>): Map<String, String> {
+        val prefix = keyNormalizer.normalize(TOKEN_EXCHANGE_AUTHORITY_BLOCK) + "."
+        return properties
+            .filterKeys { it.startsWith(prefix) }
+            .entries
+            .associate { (key, value) -> key.removePrefix(prefix) to value.toString().trim() }
     }
 
     /**
@@ -754,6 +768,7 @@ class OAuth2ClientsConfigBinder(
         const val CONFIG_PREFIX = "oauth2.clients"
         const val SERVER_CLIENTS_SUFFIX = "clients"
         const val INTERNAL_CLIENTS_SUFFIX = "internal-clients"
+        const val TOKEN_EXCHANGE_AUTHORITY_BLOCK = "token-exchange"
 
         fun configPrefix(serverId: String?): String = serverId?.let { "oauth2.servers.$it.$SERVER_CLIENTS_SUFFIX" } ?: CONFIG_PREFIX
 

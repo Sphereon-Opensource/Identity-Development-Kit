@@ -54,13 +54,12 @@ import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentica
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientCredentialsGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
-import com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant
+import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
+import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequestArgs
 import com.sphereon.oauth2.server.authorization.command.token.VerifiedDeviceCodeGrant
 import com.sphereon.oauth2.server.authorization.command.token.VerifyDeviceCodeGrantArgs
@@ -68,6 +67,7 @@ import com.sphereon.oauth2.server.authorization.command.token.VerifyDeviceCodeGr
 import com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager
 import com.sphereon.oauth2.server.authorization.dpop.DpopProofJtiCache
 import com.sphereon.oauth2.server.authorization.impl.command.token.HandleTokenRequestCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyRefreshTokenGrantCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.dpop.InMemoryDpopProofJtiCacheImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryClientRegistryImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryDeviceAuthorizationStorageImpl
@@ -75,10 +75,17 @@ import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryOAut
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySingleUseObjectStore
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryTokenStorageImpl
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
+import com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.RefreshTokenData
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
+import com.sphereon.oauth2.server.authorization.command.token.TokenExchangeJourneyCommand
+import com.sphereon.oauth2.server.authorization.impl.command.token.exchange.TokenExchangeJourneyCommandImpl
+import com.sphereon.oauth2.server.authorization.impl.policy.StandardTokenExchangeProfile
+import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemorySigningKeyStore
+import com.sphereon.oauth2.server.authorization.impl.testutil.RecordingJwtService
+import com.sphereon.oauth2.server.authorization.impl.trust.NoForeignSubjectTokenIssuerTrust
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -169,6 +176,125 @@ class HandleTokenRequestCommandImplTest {
 
     private fun newClientRegistry(): ClientRegistry = InMemoryClientRegistryImpl(InMemoryOAuth2BackingStorageImpl())
 
+    private fun tokenExchangeJourney(
+        parse: ParseTokenRequestCommand,
+        verifyClientAuthentication: VerifyClientAuthenticationCommand,
+        createAccessToken: CreateAccessTokenCommand,
+        createTokenResponse: CreateTokenResponseCommand,
+    ): TokenExchangeJourneyCommand =
+        TokenExchangeJourneyCommandImpl(
+            execution = ctx.execution,
+            parseTokenRequestCommand = parse,
+            verifyClientAuthenticationCommand = verifyClientAuthentication,
+            serversConfigProvider = configProvider,
+            verifyDpopProofCommand = rejectingDpopVerify,
+            dpopProofJtiCache = newDpopJtiCache(),
+            dpopNonceManager = newDpopNonceManager(),
+            clientRegistry = newClientRegistry(),
+            jwtService = RecordingJwtService(),
+            signingKeyStore = InMemorySigningKeyStore(),
+            subjectTokenIssuerTrust = NoForeignSubjectTokenIssuerTrust(),
+            tokenExchangeProfile = StandardTokenExchangeProfile(),
+            createAccessToken = createAccessToken,
+            createTokenResponse = createTokenResponse,
+        )
+
+    @Test
+    fun unknownPublicClientCannotUseClientCredentialsTokenExchangeOrRefresh() = runTest {
+        val tokenStorage = newTokenStorage()
+        val verifyRefreshTokenGrant =
+            VerifyRefreshTokenGrantCommandImpl(
+                execution = ctx.execution,
+                tokenStorage = tokenStorage,
+                configProvider = configProvider,
+                clientRegistry = StubClientRegistry(),
+            )
+        val grants = listOf(
+            GrantType.CLIENT_CREDENTIALS to GrantParameters.ClientCredentials(),
+            GrantType.TOKEN_EXCHANGE to GrantParameters.TokenExchange(
+                subjectToken = "subject-token",
+                subjectTokenType = "urn:ietf:params:oauth:token-type:access_token",
+            ),
+            GrantType.REFRESH_TOKEN to GrantParameters.RefreshToken("refresh-token"),
+        )
+        for ((grantType, parameters) in grants) {
+            var authenticationCalls = 0
+            val parse = stubParseTokenRequest {
+                Ok(
+                    TokenRequestData(
+                        grantType = grantType,
+                        clientId = "unknown-wallet",
+                        clientAuthentication = ClientAuthenticationConfig.None("unknown-wallet"),
+                        grantParameters = parameters,
+                        httpUrl = "https://as.example.com/token",
+                    ),
+                )
+            }
+            val verify = object : VerifyClientAuthenticationCommand {
+                override val inputTypeToken = typeToken<VerifyClientAuthenticationArgs>()
+                override val outputTypeToken = typeToken<VerifiedClientAuthentication>()
+                override val isEnabled = true
+
+                override suspend fun execute(args: VerifyClientAuthenticationArgs): IdkResult<VerifiedClientAuthentication, IdkError> {
+                    authenticationCalls++
+                    return Err(IdkError.fromString(code = "invalid_client", message = "Unknown client"))
+                }
+            }
+            val service =
+                serviceForClientCredentialsFlow(
+                    parseStub = parse,
+                    verifyClientAuthStub = verify,
+                    verifyGrantStub =
+                        stubVerifyClientCredentialsGrant {
+                            error("client-credentials grant verifier must not run for an unknown client")
+                        },
+                    createAccessTokenStub =
+                        stubCreateAccessToken {
+                            error("access token must not be minted for an unknown client")
+                        },
+                    createTokenResponseStub =
+                        stubCreateTokenResponse {
+                            error("token response must not be created for an unknown client")
+                        },
+                )
+            val command = HandleTokenRequestCommandImpl(
+                execution = ctx.execution,
+                parseTokenRequestCommand = parse,
+                verifyClientAuthenticationCommand = verify,
+                serversConfigProvider = configProvider,
+                verifyDpopProofCommand = rejectingDpopVerify,
+                dpopProofJtiCache = newDpopJtiCache(),
+                dpopNonceManager = newDpopNonceManager(),
+                grantHandlers = grantHandlersFor(
+                    commands = service.commands,
+                    tokenStorage = tokenStorage,
+                    verifyRefreshTokenGrant = lazyOf(verifyRefreshTokenGrant),
+                    tokenExchangeJourney = {
+                        tokenExchangeJourney(
+                            parse = parse,
+                            verifyClientAuthentication = verify,
+                            createAccessToken = service.commands.createAccessToken,
+                            createTokenResponse = service.commands.createTokenResponse,
+                        )
+                    },
+                ),
+            )
+
+            val result = command.execute(
+                HandleTokenRequestArgs(
+                    requestBody = emptyMap(),
+                    requestHeaders = emptyMap(),
+                    httpUrl = "https://as.example.com/token",
+                ),
+            )
+
+            assertTrue(result.isErr, "$grantType must reject an unknown client")
+            assertEquals("invalid_client", result.error.code, "$grantType must return invalid_client")
+            val expectedAuthenticationCalls = if (grantType == GrantType.REFRESH_TOKEN) 0 else 1
+            assertEquals(expectedAuthenticationCalls, authenticationCalls, "$grantType client-authentication path")
+        }
+    }
+
     /**
      * Device-code grant verifier stub: tests in this file never exercise the device-code branch,
      * so this rejects unconditionally. The dedicated state-machine tests live in
@@ -205,8 +331,10 @@ class HandleTokenRequestCommandImplTest {
             ),
         refreshAuditEmitter: com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEmitter =
             com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter,
+        verifyRefreshTokenGrant: Lazy<VerifyRefreshTokenGrantCommand> = lazy { commands.verifyRefreshTokenGrant },
         clock: Clock = testClock,
         clientRegistry: ClientRegistry = newClientRegistry(),
+        tokenExchangeJourney: () -> TokenExchangeJourneyCommand = { error("token exchange journey is not configured for this test") },
     ): Map<String, Lazy<com.sphereon.oauth2.server.authorization.command.token.GrantHandler>> =
         mapOf(
             com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.AUTHORIZATION_CODE to
@@ -228,7 +356,7 @@ class HandleTokenRequestCommandImplTest {
                     com.sphereon.oauth2.server.authorization.impl.command.token.grant.RefreshTokenGrantHandlerImpl(
                         tokenStorage = tokenStorage,
                         auditEmitter = refreshAuditEmitter,
-                        verifyRefreshTokenGrant = commands.verifyRefreshTokenGrant,
+                        verifyRefreshTokenGrant = verifyRefreshTokenGrant.value,
                         createAccessToken = commands.createAccessToken,
                         createRefreshToken = lazy { commands.createRefreshToken },
                         createIdToken = lazy { commands.createIdToken },
@@ -248,9 +376,7 @@ class HandleTokenRequestCommandImplTest {
             com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.TOKEN_EXCHANGE to
                 lazy {
                     com.sphereon.oauth2.server.authorization.impl.command.token.grant.TokenExchangeGrantHandlerImpl(
-                        verifyTokenExchangeGrant = commands.verifyTokenExchangeGrant,
-                        createAccessToken = commands.createAccessToken,
-                        createTokenResponse = commands.createTokenResponse,
+                        tokenExchangeJourney = tokenExchangeJourney(),
                     )
                 },
             com.sphereon.oauth2.server.authorization.command.token.GrantHandlerKeys.PRE_AUTHORIZED_CODE to
@@ -309,7 +435,6 @@ class HandleTokenRequestCommandImplTest {
         override val verifyAuthorizationCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand = throw NotImplementedError()
         override val verifyRefreshTokenGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand = throw NotImplementedError()
         override val verifyClientCredentialsGrant get() = verifyGrantStub
-        override val verifyTokenExchangeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand = throw NotImplementedError()
         override val verifyPreAuthorizedCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeGrantCommand = throw NotImplementedError()
         override val createAccessToken get() = createAccessTokenStub
         override val createRefreshToken get(): com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand = throw NotImplementedError()
@@ -863,7 +988,6 @@ class HandleTokenRequestCommandImplTest {
         override val verifyAuthorizationCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand = throw NotImplementedError()
         override val verifyRefreshTokenGrant get() = verifyRefreshStub
         override val verifyClientCredentialsGrant get(): VerifyClientCredentialsGrantCommand = throw NotImplementedError()
-        override val verifyTokenExchangeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand = throw NotImplementedError()
         override val verifyPreAuthorizedCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeGrantCommand = throw NotImplementedError()
         override val createAccessToken get() = createAccessTokenStub
         override val createRefreshToken get() = createRefreshTokenStub
@@ -1426,15 +1550,6 @@ class HandleTokenRequestCommandImplTest {
     // RFC 9449 §10.1 proof-jkt continuity (FAPI 2.0)
     // ============================================================================
 
-    private fun stubVerifyTokenExchangeGrant(handler: suspend (VerifyTokenExchangeGrantArgs) -> IdkResult<VerifiedTokenExchangeGrant, IdkError>): VerifyTokenExchangeGrantCommand =
-        object : VerifyTokenExchangeGrantCommand {
-            override val inputTypeToken = typeToken<VerifyTokenExchangeGrantArgs>()
-            override val outputTypeToken = typeToken<VerifiedTokenExchangeGrant>()
-            override val isEnabled = true
-
-            override suspend fun execute(args: VerifyTokenExchangeGrantArgs) = handler(args)
-        }
-
     /**
      * Lightweight DPoP-verify stub that always Ok-returns a fixed thumbprint. Tests that need
      * proof-jkt continuity supply the thumbprint they want to assert against.
@@ -1733,227 +1848,6 @@ class HandleTokenRequestCommandImplTest {
             assertTrue(result.isOk, "client_credentials with DPoP proof must succeed")
             assertEquals(proofJkt, capturedAccessTokenArgs?.dpopJkt, "access token must carry cnf.jkt equal to the proof thumbprint")
             assertEquals("DPoP", capturedTokenResponseArgs?.tokenType, "token_type must be DPoP when proof is presented")
-        }
-
-    /**
-     * Stubbed token-exchange service backing the cnf.jkt cross-check tests below.
-     */
-    private fun serviceForTokenExchangeFlow(
-        parseStub: ParseTokenRequestCommand,
-        verifyClientAuthStub: com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand,
-        verifyExchangeStub: VerifyTokenExchangeGrantCommand,
-        createAccessTokenStub: CreateAccessTokenCommand,
-        createTokenResponseStub: CreateTokenResponseCommand,
-    ): com.sphereon.oauth2.server.authorization.service.AuthorizationServerService =
-        object : StubAuthorizationServerService(
-            parseTokenRequestStub = parseStub,
-            verifyClientAuthenticationStub = verifyClientAuthStub,
-        ) {
-            override val commands: com.sphereon.oauth2.server.authorization.service.AuthorizationServerService.Commands =
-                object : com.sphereon.oauth2.server.authorization.service.AuthorizationServerService.Commands {
-                    override val parseTokenRequest get() = parseStub
-                    override val verifyAuthorizationCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand = throw NotImplementedError()
-                    override val verifyRefreshTokenGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand = throw NotImplementedError()
-                    override val verifyClientCredentialsGrant get(): VerifyClientCredentialsGrantCommand = throw NotImplementedError()
-                    override val verifyTokenExchangeGrant get(): VerifyTokenExchangeGrantCommand = verifyExchangeStub
-                    override val verifyPreAuthorizedCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeGrantCommand = throw NotImplementedError()
-                    override val createAccessToken get() = createAccessTokenStub
-                    override val createRefreshToken get(): com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand = throw NotImplementedError()
-                    override val createTokenResponse get() = createTokenResponseStub
-                    override val parseAuthorizationRequest get(): com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestCommand = throw NotImplementedError()
-                    override val verifyAuthorizationRequest get(): com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationRequestCommand = throw NotImplementedError()
-                    override val createAuthorizationSession get(): com.sphereon.oauth2.server.authorization.command.CreateAuthorizationSessionCommand = throw NotImplementedError()
-                    override val createAuthorizationCode get(): com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeCommand = throw NotImplementedError()
-                    override val createAuthorizationResponse get(): com.sphereon.oauth2.server.authorization.command.CreateAuthorizationResponseCommand = throw NotImplementedError()
-                    override val createAuthorizationErrorResponse get(): com.sphereon.oauth2.server.authorization.command.CreateAuthorizationErrorResponseCommand = throw NotImplementedError()
-                    override val parsePushedAuthorizationRequest get(): com.sphereon.oauth2.server.authorization.command.ParsePushedAuthorizationRequestCommand = throw NotImplementedError()
-                    override val verifyPushedAuthorizationRequest get(): com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand = throw NotImplementedError()
-                    override val createRequestUri get(): com.sphereon.oauth2.server.authorization.command.CreateRequestUriCommand = throw NotImplementedError()
-                    override val createPushedAuthorizationResponse get(): com.sphereon.oauth2.server.authorization.command.CreatePushedAuthorizationResponseCommand = throw NotImplementedError()
-                    override val retrieveAuthorizationRequestByUri get(): com.sphereon.oauth2.server.authorization.command.RetrieveAuthorizationRequestByUriCommand = throw NotImplementedError()
-                    override val parseIntrospectionRequest get(): com.sphereon.oauth2.server.authorization.command.ParseIntrospectionRequestCommand = throw NotImplementedError()
-                    override val introspectToken get(): com.sphereon.oauth2.server.authorization.command.IntrospectTokenCommand = throw NotImplementedError()
-                    override val parseRevocationRequest get(): com.sphereon.oauth2.server.authorization.command.ParseRevocationRequestCommand = throw NotImplementedError()
-                    override val revokeToken get(): com.sphereon.oauth2.server.authorization.command.RevokeTokenCommand = throw NotImplementedError()
-                    override val buildServerMetadata get(): com.sphereon.oauth2.server.authorization.command.BuildServerMetadataCommand = throw NotImplementedError()
-                    override val verifyClientAuthentication get() = verifyClientAuthStub
-                    override val createAttestationChallenge get(): com.sphereon.oauth2.server.authorization.command.CreateAttestationChallengeCommand = throw NotImplementedError()
-                    override val createIdToken get(): CreateIdTokenCommand = throw NotImplementedError()
-                    override val getUserInfo get(): com.sphereon.oauth2.server.authorization.command.GetUserInfoCommand = throw NotImplementedError()
-                    override val getJwks get(): com.sphereon.oauth2.server.authorization.command.GetJwksCommand = throw NotImplementedError()
-                }
-        }
-
-    /**
-     * RFC 9449 §10.1: token_exchange where the subject token is DPoP-bound (`cnf.jkt` present)
-     * MUST reject a proof from a different key.
-     */
-    @Test
-    fun tokenExchangeRejectsProofWithDifferentJktThanSubjectTokenCnf() =
-        runTest {
-            val subjectJkt = "jkt-subject-DDDD"
-            val attackerJkt = "jkt-attacker-EEEE"
-            val service =
-                serviceForTokenExchangeFlow(
-                    parseStub =
-                        stubParseTokenRequest {
-                            Ok(
-                                TokenRequestData(
-                                    grantType = GrantType.TOKEN_EXCHANGE,
-                                    clientId = "client-1",
-                                    clientAuthentication =
-                                        ClientAuthenticationConfig.Basic(
-                                            credentials =
-                                                com.sphereon.oauth2.common.model
-                                                    .ClientCredentials(clientId = "client-1", clientSecret = "secret"),
-                                        ),
-                                    grantParameters =
-                                        GrantParameters.TokenExchange(
-                                            subjectToken = "subject.token.jwt",
-                                            subjectTokenType = "urn:ietf:params:oauth:token-type:jwt",
-                                        ),
-                                    httpUrl = "https://as.example.com/token",
-                                    dpopProof = "dummy.proof.token",
-                                ),
-                            )
-                        },
-                    verifyClientAuthStub =
-                        stubVerifyClientAuthentication {
-                            Ok(VerifiedClientAuthentication(clientId = it.clientId, method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC))
-                        },
-                    verifyExchangeStub =
-                        stubVerifyTokenExchangeGrant { args ->
-                            Ok(
-                                VerifiedTokenExchangeGrant(
-                                    subject = "alice",
-                                    clientId = args.clientId,
-                                    issuedTokenType = "urn:ietf:params:oauth:token-type:access_token",
-                                    isDelegation = false,
-                                    subjectCnfJkt = subjectJkt,
-                                ),
-                            )
-                        },
-                    createAccessTokenStub = stubCreateAccessToken { error("createAccessToken must NOT be invoked when DPoP jkt mismatches") },
-                    createTokenResponseStub = stubCreateTokenResponse { error("createTokenResponse must NOT be invoked when DPoP jkt mismatches") },
-                )
-            val command =
-                HandleTokenRequestCommandImpl(
-                    execution = ctx.execution,
-                    parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
-                    serversConfigProvider = configProvider,
-                    verifyDpopProofCommand = acceptingDpopVerify(jkt = attackerJkt),
-                    dpopProofJtiCache = newDpopJtiCache(),
-                    dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
-                )
-
-            val result =
-                command.execute(
-                    HandleTokenRequestArgs(
-                        requestBody = mapOf("grant_type" to listOf("urn:ietf:params:oauth:grant-type:token-exchange")),
-                        requestHeaders = mapOf("Authorization" to "Basic Y2xpZW50LTE6c2VjcmV0", "DPoP" to "dummy.proof.token"),
-                        httpUrl = "https://as.example.com/token",
-                    ),
-                )
-
-            assertTrue(result.isErr, "token_exchange must reject DPoP proof with thumbprint different from subject token cnf.jkt")
-            assertEquals("invalid_dpop_proof", result.error.code)
-        }
-
-    /**
-     * RFC 9449 §10.1: when the subject token is DPoP-bound and the matching proof is presented,
-     * the issued access token MUST carry `cnf.jkt` equal to the same thumbprint.
-     */
-    @Test
-    fun tokenExchangePreservesCnfJktWhenSubjectTokenIsBound() =
-        runTest {
-            val subjectJkt = "jkt-bound-FFFF"
-            var capturedAccessTokenArgs: CreateAccessTokenArgs? = null
-            val clientAuthorization =
-                VerifiedClientAuthorization(
-                    clientId = "client-1",
-                    grantTypes = listOf(GrantType.TOKEN_EXCHANGE),
-                )
-            val service =
-                serviceForTokenExchangeFlow(
-                    parseStub =
-                        stubParseTokenRequest {
-                            Ok(
-                                TokenRequestData(
-                                    grantType = GrantType.TOKEN_EXCHANGE,
-                                    clientId = "client-1",
-                                    clientAuthentication =
-                                        ClientAuthenticationConfig.Basic(
-                                            credentials =
-                                                com.sphereon.oauth2.common.model
-                                                    .ClientCredentials(clientId = "client-1", clientSecret = "secret"),
-                                        ),
-                                    grantParameters =
-                                        GrantParameters.TokenExchange(
-                                            subjectToken = "subject.token.jwt",
-                                            subjectTokenType = "urn:ietf:params:oauth:token-type:jwt",
-                                        ),
-                                    httpUrl = "https://as.example.com/token",
-                                    dpopProof = "dummy.proof.token",
-                                ),
-                            )
-                        },
-                    verifyClientAuthStub =
-                        stubVerifyClientAuthentication {
-                            Ok(
-                                VerifiedClientAuthentication(
-                                    clientId = it.clientId,
-                                    method = ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
-                                    clientAuthorization = clientAuthorization,
-                                ),
-                            )
-                        },
-                    verifyExchangeStub =
-                        stubVerifyTokenExchangeGrant { args ->
-                            Ok(
-                                VerifiedTokenExchangeGrant(
-                                    subject = "alice",
-                                    clientId = args.clientId,
-                                    issuedTokenType = "urn:ietf:params:oauth:token-type:access_token",
-                                    isDelegation = false,
-                                    subjectCnfJkt = subjectJkt,
-                                ),
-                            )
-                        },
-                    createAccessTokenStub =
-                        stubCreateAccessToken { args ->
-                            capturedAccessTokenArgs = args
-                            Ok(StringResult(value = "AT-EXCH-DPOP"))
-                        },
-                    createTokenResponseStub =
-                        stubCreateTokenResponse { args ->
-                            Ok(TokenResponse(accessToken = args.accessToken, tokenType = args.tokenType))
-                        },
-                )
-            val command =
-                HandleTokenRequestCommandImpl(
-                    execution = ctx.execution,
-                    parseTokenRequestCommand = service.commands.parseTokenRequest,
-                    verifyClientAuthenticationCommand = service.commands.verifyClientAuthentication,
-                    serversConfigProvider = configProvider,
-                    verifyDpopProofCommand = acceptingDpopVerify(jkt = subjectJkt),
-                    dpopProofJtiCache = newDpopJtiCache(),
-                    dpopNonceManager = newDpopNonceManager(),
-                    grantHandlers = grantHandlersFor(commands = service.commands, tokenStorage = newTokenStorage()),
-                )
-
-            val result =
-                command.execute(
-                    HandleTokenRequestArgs(
-                        requestBody = mapOf("grant_type" to listOf("urn:ietf:params:oauth:grant-type:token-exchange")),
-                        requestHeaders = mapOf("Authorization" to "Basic Y2xpZW50LTE6c2VjcmV0", "DPoP" to "dummy.proof.token"),
-                        httpUrl = "https://as.example.com/token",
-                    ),
-                )
-
-            assertTrue(result.isOk, "token_exchange with matching DPoP proof must succeed")
-            assertEquals(subjectJkt, capturedAccessTokenArgs?.dpopJkt, "access token must carry the same cnf.jkt as the subject token")
         }
 
     // ============================================================================
@@ -2323,6 +2217,7 @@ class HandleTokenRequestCommandImplTest {
                             execution = ctx.execution,
                             tokenStorage = tokenStorage,
                             configProvider = configProvider,
+                            clientRegistry = com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry(),
                         ),
                     createAccessTokenStub = stubCreateAccessToken { error("createAccessToken must NOT be invoked when refresh token is revoked") },
                     createRefreshTokenStub = stubCreateRefreshToken { error("createRefreshToken must NOT be invoked when refresh token is revoked") },

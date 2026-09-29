@@ -25,10 +25,14 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
+import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
+import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
+import com.sphereon.oauth2.server.authorization.model.ClientType
+import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.storage.TokenStorage
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -45,6 +49,7 @@ class VerifyRefreshTokenGrantCommandImpl(
     execution: SessionExecution,
     private val tokenStorage: TokenStorage,
     private val configProvider: OAuth2ServersConfigProvider,
+    private val clientRegistry: ClientRegistry,
 ) : TypedServiceCommandAdapter<VerifyRefreshTokenGrantArgs, VerifiedRefreshTokenGrant, IdkError>(
         commandId = VerifyRefreshTokenGrantCommand.COMMAND_ID,
         execution = execution,
@@ -67,6 +72,7 @@ class VerifyRefreshTokenGrantCommandImpl(
             applied.clientInstanceKeyJkt,
             applied.requestedScope,
             applied.requestedResource,
+            applied.clientAuthorization,
         ).mapError { IdkError.fromDTO(it) }
     }
 
@@ -76,6 +82,7 @@ class VerifyRefreshTokenGrantCommandImpl(
         clientInstanceKeyJkt: String?,
         requestedScope: String?,
         requestedResource: List<String>,
+        clientAuthorization: VerifiedClientAuthorization?,
     ): IdkResult<VerifiedRefreshTokenGrant, AuthorizationServerError> {
         // Retrieve refresh token data
         val tokenData =
@@ -90,11 +97,30 @@ class VerifyRefreshTokenGrantCommandImpl(
 
         // Check if token was found
         if (tokenData == null) {
+            if (clientRegistry.getClient(clientId).getOrElse { error ->
+                    return Err(AuthorizationServerError.ServerError(details = "Failed to retrieve client registration: $error"))
+                } == null
+            ) {
+                return Err(AuthorizationServerError.InvalidClient(details = "Unknown client '$clientId'"))
+            }
             return Err(
                 AuthorizationServerError.InvalidGrant(
                     details = "Invalid or expired refresh token",
                 ),
             )
+        }
+
+        val registeredClient = clientRegistry.getClient(clientId).getOrElse { error ->
+            return Err(AuthorizationServerError.ServerError(details = "Failed to retrieve client registration: $error"))
+        }
+        if (clientAuthorization != null && clientAuthorization.clientId != clientId) {
+            return Err(AuthorizationServerError.InvalidClient(details = "Authenticated client does not match refresh token client"))
+        }
+        if (clientAuthorization == null && registeredClient != null &&
+            (registeredClient.clientType != ClientType.PUBLIC ||
+                registeredClient.tokenEndpointAuthMethod != ClientAuthenticationMethod.NONE)
+        ) {
+            return Err(AuthorizationServerError.InvalidClient(details = "Client authentication is required"))
         }
 
         // Verify token is not expired (nullable for refresh tokens)

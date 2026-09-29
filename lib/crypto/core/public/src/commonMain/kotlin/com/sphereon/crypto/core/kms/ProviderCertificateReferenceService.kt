@@ -11,6 +11,7 @@
 package com.sphereon.crypto.core.kms
 
 import com.sphereon.core.api.IdkResult
+import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.x509.Certificate
@@ -70,3 +71,26 @@ interface ProviderCertificateReferenceService {
         lookup: ProviderCertificateLookup,
     ): IdkResult<ProviderCertificateReference, IdkError>
 }
+
+/**
+ * Optional companion to [ProviderCertificateReferenceService] for providers that accept more
+ * than one spelling of a certificate id (for example a full provider URL next to a short id).
+ *
+ * Returns the canonical id the provider would report in [ProviderCertificateReference.id] for
+ * the requested [ProviderCertificateLookup.id], or `null` when the lookup has no id. Inputs that
+ * point outside the provider's own scope, or that name a different alias, return an error.
+ * Providers without this capability are compared on the requested id as given.
+ */
+interface ProviderCertificateIdCanonicalizer {
+    fun canonicalCertificateId(lookup: ProviderCertificateLookup): IdkResult<String?, IdkError>
+}
+
+/**
+ * Resolves the canonical form of [lookup]'s id through [ProviderCertificateIdCanonicalizer] when
+ * [provider] implements it, and otherwise returns the id unchanged.
+ */
+fun canonicalProviderCertificateId(
+    provider: Any,
+    lookup: ProviderCertificateLookup,
+): IdkResult<String?, IdkError> =
+    (provider as? ProviderCertificateIdCanonicalizer)?.canonicalCertificateId(lookup) ?: Ok(lookup.id).asResult()

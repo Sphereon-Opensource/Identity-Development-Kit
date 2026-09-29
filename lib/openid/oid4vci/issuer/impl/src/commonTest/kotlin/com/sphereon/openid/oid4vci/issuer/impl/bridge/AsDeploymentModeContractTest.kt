@@ -67,7 +67,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsG
 import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifiedPreAuthCodeGrant
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
@@ -89,6 +88,7 @@ import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeData
 import com.sphereon.oauth2.server.authorization.storage.PreAuthorizedCodeStorage
 import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
 import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
+import com.sphereon.oauth2.server.resource.command.StandardJwtArtifactContext
 import com.sphereon.oauth2.server.resource.model.TokenPayload
 import com.sphereon.openid.oid4vci.issuer.bridge.ConsumePreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.RegisterPreAuthCodeArgs
@@ -209,8 +209,6 @@ class AsDeploymentModeContractTest {
         override suspend fun verifyRefreshTokenGrant(args: VerifyRefreshTokenGrantArgs) = notUsed()
 
         override suspend fun verifyClientCredentialsGrant(args: VerifyClientCredentialsGrantArgs) = notUsed()
-
-        override suspend fun verifyTokenExchangeGrant(args: VerifyTokenExchangeGrantArgs) = notUsed()
 
         override suspend fun verifyPreAuthorizedCodeGrant(args: VerifyPreAuthCodeArgs): IdkResult<VerifiedPreAuthCodeGrant, IdkError> {
             lastVerifyPreAuthorizedCodeArgs = args
@@ -552,6 +550,12 @@ class AsDeploymentModeContractTest {
                 ),
             )
         }
+
+        override suspend fun verifyStandardArtifact(
+            args: VerifyJwtArgs,
+            context: StandardJwtArtifactContext,
+        ): IdkResult<JsonObject, IdkError> =
+            error("Standard JWT artifact verification is not used by access-token bridge contract tests")
     }
 
     @Test

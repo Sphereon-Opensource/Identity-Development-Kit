@@ -69,7 +69,6 @@ import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
 import com.sphereon.oauth2.server.authorization.provider.FederationProviderRuntimeResolver
-import com.sphereon.oauth2.common.model.ClientAuthenticationConfig
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserInfo
 import dev.zacsweers.metro.ContributesBinding
@@ -109,8 +108,7 @@ class FederationFlowIntegrationTest {
     private val ctx = OAuth2IntegrationTestContext(this)
     private val adapter: OAuth2FederationHttpAdapter =
         (ctx.session.graph as FederationFlowAdaptersGraph)
-            .httpAdapters
-            [OAuth2FederationHttpAdapter.ID]
+            .httpAdapters[OAuth2FederationHttpAdapter.ID]
             ?.value as? OAuth2FederationHttpAdapter
             ?: error("OAuth2FederationHttpAdapter not present in the session graph")
     private val routeSelector = (ctx.app as HttpAdapterRouteSelector.Graph).httpAdapterRouteSelector
@@ -606,7 +604,8 @@ class CapturingOAuth2Client : OAuth2Client {
         ownerHandleDigest: String?,
         grantBinding: String?,
         clientCorrelation: String?,
-    ): IdkResult<OidcLoginInitiation, IdkError> = notImplemented()
+    ): IdkResult<OidcLoginInitiation, IdkError> =
+        error("CapturingOAuth2Client.initiateOidcLogin: not used in federation flow test")
 
     override suspend fun initiateOidcLogin(
         authorizationServerMetadata: AuthorizationServerMetadata,
@@ -622,9 +621,11 @@ class CapturingOAuth2Client : OAuth2Client {
         ownerHandleDigest: String?,
         grantBinding: String?,
         clientCorrelation: String?,
-    ): IdkResult<OidcLoginInitiation, IdkError> = notImplemented()
+    ): IdkResult<OidcLoginInitiation, IdkError> =
+        error("CapturingOAuth2Client.initiateOidcLogin(metadata): not used in federation flow test")
 
-    override suspend fun parseAuthorizationResponse(redirectUrl: String): IdkResult<AuthorizationResponse, IdkError> = notImplemented()
+    override suspend fun parseAuthorizationResponse(redirectUrl: String): IdkResult<AuthorizationResponse, IdkError> =
+        error("CapturingOAuth2Client.parseAuthorizationResponse: not used in federation flow test")
 
     override suspend fun exchangeAuthorizationCode(
         authorizationServerMetadata: AuthorizationServerMetadata,
@@ -634,7 +635,9 @@ class CapturingOAuth2Client : OAuth2Client {
         pkceData: PkceData?,
         resource: List<String>?,
         dpopContext: DpopContext?,
-    ): IdkResult<TokenResponse, IdkError> = notImplemented()
+        audience: List<String>?,
+    ): IdkResult<TokenResponse, IdkError> =
+        error("CapturingOAuth2Client.exchangeAuthorizationCode: not used in federation flow test")
 
     override suspend fun exchangePreAuthorizedCode(
         authorizationServerMetadata: AuthorizationServerMetadata,
@@ -643,7 +646,8 @@ class CapturingOAuth2Client : OAuth2Client {
         txCode: String?,
         resource: List<String>?,
         dpopContext: DpopContext?,
-    ): IdkResult<TokenResponse, IdkError> = notImplemented()
+    ): IdkResult<TokenResponse, IdkError> =
+        error("CapturingOAuth2Client.exchangePreAuthorizedCode: not used in federation flow test")
 
     override suspend fun refreshAccessToken(
         authorizationServerMetadata: AuthorizationServerMetadata,
@@ -652,36 +656,29 @@ class CapturingOAuth2Client : OAuth2Client {
         scope: String?,
         resource: List<String>?,
         dpopContext: DpopContext?,
-    ): IdkResult<TokenResponse, IdkError> = notImplemented()
+        audience: List<String>?,
+    ): IdkResult<TokenResponse, IdkError> =
+        error("CapturingOAuth2Client.refreshAccessToken: not used in federation flow test")
 
     override suspend fun introspectToken(
         authorizationServerMetadata: AuthorizationServerMetadata,
         clientAuthentication: ClientAuthenticationConfig,
         token: String,
         tokenTypeHint: String?,
-    ): IdkResult<TokenIntrospectionResponse, IdkError> = notImplemented()
+    ): IdkResult<TokenIntrospectionResponse, IdkError> =
+        error("CapturingOAuth2Client.introspectToken: not used in federation flow test")
 
     override suspend fun validateIdToken(
         idToken: String,
         options: IdTokenValidationOptions,
-    ): IdkResult<ValidatedIdToken, IdkError> = notImplemented()
+    ): IdkResult<ValidatedIdToken, IdkError> =
+        error("CapturingOAuth2Client.validateIdToken: not used in federation flow test")
 
     override suspend fun fetchUserInfo(
         accessToken: String,
         metadata: AuthorizationServerMetadata,
-    ): IdkResult<FetchUserInfoResult, IdkError> = notImplemented()
-
-    private fun <T> notImplemented(): IdkResult<T, IdkError> =
-        Err(
-            IdkError(
-                code = "not_implemented",
-                message =
-                    IdkError.Message(
-                        i18nKey = "",
-                        defaultMessage = "CapturingOAuth2Client only implements initiateAuthorization",
-                    ),
-            ),
-        )
+    ): IdkResult<FetchUserInfoResult, IdkError> =
+        error("CapturingOAuth2Client.fetchUserInfo: not used in federation flow test")
 }
 
 @ContributesTo(SessionScope::class)

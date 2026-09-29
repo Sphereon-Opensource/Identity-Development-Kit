@@ -36,6 +36,7 @@ import com.sphereon.statuslist.MdocStatusListProfile
 import com.sphereon.statuslist.StatusListContentTypes
 import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.impl.codec.MdocRevocationCwtClaimsCodecImpl
+import com.sphereon.statuslist.impl.codec.tagStatusListCoseSign1
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -154,7 +155,7 @@ class MdocCwtStatusListSigner(
                     ),
                 )
             }
-        val encoded = coseSign1Codec.encode(signed.coseSign1).getOrElse { return Err(it) }
+        val encoded = coseSign1Codec.encode(signed.coseSign1).getOrElse { return Err(it) }.tagStatusListCoseSign1()
         return Ok(
             StatusListToken(
                 token = encoded.encodeToBase64Url(),

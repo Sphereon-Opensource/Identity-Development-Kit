@@ -46,6 +46,8 @@ import com.sphereon.core.events.impl.EventHubImpl
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
+import com.sphereon.openid.oid4vc.common.DisplayProperties
+import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.CredentialOffer
 import com.sphereon.openid.oid4vci.issuer.bridge.AugmentAsMetadataArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.AuthorizationContextRef
@@ -57,6 +59,7 @@ import com.sphereon.openid.oid4vci.issuer.bridge.RegisterPreAuthCodeArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.RegisteredPreAuthCode
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidateAccessTokenArgs
 import com.sphereon.openid.oid4vci.issuer.bridge.ValidatedTokenContext
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.store.CredentialIssuanceSessionStore
 import com.sphereon.openid.oid4vci.issuer.store.CredentialOfferStore
 import com.sphereon.openid.oid4vci.issuer.store.DeferredCredentialEntry
@@ -262,4 +265,15 @@ internal class NoOpAsBridge : Oid4vciAuthorizationServerBridge {
     override suspend fun validateAccessToken(args: ValidateAccessTokenArgs): IdkResult<ValidatedTokenContext, IdkError> = throw UnsupportedOperationException("not used in support fakes")
 
     override suspend fun augmentAsMetadata(args: AugmentAsMetadataArgs): IdkResult<JsonObject, IdkError> = throw UnsupportedOperationException("not used in support fakes")
+}
+
+/** Issuer configuration that publishes exactly [credentialConfigurationIds]. */
+internal class PublishedConfigurationsIssuerConfigProvider(
+    vararg credentialConfigurationIds: String,
+) : Oid4vciIssuerConfigProvider {
+    override val issuerIdentifier: String = "https://issuer.example.com"
+    override val credentialConfigurations: Map<String, CredentialConfigurationSupported> =
+        credentialConfigurationIds.associateWith { CredentialConfigurationSupported(format = "dc+sd-jwt") }
+    override val authorizationServers: List<String>? = null
+    override val display: List<DisplayProperties>? = null
 }

@@ -399,10 +399,7 @@ class ProtectedPropertySourcesResolver(
             Ok(Unit)
         } else {
             Err(
-                ConfigErrors.interpolationError(
-                    key = "environment",
-                    reason = "environment reference is not permitted",
-                ),
+                ConfigErrors.interpolationDenied("environment reference is not permitted"),
             )
         }
     }
@@ -511,10 +508,7 @@ class ProtectedPropertySourcesResolver(
 
     private fun deniedPropertyRead(): IdkResult<Unit, IdkError> =
         Err(
-            ConfigErrors.interpolationError(
-                key = "property",
-                reason = "property reference is not permitted",
-            ),
+            ConfigErrors.interpolationDenied("property reference is not permitted"),
         )
 }
 

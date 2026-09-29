@@ -21,29 +21,16 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationCodeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientCredentialsGrant
-import com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantCommand
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand
 
 internal suspend fun VerifyClientCredentialsGrantCommand.executeWithTrustedClientAuthorization(
     args: VerifyClientCredentialsGrantArgs,
     clientAuthorization: VerifiedClientAuthorization?,
 ): IdkResult<VerifiedClientCredentialsGrant, IdkError> =
     if (clientAuthorization != null && this is VerifyClientCredentialsGrantCommandImpl) {
-        verifyWithTrustedClientAuthorization(args, clientAuthorization)
-    } else {
-        execute(args)
-    }
-
-internal suspend fun VerifyTokenExchangeGrantCommand.executeWithTrustedClientAuthorization(
-    args: VerifyTokenExchangeGrantArgs,
-    clientAuthorization: VerifiedClientAuthorization?,
-): IdkResult<VerifiedTokenExchangeGrant, IdkError> =
-    if (clientAuthorization != null && this is VerifyTokenExchangeGrantCommandImpl) {
         verifyWithTrustedClientAuthorization(args, clientAuthorization)
     } else {
         execute(args)

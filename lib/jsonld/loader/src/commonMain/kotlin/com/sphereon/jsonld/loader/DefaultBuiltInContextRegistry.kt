@@ -57,6 +57,8 @@ class MapBackedBuiltInContextRegistry(
  * Bundled IRIs (UNTP 0.7.0 critical path):
  *
  * - `https://www.w3.org/ns/credentials/v2` — W3C VCDM 2.0
+ * - `https://www.w3.org/2018/credentials/v1` — W3C VCDM 1.1
+ * - `https://www.w3.org/ns/credentials/status/v1` — W3C Bitstring Status List v1.0
  * - `https://w3id.org/security/data-integrity/v1` — VC Data Integrity 1.0
  * - `https://w3id.org/security/data-integrity/v2` — VC Data Integrity 1.1+
  * - `https://vocabulary.uncefact.org/untp/` — UN/CEFACT UNTP 0.7.0

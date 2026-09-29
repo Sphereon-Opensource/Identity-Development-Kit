@@ -108,7 +108,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentica
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientCredentialsGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedPreAuthCodeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
-import com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationRequestCommand
@@ -122,8 +121,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizatio
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestArgs
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestCommand
 import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestArgs
@@ -798,8 +795,6 @@ private class TestOid4vciAuthorizationServerService : AuthorizationServerService
 
     override suspend fun verifyClientCredentialsGrant(args: VerifyClientCredentialsGrantArgs) = err()
 
-    override suspend fun verifyTokenExchangeGrant(args: VerifyTokenExchangeGrantArgs) = err()
-
     override suspend fun parseAuthorizationRequest(args: ParseAuthorizationRequestArgs) = err()
 
     override suspend fun verifyAuthorizationRequest(args: AuthorizationRequestData) = err()
@@ -1052,14 +1047,6 @@ private class TestOid4vciAuthorizationServerService : AuthorizationServerService
                 override val isEnabled = true
 
                 override suspend fun execute(args: VerifyClientCredentialsGrantArgs): IdkResult<VerifiedClientCredentialsGrant, IdkError> = err()
-            }
-        override val verifyTokenExchangeGrant =
-            object : VerifyTokenExchangeGrantCommand {
-                override val inputTypeToken = typeToken<VerifyTokenExchangeGrantArgs>()
-                override val outputTypeToken = typeToken<VerifiedTokenExchangeGrant>()
-                override val isEnabled = true
-
-                override suspend fun execute(args: VerifyTokenExchangeGrantArgs): IdkResult<VerifiedTokenExchangeGrant, IdkError> = err()
             }
         override val verifyPreAuthorizedCodeGrant =
             object : VerifyPreAuthorizedCodeGrantCommand {
@@ -1652,47 +1639,8 @@ private class Oid4vciFakeHandleTokenRequestCommand(
                 )
             }
 
-            is GrantParameters.TokenExchange -> {
-                val verified =
-                    commands.verifyTokenExchangeGrant
-                        .execute(
-                            VerifyTokenExchangeGrantArgs(
-                                subjectToken = params.subjectToken,
-                                subjectTokenType = params.subjectTokenType,
-                                actorToken = params.actorToken,
-                                actorTokenType = params.actorTokenType,
-                                resources = params.resources,
-                                audiences = params.audiences,
-                                scope = params.scope,
-                                requestedTokenType = params.requestedTokenType,
-                                clientId = tokenRequest.clientId,
-                            ),
-                        ).getOrElse { error -> return Err(error) }
-                val additionalClaims =
-                    buildMap<String, Any> {
-                        putAll(verified.additionalClaims)
-                        verified.actorClaim?.let { put("act", it) }
-                    }
-                val accessToken =
-                    commands.createAccessToken
-                        .execute(
-                            CreateAccessTokenArgs(
-                                subject = verified.subject,
-                                clientId = verified.clientId,
-                                scope = verified.scope,
-                                audience = verified.audience,
-                                additionalClaims = additionalClaims,
-                            ),
-                        ).getOrElse { error -> return Err(error) }
-                commands.createTokenResponse.execute(
-                    CreateTokenResponseArgs(
-                        accessToken = accessToken.value,
-                        tokenType = "Bearer",
-                        scope = verified.scope,
-                        issuedTokenType = verified.issuedTokenType,
-                    ),
-                )
-            }
+            is GrantParameters.TokenExchange ->
+                Err(IdkError.fromString(code = "unsupported_grant_type", message = "Token exchange runs through the token-exchange journey"))
 
             is GrantParameters.PreAuthorizedCode -> {
                 val verified =

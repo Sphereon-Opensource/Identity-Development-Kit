@@ -43,6 +43,17 @@ import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
+internal const val DIFFERENT_KIND =
+    "The alias is already registered as a different certificate reference kind"
+internal const val DIFFERENT_SOURCE =
+    "The alias is already registered with a different certificate source"
+internal const val DIFFERENT_LINKED_KEY =
+    "The alias is already registered with a different linked key"
+internal const val DIFFERENT_PROVIDER_CERTIFICATE_ID =
+    "The alias is already registered for a different provider certificate id"
+internal const val DIFFERENT_CERTIFICATE_MATERIAL =
+    "The alias is already registered with different certificate material"
+
 class CertificateReferenceResolutionException(
     val code: String,
     message: String,
@@ -56,6 +67,7 @@ class CertificateReferenceRegistrar(
     private val keyReferenceStore: KeyReferenceStore,
     private val keyInspector: ProviderKeyReferenceInspector,
     private val providerInspector: ProviderCertificateReferenceInspector,
+    private val keyReferenceProviderIds: KeyReferenceProviderIds,
     private val execution: SessionExecution,
 ) {
     private val tenantId: String
@@ -158,36 +170,31 @@ class CertificateReferenceRegistrar(
             linkedKeyReferenceId = linkedKey.id
         }
 
-        val existing = certificateReferenceStore
-            .findByAlias(tenantId, input.alias, input.providerId, input.kind)
-            .getOrElse { return Err(it) }
+        val existing = findActiveByAlias(input.alias, input.providerId).getOrElse { return Err(it) }
+        if (existing != null && reserveManaged) return Err(managedStoreConflict())
         if (existing != null && existing.controlMode != controlMode) {
-            return Err(
-                IdkError.fromString(
-                    code = CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT,
-                    message = "The certificate reference ownership cannot be changed in place",
-                ),
-            )
+            return Err(registrationConflict("The certificate reference ownership cannot be changed in place"))
         }
         val providerCertificateId = material.providerCertificateId ?: input.providerCertificateId
+        // A registration never changes a known certificate reference. Registering the same
+        // reference again returns it unchanged; any difference is a conflict.
+        if (existing != null) {
+            val difference = reregistrationDifference(existing, input, material, linkedKeyReferenceId, providerCertificateId)
+            return if (difference == null) Ok(existing) else Err(registrationConflict(difference))
+        }
         if (providerCertificateId != null) {
             val identityMatches = certificateReferenceStore
                 .findByProviderCertificateId(tenantId, input.providerId, providerCertificateId)
                 .getOrElse { return Err(it) }
             if (identityMatches.any { it.alias != input.alias || it.kind != input.kind }) {
-                return Err(
-                    IdkError.fromString(
-                        code = CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT,
-                        message = "The provider certificate is already registered under another reference",
-                    ),
-                )
+                return Err(registrationConflict("The provider certificate is already registered under another reference"))
             }
         }
 
         val now = Clock.System.now()
         val record = try {
             CertificateReferenceRecord(
-                id = existing?.id ?: recordId ?: Uuid.random().toString(),
+                id = recordId ?: Uuid.random().toString(),
                 tenantId = tenantId,
                 alias = input.alias,
                 providerId = input.providerId,
@@ -203,8 +210,8 @@ class CertificateReferenceRegistrar(
                 },
                 certificateFingerprint = CertificateReferenceRecord.certificateFingerprintOf(material.leafDer),
                 publicKeyFingerprint = CertificateReferenceRecord.publicKeyFingerprintOfCanonicalSpki(material.canonicalSpki),
-                createdAt = existing?.createdAt ?: now,
-                createdById = existing?.createdById,
+                createdAt = now,
+                createdById = null,
                 updatedAt = now,
                 updatedById = null,
                 deletedAt = now.takeIf { reserveManaged },
@@ -214,25 +221,60 @@ class CertificateReferenceRegistrar(
         } catch (_: Exception) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "The certificate reference material is invalid"))
         }
-        val aliasClaim = reserveManaged || (!reserveManaged && existing == null)
-        if (aliasClaim) {
-            val acquired = certificateReferenceStore
-                .tryAcquireAliasClaim(tenantId, record.providerId, record.alias, record.id)
-                .getOrElse { return Err(it) }
-            if (!acquired) return Err(managedStoreConflict())
-        }
-        val saved = if (reserveManaged) certificateReferenceStore.save(record) else certificateReferenceStore.upsert(record)
-        if (!reserveManaged && saved.isOk) {
-            val ownerId = saved.value.id
+        val acquired = certificateReferenceStore
+            .tryAcquireAliasClaim(tenantId, record.providerId, record.alias, record.id)
+            .getOrElse { return Err(it) }
+        if (!acquired) return Err(managedStoreConflict())
+        val saved = certificateReferenceStore.save(record)
+        if (!reserveManaged) {
             certificateReferenceStore.releaseAliasClaim(tenantId, record.providerId, record.alias, record.id)
                 .getOrElse { return Err(it) }
-            if (ownerId != record.id) {
-                certificateReferenceStore.releaseAliasClaim(tenantId, record.providerId, record.alias, ownerId)
-                    .getOrElse { return Err(it) }
-            }
         }
         return saved
     }
+
+    private suspend fun findActiveByAlias(
+        alias: String,
+        providerId: String,
+    ): IdkResult<CertificateReferenceRecord?, IdkError> {
+        for (kind in CertificateReferenceKind.entries) {
+            val found = certificateReferenceStore.findByAlias(tenantId, alias, providerId, kind).getOrElse { return Err(it) }
+            if (found != null) return Ok(found)
+        }
+        return Ok(null)
+    }
+
+    private fun reregistrationDifference(
+        existing: CertificateReferenceRecord,
+        input: RegisterCertificateReferenceInput,
+        material: CertificateMaterial,
+        linkedKeyReferenceId: String?,
+        providerCertificateId: String?,
+    ): String? = when {
+        existing.kind != input.kind -> DIFFERENT_KIND
+        existing.source != input.source -> DIFFERENT_SOURCE
+        existing.linkedKeyReferenceId != linkedKeyReferenceId -> DIFFERENT_LINKED_KEY
+        existing.providerCertificateId != providerCertificateId -> DIFFERENT_PROVIDER_CERTIFICATE_ID
+        !sameMaterial(existing, input.source, material) -> DIFFERENT_CERTIFICATE_MATERIAL
+        else -> null
+    }
+
+    private fun sameMaterial(
+        existing: CertificateReferenceRecord,
+        source: CertificateReferenceSource,
+        material: CertificateMaterial,
+    ): Boolean {
+        if (!CertificateReferenceRecord.certificateFingerprintOf(material.leafDer).contentEquals(existing.certificateFingerprint)) {
+            return false
+        }
+        if (source != CertificateReferenceSource.STORED_PUBLIC_MATERIAL) return true
+        val stored = storedChain(existing).getOrElse { return false }
+        return stored.size == material.chainDer.size &&
+            stored.zip(material.chainDer).all { (left, right) -> left.contentEquals(right) }
+    }
+
+    private fun registrationConflict(message: String) =
+        IdkError.fromString(code = CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT, message = message)
 
     private fun managedStoreConflict() = IdkError.fromString(
         code = "KMS_CERTIFICATE_REFERENCE_MANAGED_STORE_CONFLICT",
@@ -366,7 +408,7 @@ class CertificateReferenceRegistrar(
                     message = "The certificate reference has no linked tenant key",
                 ),
             )
-        if (linkedKey.providerId != record.providerId) {
+        if (linkedKey.providerId !in keyReferenceProviderIds.recordedUnder(record.providerId)) {
             return Err(
                 IdkError.fromString(
                     code = CertificateReferenceStoreErrorCodes.KEY_IDENTITY_MISMATCH,
@@ -454,19 +496,33 @@ class CertificateReferenceRegistrar(
         ))
     }
 
+    /**
+     * Finds the tenant's registered key under every id its provider records key references with.
+     * An external registration records the provider's runtime id, which can differ from the id
+     * the certificate request names.
+     */
     private suspend fun resolveLinkedKey(
         input: RegisterCertificateReferenceInput,
     ): IdkResult<KeyReferenceRecord, IdkError> {
         val linkedKeyAlias = input.linkedKeyAlias
         val linkedKeyKid = input.linkedKeyKid
-        val result: IdkResult<KeyReferenceRecord?, IdkError> = when {
-            linkedKeyAlias != null -> keyReferenceStore.findByAlias(tenantId, linkedKeyAlias, input.providerId)
-            linkedKeyKid != null -> keyReferenceStore.findByKid(tenantId, linkedKeyKid, input.providerId)
-            else -> Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "KEY_CERTIFICATE_CHAIN requires linkedKeyAlias or linkedKeyKid"))
+        if (linkedKeyAlias == null && linkedKeyKid == null) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "KEY_CERTIFICATE_CHAIN requires linkedKeyAlias or linkedKeyKid"))
         }
-        if (result.isErr) return Err(result.error)
-        return result.value?.let { Ok(it) }
-            ?: Err(IdkError.NOT_FOUND_ERROR(message = "The linked tenant key reference was not found"))
+        for (providerId in keyReferenceProviderIds.recordedUnder(input.providerId).distinct()) {
+            val found =
+                if (linkedKeyAlias != null) {
+                    keyReferenceStore.findByAlias(tenantId, linkedKeyAlias, providerId)
+                } else {
+                    keyReferenceStore.findByKid(tenantId, requireNotNull(linkedKeyKid), providerId)
+                }.getOrElse { return Err(it) }
+            if (found != null) return Ok(found)
+        }
+        return Err(
+            IdkError.NOT_FOUND_ERROR(
+                message = "The linked key is not registered for this tenant and provider; register it with POST /keys/register first",
+            ),
+        )
     }
 
     /**

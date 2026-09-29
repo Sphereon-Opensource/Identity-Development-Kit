@@ -51,6 +51,7 @@ import com.sphereon.crypto.core.kms.CertificateService
 import com.sphereon.crypto.core.kms.CertificateStoreService
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KeyStoreService
+import com.sphereon.crypto.core.kms.KmsProvider
 import com.sphereon.crypto.core.kms.ProviderCertificateReference
 import com.sphereon.crypto.core.kms.model.KeyProviderSettings
 import com.sphereon.crypto.core.x509.Certificate
@@ -75,6 +76,7 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.junit.jupiter.api.Test
+import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
 import java.math.BigInteger
 import java.security.KeyPair
@@ -535,6 +537,156 @@ class CertificateReferenceLifecycleTest {
         }
 
     @Test
+    fun identicalStoredChainReRegistrationReturnsTheExistingReferenceUnchanged() =
+        runTest {
+            val fixture = Fixture()
+            val keyPair = generateKeyPair("EC")
+            val leaf = certificateFor(keyPair, "repeat-stored")
+            fixture.addLinkedKey("repeat-key", keyPair)
+            val input = storedChainInput(alias = "repeat-chain", linkedKeyAlias = "repeat-key", leaf = leaf)
+                .copy(providerCertificateId = "repeat-provider-id")
+            val first = fixture.service.registerCertificateReference(input)
+            val before = fixture.certificateStore.rows.toMap()
+
+            val second = fixture.service.registerCertificateReference(input)
+
+            assertEquals(first.id, second.id)
+            assertEquals(ResourceControlMode.EXTERNALLY_MANAGED, second.controlMode)
+            assertEquals(before, fixture.certificateStore.rows.toMap())
+        }
+
+    @Test
+    fun providerCertificateIdentityMismatchKeepsItsReasonAndStoresNothing() =
+        runTest {
+            val fixture = Fixture()
+            fixture.providerInspector.nextError = IdkError.fromString(
+                code = "KMS_PROVIDER_CERTIFICATE_IDENTITY_MISMATCH",
+                message = "The provider certificate identity does not match the requested reference",
+            )
+
+            val failure = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.registerCertificateReference(providerNativeTrustedInput("identity-mismatch"))
+            }
+
+            assertEquals("KMS_PROVIDER_CERTIFICATE_IDENTITY_MISMATCH", failure.code)
+            assertEquals("The provider certificate identity does not match the requested reference", failure.message)
+            assertTrue(fixture.certificateStore.rows.isEmpty())
+        }
+
+    @Test
+    fun identicalProviderNativeReRegistrationReturnsTheExistingReferenceUnchanged() =
+        runTest {
+            val fixture = Fixture()
+            val leaf = certificateFor(generateKeyPair("EC"), "repeat-native")
+            fixture.providerInspector.references["repeat-native"] = providerReference("repeat-native", leaf)
+            val first = fixture.service.registerCertificateReference(providerNativeTrustedInput("repeat-native"))
+            val before = fixture.certificateStore.rows.toMap()
+
+            val second = fixture.service.registerCertificateReference(providerNativeTrustedInput("repeat-native"))
+
+            assertEquals(first.id, second.id)
+            assertEquals(before, fixture.certificateStore.rows.toMap())
+        }
+
+    @Test
+    fun reRegistrationWithADifferentChainIsAConflictAndWritesNothing() =
+        runTest {
+            val fixture = Fixture()
+            val original = certificateFor(generateKeyPair("EC"), "original-trusted")
+            val replacement = certificateFor(generateKeyPair("EC"), "replacement-trusted")
+            fixture.service.registerCertificateReference(storedTrustedInput("trusted-alias", original))
+            val before = fixture.certificateStore.rows.toMap()
+
+            val conflict = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.registerCertificateReference(storedTrustedInput("trusted-alias", replacement))
+            }
+
+            assertEquals(CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT, conflict.code)
+            assertEquals(DIFFERENT_CERTIFICATE_MATERIAL, conflict.message)
+            assertEquals(before, fixture.certificateStore.rows.toMap())
+            assertContentEquals(original.der, fixture.service.getTrustedCertificate("trusted-alias", PROVIDER_ID).certificate.value)
+        }
+
+    @Test
+    fun reRegistrationWithALongerChainIsAConflictAndWritesNothing() =
+        runTest {
+            val fixture = Fixture()
+            val caKeyPair = generateKeyPair("EC")
+            val ca = certificateFor(caKeyPair, "chain-ca")
+            val keyPair = generateKeyPair("EC")
+            val leaf = certificateSignedBy(keyPair, "chain-leaf", caKeyPair, "chain-ca")
+            fixture.addLinkedKey("chain-key", keyPair)
+            fixture.service.registerCertificateReference(storedChainInput(alias = "chain-alias", linkedKeyAlias = "chain-key", leaf = leaf))
+            val before = fixture.certificateStore.rows.toMap()
+
+            val conflict = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.registerCertificateReference(
+                    storedChainInput(alias = "chain-alias", linkedKeyAlias = "chain-key", leaf = leaf)
+                        .copy(certificateChain = listOf(Base64ByteArray(leaf.der), Base64ByteArray(ca.der))),
+                )
+            }
+
+            assertEquals(CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT, conflict.code)
+            assertEquals(DIFFERENT_CERTIFICATE_MATERIAL, conflict.message)
+            assertEquals(before, fixture.certificateStore.rows.toMap())
+        }
+
+    @Test
+    fun reRegistrationWithADifferentLinkedKeyIsAConflictAndWritesNothing() =
+        runTest {
+            val fixture = Fixture()
+            val keyPair = generateKeyPair("EC")
+            val leaf = certificateFor(keyPair, "linked-leaf")
+            fixture.addLinkedKey("first-key", keyPair)
+            fixture.addLinkedKey("second-key", keyPair)
+            fixture.service.registerCertificateReference(storedChainInput(alias = "linked-chain", linkedKeyAlias = "first-key", leaf = leaf))
+            val before = fixture.certificateStore.rows.toMap()
+
+            val conflict = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.registerCertificateReference(storedChainInput(alias = "linked-chain", linkedKeyAlias = "second-key", leaf = leaf))
+            }
+
+            assertEquals(CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT, conflict.code)
+            assertEquals(DIFFERENT_LINKED_KEY, conflict.message)
+            assertEquals(before, fixture.certificateStore.rows.toMap())
+            assertEquals("$TENANT_ID-first-key-id", before.values.single().linkedKeyReferenceId)
+        }
+
+    @Test
+    fun reRegistrationWithADifferentKindSourceOrProviderCertificateIdIsAConflictAndWritesNothing() =
+        runTest {
+            val fixture = Fixture()
+            val keyPair = generateKeyPair("EC")
+            val certificate = certificateFor(keyPair, "variant")
+            fixture.addLinkedKey("variant-key", keyPair)
+            fixture.providerInspector.references["variant"] = providerReference("variant", certificate)
+            fixture.service.registerCertificateReference(storedTrustedInput("variant", certificate))
+            val before = fixture.certificateStore.rows.toMap()
+
+            val differentKind = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.registerCertificateReference(
+                    storedChainInput(alias = "variant", linkedKeyAlias = "variant-key", leaf = certificate),
+                )
+            }
+            val differentSource = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.registerCertificateReference(providerNativeTrustedInput("variant"))
+            }
+            val differentProviderCertificateId = assertFailsWith<CertificateReferenceResolutionException> {
+                fixture.service.registerCertificateReference(
+                    storedTrustedInput("variant", certificate).copy(providerCertificateId = "other-provider-id"),
+                )
+            }
+
+            assertEquals(DIFFERENT_KIND, differentKind.message)
+            assertEquals(DIFFERENT_SOURCE, differentSource.message)
+            assertEquals(DIFFERENT_PROVIDER_CERTIFICATE_ID, differentProviderCertificateId.message)
+            listOf(differentKind, differentSource, differentProviderCertificateId).forEach {
+                assertEquals(CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT, it.code)
+            }
+            assertEquals(before, fixture.certificateStore.rows.toMap())
+        }
+
+    @Test
     fun concurrentByocRegistrationAndManagedStoreHaveOneAliasOwner() =
         runTest {
             val fixture = Fixture()
@@ -840,6 +992,52 @@ class CertificateReferenceLifecycleTest {
         }
 
     @Test
+    fun storedChainLinksAKeyRegisteredUnderTheProvidersRuntimeId() =
+        runTest {
+            // A tenant KMS resource is addressed by its published id while external key
+            // registration records the resource's runtime id. The certificate request names the
+            // published id, so the linked key must be found under the runtime id as well.
+            val fixture = Fixture()
+            fixture.runtimeProviderIds[PROVIDER_ID] = listOf(RUNTIME_PROVIDER_ID)
+            val keyPair = generateKeyPair("EC")
+            val leaf = certificateFor(keyPair, "runtime-byoc-leaf")
+            fixture.addLinkedKey("runtime-byoc-key", keyPair, recordedProviderId = RUNTIME_PROVIDER_ID)
+
+            val registered = fixture.service.registerCertificateReference(
+                storedChainInput(alias = "runtime-byoc-chain", linkedKeyAlias = "runtime-byoc-key", leaf = leaf),
+            )
+
+            assertEquals(ResourceControlMode.EXTERNALLY_MANAGED, registered.controlMode)
+            assertEquals("$TENANT_ID-runtime-byoc-key-id", registered.linkedKeyReferenceId)
+            assertContentEquals(
+                leaf.der,
+                fixture.service.getCertificateChain("runtime-byoc-chain", PROVIDER_ID).certificates.single().value,
+            )
+            assertTrue(fixture.service.deleteCertificateChain("runtime-byoc-chain", PROVIDER_ID))
+            assertEquals(0, fixture.platformStore.deleteCertificateChainCalls)
+        }
+
+    @Test
+    fun anUnregisteredLinkedKeyIsNotFoundWithAMessageThatSaysSo() =
+        runTest {
+            val fixture = Fixture()
+            val leaf = certificateFor(generateKeyPair("EC"), "unregistered-key-leaf")
+
+            val failure =
+                assertFailsWith<CertificateReferenceResolutionException> {
+                    fixture.service.registerCertificateReference(
+                        storedChainInput(alias = "unregistered-key-chain", linkedKeyAlias = "never-registered", leaf = leaf),
+                    )
+                }
+
+            assertEquals("NOT_FOUND_ERROR", failure.code)
+            assertEquals(
+                "The linked key is not registered for this tenant and provider; register it with POST /keys/register first",
+                failure.message,
+            )
+        }
+
+    @Test
     fun providerNativeRegistrationRejectsASuppliedEmptyCertificateChainBeforeProviderAccess() =
         runTest {
             val fixture = Fixture()
@@ -873,6 +1071,7 @@ class CertificateReferenceLifecycleTest {
         private val execution = testSessionExecution(tenantId)
         private val keyStore = InMemoryKeyReferenceStore()
         private val inspectedKeys = linkedMapOf<String, ManagedKeyInfoType<*>>()
+        val runtimeProviderIds: MutableMap<String, List<String>> = mutableMapOf()
         var kmsProviderLookups: Int = 0
             private set
 
@@ -896,6 +1095,10 @@ class CertificateReferenceLifecycleTest {
             keyReferenceStore = keyStore,
             keyInspector = keyInspector,
             providerInspector = providerInspector,
+            keyReferenceProviderIds = object : KeyReferenceProviderIds {
+                override suspend fun recordedUnder(providerId: String): List<String> =
+                    listOf(providerId) + runtimeProviderIds[providerId].orEmpty()
+            },
             execution = execution,
         )
         val service = CertificatesRestServiceImpl(
@@ -908,7 +1111,11 @@ class CertificateReferenceLifecycleTest {
             platformManagedCertificateAliasLister = platformAliasLister,
         )
 
-        suspend fun addLinkedKey(alias: String, keyPair: KeyPair) {
+        suspend fun addLinkedKey(
+            alias: String,
+            keyPair: KeyPair,
+            recordedProviderId: String = PROVIDER_ID,
+        ) {
             val kid = "$alias-kid"
             val key = ManagedKeyInfo.fromKeyInfo(
                 KeyInfo(
@@ -925,7 +1132,7 @@ class CertificateReferenceLifecycleTest {
                     tenantId = tenantId,
                     alias = alias,
                     kid = kid,
-                    providerId = PROVIDER_ID,
+                    providerId = recordedProviderId,
                     origin = Origin.EXTERNAL,
                     controlMode = ResourceControlMode.EXTERNALLY_MANAGED,
                     createdAt = Clock.System.now(),
@@ -1269,12 +1476,21 @@ class CertificateReferenceLifecycleTest {
     private companion object {
         const val TENANT_ID = "tenant-1"
         const val PROVIDER_ID = "shared-provider"
+        const val RUNTIME_PROVIDER_ID = "kmsp-shared-provider-runtime"
 
         fun providerNativeTrustedInput(alias: String) = RegisterCertificateReferenceInput(
             providerId = PROVIDER_ID,
             alias = alias,
             kind = CertificateReferenceKind.TRUSTED_CERTIFICATE,
             source = CertificateReferenceSource.PROVIDER_NATIVE,
+        )
+
+        fun storedTrustedInput(alias: String, certificate: Certificate) = RegisterCertificateReferenceInput(
+            providerId = PROVIDER_ID,
+            alias = alias,
+            kind = CertificateReferenceKind.TRUSTED_CERTIFICATE,
+            source = CertificateReferenceSource.STORED_PUBLIC_MATERIAL,
+            certificateChain = listOf(Base64ByteArray(certificate.der)),
         )
 
         fun storedChainInput(
@@ -1388,11 +1604,38 @@ class CertificateReferenceLifecycleTest {
                 "defaultProviderId" -> PROVIDER_ID
                 "getKeyStore" -> platformStore
                 "getProviderById" -> {
-                    providerLookup(args?.firstOrNull() as? String ?: error("provider id is required"))
+                    val providerId = args?.firstOrNull() as? String ?: error("provider id is required")
+                    providerFacade(providerId, providerLookup(providerId))
                 }
                 else -> error("KeyManagerService.${method.name} must not be called")
             }
         } as KeyManagerService
+
+        /**
+         * The registry hands out [KmsProvider]s. A recording store stands in for the provider's
+         * certificate store; every other provider call is unexpected.
+         */
+        private fun providerFacade(
+            providerId: String,
+            store: Any,
+        ): KmsProvider = Proxy.newProxyInstance(
+            KmsProvider::class.java.classLoader,
+            arrayOf(KmsProvider::class.java, CertificateStoreService::class.java),
+        ) { _, method, args ->
+            when {
+                method.declaringClass == CertificateStoreService::class.java ->
+                    try {
+                        method.invoke(store, *(args ?: emptyArray()))
+                    } catch (invocation: InvocationTargetException) {
+                        throw invocation.targetException
+                    }
+                method.name == "getId" -> providerId
+                method.name == "toString" -> "provider-facade-$providerId"
+                method.name == "hashCode" -> providerId.hashCode()
+                method.name == "equals" -> false
+                else -> error("KmsProvider.${method.name} must not be called")
+            }
+        } as KmsProvider
 
         @Suppress("UNCHECKED_CAST")
         fun <T> unusedProxy(type: Class<T>): T = Proxy.newProxyInstance(

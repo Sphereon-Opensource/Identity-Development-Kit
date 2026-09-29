@@ -122,9 +122,10 @@ import kotlin.time.Instant
  *    via [TenantConfigService] property `did.cache.external.ttlSeconds`. Mutations and
  *    deletions on an EXTERNAL aggregate invalidate the cache entry.
  *
- * The active tenant is pulled from the session context ([SessionExecution.sessionContext]).
- * For anonymous sessions this resolves to `IdentityConstants.ANONYMOUS_TENANT_ID`; all child
- * rows the manager writes inherit that value.
+ * The tenant is the one resolved for the executing request ([SessionExecution.tenantId]): the
+ * subdomain or path tenant on anonymous endpoints and the token's tenant when authenticated.
+ * Every repository call passes it explicitly. When no tenant was resolved it is
+ * `IdentityConstants.ANONYMOUS_TENANT_ID`, which tenant-routing persistence refuses.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -150,8 +151,10 @@ class DidManagerServiceImpl(
     private val json = Json { encodeDefaults = false }
     private val logger = execution.log.logManager.withTag("DidManagerService")
 
+    // The tenant resolved for the executing request (subdomain or path on anonymous endpoints,
+    // the token's tenant when authenticated), not the session's own tenant.
     private val tenantId: String
-        get() = execution.sessionContext.context.tenant.tenantId
+        get() = execution.tenantId
 
     private val actorId: String?
         get() =
@@ -1372,7 +1375,7 @@ class DidManagerServiceImpl(
                 createdAt = now,
                 updatedAt = now,
             )
-        repository.saveKeyMapping(mapping).getOrElse { return Err(it) }
+        repository.saveKeyMapping(tenantId, mapping).getOrElse { return Err(it) }
         return Ok(mapping.toDidKeyMapping())
     }
 

@@ -33,6 +33,8 @@ data class CredentialStatusReference(
     val identifier: ByteArray? = null,
     /** Optional MSO-supplied certificate that pins the revocation CWT chain; it is not a trust root. */
     val certificate: ByteArray? = null,
+    /** W3C Bitstring `statusSize` of the status entry, when the entry declares one. */
+    val statusSize: Int? = null,
 )
 
 /**

@@ -107,6 +107,32 @@ interface RefreshablePropertySource {
 }
 
 /**
+ * A [RefreshablePropertySource] whose snapshot can be bypassed on demand.
+ *
+ * [refreshIfNeeded] may keep serving a snapshot until its time-to-live ends. A caller that just
+ * observed a miss for a value another process may have written moments ago uses
+ * [reloadFromBackingSource] to read the backing store once more before it acts on the miss.
+ * Implementations increment [contentRevision] when the reload changes the exposed properties.
+ */
+interface ReloadablePropertySource : RefreshablePropertySource {
+    suspend fun reloadFromBackingSource()
+}
+
+/**
+ * Reloads every [ReloadablePropertySource] this environment and its parents resolve from.
+ *
+ * This is a read-through for misses, not a refresh policy: callers invoke it only when a lookup
+ * failed and a newer write may exist, then resolve again. Property reads after it observe the
+ * reloaded content because the reload changes the sources' content revision.
+ */
+suspend fun ConfigEnvironment?.reloadFromBackingSources() {
+    if (this == null) return
+    for (source in getPropertySources(includeParents = true)) {
+        (source.unwrappedPropertySource() as? ReloadablePropertySource)?.reloadFromBackingSource()
+    }
+}
+
+/**
  * Revision of everything a [ConfigEnvironment] can resolve: the structural revision of its own
  * source set, the content revision of every [RefreshablePropertySource] in it, and the same for
  * each parent environment.

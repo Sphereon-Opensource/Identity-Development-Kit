@@ -47,6 +47,7 @@ import dev.zacsweers.metro.binding
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -158,11 +159,14 @@ class LdpVcFormatHandler(
             val credentialId = context.credentialId ?: reservedStatus?.let { "urn:uuid:${Uuid.random()}" }
             val credentialWithStatus =
                 if (reservedStatus != null) {
+                    val contexts = credential["@context"] as JsonArray
+                    val statusContext = JsonPrimitive("https://www.w3.org/ns/credentials/status/v1")
                     JsonObject(
                         credential +
                             mapOf(
                                 "id" to JsonPrimitive(checkNotNull(credentialId)),
                                 "credentialStatus" to reservedStatus.claim,
+                                "@context" to if (profile.version == VcdmVersion.V1_1 && statusContext !in contexts) JsonArray(contexts + statusContext) else contexts,
                             ),
                     )
                 } else {
@@ -231,6 +235,13 @@ class LdpVcFormatHandler(
             ?: return Err(invalidConfiguration("credential_definition.type is required for ldp_vc"))
         if (types.isEmpty() || types.any { it.isBlank() }) {
             return Err(invalidConfiguration("credential_definition.type must be a non-empty list"))
+        }
+        if (VERIFIABLE_CREDENTIAL_TYPE !in types || types.none { it != VERIFIABLE_CREDENTIAL_TYPE }) {
+            return Err(
+                invalidConfiguration(
+                    "credential_definition.type must contain $VERIFIABLE_CREDENTIAL_TYPE and at least one specific type",
+                ),
+            )
         }
 
         val baseContexts = contexts.filter { it == VcdmProfiles.V1_1_CONTEXT || it == VcdmProfiles.V2_0_CONTEXT }

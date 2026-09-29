@@ -121,6 +121,24 @@ private fun publicOrigin(execution: SessionExecution): String {
         .orEmpty()
 }
 
+/**
+ * The tenant's public base URL (`https://<tenant public host>`), the origin hosted VCTs are served
+ * on. Falls back to the catalog's public issuer origin; empty when neither is configured.
+ */
+private fun tenantPublicBaseUrl(execution: SessionExecution): String {
+    val candidates =
+        listOf(
+            runCatching { execution.conf.tenant.getPropertyAsString("tenant.public-base-url") }.getOrNull(),
+            runCatching { execution.conf.app.getPropertyAsString("tenant.public-base-url") }.getOrNull(),
+            runCatching { execution.conf.tenant.getPropertyAsString("catalog.public.iss") }.getOrNull(),
+        )
+    return candidates
+        .firstOrNull { !it.isNullOrBlank() }
+        ?.trim()
+        ?.trimEnd('/')
+        .orEmpty()
+}
+
 private fun hostedPath(
     origin: String,
     path: String
@@ -590,8 +608,16 @@ class UpdateSchemaCommandImpl(
                 .getOrElse { return Err(it) }
         val current = store.requireSchema(execution.tenantId, catalog, input.schemaId).getOrElse { return Err(it) }
         SchemaMetaValidator.validate(input.schema, requireId = false).getOrElse { return Err(it) }
+        // A linked type is driven by its design or credential configuration: its type identity
+        // is fixed at link time and an update may only change listing, documents and metadata.
+        if (current.provenance == CatalogSchemaProvenance.LINKED_DESIGN && input.schema.schemaURIs != current.schema.schemaURIs) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "The type of a linked catalog entry cannot be changed"))
+        }
         val listing = input.listing ?: current.listing
-        val documents = input.documents ?: current.documents
+        // Supplied documents replace the stored one of the same kind and format, so a listing
+        // update that adds a rulebook keeps the stored format documents.
+        val documents =
+            withTypeIdentityFormats(input.schema.schemaURIs, mergeDocuments(current.documents, input.documents.orEmpty()))
         requireListedDocuments(input.schema, documents, listing).getOrElse { return Err(it) }
         val schema = input.schema.copy(id = input.schemaId)
         store
@@ -665,10 +691,10 @@ class LinkSchemaCommandImpl(
                 .listSchemas(execution.tenantId, catalog.id)
                 .getOrElse { return Err(it) }
                 .firstOrNull { record -> existingLinkMatches(record, input) }
-        if (existing != null) return Ok(existing.schema)
+        if (existing != null) return listExistingLink(existing, input)
         val snapshot =
             linkedTypeSource.resolve(input.designId, input.vctId).getOrElse { return Err(it) }
-        val schemaUris =
+        val resolvedUris =
             input.schemaURIs.ifEmpty {
                 buildList {
                     snapshot?.schemaURIs?.let { addAll(it) }
@@ -678,11 +704,16 @@ class LinkSchemaCommandImpl(
                     }
                 }
             }
-        if (schemaUris.isEmpty()) {
+        if (resolvedUris.isEmpty()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "schemaURIs, vct, doctype, vctId, or designId is required"))
         }
+        // A vct must be an absolute URI. A hosted type resolved as `/public/schema/vct/{id}` (or sent
+        // that way by an older console) is made absolute on the tenant public base URL.
+        val schemaUris = absoluteVctSchemaUris(resolvedUris, tenantPublicBaseUrl(execution))
         val formats = input.supportedFormats.ifEmpty { schemaUris.map { it.formatIdentifier }.distinct() }
-        val documents = input.documents.ifEmpty { snapshot?.documents.orEmpty() }
+        // Supplied documents (a rulebook, a format document) replace the resolved type's document of
+        // the same kind and format; the resolved type metadata is kept for the rest.
+        val documents = withTypeIdentityFormats(schemaUris, mergeDocuments(snapshot?.documents.orEmpty(), input.documents))
         val schema =
             SchemaMeta(
                 id = newId(),
@@ -696,8 +727,9 @@ class LinkSchemaCommandImpl(
             )
         SchemaMetaValidator.validate(schema).getOrElse { return Err(it) }
         val instant = now()
-        // Membership only until a listing window is set. Credential include sends no
-        // rulebook; serving still requires one via requireListedDocuments.
+        // Membership only until a listing window is set. A link that names a listing (the admin
+        // console's issuer import and "link a type" send one, open from now) is served at once;
+        // serving requires a rulebook either way via requireListedDocuments.
         val listing = input.listing ?: CatalogListingWindow.never(instant)
         requireListedDocuments(schema, documents, listing).getOrElse { return Err(it) }
         store
@@ -716,6 +748,30 @@ class LinkSchemaCommandImpl(
                 ),
             ).getOrElse { return Err(it) }
         return Ok(schema)
+    }
+
+    /**
+     * A link for a type the catalog already holds returns that entry. An entry that was only ever a
+     * member (an empty listing and no rulebook, as every link made before links carried a listing)
+     * is listed in place when the request names a served listing: its type identity stays fixed, the
+     * supplied documents are merged over the stored ones. An entry that has a rulebook was listed or
+     * edited by an operator, so its listing is left as it is.
+     */
+    private suspend fun listExistingLink(
+        existing: AttestationSchemaRecord,
+        input: LinkSchemaArgs,
+    ): IdkResult<SchemaMeta, IdkError> {
+        val listing = input.listing ?: return Ok(existing.schema)
+        val onlyMember = existing.listing.isEmpty() && existing.documents.none { it.kind == CatalogDocumentKind.RULEBOOK }
+        if (listing.isEmpty() || !onlyMember) return Ok(existing.schema)
+        val documents = withTypeIdentityFormats(existing.schema.schemaURIs, mergeDocuments(existing.documents, input.documents))
+        requireListedDocuments(existing.schema, documents, listing).getOrElse { return Err(it) }
+        store
+            .saveSchema(
+                execution.tenantId,
+                existing.copy(listing = listing, documents = documents, updatedAt = now()),
+            ).getOrElse { return Err(it) }
+        return Ok(existing.schema)
     }
 }
 

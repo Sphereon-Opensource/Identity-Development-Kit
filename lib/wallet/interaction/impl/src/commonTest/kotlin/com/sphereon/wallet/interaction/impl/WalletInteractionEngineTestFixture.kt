@@ -1,10 +1,11 @@
 /* Copyright 2026 Sphereon International B.V. Licensed under the Apache License, Version 2.0. */
 package com.sphereon.wallet.interaction.impl
 
+import com.sphereon.wallet.app.LocalWalletInteractionLaunchAuthority
 import com.sphereon.wallet.interaction.*
 import com.sphereon.wallet.interaction.testfixture.WalletInteractionEngineTestFactory
 
-/** Explicit test composition with a private, atomic one-use sensitive-input authority. */
+/** Explicit test composition with the local launch authority and a private sensitive-input authority. */
 @Suppress("FunctionName")
 internal fun testWalletInteractionEngine(
     adapters: List<WalletInteractionProtocolAdapter> = emptyList(),
@@ -28,5 +29,6 @@ internal fun testWalletInteractionEngine(
         sensitiveInputAuthority = sensitiveInputAuthority,
         privateSessionStore = privateSessionStore,
         sessionStore = sessionStore,
+        launchAuthorities = setOf(LocalWalletInteractionLaunchAuthority),
     )
 }

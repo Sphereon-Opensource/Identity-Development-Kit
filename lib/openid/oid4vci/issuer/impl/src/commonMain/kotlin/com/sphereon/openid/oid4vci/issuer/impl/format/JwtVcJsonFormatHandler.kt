@@ -83,8 +83,8 @@ class JwtVcJsonFormatHandler(
         context: IssuanceContext,
     ): IdkResult<CredentialEnvelope, IdkError> {
         val credentialTypes =
-            context.credentialConfiguration.credentialDefinition?.type
-                ?: listOf("VerifiableCredential")
+            vcdmCredentialTypes(context.credentialConfiguration.credentialDefinition?.type)
+                .getOrElse { return Err(it) }
         val suppliedProperties =
             mergeVcdmIssuanceProperties(context, VcdmVersion.V1_1)
                 .getOrElse { return Err(it) }
@@ -137,6 +137,7 @@ class JwtVcJsonFormatHandler(
             buildJsonObject {
                 putJsonArray("@context") {
                     add(JsonPrimitive("https://www.w3.org/2018/credentials/v1"))
+                    if (reservedStatus != null) add(JsonPrimitive("https://www.w3.org/ns/credentials/status/v1"))
                 }
                 putJsonArray("type") {
                     credentialTypes.forEach { add(JsonPrimitive(it)) }

@@ -26,7 +26,6 @@ import com.sphereon.oauth2.server.authorization.command.token.GrantHandler
 import com.sphereon.oauth2.server.authorization.impl.command.token.grant.AuthorizationCodeGrantHandlerImpl
 import com.sphereon.oauth2.server.authorization.impl.command.token.grant.ClientCredentialsGrantHandlerImpl
 import com.sphereon.oauth2.server.authorization.impl.command.token.grant.PasswordGrantHandlerImpl
-import com.sphereon.oauth2.server.authorization.impl.command.token.grant.TokenExchangeGrantHandlerImpl
 
 /**
  * Keeps verified registration facts inside the implementation module. Public contributed handlers
@@ -43,6 +42,5 @@ internal suspend fun dispatchWithVerifiedClientAuthorization(
         is AuthorizationCodeGrantHandlerImpl -> handler.handleTrusted(params, context, clientAuthorization)
         is ClientCredentialsGrantHandlerImpl -> handler.handleTrusted(params, context, clientAuthorization)
         is PasswordGrantHandlerImpl -> handler.handleTrusted(params, context, clientAuthorization)
-        is TokenExchangeGrantHandlerImpl -> handler.handleTrusted(params, context, clientAuthorization)
         else -> handler.handle(params, context)
     }

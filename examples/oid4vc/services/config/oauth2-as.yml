@@ -124,13 +124,6 @@ oauth2:
       # haip profile flips this to REQUIRED so unsigned in-line requests are rejected.
       par: "${env:OAUTH2_PAR_POLICY:SUPPORTED}"
       token-endpoint-auth-methods-supported: "${env:OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS:client_secret_basic,client_secret_post}"
-      public-clients:
-        allow-any: "${env:OAUTH2_PUBLIC_CLIENTS_ALLOW_ANY:true}"
-        # Demo: accept any public client's redirect URI (wallets use loopback / custom-scheme
-        # URIs the AS can't pre-register). Required for the allow-any fallback to engage — without
-        # it the fallback is disabled and unregistered public clients are rejected at PAR/token.
-        # OIDF conformance deployments leave this false.
-        permissive-redirect-uri: "${env:OAUTH2_PUBLIC_CLIENTS_PERMISSIVE_REDIRECT_URI:true}"
       internal-clients:
         issuer:
           client-id: issuer-service

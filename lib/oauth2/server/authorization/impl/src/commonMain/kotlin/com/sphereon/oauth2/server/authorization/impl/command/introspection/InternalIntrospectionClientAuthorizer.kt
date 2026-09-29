@@ -44,6 +44,10 @@ fun interface InternalIntrospectionClientAuthorizer {
  * Resolves both deployment-bootstrap internal clients and greenfield opaque-secret-backed
  * internal clients. Opaque clients are deliberately absent from [OAuth2ServersConfigProvider],
  * so consulting that legacy-shaped view alone incorrectly rejects valid resource servers.
+ *
+ * Opaque workload clients are registered on the default server only. They are also resource
+ * servers for every other server hosted in the same configuration scope, so a client that is not
+ * registered on the active server is looked up on the default server as well.
  */
 @Inject
 @SingleIn(SessionScope::class)
@@ -56,20 +60,26 @@ class ConfigBackedInternalIntrospectionClientAuthorizer(
     override suspend fun isInternalClient(clientId: String): IdkResult<Boolean, AuthorizationServerError.StorageError> {
         if (clientId.isBlank()) return Ok(false)
 
+        val config = serversConfigProvider.getConfig()
         val bootstrapMatch =
-            serversConfigProvider.getConfig().servers.values.any { server ->
+            config.servers.values.any { server ->
                 server.internalClients.values.any { it.clientId == clientId }
             }
         if (bootstrapMatch) return Ok(true)
 
         val activeServerId =
             asInstanceIdProvider.currentAsInstanceId()
-                ?: serversConfigProvider.getConfig().defaultServer
-        val opaqueClients = configBinder.loadOpaqueInternalClientRegistrations(activeServerId)
-        return if (opaqueClients.isOk) {
-            Ok(opaqueClients.value.containsKey(clientId))
-        } else {
-            Err(opaqueClients.error)
+                ?: config.defaultServer
+        val activeServerClients = configBinder.loadOpaqueInternalClientRegistrations(activeServerId)
+        if (activeServerClients.isErr) return Err(activeServerClients.error)
+        if (activeServerClients.value.containsKey(clientId)) return Ok(true)
+
+        if (config.defaultServer != activeServerId) {
+            val defaultServerClients = configBinder.loadOpaqueInternalClientRegistrations(config.defaultServer)
+            if (defaultServerClients.isErr) return Err(defaultServerClients.error)
+            if (defaultServerClients.value.containsKey(clientId)) return Ok(true)
         }
+
+        return Ok(false)
     }
 }

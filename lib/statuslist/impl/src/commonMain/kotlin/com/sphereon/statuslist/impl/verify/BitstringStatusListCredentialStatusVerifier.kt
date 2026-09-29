@@ -67,13 +67,23 @@ class BitstringStatusListCredentialStatusVerifier(
                 (entry["statusListIndex"] as? JsonPrimitive)?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() }
                     ?: return@mapNotNull null
             val purpose = (entry["statusPurpose"] as? JsonPrimitive)?.contentOrNull?.let { StatusPurpose.fromValue(it) }
-            CredentialStatusReference(mechanism = MECHANISM, uri = uri, index = index, purpose = purpose)
+            val statusSize =
+                entry["statusSize"]?.let { size ->
+                    (size as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull?.takeIf { it > 0 } ?: return@mapNotNull null
+                }
+            CredentialStatusReference(mechanism = MECHANISM, uri = uri, index = index, purpose = purpose, statusSize = statusSize)
         }
     }
 
     override suspend fun resolve(reference: CredentialStatusReference): IdkResult<ResolvedStatus, IdkError> =
         resolver.resolveStatus(
-            ResolveStatusArgs(uri = reference.uri, index = reference.index, expectedSpec = StatusListSpec.BITSTRING_STATUS_LIST),
+            ResolveStatusArgs(
+                uri = reference.uri,
+                index = reference.index,
+                expectedPurpose = reference.purpose,
+                expectedStatusSize = reference.statusSize,
+                expectedSpec = StatusListSpec.BITSTRING_STATUS_LIST,
+            ),
         )
 
     companion object {

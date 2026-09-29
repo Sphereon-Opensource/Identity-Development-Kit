@@ -17,7 +17,9 @@
 
 package com.sphereon.did.manager.impl
 
+import com.sphereon.core.api.conf.DefaultAppMapPropertySource
 import com.sphereon.core.defaults.app.DefaultRootScopeProvider
+import com.sphereon.crypto.key.persistence.sqlite.SqliteKeyReferenceDatabaseSettings
 import com.sphereon.di.app.AbstractAppGraph
 import com.sphereon.di.app.RootScopeProvider
 import com.sphereon.did.persistence.DidRepository
@@ -28,6 +30,7 @@ import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.createGraphFactory
+import java.nio.file.Files
 
 /**
  * Test app graph for DID manager E2E testing.
@@ -60,12 +63,28 @@ abstract class DidManagerTestAppGraph : AbstractAppGraph() {
     }
 }
 
+/**
+ * File-backed key-reference database for this test JVM. The SQLite key-reference graph refuses
+ * in-memory URLs and otherwise defaults to `./data/key-references.db`, which would write into the
+ * module directory; a temp directory keeps every test out of the source tree.
+ */
+private val testKeyReferenceJdbcUrl: String by lazy {
+    val directory = Files.createTempDirectory("did-manager-test-key-references")
+    val database = directory.resolve("key-references.db")
+    database.toFile().deleteOnExit()
+    directory.toFile().deleteOnExit()
+    "jdbc:sqlite:${database.toAbsolutePath()}"
+}
+
 fun createDidManagerTestAppGraph(
     application: Any,
     appId: String = "did-manager-test",
     profile: String = "test",
     version: String = "0.13.0-test",
 ): DidManagerTestAppGraph {
+    DefaultAppMapPropertySource.addProperties(
+        mapOf(SqliteKeyReferenceDatabaseSettings.JDBC_URL_PROPERTY to testKeyReferenceJdbcUrl),
+    )
     val graph =
         createGraphFactory<DidManagerTestAppGraph.Factory>().create(
             application = application,

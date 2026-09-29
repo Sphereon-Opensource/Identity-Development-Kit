@@ -16,6 +16,7 @@
 
 package com.sphereon.core.api.conf
 
+import kotlinx.coroutines.test.runTest
 import kotlinx.io.files.Path
 import kotlin.reflect.KClass
 import kotlin.test.Test
@@ -77,6 +78,33 @@ class ConfigContentRevisionTest {
         environment.configContentRevision(refresh = true)
         assertEquals(1, source.refreshCount)
     }
+
+    @Test
+    fun reloadFromBackingSourcesReloadsWrappedAndParentSources() =
+        runTest {
+            val parentSource = ReloadableRevisionSource("parent")
+            val childSource = ReloadableRevisionSource("child")
+            val parent = environment(ScopedPropertySourceWrapper(parentSource, ConfigLevel.TENANT))
+            val child = environment(childSource, parent = parent)
+            val before = child.configContentRevision(refresh = false)
+
+            child.reloadFromBackingSources()
+
+            assertEquals(1, parentSource.reloadCount)
+            assertEquals(1, childSource.reloadCount)
+            assertNotEquals(before, child.configContentRevision(refresh = false))
+        }
+
+    @Test
+    fun reloadFromBackingSourcesLeavesPlainRefreshableSourcesAlone() =
+        runTest {
+            val source = RevisionSource("local")
+            val environment = environment(source)
+
+            environment.reloadFromBackingSources()
+
+            assertEquals(0, source.refreshCount)
+        }
 
     private fun environment(
         source: PropertySource<*>,
@@ -143,6 +171,26 @@ class ConfigContentRevisionTest {
             stripPrefix: Boolean,
             redact: Boolean,
         ): Map<String, String> = emptyMap()
+    }
+
+    private class ReloadableRevisionSource(
+        name: String,
+    ) : MutableMapPropertySource(name),
+        ReloadablePropertySource {
+        var reloadCount = 0
+            private set
+
+        private var revision = 0L
+
+        override val contentRevision: Long
+            get() = revision
+
+        override fun refreshIfNeeded() = Unit
+
+        override suspend fun reloadFromBackingSource() {
+            reloadCount += 1
+            revision += 1
+        }
     }
 
     private class RevisionSource(

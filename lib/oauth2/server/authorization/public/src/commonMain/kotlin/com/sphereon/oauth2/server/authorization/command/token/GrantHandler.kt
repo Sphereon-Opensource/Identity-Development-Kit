@@ -109,4 +109,5 @@ data class GrantContext(
     val applied: HandleTokenRequestArgs,
     val serverConfig: OAuth2ServerInstanceConfig,
     val walletInstanceAttestation: WalletInstanceAttestationEvidence? = null,
+    val clientAuthorization: com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorization? = null,
 )

@@ -18,7 +18,6 @@ import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.common.config.FeaturePolicy
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
-import com.sphereon.oauth2.common.config.PublicClientConfig
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeArgs
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
@@ -140,21 +139,10 @@ class RequiredActionsGateTest {
         }
 
     @Test
-    fun evaluatorReceivesPermissivePublicClientFallback() =
+    fun unregisteredClientIsRejectedByRequiredActionsGate() =
         runTest {
-            val capture = CapturingEvaluator()
-            val command =
-                newCommand(
-                    evaluators = setOf(capture),
-                    clientRegistry = SingleClientRegistry(client = null),
-                    publicClients = PublicClientConfig(allowAny = true, permissiveRedirectUri = true),
-                )
-
-            val result = command.execute(args())
-
-            assertTrue(result.isOk, "permitted unregistered public client must survive the required-actions gate")
-            assertEquals(CLIENT_ID, capture.lastClient?.clientId)
-            assertTrue(capture.lastClient?.requirePkce == true)
+            val command = newCommand(evaluators = setOf(CapturingEvaluator()), clientRegistry = SingleClientRegistry(client = null))
+            assertTrue(command.execute(args()).isErr)
         }
 
     // ── Helpers ─────────────────────────────────────────────────────
@@ -162,7 +150,6 @@ class RequiredActionsGateTest {
     private fun newCommand(
         evaluators: Set<RequiredActionEvaluator>,
         clientRegistry: ClientRegistry = SingleClientRegistry(),
-        publicClients: PublicClientConfig = PublicClientConfig(),
     ): CreateAuthorizationCodeCommandImpl {
         val backing = InMemoryOAuth2BackingStorageImpl()
         return CreateAuthorizationCodeCommandImpl(
@@ -177,7 +164,6 @@ class RequiredActionsGateTest {
                                     OAuth2ServerInstanceConfig(
                                         issuer = "https://auth.example.com",
                                         oidc = FeaturePolicy.SUPPORTED,
-                                        publicClients = publicClients,
                                     ),
                             ),
                     ),

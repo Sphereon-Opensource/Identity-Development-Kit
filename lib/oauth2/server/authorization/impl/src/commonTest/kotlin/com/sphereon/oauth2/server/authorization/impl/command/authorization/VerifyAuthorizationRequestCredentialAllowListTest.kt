@@ -57,6 +57,8 @@ class VerifyAuthorizationRequestCredentialAllowListTest {
             StubClientRegistry(client),
             TestOAuth2ServersConfigProvider(OAuth2ServersConfig()),
             emptySet(),
+            com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
+            Oid4vciUnregisteredWalletAdmissionRule(),
         )
     }
 

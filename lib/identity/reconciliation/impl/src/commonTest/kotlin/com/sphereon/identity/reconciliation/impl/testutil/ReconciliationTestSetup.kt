@@ -23,7 +23,7 @@ import com.sphereon.identity.reconciliation.command.CancelReconciliationSessionC
 import com.sphereon.identity.reconciliation.command.CompleteReconciliationCommand
 import com.sphereon.identity.reconciliation.command.CreateReconciliationSessionCommand
 import com.sphereon.identity.reconciliation.command.GetReconciliationSessionCommand
-import com.sphereon.identity.reconciliation.command.asReconciliationGraph
+import com.sphereon.identity.reconciliation.impl.command.asReconciliationGraph
 import com.sphereon.identity.reconciliation.store.ReconciliationProviderStore
 import com.sphereon.identity.reconciliation.store.ReconciliationSessionStore
 

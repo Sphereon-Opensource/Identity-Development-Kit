@@ -133,6 +133,47 @@ class MemoryKeyStoreTest {
         }
 
     @Test
+    fun storeKeyShouldRetainSuppliedCertificateChain() =
+        runTest {
+            val keyPair =
+                keyManagerService.generateKey(
+                    alg = SignatureAlgorithm.ECDSA_SHA256,
+                )
+            val keyInfo = keyPair.joseToManagedKeyInfo(KeyVisibility.PRIVATE)
+            val alias = "test-key-chain"
+            val leaf =
+                com.sphereon.crypto.core.x509.Certificate(
+                    der = byteArrayOf(0x30, 0x82.toByte(), 0x01, 0x01),
+                    fingerPrint = "LEAF",
+                    serialNumber = "2",
+                    issuerDN = "CN=Test Root",
+                    subjectDN = "CN=Test Leaf",
+                    notBefore = kotlin.time.Instant.parse("2024-01-01T00:00:00Z"),
+                    notAfter = kotlin.time.Instant.parse("2025-12-31T23:59:59Z"),
+                )
+            val root =
+                com.sphereon.crypto.core.x509.Certificate(
+                    der = byteArrayOf(0x30, 0x82.toByte(), 0x01, 0x02),
+                    fingerPrint = "ROOT",
+                    serialNumber = "1",
+                    issuerDN = "CN=Test Root",
+                    subjectDN = "CN=Test Root",
+                    notBefore = kotlin.time.Instant.parse("2024-01-01T00:00:00Z"),
+                    notAfter = kotlin.time.Instant.parse("2025-12-31T23:59:59Z"),
+                )
+
+            memoryKeyStore.storeKey(keyInfo, "test-provider", alias, arrayOf(leaf, root))
+
+            val retrieved = memoryKeyStore.getKey(KeyInfo<Jwk>(alias = alias, keyVisibility = KeyVisibility.PRIVATE))
+            val expectedX5c = listOf(leaf.derToBase64(), root.derToBase64())
+            val jwk = retrieved.key as Jwk
+            assertEquals(expectedX5c, jwk.x5c?.toList())
+            assertEquals(expectedX5c, retrieved.x5c?.toList())
+            assertNotNull(jwk.d, "Storing a chain must keep the private key material")
+            assertEquals(listOf("LEAF", "ROOT"), memoryKeyStore.getCertificateChain(alias).map { it.fingerPrint })
+        }
+
+    @Test
     fun listKeysShouldReturnStoredKeys() =
         runTest {
             val keyPair1 = keyManagerService.generateKey(alg = SignatureAlgorithm.ECDSA_SHA256)

@@ -28,9 +28,11 @@ import com.sphereon.ktor.http.client.provider.HttpClientFactory
 import com.sphereon.ktor.http.client.provider.HttpClientOptions
 import com.sphereon.ktor.http.client.provider.HttpClientEngineType
 import com.sphereon.jsonld.JsonLdError
+import com.sphereon.jsonld.WellKnownContexts
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
@@ -65,6 +67,28 @@ class DefaultLinkedDataDocumentLoaderTest {
         val error = assertIs<JsonLdError.LoadingDocumentFailed>(result.error)
         assertTrue(error.reason.contains("HTTP client construction failed"), error.reason)
         assertEquals(1, factory.createCount)
+    }
+
+    @Test
+    fun bitstringStatusListContextResolvesOfflineUnderBuiltInOnlyPolicy() = runTest {
+        val factory = RecordingFactory()
+        val registry = DefaultBuiltInContextRegistry()
+        val loader =
+            DefaultLinkedDataDocumentLoader(
+                httpClientFactory = factory,
+                cacheService = TestCacheService(),
+                builtInRegistry = registry,
+                pinResolver = NoOpIntegrityPinResolver(),
+                loadingPolicy = BuiltInOnlyJsonLdDocumentLoadingPolicy(registry),
+            )
+
+        val result = loader.loadDocument(WellKnownContexts.BITSTRING_STATUS_LIST_V1)
+
+        assertTrue(result.isOk, "Bitstring Status List context must resolve offline: ${result.errorOrNull()}")
+        assertEquals(WellKnownContexts.BITSTRING_STATUS_LIST_V1, result.value.documentUrl)
+        val context = assertIs<JsonObject>(assertIs<JsonObject>(result.value.content)["@context"])
+        assertTrue("BitstringStatusListEntry" in context, "bundled context must define BitstringStatusListEntry")
+        assertEquals(0, factory.createCount, "built-in resolution must not construct an HTTP client")
     }
 
     private fun newLoader(factory: RecordingFactory): DefaultLinkedDataDocumentLoader =

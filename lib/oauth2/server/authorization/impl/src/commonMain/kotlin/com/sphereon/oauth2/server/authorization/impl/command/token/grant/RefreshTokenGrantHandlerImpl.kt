@@ -109,6 +109,7 @@ class RefreshTokenGrantHandlerImpl(
                         clientInstanceKeyJkt = context.clientInstanceKeyJkt,
                         requestedScope = rtParams.scope,
                         requestedResource = rtParams.resource,
+                        clientAuthorization = context.clientAuthorization,
                     ),
                 )
         if (!verifyResult.isOk) {
@@ -205,7 +206,7 @@ class RefreshTokenGrantHandlerImpl(
                         audience =
                             verified.resource
                                 .ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) }
-                                .ifEmpty { credentialIssuerAudienceResolver.defaultAudiences() },
+                                .ifEmpty { credentialIssuerAudienceResolver.boundCredentialIssuers().map { it.audience } },
                         dpopJkt = refreshBoundJkt,
                         certificateThumbprintS256 = certThumbprint,
                         authTime = verified.authTime,

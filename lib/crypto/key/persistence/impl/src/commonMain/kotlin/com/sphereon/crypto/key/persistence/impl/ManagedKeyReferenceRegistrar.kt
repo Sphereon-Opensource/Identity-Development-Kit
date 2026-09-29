@@ -36,6 +36,15 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlin.time.Clock
 
+internal const val ALREADY_PLATFORM_MANAGED =
+    "The key is already managed by this platform; registering it as an external reference would change its ownership"
+internal const val DIFFERENT_KEY_ID =
+    "The alias is already registered for a different key id or key version"
+internal const val DIFFERENT_KEY_MATERIAL =
+    "The alias is already registered with different public key material"
+internal const val DIFFERENT_ALIAS =
+    "The key is already registered under a different alias"
+
 /**
  * Centralizes all key reference indexing logic.
  *
@@ -108,21 +117,14 @@ class ManagedKeyReferenceRegistrar(
                 .findByAlias(tenantId, alias, providerId)
                 .getOrElse { error -> return Err(error) }
 
-        if (existing != null && existing.kid != null && kid != null && existing.kid != kid) {
-            return Err(
-                IdkError.fromString(
-                    code = KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT,
-                    message = "The key reference identity conflicts with the existing registration",
-                ),
-            )
-        }
-        if (existing != null && existing.publicKeyJwk != null && publicKeyJwk != null && existing.publicKeyJwk != publicKeyJwk) {
-            return Err(
-                IdkError.fromString(
-                    code = KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT,
-                    message = "The key reference public material conflicts with the existing registration",
-                ),
-            )
+        // A registration never changes a known key: ownership is set once when the key becomes
+        // known. Registering the same external key again returns it unchanged; anything else
+        // about an already known key is a conflict.
+        if (existing != null) {
+            if (existing.controlMode != ResourceControlMode.EXTERNALLY_MANAGED) return Err(registrationConflict(ALREADY_PLATFORM_MANAGED))
+            if (kid != null && existing.kid != kid) return Err(registrationConflict(DIFFERENT_KEY_ID))
+            if (publicKeyJwk != null && existing.publicKeyJwk != publicKeyJwk) return Err(registrationConflict(DIFFERENT_KEY_MATERIAL))
+            return Ok(existing)
         }
 
         if (kid != null) {
@@ -130,11 +132,10 @@ class ManagedKeyReferenceRegistrar(
                 keyReferenceStore
                     .findByKid(tenantId, kid, providerId)
                     .getOrElse { error -> return Err(error) }
-            if (existingKid != null && existingKid.id != existing?.id) {
+            if (existingKid != null) {
                 return Err(
-                    IdkError.fromString(
-                        code = KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT,
-                        message = "The canonical provider key identifier is already registered under another alias",
+                    registrationConflict(
+                        if (existingKid.controlMode != ResourceControlMode.EXTERNALLY_MANAGED) ALREADY_PLATFORM_MANAGED else DIFFERENT_ALIAS,
                     ),
                 )
             }
@@ -143,10 +144,10 @@ class ManagedKeyReferenceRegistrar(
         val now = Clock.System.now()
         val record =
             KeyReferenceRecord(
-                id = existing?.id ?: generateId(),
+                id = generateId(),
                 tenantId = tenantId,
                 alias = alias,
-                kid = kid ?: existing?.kid,
+                kid = kid,
                 providerId = providerId,
                 origin = Origin.EXTERNAL,
                 controlMode = ResourceControlMode.EXTERNALLY_MANAGED,
@@ -154,9 +155,9 @@ class ManagedKeyReferenceRegistrar(
                 signatureAlgorithm = signatureAlgorithm,
                 keyVisibility = keyVisibility,
                 keyEncoding = keyEncoding,
-                publicKeyJwk = publicKeyJwk ?: existing?.publicKeyJwk,
-                createdAt = existing?.createdAt ?: now,
-                createdById = existing?.createdById ?: principalId,
+                publicKeyJwk = publicKeyJwk,
+                createdAt = now,
+                createdById = principalId,
                 updatedAt = now,
                 updatedById = principalId,
                 deletedAt = null,
@@ -191,6 +192,9 @@ class ManagedKeyReferenceRegistrar(
             else -> Ok(false)
         }
     }
+
+    private fun registrationConflict(message: String): IdkError =
+        IdkError.fromString(code = KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT, message = message)
 
     private fun generateId(): String =
         kotlin.uuid.Uuid

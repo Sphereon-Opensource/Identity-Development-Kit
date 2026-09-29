@@ -12,6 +12,7 @@ package com.sphereon.oauth2.server.authorization.impl.provider
 
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudience
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -25,5 +26,5 @@ import dev.zacsweers.metro.binding
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class, binding = binding<CredentialIssuerAudienceResolver>())
 class NoCredentialIssuerAudienceResolver : CredentialIssuerAudienceResolver {
-    override suspend fun defaultAudiences(): List<String> = emptyList()
+    override suspend fun boundCredentialIssuers(): List<CredentialIssuerAudience> = emptyList()
 }

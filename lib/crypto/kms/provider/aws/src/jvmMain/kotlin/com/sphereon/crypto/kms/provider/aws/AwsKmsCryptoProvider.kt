@@ -176,6 +176,13 @@ actual class AwsKmsCryptoProvider actual constructor(
         this.tenantAssignmentReader = tenantAssignmentReader
     }
 
+    internal constructor(
+        settings: KeyProviderSettings,
+        client: KmsClient,
+    ) : this(settings) {
+        this.sharedClient = client
+    }
+
     private suspend fun defaultTenantAssignmentReader(): AwsKmsTenantAssignmentReader {
         val client = getAWSKmsClient()
         return object : AwsKmsTenantAssignmentReader {
@@ -285,7 +292,7 @@ actual class AwsKmsCryptoProvider actual constructor(
             this.keySpec = keySpec
         })
 
-        val kid = createKeyResponse.keyMetadata?.keyId
+        val kid = createKeyResponse.keyMetadata?.keyId?.let(::awsCanonicalKeyId)
             ?: throw IllegalStateException("Failed to retrieve key ID after creation")
 
         if (alias != null && (createKeyResponse.keyMetadata?.arn != null || createKeyResponse.keyMetadata?.keyId != null)) {
@@ -618,7 +625,7 @@ actual class AwsKmsCryptoProvider actual constructor(
         return run {
             val client = getAWSKmsClient()
             client.listKeys().keys?.map { entry: KeyListEntry ->
-                getKey(KeyInfo<JwkType>(kid = entry.keyId!!))
+                getKey(KeyInfo<JwkType>(kid = awsCanonicalKeyId(entry.keyId!!)))
             }
         }.orEmpty().map { it.toKeyReference() }.toTypedArray()
 
@@ -634,7 +641,7 @@ actual class AwsKmsCryptoProvider actual constructor(
 
                 toManagedKeyPair(
                     it,
-                    response.keyId ?: resolvedKeyId,
+                    awsCanonicalKeyId(response.keyId ?: resolvedKeyId),
                     resolvedAlias,
                 ).joseToManagedKeyInfo()
             }
@@ -1393,6 +1400,13 @@ private fun requireAwsNativeAlias(alias: String): String {
     require(AWS_NATIVE_ALIAS.matches(normalized)) { "AWS KMS alias is invalid" }
     return normalized
 }
+
+/**
+ * AWS reports the same key as a bare key id (CreateKey, ListKeys) or as its ARN (GetPublicKey,
+ * Sign). The bare key id is the kid callers persist and publish, so every path reduces to it.
+ */
+internal fun awsCanonicalKeyId(identity: String): String =
+    if (AWS_KMS_KEY_ARN.matches(identity)) identity.substringAfterLast("key/") else identity
 
 private fun requireAwsNativeKeyIdentity(identity: String) {
     require(AWS_KMS_KEY_ARN.matches(identity) || AWS_KMS_KEY_ID.matches(identity)) {

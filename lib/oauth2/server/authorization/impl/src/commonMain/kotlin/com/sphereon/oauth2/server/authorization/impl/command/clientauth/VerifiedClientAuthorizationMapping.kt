@@ -30,6 +30,7 @@ internal fun ClientRegistration.toVerifiedClientAuthorization(): VerifiedClientA
         requirePkce = requirePkce,
         tlsClientCertificateBoundAccessTokens = tlsClientCertificateBoundAccessTokens,
         tenantId = additionalMetadata[TENANT_ID_CLAIM] as? String,
+        tokenExchangeAuthority = tokenExchangeAuthority,
     )
 
 private const val TENANT_ID_CLAIM = "tenant_id"

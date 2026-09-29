@@ -21,6 +21,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.reloadFromBackingSources
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.crypto.core.KeyInfo
@@ -196,6 +197,11 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      */
     private fun metadataSigningKmsProviderId(): String? =
         if (keyNameResolver == null) namespaceProperty("signingKmsProviderId")?.takeIf { it.isNotBlank() } else null
+
+    override suspend fun reloadConfiguration() {
+        configService.reloadFromBackingSources()
+        prepare()
+    }
 
     private fun tenantId(): String? = execution.tenantId.takeIf { it.isNotBlank() }
 

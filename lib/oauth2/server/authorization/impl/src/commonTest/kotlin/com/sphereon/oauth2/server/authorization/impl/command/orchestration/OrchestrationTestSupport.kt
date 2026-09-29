@@ -69,7 +69,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentica
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientCredentialsGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedPreAuthCodeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
-import com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationCommand
@@ -78,7 +77,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthCodeArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 
@@ -109,8 +107,6 @@ internal open class StubAuthorizationServerService(
     override suspend fun verifyRefreshTokenGrant(args: VerifyRefreshTokenGrantArgs): IdkResult<VerifiedRefreshTokenGrant, IdkError> = unused()
 
     override suspend fun verifyClientCredentialsGrant(args: VerifyClientCredentialsGrantArgs): IdkResult<VerifiedClientCredentialsGrant, IdkError> = unused()
-
-    override suspend fun verifyTokenExchangeGrant(args: VerifyTokenExchangeGrantArgs): IdkResult<VerifiedTokenExchangeGrant, IdkError> = unused()
 
     override suspend fun verifyPreAuthorizedCodeGrant(args: VerifyPreAuthCodeArgs): IdkResult<VerifiedPreAuthCodeGrant, IdkError> = unused()
 
@@ -168,7 +164,6 @@ internal open class StubAuthorizationServerService(
             override val verifyAuthorizationCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand = missing("verifyAuthorizationCodeGrant")
             override val verifyRefreshTokenGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand = missing("verifyRefreshTokenGrant")
             override val verifyClientCredentialsGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantCommand = missing("verifyClientCredentialsGrant")
-            override val verifyTokenExchangeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand = missing("verifyTokenExchangeGrant")
             override val verifyPreAuthorizedCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeGrantCommand = missing("verifyPreAuthorizedCodeGrant")
             override val createAccessToken get(): com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand = missing("createAccessToken")
             override val createRefreshToken get(): com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand = missing("createRefreshToken")

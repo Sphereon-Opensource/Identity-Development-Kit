@@ -35,6 +35,7 @@ import com.sphereon.oauth2.server.authorization.command.token.HandleTokenRequest
 import com.sphereon.oauth2.server.authorization.command.token.TokenHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.dpop.DpopNonceManager
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
+import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ErrorEndpoint
 import com.sphereon.oauth2.server.authorization.impl.http.isBasicAuthorizationHeaderInternal
 import com.sphereon.oauth2.server.authorization.impl.http.mapOAuth2ErrorToResponse
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
@@ -98,11 +99,14 @@ class TokenHttpEndpointCommandImpl(
             clientCertificateExtractor
                 .extractCertificate(request)
                 .getOrElse { error ->
+                    execution.log.logManager.withTag("TokenHttpEndpoint").warn(
+                        "Client certificate extraction failed idk_code=${error.code} error_key=${error.message.i18nKey}",
+                    )
                     return Ok(
                         oauth2ErrorResponse(
                             statusCode = 400,
                             error = "invalid_request",
-                            errorDescription = error.message.defaultMessage ?: "Invalid client certificate",
+                            errorDescription = "Invalid client certificate",
                             jsonFormat = json,
                         ),
                     )
@@ -147,7 +151,13 @@ class TokenHttpEndpointCommandImpl(
                     body = responseBody,
                 )
             } else {
-                mapOAuth2ErrorToResponse(result.error, json, execution).withWwwAuthenticateIfBasicInternal(basicAuthWasAttempted)
+                mapOAuth2ErrorToResponse(
+                    result.error,
+                    json,
+                    execution,
+                    endpoint = OAuth2ErrorEndpoint.TOKEN,
+                    httpAuthenticationAttempted = basicAuthWasAttempted,
+                ).withWwwAuthenticateIfBasicInternal(basicAuthWasAttempted)
             }
         // RFC 9449 §8 SHOULD: emit `DPoP-Nonce` on every DPoP-bearing response so clients can
         // rotate proactively, regardless of success/failure. The error path already attaches

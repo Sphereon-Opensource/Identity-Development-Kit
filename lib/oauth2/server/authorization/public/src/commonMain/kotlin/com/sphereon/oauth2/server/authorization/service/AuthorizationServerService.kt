@@ -82,7 +82,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentica
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientCredentialsGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedPreAuthCodeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
-import com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationRequestCommand
@@ -96,8 +95,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizatio
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
@@ -127,8 +124,6 @@ interface AuthorizationServerService {
     suspend fun verifyRefreshTokenGrant(args: VerifyRefreshTokenGrantArgs): IdkResult<VerifiedRefreshTokenGrant, IdkError>
 
     suspend fun verifyClientCredentialsGrant(args: VerifyClientCredentialsGrantArgs): IdkResult<VerifiedClientCredentialsGrant, IdkError>
-
-    suspend fun verifyTokenExchangeGrant(args: VerifyTokenExchangeGrantArgs): IdkResult<VerifiedTokenExchangeGrant, IdkError>
 
     suspend fun verifyPreAuthorizedCodeGrant(args: VerifyPreAuthCodeArgs): IdkResult<VerifiedPreAuthCodeGrant, IdkError>
 
@@ -202,7 +197,6 @@ interface AuthorizationServerService {
         val verifyAuthorizationCodeGrant: VerifyAuthorizationCodeGrantCommand
         val verifyRefreshTokenGrant: VerifyRefreshTokenGrantCommand
         val verifyClientCredentialsGrant: VerifyClientCredentialsGrantCommand
-        val verifyTokenExchangeGrant: VerifyTokenExchangeGrantCommand
         val verifyPreAuthorizedCodeGrant: VerifyPreAuthorizedCodeGrantCommand
         val createAccessToken: CreateAccessTokenCommand
         val createRefreshToken: CreateRefreshTokenCommand

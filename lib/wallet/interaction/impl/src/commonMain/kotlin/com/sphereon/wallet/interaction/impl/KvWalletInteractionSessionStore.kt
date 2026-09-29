@@ -16,9 +16,14 @@ import com.sphereon.wallet.interaction.WalletInteractionSessionId
 import com.sphereon.wallet.interaction.WalletInteractionState
 import com.sphereon.wallet.interaction.WalletInteractionStateEvent
 import com.sphereon.wallet.interaction.WalletInteractionActivityProjection
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration
@@ -90,8 +95,29 @@ class KvWalletInteractionSessionStore(
         afterRevision: Long?,
     ): Flow<WalletInteractionStateEvent> =
         flow {
-            events(sessionId, afterRevision).forEach { event -> emit(event) }
-            emitAll(liveEventBus.observeEvents(sessionId, afterRevision))
+            coroutineScope {
+                val bufferedLiveEvents = Channel<WalletInteractionStateEvent>(Channel.UNLIMITED)
+                val liveCollector =
+                    launch(start = CoroutineStart.UNDISPATCHED) {
+                        try {
+                            liveEventBus.observeEvents(sessionId, afterRevision).collect { event -> bufferedLiveEvents.send(event) }
+                        } finally {
+                            bufferedLiveEvents.close()
+                        }
+                    }
+                val emittedIdentities = mutableSetOf<Pair<WalletInteractionSessionId, Long>>()
+                try {
+                    events(sessionId, afterRevision).forEach { event ->
+                        if (emittedIdentities.add(event.identity())) emit(event)
+                    }
+                    for (event in bufferedLiveEvents) {
+                        if (emittedIdentities.add(event.identity())) emit(event)
+                    }
+                } finally {
+                    liveCollector.cancel()
+                    bufferedLiveEvents.close()
+                }
+            }
         }
 
     override suspend fun remove(sessionId: WalletInteractionSessionId) {
@@ -146,6 +172,8 @@ class KvWalletInteractionSessionStore(
             revision = revision,
             state = this,
         )
+
+    private fun WalletInteractionStateEvent.identity(): Pair<WalletInteractionSessionId, Long> = sessionId to revision
 
     private companion object {
         const val SESSION_NAMESPACE = "wallet-interaction-sessions"

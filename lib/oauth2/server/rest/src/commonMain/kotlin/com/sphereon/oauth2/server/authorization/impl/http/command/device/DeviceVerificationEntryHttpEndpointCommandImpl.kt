@@ -31,7 +31,7 @@ import com.sphereon.oauth2.common.config.isEnabled
 import com.sphereon.oauth2.server.authorization.command.device.DeviceVerificationEntryHttpEndpointCommand
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
-import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
+import com.sphereon.oauth2.server.authorization.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.provider.DeviceEntryContext
 import com.sphereon.oauth2.server.authorization.provider.DeviceVerificationPageRenderer
 import dev.zacsweers.metro.ContributesBinding

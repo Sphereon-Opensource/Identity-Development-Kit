@@ -635,10 +635,7 @@ class DefaultConfigResolutionPipeline(
 
     private fun <T> policyDenied(): IdkResult<T, IdkError> =
         Err(
-            ConfigErrors.interpolationError(
-                key = "policy",
-                reason = "configuration value is not permitted",
-            ),
+            ConfigErrors.interpolationDenied("configuration value is not permitted"),
         )
 }
 
@@ -676,6 +673,15 @@ object ConfigErrors {
     ) = IdkError.ILLEGAL_ARGUMENT_ERROR(
         message = "Interpolation failed for property '$key': $reason",
     )
+
+    /**
+     * A placeholder was refused by interpolation policy or reference protection. The caller that
+     * knows the property key and its source reports them; the reason names only the rule class.
+     */
+    fun interpolationDenied(reason: String) =
+        IdkError.ILLEGAL_ARGUMENT_ERROR(
+            message = "Interpolation denied: $reason",
+        )
 
     fun circularReference(
         key: String,

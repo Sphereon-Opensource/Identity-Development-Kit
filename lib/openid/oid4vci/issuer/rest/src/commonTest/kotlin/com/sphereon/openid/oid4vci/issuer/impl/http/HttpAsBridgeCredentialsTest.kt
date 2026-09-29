@@ -43,6 +43,7 @@ import com.sphereon.oauth2.server.authorization.provider.UserInfo
 import com.sphereon.oauth2.server.authorization.dpop.DpopProofJtiCache
 import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
 import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
+import com.sphereon.oauth2.server.resource.command.StandardJwtArtifactContext
 import com.sphereon.oauth2.server.resource.model.TokenPayload
 import com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationServerDeployment
 import com.sphereon.openid.oid4vci.issuer.bridge.Oid4vciAuthorizationServerTarget
@@ -423,6 +424,12 @@ class HttpAsBridgeCredentialsTest {
                     put("userinfo", buildJsonObject { put("given_name", "Injected") })
                 }),
             ))
+
+            override suspend fun verifyStandardArtifact(
+                args: VerifyJwtArgs,
+                context: StandardJwtArtifactContext,
+            ): IdkResult<JsonObject, IdkError> =
+                error("Standard JWT artifact verification is not used by access-token HTTP bridge tests")
         }
         val bridge = HttpAsBridge(
             execution = TestSessionExecution(principalConfigService = RecordingPrincipalConfigService(mapOf(
@@ -567,6 +574,12 @@ class HttpAsBridgeCredentialsTest {
 
         override suspend fun execute(args: VerifyJwtArgs): IdkResult<TokenPayload.Jwt, IdkError> =
             error("JWT verification must not run for invalid expiry")
+
+        override suspend fun verifyStandardArtifact(
+            args: VerifyJwtArgs,
+            context: StandardJwtArtifactContext,
+        ): IdkResult<JsonObject, IdkError> =
+            error("Standard JWT artifact verification must not run for invalid expiry")
     }
 
     private class RecordingOpaqueSecretResolver : OpaqueSecretResolver {

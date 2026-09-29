@@ -70,7 +70,8 @@ class OAuth2ServerMetadataHttpEndpointCommandImpl(
     override suspend fun supports(args: Any): Boolean =
         if (args is GenericHttpRequest) {
             args.matches(endpoint.method.name, endpoint.pathPattern) ||
-                args.matches(endpoint.method.name, OAuth2ServerMetadataHttpEndpointCommand.TENANT_PATH_PATTERN)
+                args.matches(endpoint.method.name, OAuth2ServerMetadataHttpEndpointCommand.TENANT_PATH_PATTERN) ||
+                args.matches(endpoint.method.name, OAuth2ServerMetadataHttpEndpointCommand.ISSUER_PATH_PATTERN)
         } else {
             false
         }

@@ -16,6 +16,7 @@ import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import com.sphereon.crypto.core.kms.ProviderCertificateLookup
 import com.sphereon.crypto.core.kms.ProviderCertificateReference
 import com.sphereon.crypto.core.kms.ProviderCertificateReferenceService
+import com.sphereon.crypto.core.kms.canonicalProviderCertificateId
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -74,9 +75,14 @@ class DefaultProviderCertificateReferenceInspector(
                 ),
             )
 
+        val lookup = ProviderCertificateLookup(alias = alias, id = providerCertificateId)
+        val requestedCanonicalId = canonicalProviderCertificateId(provider, lookup).getOrElse {
+            return Err(identityMismatch())
+        }
+
         val result =
             try {
-                certificateService.getCertificate(ProviderCertificateLookup(alias = alias, id = providerCertificateId))
+                certificateService.getCertificate(lookup)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -93,17 +99,18 @@ class DefaultProviderCertificateReferenceInspector(
         }
 
         if (reference.providerId != providerId || reference.alias != alias ||
-            (providerCertificateId != null && reference.id != providerCertificateId)
+            (requestedCanonicalId != null && reference.id != requestedCanonicalId)
         ) {
-            return Err(
-                IdkError.fromString(
-                    code = "KMS_PROVIDER_CERTIFICATE_IDENTITY_MISMATCH",
-                    message = "The provider certificate identity does not match the requested reference",
-                ),
-            )
+            return Err(identityMismatch())
         }
         return Ok(reference)
     }
+
+    private fun identityMismatch(): IdkError =
+        IdkError.fromString(
+            code = "KMS_PROVIDER_CERTIFICATE_IDENTITY_MISMATCH",
+            message = "The provider certificate identity does not match the requested reference",
+        )
 
     private fun safeProviderErrorMessage(code: String): String =
         when (code) {

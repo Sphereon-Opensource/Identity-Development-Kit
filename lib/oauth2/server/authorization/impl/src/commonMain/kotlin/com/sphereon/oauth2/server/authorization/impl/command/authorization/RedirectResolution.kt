@@ -24,6 +24,9 @@ import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import com.sphereon.oauth2.server.authorization.redirect.RedirectUriMatching
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
+import com.sphereon.oauth2.server.authorization.provider.UnregisteredClientAdmission
+import com.sphereon.oauth2.server.authorization.provider.UnregisteredClientAdmissionRule
 
 /**
  * Result of the client + grant-type + redirect-URI + response-mode resolution pass. The
@@ -38,6 +41,7 @@ public sealed class RedirectResolution {
         val redirectUri: String,
         val state: String?,
         val responseMode: OAuth2ResponseMode,
+        val admission: UnregisteredClientAdmission? = null,
     ) : RedirectResolution()
 
     data class RejectPreRedirect(
@@ -60,8 +64,10 @@ public suspend fun resolveTrustedRedirect(
     parsed: AuthorizationRequestData,
     clientRegistry: ClientRegistry,
     serversConfigProvider: OAuth2ServersConfigProvider,
+    admissionRule: UnregisteredClientAdmissionRule,
+    credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
 ): RedirectResolution {
-    // ── Client lookup (registry → permissive public-client fallback) ───────
+    // ── Client lookup and OID4VCI wallet admission ────────────────────────
     val clientLookup = clientRegistry.getClient(parsed.clientId)
     if (!clientLookup.isOk) {
         return RedirectResolution.RejectPreRedirect(
@@ -71,12 +77,16 @@ public suspend fun resolveTrustedRedirect(
             ),
         )
     }
-    val client =
-        clientLookup.value
-            ?: resolvePublicClientFallback(parsed.clientId, serversConfigProvider)
-            ?: return RedirectResolution.RejectPreRedirect(
-                AuthorizationServerError.UnauthorizedClient(clientId = parsed.clientId),
-            )
+    val admission =
+        if (clientLookup.value == null) {
+            admissionRule.admit(parsed, credentialIssuerAudienceResolver.boundCredentialIssuers())
+        } else {
+            null
+        }
+    val client = clientLookup.value ?: admission?.client
+        ?: return RedirectResolution.RejectPreRedirect(
+            AuthorizationServerError.UnauthorizedClient(clientId = parsed.clientId),
+        )
 
     // ── Grant-type allowance ───────────────────────────────────────────────
     if (GrantType.AUTHORIZATION_CODE !in client.grantTypes) {
@@ -91,8 +101,8 @@ public suspend fun resolveTrustedRedirect(
         when {
             requestedRedirect != null -> {
                 if (client.redirectUris.isEmpty()) {
-                    // Permissive fallback (empty redirectUris on a synthesised public client)
-                    // accepts any explicit URI; normal registered clients always have a URI list.
+                    // An admitted wallet binds this URI in PAR. StandardAuthorizeRequestCommandImpl
+                    // requires the authorization-endpoint value to equal the stored value exactly.
                     requestedRedirect
                 } else if (matchesRegisteredRedirectUri(requestedRedirect, client.redirectUris)) {
                     requestedRedirect
@@ -145,6 +155,7 @@ public suspend fun resolveTrustedRedirect(
         redirectUri = resolvedRedirectUri,
         state = parsed.state,
         responseMode = responseMode,
+        admission = admission,
     )
 }
 

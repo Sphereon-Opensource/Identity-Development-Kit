@@ -58,6 +58,8 @@ class VerifyAuthorizationRequestRequestNotSupportedTest {
             SingleClientRegistry(client()),
             TestOAuth2ServersConfigProvider(servers),
             emptySet(),
+            com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
+            Oid4vciUnregisteredWalletAdmissionRule(),
         )
     }
 

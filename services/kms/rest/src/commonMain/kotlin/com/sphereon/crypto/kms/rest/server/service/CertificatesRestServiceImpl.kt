@@ -78,7 +78,9 @@ class CertificatesRestServiceImpl(
     private val platformManagedCertificateAliasLister: PlatformManagedCertificateAliasLister,
 ) : CertificatesRestService {
     override suspend fun registerCertificateReference(request: RegisterCertificateReferenceInput): CertificateReferenceResponse =
-        certificateReferenceRegistrar.register(request).getOrThrowReference().toResponse()
+        certificateReferenceRegistrar.register(request).getOrElse { error ->
+            throw CertificateReferenceResolutionException(code = error.code, message = registrationErrorMessage(error))
+        }.toResponse()
 
     override suspend fun listCertificateReferences(
         providerId: String?,
@@ -423,6 +425,17 @@ class CertificatesRestServiceImpl(
             )
         }
 
+    /**
+     * Registration errors from these codes carry messages written by the registrar and the
+     * provider inspectors, never provider or persistence text, so they are passed on as the reason.
+     */
+    private fun registrationErrorMessage(error: IdkError): String =
+        if (error.code in AUTHORED_REGISTRATION_ERROR_CODES) {
+            error.message.defaultMessage?.takeIf { it.isNotBlank() } ?: safeReferenceErrorMessage(error.code)
+        } else {
+            safeReferenceErrorMessage(error.code)
+        }
+
     private fun safeReferenceErrorMessage(code: String): String =
         when (code) {
             "NOT_FOUND_ERROR" -> "The certificate reference was not found"
@@ -480,3 +493,20 @@ class CertificatesRestServiceImpl(
         val certificatesRestService: CertificatesRestService
     }
 }
+
+private val AUTHORED_REGISTRATION_ERROR_CODES: Set<String> =
+    setOf(
+        "ILLEGAL_ARGUMENT_ERROR",
+        "NOT_FOUND_ERROR",
+        "KMS_PROVIDER_NOT_FOUND",
+        "KMS_PROVIDER_NOT_AVAILABLE",
+        "KMS_EXTERNAL_KEY_NOT_FOUND",
+        "KMS_EXTERNAL_KEY_IDENTITY_MISMATCH",
+        "KMS_CERTIFICATE_REFERENCE_MANAGED_STORE_CONFLICT",
+        "KMS_PROVIDER_CERTIFICATE_REFERENCE_UNSUPPORTED",
+        "KMS_PROVIDER_CERTIFICATE_IDENTITY_MISMATCH",
+        CertificateReferenceStoreErrorCodes.KEY_IDENTITY_MISMATCH,
+        CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT,
+        CertificateReferenceStoreErrorCodes.STORE_UNAVAILABLE,
+        CertificateReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,
+    )

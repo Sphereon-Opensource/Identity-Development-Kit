@@ -17,6 +17,7 @@
 package com.sphereon.oauth2.common.config
 
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.core.compat.JsExportIgnoreCompat
 import com.sphereon.di.session.SessionScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.OptionalBinding
@@ -43,6 +44,15 @@ interface OAuth2ServersConfigProvider {
         get() = getDefaultServer()
 
     fun getConfig(): OAuth2ServersConfig
+
+    /**
+     * Reads the configuration again from its backing stores, bypassing any snapshot they serve
+     * from, and returns it. Used when a request names a server the current view does not contain,
+     * which happens while a server created moments ago has not reached this process's snapshot yet.
+     * A provider without a snapshot keeps the default.
+     */
+    @JsExportIgnoreCompat
+    suspend fun reloadConfig(): OAuth2ServersConfig = getConfig()
 
     fun getServer(id: String): OAuth2ServerInstanceConfig?
 

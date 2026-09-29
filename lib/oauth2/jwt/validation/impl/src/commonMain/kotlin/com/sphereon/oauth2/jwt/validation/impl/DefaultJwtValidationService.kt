@@ -38,6 +38,7 @@ import com.sphereon.oauth2.jwt.validation.ValidatedAccessToken
 import com.sphereon.oauth2.jwt.validation.ValidatedIdToken
 import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
 import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
+import com.sphereon.oauth2.server.resource.command.StandardJwtArtifactContext
 import com.sphereon.oauth2.server.resource.model.TokenPayload
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -123,35 +124,43 @@ class DefaultJwtValidationService(
                 type = IdpType.CUSTOM,
                 issuer = trustMaterial.canonicalIssuer.value,
             )
-        val verifyResult =
-            verifyJwtCommand.execute(
-                VerifyJwtArgs(
+        val verifyArgs =
+            VerifyJwtArgs(
                     jwt = compactJwt,
                     authorizationServer = trustMaterial.canonicalIssuer.value,
                     expectedAudience = null,
                     jwksUri = null,
                     trustedIdentifier = trustedIdentifier,
-                ),
-            )
+                )
+        val verifyResult: IdkResult<Unit, IdkError> =
+            when (artifactContext) {
+                JwtArtifactContext.ACCESS_TOKEN -> verifyJwtCommand.execute(verifyArgs).map { Unit }
+                JwtArtifactContext.ID_TOKEN ->
+                    verifyJwtCommand.verifyStandardArtifact(verifyArgs, StandardJwtArtifactContext.ID_TOKEN).map { Unit }
+                JwtArtifactContext.JARM_RESPONSE ->
+                    verifyJwtCommand.verifyStandardArtifact(verifyArgs, StandardJwtArtifactContext.JARM_RESPONSE).map { Unit }
+                JwtArtifactContext.LOGOUT_TOKEN ->
+                    verifyJwtCommand.verifyStandardArtifact(verifyArgs, StandardJwtArtifactContext.LOGOUT_TOKEN).map { Unit }
+            }
 
         return verifyResult.fold(
-            success = { jwtPayload ->
-                if (jwtPayload.iss != trustMaterial.canonicalIssuer.value) {
+            success = {
+                if (claims.issuer != trustMaterial.canonicalIssuer.value) {
                     return Err(
                         JwtValidationError.untrustedIssuer(
-                            issuer = jwtPayload.iss,
+                            issuer = claims.issuer.orEmpty(),
                             trustedIssuers = listOf(trustMaterial.canonicalIssuer.value),
                         ),
                     )
                 }
                 when (artifactContext) {
-                    JwtArtifactContext.ID_TOKEN,
-                    JwtArtifactContext.JARM_RESPONSE -> if (jwtPayload.aud.isNullOrEmpty()) {
+                JwtArtifactContext.ID_TOKEN,
+                    JwtArtifactContext.JARM_RESPONSE -> if (claims.audiences.isEmpty()) {
                         return Err(JwtValidationError.missingClaim("aud"))
                     }
 
                     JwtArtifactContext.LOGOUT_TOKEN ->
-                        if (jwtPayload.additionalClaims["events"] !is JsonObject) {
+                        if (claims.payload["events"] !is JsonObject) {
                             return Err(JwtValidationError.missingClaim("events"))
                         }
 
@@ -169,31 +178,72 @@ class DefaultJwtValidationService(
         token: String,
         options: AccessTokenValidationOptions,
     ): IdkResult<ValidatedAccessToken, JwtValidationError> {
+        val trustedIssuer = options.trustedIssuer?.trim()
+        val trustedJwksUri = options.trustedJwksUri?.trim()
+        val hasPerCallTrust = options.trustedIssuer != null || options.trustedJwksUri != null
+        if (hasPerCallTrust &&
+            (trustedIssuer.isNullOrEmpty() || trustedJwksUri.isNullOrEmpty() ||
+                options.idpId != null || options.tenantHint != null || options.trustedIdentifier != null)
+        ) {
+            return Err(
+                JwtValidationError.idpConfigurationError(
+                    "Per-call issuer/JWKS trust must be complete and cannot be combined with IdP selection or identifier options",
+                ),
+            )
+        }
+
         // Validate token format
         val parts = token.split(".")
         if (parts.size != 3) {
             return Err(JwtValidationError.invalidFormat("JWT must have 3 parts, got ${parts.size}"))
         }
 
-        // Find the IdP configuration to use
-        val idpResult = resolveIdpConfig(token, options)
-        if (idpResult is Err) {
-            return idpResult
-        }
-
-        val idpConfig = (idpResult as Ok).value
-
-        val jwksUri = if (options.trustedIdentifier == null) {
-            val jwksResult = resolveJwksUri(idpConfig)
-            if (jwksResult is Err) {
-                return Err(jwksResult.error)
+        val (idpConfig, jwksUri) = when {
+            hasPerCallTrust -> {
+                IdpConfig(
+                    id = PER_CALL_TRUSTED_IDP_ID,
+                    type = IdpType.CUSTOM,
+                    issuer = trustedIssuer!!,
+                    jwksUri = trustedJwksUri,
+                ) to trustedJwksUri!!
             }
-            (jwksResult as Ok).value
-        } else {
-            null
+
+            else -> {
+                val idpResult = resolveIdpConfig(token, options)
+                if (idpResult is Err) {
+                    return idpResult
+                }
+                val resolvedIdp = (idpResult as Ok).value
+                val resolvedJwks = if (options.trustedIdentifier == null) {
+                    val jwksResult = resolveJwksUri(resolvedIdp)
+                    if (jwksResult is Err) {
+                        return Err(jwksResult.error)
+                    }
+                    (jwksResult as Ok).value
+                } else {
+                    null
+                }
+                resolvedIdp to resolvedJwks
+            }
         }
 
-        // Determine expected audience
+        if (hasPerCallTrust) {
+            val claims = extractClaims(token)
+            if (claims is Err) {
+                return claims
+            }
+            val tokenIssuer = (claims as Ok).value.issuer
+            if (tokenIssuer != trustedIssuer) {
+                return Err(
+                    JwtValidationError.untrustedIssuer(
+                        issuer = tokenIssuer ?: "",
+                        trustedIssuers = listOf(trustedIssuer!!),
+                    ),
+                )
+            }
+        }
+
+        // Per-call issuer/JWKS inputs bypass registry lookup and discovery.
         val expectedAudience = options.expectedAudience ?: idpConfig.audience
 
         // Verify the JWT using IDK's command
@@ -286,20 +336,29 @@ class DefaultJwtValidationService(
 
         // Verify the JWT
         val verifyResult =
-            verifyJwtCommand.execute(
+            verifyJwtCommand.verifyStandardArtifact(
                 VerifyJwtArgs(
                     jwt = token,
                     authorizationServer = idpConfig.issuer,
                     expectedAudience = options.expectedAudience ?: idpConfig.audience,
                     jwksUri = jwksUri,
                 ),
+                StandardJwtArtifactContext.ID_TOKEN,
             )
 
         return verifyResult.fold(
             success = { jwtPayload ->
+                val subject = readString(jwtPayload, "sub")
+                    ?: return Err(JwtValidationError.missingClaim("sub"))
+                val issuer = readString(jwtPayload, "iss")
+                    ?: return Err(JwtValidationError.missingClaim("iss"))
+                val expiresAt = readLong(jwtPayload, "exp")
+                    ?: return Err(JwtValidationError.missingClaim("exp"))
+                val issuedAt = readLong(jwtPayload, "iat")
+                    ?: return Err(JwtValidationError.missingClaim("iat"))
                 // Validate nonce if required
                 if (options.expectedNonce != null) {
-                    val tokenNonce = jwtPayload.additionalClaims["nonce"].asString()
+                    val tokenNonce = jwtPayload["nonce"].asString()
                     if (tokenNonce != options.expectedNonce) {
                         return Err(
                             JwtValidationError.validationError(
@@ -313,25 +372,25 @@ class DefaultJwtValidationService(
                 // See class-level KDoc.
                 Ok(
                     ValidatedIdToken(
-                        subject = jwtPayload.sub,
-                        issuer = jwtPayload.iss,
-                        audiences = jwtPayload.aud ?: emptyList(),
-                        expiresAt = jwtPayload.exp.epochSeconds,
-                        issuedAt = jwtPayload.iat.epochSeconds,
+                        subject = subject,
+                        issuer = issuer,
+                        audiences = readAudiences(jwtPayload),
+                        expiresAt = expiresAt,
+                        issuedAt = issuedAt,
                         authTime =
-                            jwtPayload.additionalClaims["auth_time"]
+                            jwtPayload["auth_time"]
                                 .asString()
                                 ?.toDoubleOrNull()
                                 ?.toLong(),
-                        nonce = jwtPayload.additionalClaims["nonce"].asString(),
-                        name = jwtPayload.additionalClaims["name"].asString(),
-                        email = jwtPayload.additionalClaims["email"].asString(),
-                        emailVerified = jwtPayload.additionalClaims["email_verified"].asString()?.toBooleanStrictOrNull(),
-                        preferredUsername = jwtPayload.additionalClaims["preferred_username"].asString(),
-                        givenName = jwtPayload.additionalClaims["given_name"].asString(),
-                        familyName = jwtPayload.additionalClaims["family_name"].asString(),
+                        nonce = jwtPayload["nonce"].asString(),
+                        name = jwtPayload["name"].asString(),
+                        email = jwtPayload["email"].asString(),
+                        emailVerified = jwtPayload["email_verified"].asString()?.toBooleanStrictOrNull(),
+                        preferredUsername = jwtPayload["preferred_username"].asString(),
+                        givenName = jwtPayload["given_name"].asString(),
+                        familyName = jwtPayload["family_name"].asString(),
                         rawToken = token,
-                        claims = buildClaims(jwtPayload),
+                        claims = jwtPayload.toMap(),
                         idpId = idpConfig.id,
                     ),
                 )
@@ -612,6 +671,7 @@ class DefaultJwtValidationService(
         }
 
     private companion object {
+        private const val PER_CALL_TRUSTED_IDP_ID = "per-call-trusted-issuer"
         private val JSON =
             Json {
                 ignoreUnknownKeys = true

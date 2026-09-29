@@ -215,9 +215,10 @@ class AuthorizationCodeGrantHandlerImpl(
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
                         audience =
-                            verified.resource
+                            verified.codeData.admittedAudiences
+                                ?: verified.resource
                                 .ifEmpty { listOfNotNull(verified.defaultAccessTokenAudience) }
-                                .ifEmpty { credentialIssuerAudienceResolver.defaultAudiences() },
+                                .ifEmpty { credentialIssuerAudienceResolver.boundCredentialIssuers().map { it.audience } },
                         dpopJkt = boundJkt,
                         certificateThumbprintS256 = certThumbprint,
                         authTime = verified.codeData.authTime,
@@ -238,7 +239,7 @@ class AuthorizationCodeGrantHandlerImpl(
                         subject = verified.subject,
                         clientId = tokenRequest.clientId,
                         scope = verified.scope,
-                        resource = verified.resource,
+                        resource = verified.codeData.admittedAudiences ?: verified.resource,
                         defaultAccessTokenAudience = verified.defaultAccessTokenAudience,
                         credentialConfigurationIds = credentialConfigurationIds.orEmpty(),
                         oid4vciIssuerState = issuerState,

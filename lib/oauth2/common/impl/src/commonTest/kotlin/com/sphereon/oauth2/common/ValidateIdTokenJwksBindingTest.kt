@@ -18,6 +18,7 @@ package com.sphereon.oauth2.common
 
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.session.asCoreApiServiceGraph
+import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.jose.JwkSet
@@ -73,6 +74,15 @@ class ValidateIdTokenJwksBindingTest {
             "aud" to JsonArray(listOf(JsonPrimitive("client-1"))),
             "exp" to JsonPrimitive(9_999_999_999L),
             "iat" to JsonPrimitive(1_000_000_000L),
+        )
+
+    private fun p256PublicJwk(kid: String): Jwk =
+        Jwk(
+            kty = JwaKeyType.EC,
+            crv = JwaCurve.P_256,
+            kid = kid,
+            x = "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+            y = "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
         )
 
     private val issuerOptions =
@@ -208,7 +218,7 @@ class ValidateIdTokenJwksBindingTest {
         runTest {
             val trustedJwks =
                 JwkSet(
-                    keys = arrayOf(Jwk(kty = JwaKeyType.EC, kid = "known-key")),
+                    keys = arrayOf(p256PublicJwk("known-key")),
                 )
 
             val idToken =
@@ -244,8 +254,8 @@ class ValidateIdTokenJwksBindingTest {
                 JwkSet(
                     keys =
                         arrayOf(
-                            Jwk(kty = JwaKeyType.EC, kid = "ec-1"),
-                            Jwk(kty = JwaKeyType.EC, kid = "ec-2"),
+                            p256PublicJwk("ec-1"),
+                            p256PublicJwk("ec-2"),
                         ),
                 )
 
@@ -271,7 +281,7 @@ class ValidateIdTokenJwksBindingTest {
         runTest {
             val trustedJwks =
                 JwkSet(
-                    keys = arrayOf(Jwk(kty = JwaKeyType.EC, kid = "key-1")),
+                    keys = arrayOf(p256PublicJwk("key-1")),
                 )
             val idToken =
                 jwtWith(

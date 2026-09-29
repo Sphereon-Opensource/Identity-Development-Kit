@@ -282,7 +282,10 @@ class MemoryDidRepositoryImpl : DidRepository {
 
     // ============ Child-row ops ============
 
-    override suspend fun saveVerificationMethod(vm: DidVerificationMethodRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveVerificationMethod(
+        tenantId: String?,
+        vm: DidVerificationMethodRecord,
+    ): IdkResult<Unit, IdkError> =
         upsertChild("saveVerificationMethod", vms, vm.didRecordId, vm) { existing -> existing.id == vm.id }
 
     override suspend fun deleteVerificationMethod(
@@ -315,7 +318,10 @@ class MemoryDidRepositoryImpl : DidRepository {
             Ok(Unit)
         }
 
-    override suspend fun saveVerificationRelationship(rel: DidVerificationRelationshipRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveVerificationRelationship(
+        tenantId: String?,
+        rel: DidVerificationRelationshipRecord,
+    ): IdkResult<Unit, IdkError> =
         upsertChild("saveVerificationRelationship", rels, rel.didRecordId, rel) { existing -> existing.id == rel.id }
 
     override suspend fun deleteVerificationRelationship(
@@ -323,7 +329,10 @@ class MemoryDidRepositoryImpl : DidRepository {
         relationshipId: String,
     ): IdkResult<Unit, IdkError> = deleteChildScoped("deleteVerificationRelationship", rels, tenantId) { existing -> existing.id == relationshipId }
 
-    override suspend fun saveService(service: DidServiceRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveService(
+        tenantId: String?,
+        service: DidServiceRecord,
+    ): IdkResult<Unit, IdkError> =
         upsertChild("saveService", services, service.didRecordId, service) { existing -> existing.id == service.id }
 
     override suspend fun deleteService(
@@ -331,7 +340,10 @@ class MemoryDidRepositoryImpl : DidRepository {
         serviceId: String,
     ): IdkResult<Unit, IdkError> = deleteChildScoped("deleteService", services, tenantId) { existing -> existing.id == serviceId }
 
-    override suspend fun saveKeyMapping(mapping: DidKeyMappingRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveKeyMapping(
+        tenantId: String?,
+        mapping: DidKeyMappingRecord,
+    ): IdkResult<Unit, IdkError> =
         upsertChild("saveKeyMapping", keyMappings, mapping.didRecordId, mapping) { existing -> existing.id == mapping.id }
 
     override suspend fun deleteKeyMapping(
@@ -339,7 +351,10 @@ class MemoryDidRepositoryImpl : DidRepository {
         mappingId: String,
     ): IdkResult<Unit, IdkError> = deleteChildScoped("deleteKeyMapping", keyMappings, tenantId) { existing -> existing.id == mappingId }
 
-    override suspend fun saveController(controller: DidControllerRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveController(
+        tenantId: String?,
+        controller: DidControllerRecord,
+    ): IdkResult<Unit, IdkError> =
         upsertChild("saveController", controllers, controller.didRecordId, controller) { existing -> existing.id == controller.id }
 
     override suspend fun deleteController(
@@ -347,14 +362,20 @@ class MemoryDidRepositoryImpl : DidRepository {
         controllerId: String,
     ): IdkResult<Unit, IdkError> = deleteChildScoped("deleteController", controllers, tenantId) { existing -> existing.id == controllerId }
 
-    override suspend fun saveAlsoKnownAs(aka: DidAlsoKnownAsRecord): IdkResult<Unit, IdkError> = upsertChild("saveAlsoKnownAs", akas, aka.didRecordId, aka) { existing -> existing.id == aka.id }
+    override suspend fun saveAlsoKnownAs(
+        tenantId: String?,
+        aka: DidAlsoKnownAsRecord,
+    ): IdkResult<Unit, IdkError> = upsertChild("saveAlsoKnownAs", akas, aka.didRecordId, aka) { existing -> existing.id == aka.id }
 
     override suspend fun deleteAlsoKnownAs(
         tenantId: String?,
         akaId: String,
     ): IdkResult<Unit, IdkError> = deleteChildScoped("deleteAlsoKnownAs", akas, tenantId) { existing -> existing.id == akaId }
 
-    override suspend fun saveEquivalentId(eq: DidEquivalentIdRecord): IdkResult<Unit, IdkError> =
+    override suspend fun saveEquivalentId(
+        tenantId: String?,
+        eq: DidEquivalentIdRecord,
+    ): IdkResult<Unit, IdkError> =
         upsertChild("saveEquivalentId", equivalentIds, eq.didRecordId, eq) { existing -> existing.id == eq.id }
 
     override suspend fun deleteEquivalentId(
@@ -379,9 +400,13 @@ class MemoryDidRepositoryImpl : DidRepository {
 
     // ============ Context ops ============
 
-    override suspend fun getContexts(didRecordId: String): IdkResult<List<DidDocumentContextRecord>, IdkError> = mutex.withLock { Ok(contexts[didRecordId]?.map { row -> row.copy() }.orEmpty()) }
+    override suspend fun getContexts(
+        tenantId: String?,
+        didRecordId: String,
+    ): IdkResult<List<DidDocumentContextRecord>, IdkError> = mutex.withLock { Ok(contexts[didRecordId]?.map { row -> row.copy() }.orEmpty()) }
 
     override suspend fun replaceContexts(
+        tenantId: String?,
         didRecordId: String,
         contexts: List<DidDocumentContextRecord>,
     ): IdkResult<Unit, IdkError> =

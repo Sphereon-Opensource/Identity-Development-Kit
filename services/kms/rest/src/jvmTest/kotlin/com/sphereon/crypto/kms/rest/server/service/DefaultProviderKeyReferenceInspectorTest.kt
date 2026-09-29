@@ -14,10 +14,12 @@ import com.sphereon.crypto.core.ManagedKeyInfoType
 import com.sphereon.crypto.core.jose.JwaCurve
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.crypto.core.kms.KmsProvider
 import com.sphereon.crypto.core.kms.KmsProviderRegistry
 import java.lang.reflect.Proxy
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -120,6 +122,20 @@ class DefaultProviderKeyReferenceInspectorTest {
         }
 
     @Test
+    fun providerLookupFailureReturnsSanitizedInternalError() =
+        runTest {
+            val provider = providerProxy(emptyMap(), mutableListOf(), IllegalStateException("secret backend detail"))
+            val inspector = DefaultProviderKeyReferenceInspector(registry(mapOf("provider-1" to provider)))
+
+            val result = inspector.inspect("provider-1", "alias")
+
+            assertTrue(result.isErr)
+            assertEquals("UNKNOWN_ERROR", result.error.code)
+            assertEquals("External provider key lookup failed", result.error.message.defaultMessage)
+            assertFalse(result.error.message.defaultMessage.contains("secret backend detail"))
+        }
+
+    @Test
     fun kidLookupUnsupportedByProviderAcceptsAliasKeyWithMatchingCanonicalKid() =
         runTest {
             val lookups = mutableListOf<KeyInfoType<*>>()
@@ -174,6 +190,7 @@ class DefaultProviderKeyReferenceInspectorTest {
     private fun providerProxy(
         keys: Map<String, ManagedKeyInfoType<*>>,
         lookups: MutableList<KeyInfoType<*>>,
+        getKeyFailure: Exception? = null,
     ): KmsProvider =
         Proxy.newProxyInstance(
             KmsProvider::class.java.classLoader,
@@ -184,7 +201,8 @@ class DefaultProviderKeyReferenceInspectorTest {
                 "getKey" -> {
                     val keyInfo = args?.firstOrNull() as KeyInfoType<*>
                     lookups += keyInfo
-                    keys[keyInfo.alias ?: keyInfo.kid] ?: throw IllegalArgumentException("key not found")
+                    getKeyFailure?.let { throw it }
+                    keys[keyInfo.alias ?: keyInfo.kid] ?: throw NotFoundException("provider key")
                 }
                 else -> null
             }

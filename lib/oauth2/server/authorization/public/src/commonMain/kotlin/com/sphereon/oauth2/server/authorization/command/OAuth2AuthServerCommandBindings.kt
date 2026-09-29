@@ -76,11 +76,6 @@ interface OAuth2AuthServerCommandBindings {
             ?: error("No binding for ${VerifyClientCredentialsGrantCommand.COMMAND_ID}")
 
     @Provides
-    fun verifyTokenExchangeGrant(registry: SessionScopedCommandRegistry): VerifyTokenExchangeGrantCommand =
-        registry.get(VerifyTokenExchangeGrantCommand.COMMAND_ID) as? VerifyTokenExchangeGrantCommand
-            ?: error("No binding for ${VerifyTokenExchangeGrantCommand.COMMAND_ID}")
-
-    @Provides
     fun createAccessToken(registry: SessionScopedCommandRegistry): CreateAccessTokenCommand =
         registry.get(CreateAccessTokenCommand.COMMAND_ID) as? CreateAccessTokenCommand
             ?: error("No binding for ${CreateAccessTokenCommand.COMMAND_ID}")

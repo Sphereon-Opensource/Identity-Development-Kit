@@ -162,7 +162,6 @@ class AuthorizationCodeGrantRolesClaimTest {
         override val parseTokenRequest get(): com.sphereon.oauth2.server.authorization.command.ParseTokenRequestCommand = throw NotImplementedError()
         override val verifyRefreshTokenGrant get() = refreshVerifyStub ?: throw NotImplementedError()
         override val verifyClientCredentialsGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantCommand = throw NotImplementedError()
-        override val verifyTokenExchangeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand = throw NotImplementedError()
         override val verifyPreAuthorizedCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeGrantCommand = throw NotImplementedError()
         override val parseAuthorizationRequest get(): com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestCommand = throw NotImplementedError()
         override val verifyAuthorizationRequest get(): com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationRequestCommand = throw NotImplementedError()
@@ -297,6 +296,16 @@ class AuthorizationCodeGrantRolesClaimTest {
         val args = commands.capturedAccessTokenArgs
         assertNotNull(args, "createAccessToken must be invoked")
         return args
+    }
+
+    @Test
+    fun admittedWalletCodeProducesOnlyTheBoundIssuerAudiencesAndKeepsClientId() = runTest {
+        val boundAudiences = listOf("https://issuer-one.example", "https://issuer-two.example")
+        val code = codeData().copy(admittedAudiences = boundAudiences)
+        val args = mintWithUserClaims(userClaims = emptyMap(), codeData = code)
+
+        assertEquals(boundAudiences, args.audience)
+        assertEquals("client-1", args.clientId)
     }
 
     @Test
@@ -453,12 +462,73 @@ class AuthorizationCodeGrantRolesClaimTest {
         }
 
     @Test
+    fun admittedWalletRefreshKeepsBoundAudiencesAndRejectsAnotherClientId() = runTest {
+        val boundAudiences = listOf("https://issuer-one.example", "https://issuer-two.example")
+        val execution = OAuth2ServerTestContext("admitted-wallet-refresh", this@AuthorizationCodeGrantRolesClaimTest).execution
+        val config = TestOAuth2ServersConfigProvider()
+        val storage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
+        val creator = CreateRefreshTokenCommandImpl(execution, storage, config, defaultSecureRandom())
+        val admittedClient = com.sphereon.oauth2.server.authorization.model.ClientRegistration(
+            clientId = "client-1",
+            clientType = com.sphereon.oauth2.server.authorization.model.ClientType.PUBLIC,
+            grantTypes = listOf(com.sphereon.oauth2.common.model.GrantType.AUTHORIZATION_CODE),
+            tokenEndpointAuthMethod = com.sphereon.oauth2.common.model.ClientAuthenticationMethod.NONE,
+            requirePkce = true,
+        )
+        val authCommands = CapturingCommands(
+            verifyStub(
+                VerifiedAuthorizationCodeGrant(
+                    codeData = codeData().copy(admittedClient = admittedClient, admittedAudiences = boundAudiences),
+                    subject = "operator-1",
+                    clientId = "client-1",
+                ),
+            ),
+            refreshCreator = creator,
+        )
+        val initial = newHandler(authCommands).handle(grantContext().tokenRequest.grantParameters, grantContext())
+        assertTrue(initial.isOk)
+        assertEquals(boundAudiences, authCommands.capturedRefreshTokenArgs?.resource)
+        val refreshToken = assertNotNull(initial.value.refreshToken)
+        val verifier = VerifyRefreshTokenGrantCommandImpl(
+            execution,
+            storage,
+            config,
+            com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry(),
+        )
+        val commands = CapturingCommands(
+            verifyStub(VerifiedAuthorizationCodeGrant(codeData(), "operator-1", "client-1")),
+            refreshVerifyStub = verifier,
+            refreshCreator = creator,
+        )
+        val refreshParams = GrantParameters.RefreshToken(refreshToken)
+        val context = refreshGrantContext().let { it.copy(
+            tokenRequest = it.tokenRequest.copy(grantParameters = refreshParams),
+        ) }
+        val refreshed = RefreshTokenGrantHandlerImpl(
+            tokenStorage = storage,
+            auditEmitter = com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter,
+            verifyRefreshTokenGrant = verifier,
+            createAccessToken = commands.createAccessToken,
+            createRefreshToken = lazy { commands.createRefreshToken },
+            createIdToken = lazy { commands.createIdToken },
+            createTokenResponse = commands.createTokenResponse,
+            credentialIssuerAudienceResolver = NoCredentialIssuerAudienceResolver(),
+        ).handle(refreshParams, context)
+        assertTrue(refreshed.isOk)
+        assertEquals(boundAudiences, commands.capturedAccessTokenArgs?.audience)
+
+        val wrongClient = verifier.execute(VerifyRefreshTokenGrantArgs(refreshToken, "different-wallet"))
+        assertTrue(wrongClient.isErr)
+        assertEquals("invalid_grant", wrongClient.error.code)
+    }
+
+    @Test
     fun federationMetadataSurvivesRealRefreshCreationVerificationAndRotation() = runTest {
         val execution = OAuth2ServerTestContext("federation-refresh", this@AuthorizationCodeGrantRolesClaimTest).execution
         val config = TestOAuth2ServersConfigProvider()
         val storage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
         val creator = CreateRefreshTokenCommandImpl(execution, storage, config, defaultSecureRandom())
-        val verifier = VerifyRefreshTokenGrantCommandImpl(execution, storage, config)
+        val verifier = VerifyRefreshTokenGrantCommandImpl(execution, storage, config, com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry())
         val commands = CapturingCommands(
             verifyStub(VerifiedAuthorizationCodeGrant(codeData(), "operator-1", "client-1", userClaims = mapOf(
                 "upstream_iss" to "https://idp.example.test", "upstream_sub" to "idp-42", "given_name" to "Ada",
@@ -506,7 +576,7 @@ class AuthorizationCodeGrantRolesClaimTest {
             val config = TestOAuth2ServersConfigProvider()
             val storage = InMemoryTokenStorageImpl(InMemoryOAuth2BackingStorageImpl())
             val creator = CreateRefreshTokenCommandImpl(execution, storage, config, defaultSecureRandom())
-            val verifier = VerifyRefreshTokenGrantCommandImpl(execution, storage, config)
+            val verifier = VerifyRefreshTokenGrantCommandImpl(execution, storage, config, com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry())
             val created = creator.execute(CreateRefreshTokenArgs(
                 subject = "operator-1", clientId = "client-1", scope = "openid",
                 federationClaims = invalidMetadata,

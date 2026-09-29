@@ -65,11 +65,13 @@ import com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm a
 import com.azure.security.keyvault.keys.cryptography.models.KeyWrapAlgorithm as AzureKeyWrapAlgorithm
 import com.azure.security.keyvault.keys.cryptography.models.EncryptParameters
 import com.azure.security.keyvault.keys.cryptography.models.DecryptParameters
+import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.crypto.core.kms.ContentEncryptionAlgorithm
 import com.sphereon.crypto.core.kms.BackendKeyOperationProofProvider
 import com.sphereon.crypto.core.kms.BackendKeyProvedDecryption
 import com.sphereon.crypto.core.kms.BackendKeyProvedEncryption
 import com.sphereon.crypto.core.kms.BackendSymmetricKmsKeyLifecycle
+import com.sphereon.crypto.core.kms.ProviderCertificateIdCanonicalizer
 import com.sphereon.crypto.core.kms.ProviderCertificateLookup
 import com.sphereon.crypto.core.kms.ProviderCertificateReference
 import com.sphereon.crypto.core.kms.ProviderCertificateReferenceService
@@ -206,6 +208,7 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
 //    settings: KeyProviderSettings
 ) : BaseAzureKeyvaultCryptoProvider(config/*, settings*/),
     ProviderCertificateReferenceService,
+    ProviderCertificateIdCanonicalizer,
     ProviderTenantAssignmentVerifier,
     BackendKeyOperationProofProvider,
     BackendSymmetricKmsKeyLifecycle {
@@ -622,40 +625,53 @@ actual class AzureKeyVaultCryptoProvider actual constructor(
         val reference = azureKeyReference(keyInfo)
         val kvNames = kidToKVKeyName(reference)
         // Try the certificate first if available
-        val keyEntry = if (hasCertsApi && certClient != null) {
+        val keyEntry = if (supportsProviderCertificateReferenceReads) {
             try {
-                val certificate = if (kvNames.second.isBlank()) {
-                    certClient.getCertificate(kvNames.first)
-                } else {
-                    certClient.getCertificateVersion(kvNames.first, kvNames.second)
-                }
-                certificate
-                    .awaitSingleOrNull()
-                    ?.toManagedCertInfo()
-                    ?.preserveAzurePublicJwkCertificateMetadata()
+                certificateClientReader!!.read(kvNames.first, kvNames.second.ifBlank { null })
+                    .toManagedCertInfo()
+                    .preserveAzurePublicJwkCertificateMetadata()
             } catch (_: ResourceNotFoundException) {
                 null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (expected: Exception) {
+                throw SignClientException("certificateClient.getCertificate failed", expected)
             }
         } else null
 
-        // Fall back to key if certificate not found
-        try {
+        // A certificate read already contains the public key. Only use the keys API when no
+        // certificate exists, so certificate-only access does not require backing-key read access.
+        if (keyEntry != null) return keyEntry
+
+        // Fall back to the key API if no certificate was found.
+        val key = try {
             val key = if (kvNames.second.isBlank()) {
                 keyClient.getKey(kvNames.first)
             } else {
                 keyClient.getKey(kvNames.first, kvNames.second)
             }
-            return keyEntry ?: key
-                .awaitSingleOrNull()?.toManagedKeyInfo()
-            ?: throw SignClientException("Key not found in Azure Key Vault for reference: $reference")
+            key.awaitSingleOrNull()
+        } catch (_: ResourceNotFoundException) {
+            null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (expected: Exception) {
-            throw SignClientException("keyClient.getKey failed for ${kvNames.first}", expected)
+            throw SignClientException("keyClient.getKey failed", expected)
         }
+        return key?.toManagedKeyInfo()
+            ?: throw NotFoundException(resource = "Azure Key Vault key")
     }
 
     override suspend fun getCertificate(
         lookup: ProviderCertificateLookup,
     ): IdkResult<ProviderCertificateReference, IdkError> = readCertificateReference(lookup)
+
+    override fun canonicalCertificateId(lookup: ProviderCertificateLookup): IdkResult<String?, IdkError> =
+        try {
+            Ok(canonicalAzureCertificateId(config.keyvaultUrl, lookup)).asResult()
+        } catch (_: IllegalArgumentException) {
+            certificateReadError(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "Provider certificate lookup is invalid"))
+        }
 
     private suspend fun readCertificateReference(
         lookup: ProviderCertificateLookup,
@@ -1356,6 +1372,23 @@ internal fun resolveAzureCertificateIdentity(
         alias = certificateAlias,
         id = "$certificateAlias:$certificateVersion",
     )
+}
+
+/**
+ * Normalizes an accepted certificate id spelling (`alias:version`, a versioned certificate URL
+ * in the configured vault, or a bare version) to the canonical `alias:version`. A URL for another
+ * vault or an id naming another alias is rejected.
+ */
+internal fun canonicalAzureCertificateId(
+    configuredVaultUrl: String,
+    lookup: ProviderCertificateLookup,
+): String? {
+    val configuredVault = configuredVaultUrl.trimEnd('/')
+    rejectIf(configuredVault.isBlank())
+    rejectIf(lookup.alias.isBlank() || !AZURE_CERTIFICATE_NAME.matches(lookup.alias))
+    val requestedId = lookup.id ?: return null
+    val (alias, version) = parseRequestedCertificateIdentity(requestedId, lookup.alias, configuredVault)
+    return "$alias:$version"
 }
 
 private fun parseAzureCertificateLookup(lookup: ProviderCertificateLookup): Pair<String, String?> {

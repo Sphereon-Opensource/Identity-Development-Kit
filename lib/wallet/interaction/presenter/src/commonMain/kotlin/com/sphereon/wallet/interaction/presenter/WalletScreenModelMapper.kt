@@ -173,6 +173,8 @@ private fun projection(state: WalletInteractionState): WalletInteractionScreenPr
                 expectedLength = state.txCode?.length,
                 descriptionKey = state.txCode?.descriptionKey,
                 descriptionArguments = state.txCode?.arguments.orEmpty(),
+                rejected = state.txCode?.rejected == true,
+                possiblyExpired = state.txCode?.possiblyExpired == true,
             )
         WalletInteractionStatus.CredentialPreview -> WalletInteractionScreenProjection.CredentialReview(state.credentialPreview.map { it.toPresentation() })
         WalletInteractionStatus.CredentialSelection ->
@@ -451,6 +453,7 @@ private fun WalletInteractionState.offerPresentation(): WalletCredentialOfferPre
                                 infoId = "${branding.credentialConfigurationId}:${descriptor.path.joinToString("/")}",
                                 path = descriptor.path,
                                 displayName = descriptor.displayName,
+                                localizedDisplayNames = descriptor.localizedDisplayNames,
                             )
                         },
                 )

@@ -39,6 +39,15 @@
       "description": "W3C Verifiable Credential Data Integrity 1.1+ context"
     },
     {
+      "iri": "https://www.w3.org/ns/credentials/status/v1",
+      "file": "bitstring-status-list-v1.jsonld",
+      "sha256": "fda5add353231e6a6884a46b12e6c75464281900cb348284d9c360f62381d9f7",
+      "source": "https://www.w3.org/ns/credentials/status/v1",
+      "license": "W3C Document License (https://www.w3.org/Consortium/Legal/2015/doc-license)",
+      "fetchedAt": "2026-09-29",
+      "description": "W3C Bitstring Status List v1.0 context (used with VCDM 1.1 credentials)"
+    },
+    {
       "iri": "https://vocabulary.uncefact.org/untp/",
       "file": "untp.jsonld",
       "sha256": "752060cc15c6c77bfcea8b170f173239a705e9da389314c1cb2dacc8a69d93bc",

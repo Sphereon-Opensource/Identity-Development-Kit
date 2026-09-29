@@ -209,7 +209,6 @@ Configuration in `config/oauth2-as.yml`. Live values from the shipped config:
 | `oauth2.servers.default.access-token-lifetime-seconds` | `3600` | Access token TTL |
 | `oauth2.servers.default.authorization-code-lifetime-seconds` | `600` | Auth code TTL |
 | `oauth2.servers.default.grant-types-enabled` | `authorization_code`, `urn:ietf:params:oauth:grant-type:pre-authorized_code`, `client_credentials`, `refresh_token` | Enabled grant types |
-| `oauth2.servers.default.public-clients.allow-any` | `true` | Accept any public client (demo only) |
 | `oauth2.servers.default.internal-clients.issuer.client-id` | `issuer-service` | Service client used by the issuer to call the AS |
 
 Additional grant type that can be enabled:

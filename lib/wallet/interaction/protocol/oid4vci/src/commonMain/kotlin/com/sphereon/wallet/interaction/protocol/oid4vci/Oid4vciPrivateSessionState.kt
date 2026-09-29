@@ -28,6 +28,8 @@ data class Oid4vciPrivateSessionState(
     val credentialConfigurationId: String? = null,
     val holderKeyAliases: List<String> = emptyList(),
     val txCode: String? = null,
+    // Consecutive tx codes the token endpoint answered with invalid_grant; reset when one is accepted.
+    val txCodeRejections: Int = 0,
     val authorizationCallback: String? = null,
     // Set only for a wallet-initiated credential-refresh session: the id of
     // the EXISTING credential record being reissued. The receiver reads this to target the exact

@@ -33,6 +33,7 @@ import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExe
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class TokenHttpEndpointCommandImplTest {
@@ -152,6 +153,122 @@ class TokenHttpEndpointCommandImplTest {
             assertEquals(401, result.value.statusCode)
             assertEquals("Basic realm=\"oauth2\"", result.value.headers["WWW-Authenticate"])
             assertTrue(result.value.body!!.contains("invalid_client"))
+            assertFalse(result.value.body!!.contains("bad creds"))
+        }
+
+    @Test
+    fun invalidClientWithoutHttpAuthentication_returns400WithoutChallenge() =
+        runTest {
+            val command =
+                TokenHttpEndpointCommandImpl(
+                    execution = TestSessionExecution(),
+                    handleTokenRequestCommand =
+                        FakeHandleTokenRequestCommand {
+                            Err(IdkError.fromString(code = "invalid_client", message = "secret detail"))
+                        },
+                    configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
+                    dpopNonceManager = TokenTestNonceManager,
+                    clientCertificateExtractor = NoOpClientCertificateExtractor,
+                    auditEmitter = NoOpOAuth2AuditEmitter,
+                )
+
+            val result =
+                command.execute(
+                    GenericHttpRequest.withTextBody(
+                        method = "POST",
+                        path = "/token",
+                        body = "grant_type=client_credentials",
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(400, result.value.statusCode)
+            assertTrue(result.value.body!!.contains("\"error\":\"invalid_client\""))
+            assertFalse(result.value.body!!.contains("secret detail"))
+            assertEquals(null, result.value.headers["WWW-Authenticate"])
+        }
+
+    @Test
+    fun unauthorizedClient_is400WithStandardWireCode() =
+        runTest {
+            val command =
+                TokenHttpEndpointCommandImpl(
+                    execution = TestSessionExecution(),
+                    handleTokenRequestCommand =
+                        FakeHandleTokenRequestCommand {
+                            Err(IdkError.fromString(code = "unauthorized_client", message = "policy detail"))
+                        },
+                    configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
+                    dpopNonceManager = TokenTestNonceManager,
+                    clientCertificateExtractor = NoOpClientCertificateExtractor,
+                    auditEmitter = NoOpOAuth2AuditEmitter,
+                )
+
+            val result =
+                command.execute(
+                    GenericHttpRequest.withTextBody(
+                        method = "POST",
+                        path = "/token",
+                        body = "grant_type=client_credentials",
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(400, result.value.statusCode)
+            assertTrue(result.value.body!!.contains("\"error\":\"unauthorized_client\""))
+            assertFalse(result.value.body!!.contains("policy detail"))
+        }
+
+    @Test
+    fun dpopNonceAndAttestationChallengeHeadersSurviveTokenEndpointMapping() =
+        runTest {
+            suspend fun responseFor(error: IdkError): com.sphereon.core.api.http.GenericHttpResponse {
+                val command =
+                    TokenHttpEndpointCommandImpl(
+                        execution = TestSessionExecution(),
+                        handleTokenRequestCommand = FakeHandleTokenRequestCommand { Err(error) },
+                        configProvider = TestOAuth2ServersConfigProvider(),
+                        baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
+                        dpopNonceManager = TokenTestNonceManager,
+                        clientCertificateExtractor = NoOpClientCertificateExtractor,
+                        auditEmitter = NoOpOAuth2AuditEmitter,
+                    )
+                val result =
+                    command.execute(
+                        GenericHttpRequest.withTextBody(
+                            method = "POST",
+                            path = "/token",
+                            body = "grant_type=client_credentials",
+                            headers = mapOf("DPoP" to "proof"),
+                        ),
+                    )
+                assertTrue(result.isOk)
+                return result.value
+            }
+
+            val dpopResponse =
+                responseFor(
+                    IdkError(
+                        code = "use_dpop_nonce",
+                        message = IdkError.Message(i18nKey = "test.nonce", defaultMessage = "private nonce error"),
+                        meta = mapOf("dpop_nonce" to "fresh-dpop-nonce"),
+                    ),
+                )
+            val attestationResponse =
+                responseFor(
+                    IdkError(
+                        code = "use_attestation_challenge",
+                        message = IdkError.Message(i18nKey = "test.challenge", defaultMessage = "private challenge error"),
+                        meta = mapOf("attestation_challenge" to "fresh-attestation-challenge"),
+                    ),
+                )
+
+            assertEquals("fresh-dpop-nonce", dpopResponse.headers["DPoP-Nonce"])
+            assertEquals("fresh-attestation-challenge", attestationResponse.headers["OAuth-Client-Attestation-Challenge"])
+            assertFalse(dpopResponse.body!!.contains("private nonce error"))
+            assertFalse(attestationResponse.body!!.contains("private challenge error"))
         }
 }
 

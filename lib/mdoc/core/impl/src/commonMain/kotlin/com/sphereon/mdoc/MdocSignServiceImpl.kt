@@ -138,10 +138,31 @@ class MdocSignServiceImpl(
                 .withProtectedHeader(protected)
                 .withUnprotectedHeader(unprotected)
                 .build()
+        // A KMS-resolved issuer key carries only public material. Public material inlined next
+        // to the alias would be authoritative at the provider, so a managed key signs through a
+        // keyless alias selector, as device signing does.
+        val signingKeyInfo: KeyInfoType<*> =
+            if (issuerKeyInfo.key?.d == null && !issuerKeyInfo.alias.isNullOrBlank()) {
+                KeyInfo<CoseKeyType>(
+                    kid = issuerKeyInfo.kid,
+                    key = null,
+                    opts = cborIssuerSignKeyInfo.opts,
+                    keyVisibility = KeyVisibility.PRIVATE,
+                    signatureAlgorithm = alg,
+                    x5c = cborIssuerSignKeyInfo.x5c,
+                    alias = issuerKeyInfo.alias,
+                    providerId = issuerKeyInfo.providerId,
+                    keyType = cborIssuerSignKeyInfo.keyType,
+                    keyEncoding = cborIssuerSignKeyInfo.keyEncoding,
+                    noCache = cborIssuerSignKeyInfo.noCache,
+                )
+            } else {
+                cborIssuerSignKeyInfo
+            }
         val signResult =
             coseCryptoService.sign1<MobileSecurityObject>(
                 input = input,
-                keyInfo = cborIssuerSignKeyInfo,
+                keyInfo = signingKeyInfo,
                 requireX5Chain = requireDeviceX5Chain,
             )
         return signResult

@@ -20,6 +20,7 @@ import com.sphereon.core.api.conf.ConfigLevel
 import com.sphereon.core.api.conf.PrincipalConfigService
 import com.sphereon.core.api.conf.PropertyKeyNormalizerImpl
 import com.sphereon.core.api.conf.configContentRevision
+import com.sphereon.core.api.conf.reloadFromBackingSources
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.AuthorizationServerMode
@@ -30,7 +31,6 @@ import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
-import com.sphereon.oauth2.common.config.PublicClientConfig
 import com.sphereon.oauth2.common.config.SessionConfig
 import com.sphereon.oauth2.common.config.TokenFormat
 import com.sphereon.oauth2.common.config.WebAuthnLoginConfig
@@ -107,6 +107,11 @@ class OAuth2ServersConfigBinder(
                 }
             if (resolved != null) return resolved
         }
+    }
+
+    override suspend fun reloadConfig(): OAuth2ServersConfig {
+        configService.reloadFromBackingSources()
+        return getConfig()
     }
 
     override fun getServer(id: String): OAuth2ServerInstanceConfig? {
@@ -505,7 +510,6 @@ class OAuth2ServersConfigBinder(
             revocationEndpoint = configService.getPropertyAsString("$serverPrefix.revocation-endpoint", null),
             jwksUri = configService.getPropertyAsString("$serverPrefix.jwks-uri", null),
             internalClients = loadInternalClients(serverPrefix),
-            publicClients = loadPublicClients(serverPrefix),
             // OAuth2 Attestation-Based Client Authentication
             // (draft-ietf-oauth-attestation-based-client-auth). Discovery hides the surface
             // entirely until [attestation] is opted in; [attestationChallengeRequired] toggles
@@ -803,38 +807,15 @@ class OAuth2ServersConfigBinder(
                                 ?.filter(String::isNotEmpty)
                                 ?.toSet()
                                 .orEmpty(),
+                        tokenExchangeAuthority =
+                            configService
+                                .getSubProperties(setOf("$internalClientsPrefix.$roleKey.token-exchange"), stripPrefix = true)
+                                .entries
+                                .associate { (key, value) -> keyNormalizer.normalize(key) to value.toString().trim() },
                     )
             }
         }
         return clients
-    }
-
-    private fun loadPublicClients(serverPrefix: String): PublicClientConfig {
-        val defaults = PublicClientConfig()
-        val allowAny =
-            configService.getProperty(
-                "$serverPrefix.public-clients.allow-any",
-                Boolean::class,
-                defaults.allowAny,
-            ) ?: defaults.allowAny
-        val allowedClientIds =
-            configService
-                .getPropertyAsString("$serverPrefix.public-clients.allowed-client-ids", null)
-                ?.split(",")
-                ?.map { it.trim() }
-                ?.filter { it.isNotEmpty() }
-                ?: defaults.allowedClientIds
-        val permissiveRedirectUri =
-            configService.getProperty(
-                "$serverPrefix.public-clients.permissive-redirect-uri",
-                Boolean::class,
-                defaults.permissiveRedirectUri,
-            ) ?: defaults.permissiveRedirectUri
-        return PublicClientConfig(
-            allowAny = allowAny,
-            allowedClientIds = allowedClientIds,
-            permissiveRedirectUri = permissiveRedirectUri,
-        )
     }
 
     private fun readFeaturePolicy(

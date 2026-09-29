@@ -41,6 +41,9 @@ interface OAuth2ServerMetadataHttpEndpointCommand : HttpEndpointCommand {
         const val COMMAND_ID = "oauth2.discovery.oauth2-server-metadata-endpoint"
         const val TENANT_PATH_PATTERN = "/.well-known/oauth-authorization-server/{tenant-path}"
 
+        /** RFC 8414 section 3.1 location for an issuer with a two-segment path such as `/as/<slug>`. */
+        const val ISSUER_PATH_PATTERN = "/.well-known/oauth-authorization-server/{issuer-prefix}/{issuer-slug}"
+
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -48,6 +51,7 @@ interface OAuth2ServerMetadataHttpEndpointCommand : HttpEndpointCommand {
                     listOf(
                         "/.well-known/oauth-authorization-server",
                         TENANT_PATH_PATTERN,
+                        ISSUER_PATH_PATTERN,
                     ),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "serverMetadataDefault",
@@ -68,6 +72,9 @@ interface OpenidDiscoveryHttpEndpointCommand : HttpEndpointCommand {
         const val COMMAND_ID = "oauth2.discovery.openid-configuration-endpoint"
         const val TENANT_PATH_PATTERN = "/.well-known/openid-configuration/{tenant-path}"
 
+        /** Well-known-inserted location for an issuer with a two-segment path such as `/as/<slug>`. */
+        const val ISSUER_PATH_PATTERN = "/.well-known/openid-configuration/{issuer-prefix}/{issuer-slug}"
+
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -75,6 +82,7 @@ interface OpenidDiscoveryHttpEndpointCommand : HttpEndpointCommand {
                     listOf(
                         "/.well-known/openid-configuration",
                         TENANT_PATH_PATTERN,
+                        ISSUER_PATH_PATTERN,
                     ),
                 produces = setOf(MediaType.ApplicationJson),
                 operationId = "openidConfigurationDefault",

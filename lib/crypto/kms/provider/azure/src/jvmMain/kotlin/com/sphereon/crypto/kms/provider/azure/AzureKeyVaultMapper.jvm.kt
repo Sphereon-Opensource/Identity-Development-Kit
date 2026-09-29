@@ -364,11 +364,33 @@ suspend fun KeyVaultCertificate.toManagedCertInfo(): ManagedKeyInfoType<Jwk> {
     val leafCert: Certificate = certificateFromDer(cer)
     val x5c = azureCertificateX5c(leafCert.der)
 
-    // build the JWK
-    val jwk = Jwk.from(leafCert.getPublicKeyJwk(x5c = x5c))
+    val jwk = Jwk.from(leafCert.getPublicKeyJwk(x5c = x5c)).copy(kid = kid)
     val resolved = ResolvedKeyInfo.fromKey(jwk)
     return ManagedKeyInfo(
         alias = kid, providerId = properties.id.substringBefore("/certificates"), resolvedKeyInfo = resolved
+    )
+}
+
+/**
+ * Maps the provider's existing public certificate read into a key lookup result.
+ *
+ * A certificate-managed Key Vault key shares the certificate's name and version, so the result
+ * carries the same `name:version` kid that a direct key read produces.
+ */
+internal suspend fun AzureCertificateClientRead.toManagedCertInfo(): ManagedKeyInfoType<Jwk> {
+    val id = certificateId ?: throw IllegalArgumentException("Azure certificate response has no identifier")
+    val path = id.substringAfter("/certificates/", missingDelimiterValue = "")
+    val parts = path.split('/')
+    if (parts.size != 2 || parts.any { it.isBlank() }) {
+        throw IllegalArgumentException("Azure certificate response has an invalid identifier")
+    }
+    val alias = "${parts[0]}:${parts[1]}"
+    val leafCert = certificateFromDer(certificateDer)
+    val jwk = Jwk.from(leafCert.getPublicKeyJwk(x5c = azureCertificateX5c(leafCert.der))).copy(kid = alias)
+    return ManagedKeyInfo(
+        alias = alias,
+        providerId = id.substringBefore("/certificates"),
+        resolvedKeyInfo = ResolvedKeyInfo.fromKey(jwk),
     )
 }
 

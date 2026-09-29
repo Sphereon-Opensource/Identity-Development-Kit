@@ -265,7 +265,7 @@ class KeysHttpAdapter(
 
         val response =
             result.getOrElse { error ->
-                return errorResponse(registrationHttpStatus(error), "Key reference registration failed")
+                return errorResponse(registrationHttpStatus(error), registrationErrorMessage(error))
             }
 
         return createdResponse(
@@ -295,7 +295,10 @@ class KeysHttpAdapter(
 
 internal fun registrationHttpStatus(error: IdkError): Int =
     when (error.code) {
-        "ILLEGAL_ARGUMENT_ERROR" -> 400
+        "ILLEGAL_ARGUMENT_ERROR",
+        "KMS_LOGICAL_PROVIDER_ID_REQUIRED",
+        "KMS_EXTERNAL_KEY_UNSUPPORTED",
+        -> 400
         "NOT_FOUND_ERROR",
         "KMS_PROVIDER_NOT_FOUND",
         "KMS_PROVIDER_NOT_AVAILABLE",
@@ -307,6 +310,32 @@ internal fun registrationHttpStatus(error: IdkError): Int =
         -> 409
         else -> 500
     }
+
+/**
+ * Says why a registration failed without echoing provider text. Validation and conflict errors
+ * carry messages written by the registration code itself, so those are passed on; the provider
+ * outcomes get a fixed sentence, and anything unclassified keeps the generic one.
+ */
+internal fun registrationErrorMessage(error: IdkError): String =
+    when (error.code) {
+        "NOT_FOUND_ERROR",
+        "KMS_EXTERNAL_KEY_NOT_FOUND",
+        -> "No key with this alias or kid exists in the KMS provider, or it is not assigned to this tenant"
+        "KMS_PROVIDER_NOT_FOUND",
+        "KMS_PROVIDER_NOT_AVAILABLE",
+        -> "The KMS provider is not available to this tenant"
+        "KMS_EXTERNAL_KEY_IDENTITY_MISMATCH" -> "The alias and kid resolve to different keys in the KMS provider"
+        KeyReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED ->
+            "Key registration requires a key reference store with durable ownership history"
+        "ILLEGAL_ARGUMENT_ERROR",
+        "KMS_LOGICAL_PROVIDER_ID_REQUIRED",
+        "KMS_EXTERNAL_KEY_UNSUPPORTED",
+        "KMS_EXTERNAL_KEY_REGISTRATION_CONFLICT",
+        -> error.message.defaultMessage?.takeIf { it.isNotBlank() } ?: KEY_REGISTRATION_FAILED
+        else -> KEY_REGISTRATION_FAILED
+    }
+
+private const val KEY_REGISTRATION_FAILED = "Key reference registration failed"
 
 internal fun keyDeleteErrorResponse(error: Throwable): GenericHttpResponse =
     if (

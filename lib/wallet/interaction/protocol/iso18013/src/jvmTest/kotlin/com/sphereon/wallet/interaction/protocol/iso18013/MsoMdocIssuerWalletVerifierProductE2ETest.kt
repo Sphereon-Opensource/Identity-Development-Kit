@@ -33,7 +33,6 @@ import com.sphereon.crypto.core.interop.x509CertificateFromDer
 import com.sphereon.crypto.core.x509.Certificate
 import com.sphereon.crypto.core.x509.X509ExtensionOids
 import com.sphereon.crypto.core.KeyVisibility
-import com.sphereon.crypto.kms.asCertificateServiceGraph
 import com.sphereon.crypto.dataintegrity.command.AddProofInput
 import com.sphereon.crypto.dataintegrity.command.AddProofOutput
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
@@ -77,6 +76,7 @@ import com.sphereon.statuslist.MdocCwtStatusListSigningArgs
 import com.sphereon.statuslist.StatusListToken
 import com.sphereon.statuslist.StatusListRef
 import com.sphereon.statuslist.StatusListBinding
+import com.sphereon.statuslist.StatusListContentTypes
 import com.sphereon.statuslist.StatusListSpec
 import com.sphereon.statuslist.StatusProofFormat
 import com.sphereon.statuslist.StatusPurpose
@@ -150,13 +150,18 @@ import com.sphereon.core.api.http.GenericHttpRequest
 import com.sphereon.core.api.http.command.HttpEndpointCommand
 import com.sphereon.core.api.http.command.HttpEndpointCommandRegistry
 import com.sphereon.core.api.http.dispatch.HttpAdapterRouteMatch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.plus
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.zip.Deflater
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -293,7 +298,7 @@ private class ProductStatusVerifierTrace(
     override suspend fun resolve(reference: CredentialStatusReference): IdkResult<ResolvedStatus, IdkError> =
         delegate.resolve(reference).also { result ->
             resolveCalls += 1
-            result.getOrElse { error -> lastResolutionError = error }
+            result.onFailure { error -> lastResolutionError = error }
         }
 }
 
@@ -410,12 +415,12 @@ private object EmptyTrustAnchorLoader : com.sphereon.trust.x509.X509TrustAnchorL
 
 class MsoMdocIssuerWalletVerifierProductE2ETest {
     @Test
-    fun productTransportPreservesProductionHostingStatusContentTypeAndCacheControl() = runTest {
+    fun productTransportPreservesProductionHostingStatusContentTypeAndCacheControl() = runProductTest {
         val setup = ProductSetup(this@MsoMdocIssuerWalletVerifierProductE2ETest)
         listOf(
-            "hosting-token" to MdocStatusListProfile.STATUS_LIST,
-            "hosting-identifiers" to MdocStatusListProfile.IDENTIFIER_LIST,
-        ).forEach { (id, profile) ->
+            Triple("hosting-token", MdocStatusListProfile.STATUS_LIST, StatusListContentTypes.STATUSLIST_CWT),
+            Triple("hosting-identifiers", MdocStatusListProfile.IDENTIFIER_LIST, StatusListContentTypes.IDENTIFIERLIST_CWT),
+        ).forEach { (id, profile, contentType) ->
             val uri = "https://issuer.example/public/statuslists/$id"
             val driver = setup.newDriver()
             setup.createCertificateBearingKey(id)
@@ -425,13 +430,13 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
             val response = setup.fetchHostedStatus(uri)
 
             assertEquals(HttpStatusCode.OK, response.status)
-            assertEquals("application/statuslist+cwt", response.headers[HttpHeaders.ContentType])
+            assertEquals(contentType, response.headers[HttpHeaders.ContentType])
             assertEquals("public, max-age=0", response.headers[HttpHeaders.CacheControl])
         }
     }
 
     @Test
-    fun tokenStatusIsAuthenticatedInMsoPersistedAndRejectedAfterPublicationChange() = runTest {
+    fun tokenStatusIsAuthenticatedInMsoPersistedAndRejectedAfterPublicationChange() = runProductTest {
         val setup = ProductSetup(this@MsoMdocIssuerWalletVerifierProductE2ETest)
         val statusListId = "product-token"
         val uri = "https://issuer.example/public/statuslists/product-token"
@@ -553,7 +558,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
     }
 
     @Test
-    fun identifierListStatusIsAuthenticatedInMsoPersistedAndRejectedAfterPublicationChange() = runTest {
+    fun identifierListStatusIsAuthenticatedInMsoPersistedAndRejectedAfterPublicationChange() = runProductTest {
         val setup = ProductSetup(this@MsoMdocIssuerWalletVerifierProductE2ETest)
         val statusListId = "product-identifiers"
         val uri = "https://issuer.example/public/statuslists/product-identifiers"
@@ -667,7 +672,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
      * production verifier parses and validates the response against the persisted session.
      */
     @Test
-    fun productionOid4vpCommandAcceptsAndThenRejectsBothMdocStatusProfiles() = runTest {
+    fun productionOid4vpCommandAcceptsAndThenRejectsBothMdocStatusProfiles() = runProductTest {
         val setup = ProductSetup(this@MsoMdocIssuerWalletVerifierProductE2ETest)
         val verifier = setup.oid4vpVerifierService()
         listOf(
@@ -782,7 +787,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
     }
 
     @Test
-    fun issuerAuthOmitsStoredIacaRootAndVerifierAcceptsWithOnlyIacaTrusted() = runTest {
+    fun issuerAuthOmitsStoredIacaRootAndVerifierAcceptsWithOnlyIacaTrusted() = runProductTest {
         val fixture = ProductSetup(this@MsoMdocIssuerWalletVerifierProductE2ETest).commandFixture(
             id = "issuerauth-iaca-chain",
             useIacaCertificateChain = true,
@@ -804,7 +809,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
     }
 
     @Test
-    fun productionOid4vpCommandRejectsAdversarialStatusPublicationsWithCanonicalFailureEvidence() = runTest {
+    fun productionOid4vpCommandRejectsAdversarialStatusPublicationsWithCanonicalFailureEvidence() = runProductTest {
         suspend fun fixture(id: String, profile: MdocStatusListProfile = MdocStatusListProfile.STATUS_LIST, reserveLow: Boolean = false) =
             ProductSetup(this@MsoMdocIssuerWalletVerifierProductE2ETest).commandFixture(id, profile, reserveLow)
 
@@ -834,7 +839,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
                 case.uri,
                 case.setup.signStatus(case.statusSigningAlias, case.uri, payload, now - 120, now + 3_600, 60),
             )
-            assertCommandRejected(case, "next update is expired")
+            assertCommandRejected(case, "publication freshness is expired")
         }
 
         fixture("matrix-invalid-next-update").let { case ->
@@ -905,7 +910,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
                 case.setup.signStatus(
                     case.statusSigningAlias,
                     case.uri,
-                    MdocStatusListPayload.Token(bits = 1, list = byteArrayOf(0)),
+                    MdocStatusListPayload.Token(bits = 1, list = zlib(byteArrayOf(0))),
                     now,
                     now + 3_600,
                     300,
@@ -921,7 +926,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
                 case.setup.signStatus(
                     case.statusSigningAlias,
                     case.uri,
-                    MdocStatusListPayload.Token(bits = 1, list = byteArrayOf(0)),
+                    MdocStatusListPayload.Token(bits = 1, list = zlib(byteArrayOf(0))),
                     now,
                     now + 3_600,
                     300,
@@ -932,7 +937,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
     }
 
     @Test
-    fun productionOid4vpCommandRejectsDocumentIssuerAndHolderBindingFailures() = runTest {
+    fun productionOid4vpCommandRejectsDocumentIssuerAndHolderBindingFailures() = runProductTest {
         ProductSetup(this@MsoMdocIssuerWalletVerifierProductE2ETest).commandFixture(
             id = "matrix-document-type",
             issuedDocumentType = "org.iso.18013.5.1.wrong",
@@ -952,7 +957,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
     }
 
     @Test
-    fun productionOid4vpCommandCannotReadAnotherTenantSessionInTheSameApplicationGraph() = runTest {
+    fun productionOid4vpCommandCannotReadAnotherTenantSessionInTheSameApplicationGraph() = runProductTest {
         val sharedApp = createIso18013MdocIntegrationTestAppGraph(this@MsoMdocIssuerWalletVerifierProductE2ETest)
         val tenantA = ProductSetup(
             testInstance = this@MsoMdocIssuerWalletVerifierProductE2ETest,
@@ -1051,7 +1056,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
             .createOrGetFromId("product-mdoc", principalType = PrincipalType.USER)
         val execution: SessionExecution = session.asCoreApiServiceGraph().serviceExecution
         val kms: KeyManagerService = session.graph.asKeyManagerServiceGraph().keyManagerService
-        private val certificateService: CertificateService = session.graph.asCertificateServiceGraph().certificateService
+        private val certificateService: CertificateService = (session.graph as CertificateService.Graph).certificateService
         private val productStatusListTransport =
             (session.graph as ProductStatusListTransportGraph).productStatusListTransport
         private val appConfig = (app as AppConfigService.Graph).appConfigService
@@ -1184,15 +1189,15 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
             assertEquals(2, storedChain.size, "KMS storage must retain the complete DSC and IACA chain")
             assertContentEquals(dscCertificate.der, storedChain[0].decodeFrom(Encoding.BASE64))
             assertContentEquals(iacaCertificate.der, storedChain[1].decodeFrom(Encoding.BASE64))
-            val certificatePublicKey = dscCertificate.getPublicKeyJwk().toPublicKey().jwkToCoseKey()
+            val certificatePublicKey = ecPublicPoint(dscCertificate.getPublicKeyJwk())
             assertEquals(
                 certificatePublicKey,
-                dscGenerated.jose.publicJwk.toPublicKey().jwkToCoseKey(),
+                ecPublicPoint(dscGenerated.jose.publicJwk),
                 "DSC certificate public key must match the generated signing key",
             )
             assertEquals(
                 certificatePublicKey,
-                storedJwk.toPublicKey().jwkToCoseKey(),
+                ecPublicPoint(storedJwk),
                 "DSC certificate public key must match the stored signing key",
             )
 
@@ -1421,7 +1426,7 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
 
         fun decodeStatusClaims(token: StatusListToken) =
             MdocRevocationCwtClaimsCodecImpl.decode(
-                CoseSign1CborCodecImpl().decode(token.rawBytes()).getOrElse { fail("decode status COSE: $it") }.value.payload?.value
+                CoseSign1CborCodecImpl().decode(untagCoseSign1(token.rawBytes())).getOrElse { fail("decode status COSE: $it") }.value.payload?.value
                     ?: fail("status COSE payload is detached"),
             )
 
@@ -1464,17 +1469,19 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
 
         fun tamperStatusSignature(token: StatusListToken): ByteArray {
             val codec = CoseSign1CborCodecImpl()
-            val cose = codec.decode(token.rawBytes()).getOrElse { fail("decode status COSE for signature mutation: $it") }.value
+            val cose = codec.decode(untagCoseSign1(token.rawBytes())).getOrElse { fail("decode status COSE for signature mutation: $it") }.value
             val signature = cose.signature.value.copyOf()
             signature[signature.lastIndex] = (signature.last().toInt() xor 0x01).toByte()
-            return codec.encode(cose.copy(signature = CborByteString(signature))).getOrElse { fail("encode tampered status COSE: $it") }
+            return tagCoseSign1(codec.encode(cose.copy(signature = CborByteString(signature))).getOrElse { fail("encode tampered status COSE: $it") })
         }
 
         fun mutateStatusHeader(token: StatusListToken, header: (CoseHeaderCbor) -> CoseHeaderCbor): ByteArray {
             val codec = CoseSign1CborCodecImpl()
-            val cose = codec.decode(token.rawBytes()).getOrElse { fail("decode status COSE for header mutation: $it") }.value
-            return codec.encode(cose.copy(protectedHeader = header(cose.protectedHeader)))
-                .getOrElse { fail("encode status COSE with malformed protected header: $it") }
+            val cose = codec.decode(untagCoseSign1(token.rawBytes())).getOrElse { fail("decode status COSE for header mutation: $it") }.value
+            return tagCoseSign1(
+                codec.encode(cose.copy(protectedHeader = header(cose.protectedHeader)))
+                    .getOrElse { fail("encode status COSE with malformed protected header: $it") },
+            )
         }
 
         fun tamperMdocAuthentication(
@@ -1635,5 +1642,38 @@ class MsoMdocIssuerWalletVerifierProductE2ETest {
             )),
             createdAt = kotlin.time.Clock.System.now(), updatedAt = kotlin.time.Clock.System.now(),
         )
+    }
+}
+
+private const val COSE_SIGN1_TAG: Int = 0xd2
+
+private fun untagCoseSign1(bytes: ByteArray): ByteArray {
+    assertEquals(COSE_SIGN1_TAG, bytes.first().toInt() and 0xff, "status-list CWT must carry COSE_Sign1 tag 18")
+    return bytes.copyOfRange(1, bytes.size)
+}
+
+private fun tagCoseSign1(bytes: ByteArray): ByteArray = byteArrayOf(COSE_SIGN1_TAG.toByte()) + bytes
+
+/** The EC public point only: a certificate-derived key carries no kid or x5c, while a KMS key may. */
+private fun ecPublicPoint(key: com.sphereon.crypto.core.jose.JwkType): List<Any?> =
+    com.sphereon.crypto.core.jose.Jwk.from(key).let { listOf(it.kty, it.crv, it.x, it.y) }
+
+/**
+ * Runs a product test body on real time. The status-list resolver bounds its HTTP fetch with
+ * withTimeout, and the Ktor mock engine completes off the test dispatcher, so under virtual time
+ * the idle scheduler would jump straight past that timeout.
+ */
+private fun runProductTest(block: suspend CoroutineScope.() -> Unit): TestResult =
+    runTest { withContext(Dispatchers.Default) { block() } }
+
+private fun zlib(bytes: ByteArray): ByteArray {
+    val deflater = Deflater()
+    try {
+        deflater.setInput(bytes)
+        deflater.finish()
+        val output = ByteArray(bytes.size + 64)
+        return output.copyOf(deflater.deflate(output))
+    } finally {
+        deflater.end()
     }
 }

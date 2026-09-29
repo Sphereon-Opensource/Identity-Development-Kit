@@ -51,7 +51,6 @@ import com.sphereon.oauth2.common.config.LoginMethod
 import com.sphereon.oauth2.common.config.LoginRenderer
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceIdProvider
-import com.sphereon.oauth2.common.config.PublicClientConfig
 import com.sphereon.oauth2.common.config.SessionConfig
 import com.sphereon.oauth2.common.config.TokenFormat
 import kotlinx.io.files.Path
@@ -82,7 +81,7 @@ import kotlin.test.fail
  *    the canonical config key, so the test can assert the binder consumed the right key.
  *
  * The assertion list is explicit (not reflection-driven) because a few fields are computed from
- * sub-objects ([SessionConfig], [PublicClientConfig], `internalClients`) that need their own
+ * sub-objects ([SessionConfig], `internalClients`) that need their own
  * key paths. When a field is added to [OAuth2ServerInstanceConfig], add the sentinel here AND
  * the assertion AND the binder read in [OAuth2ServersConfigBinder.loadServerConfig]. The "add it
  * here" step is a deliberate friction point so the binder side never gets forgotten.
@@ -283,9 +282,6 @@ class OAuth2ServersConfigBinderRoundTripTest {
             "internalClients[verifier]",
         )
         // Public clients
-        assertEquals(true, server.publicClients.allowAny, "publicClients.allowAny")
-        assertEquals(listOf("sentinel-public-client-1", "sentinel-public-client-2"), server.publicClients.allowedClientIds, "publicClients.allowedClientIds")
-        assertEquals(true, server.publicClients.permissiveRedirectUri, "publicClients.permissiveRedirectUri")
         // Browser-login session lifetimes
         assertEquals(7_001, server.session.idleTtlSeconds, "session.idleTtlSeconds")
         assertEquals(7_002, server.session.absoluteTtlSeconds, "session.absoluteTtlSeconds")
@@ -399,9 +395,7 @@ class OAuth2ServersConfigBinderRoundTripTest {
             "$prefix.internal-clients.verifier.client-id" to "sentinel-verifier-client-id",
             "$prefix.internal-clients.verifier.client-secret" to "sentinel-verifier-client-secret",
             // Public clients
-            "$prefix.public-clients.allow-any" to true,
             "$prefix.public-clients.allowed-client-ids" to "sentinel-public-client-1, sentinel-public-client-2",
-            "$prefix.public-clients.permissive-redirect-uri" to true,
             // Session lifetimes
             "$prefix.session.idle-ttl-seconds" to 7_001,
             "$prefix.session.absolute-ttl-seconds" to 7_002,
@@ -491,7 +485,6 @@ class OAuth2ServersConfigBinderRoundTripTest {
         assertEquals(AuthorizationServerMode.HOSTED, server.mode)
         assertEquals(SessionConfig.DEFAULT_IDLE_TTL_SECONDS, server.session.idleTtlSeconds)
         assertEquals(SessionConfig.DEFAULT_ABSOLUTE_TTL_SECONDS, server.session.absoluteTtlSeconds)
-        assertEquals(false, server.publicClients.permissiveRedirectUri)
     }
 }
 

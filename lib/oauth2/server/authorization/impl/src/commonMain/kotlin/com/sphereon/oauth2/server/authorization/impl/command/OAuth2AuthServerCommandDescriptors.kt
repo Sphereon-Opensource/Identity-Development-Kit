@@ -51,7 +51,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsG
 import com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttestationClientAuthCommand
 import com.sphereon.oauth2.server.authorization.command.device.IssueDeviceAuthorizationCommand
 import com.sphereon.oauth2.server.authorization.command.discovery.HandleDiscoveryRequestCommand
@@ -103,7 +102,6 @@ import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyClientC
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyDeviceCodeGrantCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyPreAuthorizedCodeGrantCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyRefreshTokenGrantCommandImpl
-import com.sphereon.oauth2.server.authorization.impl.command.token.VerifyTokenExchangeGrantCommandImpl
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.IntoMap
 import dev.zacsweers.metro.Provides
@@ -158,10 +156,6 @@ interface OAuth2AuthServerCommandDescriptors {
     @Provides @IntoMap
     @StringKey(VerifyClientCredentialsGrantCommand.COMMAND_ID)
     fun verifyClientCredentialsGrant(impl: VerifyClientCredentialsGrantCommandImpl): ServiceCommand<*, *, *> = impl
-
-    @Provides @IntoMap
-    @StringKey(VerifyTokenExchangeGrantCommand.COMMAND_ID)
-    fun verifyTokenExchangeGrant(impl: VerifyTokenExchangeGrantCommandImpl): ServiceCommand<*, *, *> = impl
 
     @Provides @IntoMap
     @StringKey(VerifyRefreshTokenGrantCommand.COMMAND_ID)

@@ -59,6 +59,8 @@ data class VerifiedClientAuthorization(
     val requirePkce: Boolean = false,
     val tlsClientCertificateBoundAccessTokens: Boolean = false,
     val tenantId: String? = null,
+    /** Registration-controlled token-exchange authority; interpreted only by the exchange profile. */
+    val tokenExchangeAuthority: Map<String, String> = emptyMap(),
 )
 
 /**

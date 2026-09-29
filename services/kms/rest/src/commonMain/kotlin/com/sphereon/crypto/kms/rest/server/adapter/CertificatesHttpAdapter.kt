@@ -184,7 +184,11 @@ class CertificatesHttpAdapter(
             return errorResponse(400, "Invalid request body")
         }
         val response = registerCommand.execute(input).getOrElse { error ->
-            return errorResponse(certificateReferenceRegistrationHttpStatus(error), "Certificate reference registration failed")
+            // The command only ever carries a message the registration code wrote itself.
+            return errorResponse(
+                certificateReferenceRegistrationHttpStatus(error),
+                error.message.defaultMessage?.takeIf { it.isNotBlank() } ?: "Certificate reference registration failed",
+            )
         }
         return createdResponse("/certificates/${response.alias}", json.encodeToString(response))
     }
@@ -300,7 +304,7 @@ class CertificatesHttpAdapter(
         return try {
             jsonResponse(200, json.encodeToString(handler(input)))
         } catch (expected: Exception) {
-            errorResponse(expected)
+            certificateReferenceErrorResponse(expected)
         }
     }
 
@@ -313,7 +317,9 @@ class CertificatesHttpAdapter(
 internal fun certificateReferenceRegistrationHttpStatus(error: IdkError): Int =
     when (error.code) {
         "ILLEGAL_ARGUMENT_ERROR" -> 400
-        "NOT_FOUND_ERROR", "KMS_PROVIDER_NOT_FOUND", "KMS_EXTERNAL_KEY_NOT_FOUND" -> 404
+        "NOT_FOUND_ERROR", "KMS_PROVIDER_NOT_FOUND", "KMS_PROVIDER_NOT_AVAILABLE", "KMS_EXTERNAL_KEY_NOT_FOUND" -> 404
+        "KMS_EXTERNAL_KEY_IDENTITY_MISMATCH",
+        "KMS_CERTIFICATE_REFERENCE_MANAGED_STORE_CONFLICT",
         CertificateReferenceStoreErrorCodes.KEY_IDENTITY_MISMATCH,
         CertificateReferenceStoreErrorCodes.REGISTRATION_CONFLICT,
         CertificateReferenceStoreErrorCodes.DURABLE_HISTORY_UNSUPPORTED,

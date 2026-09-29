@@ -103,7 +103,7 @@ class JwtVcJsonFormatHandlerTest {
 
     private fun makeConfig(
         format: String,
-        types: List<String>? = null,
+        types: List<String>? = listOf("VerifiableCredential", "ExampleCredential"),
     ) = CredentialConfigurationSupported(
         format = format,
         credentialDefinition = types?.let { CredentialDefinition(type = it) },
@@ -177,20 +177,35 @@ class JwtVcJsonFormatHandlerTest {
         }
 
     @Test
-    fun issueCredentialDefaultsToVerifiableCredentialType() =
+    fun issueCredentialRefusesACredentialWithoutASpecificType() =
         runTest {
-            // No credentialDefinition means types default to ["VerifiableCredential"]
-            val config = makeConfig("jwt_vc_json")
+            val request = makeRequest("jwt_vc_json")
+            for (types in listOf(null, listOf("VerifiableCredential"))) {
+                val context =
+                    makeContext(
+                        config = makeConfig("jwt_vc_json", types),
+                        attributes = mapOf("name" to JsonPrimitive("Alice")),
+                    )
+
+                val result = handler.issueCredential(request, context)
+
+                assertTrue(result.isErr, "types $types must be refused")
+                assertEquals("invalid_vcdm_credential", result.error.code)
+            }
+        }
+
+    @Test
+    fun issuedTypesAlwaysLeadWithVerifiableCredential() =
+        runTest {
             val context =
                 makeContext(
-                    config = config,
+                    config = makeConfig("jwt_vc_json", listOf("EmployeeBadgeCredential", "VerifiableCredential", "EmployeeBadgeCredential")),
                     attributes = mapOf("name" to JsonPrimitive("Alice")),
                 )
-            val request = makeRequest("jwt_vc_json")
 
-            val result = handler.issueCredential(request, context)
+            val types = vcdmCredentialTypes(context.credentialConfiguration.credentialDefinition?.type).value
 
-            assertTrue(result.isOk)
+            assertEquals(listOf("VerifiableCredential", "EmployeeBadgeCredential"), types)
         }
 
     @Test

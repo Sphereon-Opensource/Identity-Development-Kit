@@ -82,7 +82,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthentica
 import com.sphereon.oauth2.server.authorization.command.VerifiedClientCredentialsGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedPreAuthCodeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifiedRefreshTokenGrant
-import com.sphereon.oauth2.server.authorization.command.VerifiedTokenExchangeGrant
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationRequestCommand
@@ -96,8 +95,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizatio
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import dev.zacsweers.metro.ContributesBinding
@@ -118,7 +115,6 @@ class AuthorizationServerServiceImpl(
     private val verifyAuthorizationCodeGrantCommand: VerifyAuthorizationCodeGrantCommand,
     private val verifyRefreshTokenGrantCommand: VerifyRefreshTokenGrantCommand,
     private val verifyClientCredentialsGrantCommand: VerifyClientCredentialsGrantCommand,
-    private val verifyTokenExchangeGrantCommand: VerifyTokenExchangeGrantCommand,
     private val verifyPreAuthorizedCodeGrantCommand: VerifyPreAuthorizedCodeGrantCommand,
     private val createAccessTokenCommand: CreateAccessTokenCommand,
     private val createRefreshTokenCommand: CreateRefreshTokenCommand,
@@ -150,7 +146,6 @@ class AuthorizationServerServiceImpl(
         override val verifyAuthorizationCodeGrant = this@AuthorizationServerServiceImpl.verifyAuthorizationCodeGrantCommand
         override val verifyRefreshTokenGrant = this@AuthorizationServerServiceImpl.verifyRefreshTokenGrantCommand
         override val verifyClientCredentialsGrant = this@AuthorizationServerServiceImpl.verifyClientCredentialsGrantCommand
-        override val verifyTokenExchangeGrant = this@AuthorizationServerServiceImpl.verifyTokenExchangeGrantCommand
         override val verifyPreAuthorizedCodeGrant = this@AuthorizationServerServiceImpl.verifyPreAuthorizedCodeGrantCommand
         override val createAccessToken = this@AuthorizationServerServiceImpl.createAccessTokenCommand
         override val createRefreshToken = this@AuthorizationServerServiceImpl.createRefreshTokenCommand
@@ -202,8 +197,6 @@ class AuthorizationServerServiceImpl(
     override suspend fun verifyRefreshTokenGrant(args: VerifyRefreshTokenGrantArgs): IdkResult<VerifiedRefreshTokenGrant, IdkError> = verifyRefreshTokenGrantCommand.execute(args)
 
     override suspend fun verifyClientCredentialsGrant(args: VerifyClientCredentialsGrantArgs): IdkResult<VerifiedClientCredentialsGrant, IdkError> = verifyClientCredentialsGrantCommand.execute(args)
-
-    override suspend fun verifyTokenExchangeGrant(args: VerifyTokenExchangeGrantArgs): IdkResult<VerifiedTokenExchangeGrant, IdkError> = verifyTokenExchangeGrantCommand.execute(args)
 
     override suspend fun verifyPreAuthorizedCodeGrant(args: VerifyPreAuthCodeArgs): IdkResult<VerifiedPreAuthCodeGrant, IdkError> = verifyPreAuthorizedCodeGrantCommand.execute(args)
 

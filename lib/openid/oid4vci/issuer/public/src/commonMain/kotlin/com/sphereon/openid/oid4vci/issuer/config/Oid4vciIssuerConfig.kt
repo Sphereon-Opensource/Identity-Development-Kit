@@ -72,6 +72,17 @@ interface Oid4vciIssuerConfigProvider {
     @JsExportIgnoreCompat
     suspend fun prepare() {}
 
+    /**
+     * Reads this issuer's configuration again from its backing stores, bypassing any snapshot they
+     * serve from, and prepares it again. Callers use it after a lookup missed, when the missing entry
+     * may have been written moments ago in another process; they then repeat the lookup against
+     * the reloaded view. A provider without a snapshot keeps the default, which only prepares.
+     */
+    @JsExportIgnoreCompat
+    suspend fun reloadConfiguration() {
+        prepare()
+    }
+
     @JsExportIgnoreCompat
     val credentialConfigurations: Map<String, CredentialConfigurationSupported>
     /** Stable authorization-server override configured for one credential configuration. */

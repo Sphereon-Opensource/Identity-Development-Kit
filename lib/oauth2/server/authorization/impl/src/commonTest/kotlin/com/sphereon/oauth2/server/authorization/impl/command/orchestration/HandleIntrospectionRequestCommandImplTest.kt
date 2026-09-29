@@ -91,7 +91,7 @@ class HandleIntrospectionRequestCommandImplTest {
                 command.execute(
                     HandleIntrospectionRequestArgs(
                         // No Authorization header, no client_id, no client_secret in body — anonymous request
-                        requestBody = mapOf("token" to listOf("abc")),
+                        requestBody = mapOf("token" to listOf("x")),
                         requestHeaders = emptyMap(),
                         httpUrl = "https://as.example.com/introspect",
                     ),

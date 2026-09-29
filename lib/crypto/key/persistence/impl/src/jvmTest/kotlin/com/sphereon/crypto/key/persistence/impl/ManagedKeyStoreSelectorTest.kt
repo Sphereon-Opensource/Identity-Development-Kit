@@ -292,6 +292,27 @@ class ManagedKeyStoreSelectorTest {
         }
 
     @Test
+    fun externalPublicImportNeverDeletesProviderKeyWhenControlModeIsPlatformManaged() =
+        runTest {
+            every { keyReferenceStore.isAvailable } returns true
+            every { keyReferenceStore.ownershipHistoryCapability } returns KeyReferenceHistoryCapability.DURABLE
+            val reference = sampleRecord.copy(
+                origin = Origin.EXTERNAL,
+                controlMode = ResourceControlMode.PLATFORM_MANAGED,
+            )
+            coEvery { keyReferenceStore.findAllByAliasIncludingDeleted("test-tenant", "key-alias", "provider-1") } returns
+                Ok(listOf(reference))
+            coEvery { keyReferenceStore.findAllByKidIncludingDeleted("test-tenant", "key-alias", "provider-1") } returns
+                Ok(emptyList())
+            coEvery { keyReferenceStore.delete("test-tenant", "key-alias", "provider-1") } returns Ok(true)
+
+            assertTrue(selector.deleteKey(KeyInfo<Jwk>(alias = "key-alias", providerId = "provider-1")))
+            coVerify(exactly = 1) { keyReferenceStore.delete("test-tenant", "key-alias", "provider-1") }
+            coVerify(exactly = 0) { iteratingStore.deleteKey(any()) }
+            coVerify(exactly = 0) { registrar.removeKeyReference(any()) }
+        }
+
+    @Test
     fun externalDeleteByKidUsesTenantAndProviderScopeWithoutProviderCalls() =
         runTest {
             every { keyReferenceStore.isAvailable } returns true
@@ -623,7 +644,7 @@ class ManagedKeyStoreSelectorTest {
         }
 
     @Test
-    fun unindexedProviderDeletePreservesLegacyFallback() =
+    fun unindexedProviderDeleteDoesNotCallProvider() =
         runTest {
             every { keyReferenceStore.isAvailable } returns true
             every { keyReferenceStore.ownershipHistoryCapability } returns KeyReferenceHistoryCapability.DURABLE
@@ -632,13 +653,28 @@ class ManagedKeyStoreSelectorTest {
             coEvery { keyReferenceStore.findByKid("test-tenant", "unindexed-alias", "provider-1") } returns Ok(null)
             coEvery { keyReferenceStore.findAllByAliasIncludingDeleted("test-tenant", "unindexed-alias", "provider-1") } returns Ok(emptyList())
             coEvery { keyReferenceStore.findAllByKidIncludingDeleted("test-tenant", "unindexed-alias", "provider-1") } returns Ok(emptyList())
+            coEvery { iteratingStore.maintainsKeyReferenceIndex("provider-1") } returns false
+            assertFalse(selector.deleteKey(keyInfo))
+
+            coVerify(exactly = 0) { iteratingStore.deleteKey(any()) }
+            coVerify(exactly = 0) { registrar.removeKeyReference(any()) }
+        }
+
+    @Test
+    fun keyIndexedBySelfIndexingProviderUnderItsInternalAddressIsDeletedByThatProvider() =
+        runTest {
+            every { keyReferenceStore.isAvailable } returns true
+            every { keyReferenceStore.ownershipHistoryCapability } returns KeyReferenceHistoryCapability.DURABLE
+            val keyInfo = KeyInfo<Jwk>(alias = "resource-key", kid = "resource-kid", providerId = "public-resource-id")
+            coEvery { keyReferenceStore.findAllByAliasIncludingDeleted("test-tenant", "resource-key", "public-resource-id") } returns Ok(emptyList())
+            coEvery { keyReferenceStore.findAllByKidIncludingDeleted("test-tenant", "resource-key", "public-resource-id") } returns Ok(emptyList())
+            coEvery { iteratingStore.maintainsKeyReferenceIndex("public-resource-id") } returns true
             coEvery { iteratingStore.deleteKey(keyInfo) } returns true
-            coEvery { registrar.removeKeyReference(keyInfo) } returns Ok(true)
 
             assertTrue(selector.deleteKey(keyInfo))
 
             coVerify(exactly = 1) { iteratingStore.deleteKey(keyInfo) }
-            coVerify(exactly = 1) { registrar.removeKeyReference(keyInfo) }
+            coVerify(exactly = 0) { registrar.removeKeyReference(any()) }
         }
 
     @Test

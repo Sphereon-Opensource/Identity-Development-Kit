@@ -49,7 +49,6 @@ import com.sphereon.oauth2.server.authorization.command.clientauth.VerifyAttesta
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.TokenPathStage
 import com.sphereon.oauth2.server.authorization.impl.command.TokenPathStageTimings
-import com.sphereon.oauth2.server.authorization.impl.command.authorization.resolvePublicClientFallback
 import com.sphereon.oauth2.server.authorization.impl.resolver.ClientJwksResolver
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
@@ -61,12 +60,10 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Clock
@@ -192,16 +189,10 @@ class VerifyClientAuthenticationCommandImpl(
                     timings
                         .record(TokenPathStage.CLIENT_LOOKUP) { requestView!!.getClient(args.clientId) }
                         .getOrElse { return Err(it) }
-                        // Public clients (token_endpoint_auth_method = none) that aren't pre-registered
-                        // are accepted when the server permits any public client (publicClients.allowAny
-                        // / allowedClientIds + permissiveRedirectUri). Mirrors the authorization
-                        // endpoint's fallback so the PAR/token client-auth path agrees with it.
-                        ?: (auth as? ClientAuthenticationConfig.None)?.let {
-                            resolvePublicClientFallback(args.clientId, configProvider)
-                        }
-                        ?: return Err(AuthorizationServerError.InvalidClient(details = "Unknown client '${args.clientId}'"))
-
-                enforceRegisteredAuthMethod(auth, resolved)?.let { return Err(it) }
+                if (resolved == null) {
+                    return Err(AuthorizationServerError.InvalidClient(details = "Unknown client '${args.clientId}'"))
+                }
+                resolved?.let { enforceRegisteredAuthMethod(auth, it)?.let { error -> return Err(error) } }
                 resolved
             } else {
                 null
@@ -367,8 +358,8 @@ class VerifyClientAuthenticationCommandImpl(
                 ?: return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion header is not valid JSON"))
 
         val alg =
-            header["alg"]?.jsonPrimitive?.content
-                ?: return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion header missing 'alg'"))
+            header["alg"]?.let { it as? JsonPrimitive }?.takeIf { it.isString }?.content
+                ?: return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion header missing or invalid 'alg'"))
         if (alg == "none") {
             return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion 'alg=none' is not permitted"))
         }
@@ -409,8 +400,8 @@ class VerifyClientAuthenticationCommandImpl(
         val trustedClientJwks =
             if (auth is ClientAuthenticationConfig.PrivateKeyJwt) {
             val kid =
-                header["kid"]?.jsonPrimitive?.content
-                    ?: return Err(AuthorizationServerError.InvalidClient(details = "private_key_jwt assertion header missing 'kid'"))
+                header["kid"]?.let { it as? JsonPrimitive }?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+                    ?: return Err(AuthorizationServerError.InvalidClient(details = "private_key_jwt assertion header missing or invalid 'kid'"))
             val jwks = clientJwksResolver.value.resolveFor(client).getOrElse { return Err(it) }
             val matched = jwks.firstOrNull { it.kid == kid }
             if (matched == null) {
@@ -452,6 +443,7 @@ class VerifyClientAuthenticationCommandImpl(
                 claims = verifyResult.parsedPayload,
                 clientId = clientId,
                 tokenEndpointUrl = tokenEndpointUrl,
+                requirePrivateKeyJwtIssuerAudience = auth is ClientAuthenticationConfig.PrivateKeyJwt,
                 serverConfig = configProvider.serverConfig,
             )
         claimsValidation.getOrElse { return Err(it) }
@@ -467,11 +459,14 @@ class VerifyClientAuthenticationCommandImpl(
     }
 
     /**
-     * Validate the OIDC Core §9 / RFC 7523 §3 required assertion claims.
+     * Validate required assertion claims. This AS applies a selected stricter private_key_jwt
+     * profile requiring the configured issuer as the sole audience; this is not a universal
+     * RFC 7523 / OIDC Core §9 rule. client_secret_jwt retains its supported RFC 7523 audience set.
      *
      * - `iss` MUST equal `sub` AND equal `client_id` (both directions, not either-or).
-     * - `aud` MUST contain the AS issuer identifier or the token endpoint URL. Can be scalar or
-     *   array; array membership is checked entry-by-entry.
+     * - private_key_jwt: the configured AS issuer MUST be the sole `aud` value.
+     * - client_secret_jwt: `aud` may identify the AS issuer or token endpoint; arrays retain the
+     *   supported membership semantics.
      * - `exp` MUST be present and in the future.
      * - `iat`, if present, MUST be within ±5 minutes of now (5 min clock-skew window).
      * - `jti` MUST be present and MUST NOT replay within the assertion lifetime (uses [jtiStore]).
@@ -480,11 +475,14 @@ class VerifyClientAuthenticationCommandImpl(
         claims: JsonObject,
         clientId: String,
         tokenEndpointUrl: String,
+        requirePrivateKeyJwtIssuerAudience: Boolean,
         serverConfig: OAuth2ServerInstanceConfig,
     ): IdkResult<Unit, AuthorizationServerError> {
-        val iss = claims["iss"]?.jsonPrimitive?.content
-        val sub = claims["sub"]?.jsonPrimitive?.content
-        if (iss == null || sub == null) {
+        val issValue = claims["iss"]
+        val subValue = claims["sub"]
+        val iss = (issValue as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val sub = (subValue as? JsonPrimitive)?.takeIf { it.isString }?.content
+        if (iss.isNullOrBlank() || sub.isNullOrBlank()) {
             return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing 'iss' or 'sub'"))
         }
         if (iss != clientId || sub != clientId) {
@@ -495,35 +493,56 @@ class VerifyClientAuthenticationCommandImpl(
             )
         }
 
-        val audValues =
-            claims["aud"]?.let { aud ->
-                when (aud) {
-                    is JsonArray -> aud.mapNotNull { it.jsonPrimitive.contentOrNull }
-                    else -> listOfNotNull(aud.jsonPrimitive.contentOrNull)
-                }
-            } ?: emptyList()
-        if (audValues.isEmpty()) {
-            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing 'aud'"))
-        }
-        val acceptableAudiences = listOfNotNull(serverConfig.issuer, tokenEndpointUrl).distinct()
-        if (audValues.none { it in acceptableAudiences }) {
+        val audienceValue = claims["aud"]
+        val strictAudienceShapeIsValid =
+            when (audienceValue) {
+                is JsonPrimitive -> audienceValue.isString
+                is JsonArray -> audienceValue.all { (it as? JsonPrimitive)?.isString == true }
+                else -> false
+            }
+        val audiences =
+            when (val aud = audienceValue) {
+                is JsonPrimitive -> listOfNotNull(aud.takeIf { it.isString }?.content)
+                is JsonArray -> aud.mapNotNull { (it as? JsonPrimitive)?.takeIf { value -> value.isString }?.content }
+                else -> emptyList()
+            }
+        val configuredIssuer = serverConfig.issuer
+        val audienceAccepted =
+            if (!strictAudienceShapeIsValid) {
+                false
+            } else if (requirePrivateKeyJwtIssuerAudience) {
+                val issuer = configuredIssuer?.takeIf { it.isNotBlank() }
+                strictAudienceShapeIsValid && issuer != null && audiences.size == 1 && audiences.single() == issuer
+            } else {
+                audiences.any { it == configuredIssuer || it == tokenEndpointUrl }
+            }
+        if (!audienceAccepted) {
             return Err(
                 AuthorizationServerError.InvalidClient(
-                    details = "JWT assertion 'aud' does not reference the AS issuer or token endpoint (got: ${audValues.joinToString()})",
+                    details =
+                        if (requirePrivateKeyJwtIssuerAudience) {
+                            "private_key_jwt audience must be one string equal to the configured AS issuer"
+                        } else {
+                            "JWT assertion audience must identify the AS issuer or token endpoint"
+                        },
                 ),
             )
         }
 
-        val expSeconds =
-            claims["exp"]?.jsonPrimitive?.long
-                ?: return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing 'exp'"))
+        val expValue = claims["exp"]
+        val expSeconds = (expValue as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toLongOrNull()
+            ?: return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing or invalid 'exp'"))
         val now = Clock.System.now()
         val exp = Instant.fromEpochSeconds(expSeconds)
         if (exp <= now) {
             return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion has expired"))
         }
 
-        val iatSeconds = claims["iat"]?.jsonPrimitive?.long
+        val iatValue = claims["iat"]
+        val iatSeconds = iatValue?.let { (it as? JsonPrimitive)?.takeUnless { primitive -> primitive.isString }?.content?.toLongOrNull() }
+        if (iatValue != null && iatSeconds == null) {
+            return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion 'iat' is invalid"))
+        }
         if (iatSeconds != null) {
             val iat = Instant.fromEpochSeconds(iatSeconds)
             val skew = now - iat
@@ -537,7 +556,8 @@ class VerifyClientAuthenticationCommandImpl(
             }
         }
 
-        val jti = claims["jti"]?.jsonPrimitive?.content
+        val jtiValue = claims["jti"]
+        val jti = (jtiValue as? JsonPrimitive)?.takeIf { it.isString }?.content
         if (jti.isNullOrBlank()) {
             return Err(AuthorizationServerError.InvalidClient(details = "JWT assertion missing 'jti'"))
         }

@@ -35,6 +35,7 @@ import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwksUrlOpts
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
 import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
+import com.sphereon.oauth2.server.resource.command.StandardJwtArtifactContext
 import com.sphereon.oauth2.server.resource.error.ResourceServerError
 import com.sphereon.oauth2.server.resource.model.TokenPayload
 import dev.zacsweers.metro.Inject
@@ -57,8 +58,8 @@ import kotlin.time.Instant
  *
  * **Verification flow**:
  * 1. Verify JWT signature using JwtService
- * 2. Parse and validate claims (iss, aud, exp, iat, sub)
- * 3. Validate typ header (should be "at+jwt" per RFC 9068)
+ * 2. Parse and validate the claims required by the selected context
+ * 3. Require the RFC 9068 typ only for resource-server access-token execution
  * 4. Extract DPoP binding (cnf.jkt) if present
  * 5. Return TokenPayload.Jwt
  *
@@ -100,8 +101,25 @@ class VerifyJwtCommandImpl(
             jwksUri = applied.jwksUri,
             trustedIdentifier = applied.trustedIdentifier,
             clockSkewSeconds = applied.clockSkewSeconds ?: configuredClockSkewSeconds,
-        ).mapError { IdkError.fromDTO(it) }
+            standardArtifactContext = null,
+        ).map { it.toTokenPayload(applied.authorizationServer) }
+            .mapError { IdkError.fromDTO(it) }
     }
+
+    override suspend fun verifyStandardArtifact(
+        args: VerifyJwtArgs,
+        context: StandardJwtArtifactContext,
+    ): IdkResult<JsonObject, IdkError> =
+        executeInternal(
+            jwt = args.jwt,
+            authorizationServer = args.authorizationServer,
+            expectedAudience = args.expectedAudience,
+            jwksUri = args.jwksUri,
+            trustedIdentifier = args.trustedIdentifier,
+            clockSkewSeconds = args.clockSkewSeconds ?: configuredClockSkewSeconds,
+            standardArtifactContext = context,
+        ).map { it.claims }
+            .mapError { IdkError.fromDTO(it) }
 
     private fun resolveClockSkewFromConfig(): Long {
         val configured =
@@ -119,7 +137,8 @@ class VerifyJwtCommandImpl(
         jwksUri: String? = null,
         trustedIdentifier: IdentifierOptsOrResult? = null,
         clockSkewSeconds: Long = VerifyJwtArgs.DEFAULT_CLOCK_SKEW_SECONDS,
-    ): IdkResult<TokenPayload.Jwt, ResourceServerError> {
+        standardArtifactContext: StandardJwtArtifactContext?,
+    ): IdkResult<VerifiedJwtPayload, ResourceServerError> {
         if (jwksUri != null && trustedIdentifier != null) {
             return Err(
                 ResourceServerError.InvalidToken.Malformed(
@@ -193,19 +212,32 @@ class VerifyJwtCommandImpl(
                 )
             }
 
-        // Typ header validation — RFC 9068 recommends `at+jwt`. We're lenient and also accept
-        // plain `JWT` (widely-used Auth0/Keycloak default) or absent `typ`.
-        val typ = protectedHeader["typ"]?.jsonPrimitive?.content
-        if (typ != null && typ != JWT_TYPE_AT && typ != JWT_TYPE_GENERIC) {
+        // RFC 9068 §4 requires the access-token media type. Reject absent and non-string typ
+        // values safely; jsonPrimitive would throw for malformed object/array headers.
+        if (standardArtifactContext == null && !hasSupportedAccessTokenTyp(protectedHeader)) {
             return Err(
                 ResourceServerError.InvalidToken.Malformed(
-                    reason = "Invalid JWT type: expected '$JWT_TYPE_AT' or '$JWT_TYPE_GENERIC', got '$typ'",
+                    reason = "JWT typ must be 'at+jwt' or 'application/at+jwt'",
                 ),
             )
         }
+        if (standardArtifactContext != null) {
+            val artifactTyp = protectedHeader["typ"]
+            if (artifactTyp != null) {
+                val typ = artifactTyp as? JsonPrimitive
+                val isCompatible = typ != null && typ.isString && isArtifactTypCompatible(standardArtifactContext, typ.content)
+                if (!isCompatible) {
+                    return Err(
+                        ResourceServerError.InvalidToken.Malformed(
+                            reason = "JWT typ is not valid for $standardArtifactContext",
+                        ),
+                    )
+                }
+            }
+        }
 
         // 4. Extract and validate required claims
-        val iss = payloadJson["iss"]?.jsonPrimitive?.content
+        val iss = payloadJson["iss"]?.let { value -> (value as? JsonPrimitive)?.takeIf { it.isString }?.content }
         if (iss != authorizationServer) {
             return Err(
                 ResourceServerError.InvalidToken.IssuerMismatch(
@@ -215,13 +247,18 @@ class VerifyJwtCommandImpl(
             )
         }
 
-        val sub =
-            payloadJson["sub"]?.jsonPrimitive?.content
-                ?: return Err(ResourceServerError.InvalidToken.Malformed(reason = "Missing sub claim"))
+        val subValue = payloadJson["sub"]
+        val sub = subValue?.let { value -> (value as? JsonPrimitive)?.takeIf { it.isString }?.content }
+        if ((standardArtifactContext == null || standardArtifactContext == StandardJwtArtifactContext.ID_TOKEN) && sub == null) {
+            return Err(ResourceServerError.InvalidToken.Malformed(reason = "Missing sub claim"))
+        }
+        if (standardArtifactContext == StandardJwtArtifactContext.LOGOUT_TOKEN && subValue != null && sub.isNullOrBlank()) {
+            return Err(ResourceServerError.InvalidToken.Malformed(reason = "Invalid sub claim"))
+        }
 
         val exp =
             payloadJson["exp"]
-                ?.jsonPrimitive
+                ?.let { it as? JsonPrimitive }
                 ?.content
                 ?.toDoubleOrNull()
                 ?.toLong()
@@ -229,19 +266,16 @@ class VerifyJwtCommandImpl(
                     ResourceServerError.InvalidToken.Malformed(reason = "Missing or invalid exp claim"),
                 )
 
-        val iat =
-            payloadJson["iat"]
-                ?.jsonPrimitive
-                ?.content
-                ?.toDoubleOrNull()
-                ?.toLong()
-                ?: return Err(
-                    ResourceServerError.InvalidToken.Malformed(reason = "Missing or invalid iat claim"),
-                )
+        val iatValue = payloadJson["iat"]
+        val iat = iatValue?.let { value -> (value as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong() }
+        if ((standardArtifactContext != StandardJwtArtifactContext.JARM_RESPONSE && iat == null) ||
+            (iatValue != null && iat == null)
+        ) {
+            return Err(ResourceServerError.InvalidToken.Malformed(reason = "Missing or invalid iat claim"))
+        }
 
         // 5. Validate expiration (with skew tolerance)
         val now = Clock.System.now()
-        val expInstant = Instant.fromEpochSeconds(exp)
         if (now.epochSeconds > exp + clockSkewSeconds) {
             return Err(ResourceServerError.InvalidToken.Expired(expiresAt = exp))
         }
@@ -249,12 +283,11 @@ class VerifyJwtCommandImpl(
         // 5b. Validate `nbf` (not before) if present — skew-tolerant.
         // Per RFC 7519 §4.1.5 a token used before `nbf` must be rejected. The RFC allows small
         // clock-skew tolerance which we honour so honest clients don't get spurious failures.
-        val nbf =
-            payloadJson["nbf"]
-                ?.jsonPrimitive
-                ?.content
-                ?.toDoubleOrNull()
-                ?.toLong()
+        val nbfValue = payloadJson["nbf"]
+        val nbf = nbfValue?.let { (it as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong() }
+        if (nbfValue != null && nbf == null) {
+            return Err(ResourceServerError.InvalidToken.Malformed(reason = "Invalid nbf claim"))
+        }
         if (nbf != null && now.epochSeconds + clockSkewSeconds < nbf) {
             return Err(
                 ResourceServerError.InvalidToken.Malformed(
@@ -283,43 +316,47 @@ class VerifyJwtCommandImpl(
             )
         }
 
+        if (standardArtifactContext != null && audiences.isNullOrEmpty()) {
+            return Err(ResourceServerError.InvalidToken.Malformed(reason = "Missing or invalid aud claim"))
+        }
+        if (standardArtifactContext == StandardJwtArtifactContext.LOGOUT_TOKEN) {
+            val events = payloadJson["events"] as? JsonObject
+            val event = events?.get(BACKCHANNEL_LOGOUT_EVENT)
+            val logoutEventIsObject = events?.keys == setOf(BACKCHANNEL_LOGOUT_EVENT) && event is JsonObject && event.isEmpty()
+            val sidValue = payloadJson["sid"]
+            val sid = sidValue?.let { value -> (value as? JsonPrimitive)?.takeIf { it.isString }?.content }
+            val hasSubjectOrSession = !sub.isNullOrBlank() || !sid.isNullOrBlank()
+            val jti = payloadJson["jti"]?.let { value -> (value as? JsonPrimitive)?.takeIf { it.isString }?.content }
+            if ((sidValue != null && sid.isNullOrBlank()) || !logoutEventIsObject || !hasSubjectOrSession || jti.isNullOrBlank() || "nonce" in payloadJson) {
+                return Err(ResourceServerError.InvalidToken.Malformed(reason = "Invalid OpenID back-channel Logout Token claims"))
+            }
+        }
+
+        if (standardArtifactContext == StandardJwtArtifactContext.JARM_RESPONSE && !hasSupportedAuthorizationResponse(payloadJson)) {
+            return Err(ResourceServerError.InvalidToken.Malformed(reason = "JARM response is missing a supported authorization response field"))
+        }
+
         // 7. Extract optional claims
-        val scope = payloadJson["scope"]?.jsonPrimitive?.content
-        val clientId = payloadJson["client_id"]?.jsonPrimitive?.content
-        val jti = payloadJson["jti"]?.jsonPrimitive?.content
+        return Ok(VerifiedJwtPayload(payloadJson, audiences, sub, exp, iat))
+    }
 
-        // 8. Extract DPoP binding (cnf.jkt) if present (RFC 9449)
-        val cnf = payloadJson["cnf"]?.jsonObject
-        val dpopJkt =
-            cnf
-                ?.get("jkt")
-                ?.jsonPrimitive
-                ?.content
-
-        // RFC 8705 §3.1: cnf.x5t#S256 binds the access token to a TLS client certificate.
-        val certificateThumbprintS256 =
-            cnf
-                ?.get("x5t#S256")
-                ?.jsonPrimitive
-                ?.content
-
-        // 9. Build and return TokenPayload.Jwt. Carry every non-registered claim with full fidelity
-        // (object/array claims like `roles`, custom claims like `tenant_id`) so downstream consumers
-        // never have to re-parse the raw token.
-        return Ok(
-            TokenPayload.Jwt(
-                sub = sub,
-                iss = iss ?: authorizationServer,
-                aud = audiences,
-                exp = expInstant,
-                iat = Instant.fromEpochSeconds(iat),
-                scope = scope,
-                clientId = clientId,
-                dpopJkt = dpopJkt,
-                certificateThumbprintS256 = certificateThumbprintS256,
-                jti = jti,
-                additionalClaims = payloadJson.filterKeys { it !in JWT_REGISTERED_CLAIMS },
-            ),
+    private fun VerifiedJwtPayload.toTokenPayload(authorizationServer: String): TokenPayload.Jwt {
+        val scope = claims["scope"]?.jsonPrimitive?.content
+        val clientId = claims["client_id"]?.jsonPrimitive?.content
+        val jti = claims["jti"]?.jsonPrimitive?.content
+        val cnf = claims["cnf"]?.jsonObject
+        return TokenPayload.Jwt(
+            sub = subject ?: error("Verified resource access token is missing sub"),
+            iss = claims["iss"]?.jsonPrimitive?.content ?: authorizationServer,
+            aud = audiences,
+            exp = Instant.fromEpochSeconds(exp),
+            iat = Instant.fromEpochSeconds(iat ?: error("Verified resource access token is missing iat")),
+            scope = scope,
+            clientId = clientId,
+            dpopJkt = cnf?.get("jkt")?.jsonPrimitive?.content,
+            certificateThumbprintS256 = cnf?.get("x5t#S256")?.jsonPrimitive?.content,
+            jti = jti,
+            additionalClaims = claims.filterKeys { it !in JWT_REGISTERED_CLAIMS },
         )
     }
 
@@ -331,18 +368,20 @@ class VerifyJwtCommandImpl(
     private fun parseAudClaim(audValue: JsonElement?): List<String>? =
         when (audValue) {
             null -> emptyList()
-            is JsonPrimitive -> listOf(audValue.content)
+            is JsonPrimitive -> if (audValue.isString) listOf(audValue.content) else null
             is JsonObject -> null
-            else -> runCatching { audValue.jsonArray.map { it.jsonPrimitive.content } }.getOrNull()
+            else ->
+                runCatching {
+                    val elements = audValue.jsonArray
+                    if (elements.all { element -> (element as? JsonPrimitive)?.isString == true }) {
+                        elements.map { (it as JsonPrimitive).content }
+                    } else {
+                        null
+                    }
+                }.getOrNull()
         }
 
     private companion object {
-        /** RFC 9068 access-token typ. */
-        const val JWT_TYPE_AT = "at+jwt"
-
-        /** Legacy generic typ accepted leniently (Auth0 / Keycloak / older AS default). */
-        const val JWT_TYPE_GENERIC = "JWT"
-
         /**
          * Registered/standard claims surfaced via the typed [TokenPayload.Jwt] fields; excluded from
          * `additionalClaims` so it carries only the non-standard remainder.
@@ -350,4 +389,30 @@ class VerifyJwtCommandImpl(
         val JWT_REGISTERED_CLAIMS =
             setOf("sub", "iss", "aud", "exp", "iat", "nbf", "scope", "client_id", "jti", "cnf")
     }
+}
+
+private data class VerifiedJwtPayload(
+    val claims: JsonObject,
+    val audiences: List<String>?,
+    val subject: String?,
+    val exp: Long,
+    val iat: Long?,
+)
+
+private const val BACKCHANNEL_LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout"
+private fun isArtifactTypCompatible(context: StandardJwtArtifactContext, typ: String): Boolean =
+    when (context) {
+        StandardJwtArtifactContext.ID_TOKEN -> typ in setOf("JWT", "id+jwt", "application/id+jwt")
+        StandardJwtArtifactContext.JARM_RESPONSE -> typ in setOf("JWT", "oauth-authz-resp+jwt", "application/oauth-authz-resp+jwt")
+        StandardJwtArtifactContext.LOGOUT_TOKEN -> typ in setOf("JWT", "logout+jwt", "application/logout+jwt")
+    }
+
+private fun hasSupportedAuthorizationResponse(claims: JsonObject): Boolean =
+    listOf("code", "error", "access_token", "id_token").any { key ->
+        (claims[key] as? JsonPrimitive)?.let { it.isString && it.content.isNotBlank() } == true
+    }
+
+internal fun hasSupportedAccessTokenTyp(protectedHeader: JsonObject): Boolean {
+    val typ = protectedHeader["typ"] as? JsonPrimitive ?: return false
+    return typ.isString && (typ.content == "at+jwt" || typ.content == "application/at+jwt")
 }

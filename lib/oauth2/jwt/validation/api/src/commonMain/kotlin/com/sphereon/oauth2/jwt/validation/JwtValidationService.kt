@@ -125,6 +125,12 @@ data class AccessTokenValidationOptions(
     /** Caller-established local verification material; mutually exclusive with JWKS discovery. */
     @Transient
     val trustedIdentifier: IdentifierOptsOrResult? = null,
+    /** Explicit issuer trust for this call; must be provided together with [trustedJwksUri]. */
+    @Transient
+    val trustedIssuer: String? = null,
+    /** Explicit JWKS endpoint for this call; must be provided together with [trustedIssuer]. */
+    @Transient
+    val trustedJwksUri: String? = null,
 )
 
 /**

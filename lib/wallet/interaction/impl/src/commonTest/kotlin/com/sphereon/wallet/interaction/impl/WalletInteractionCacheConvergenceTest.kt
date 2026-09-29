@@ -1,6 +1,6 @@
 package com.sphereon.wallet.interaction.impl
 
-import com.sphereon.core.api.Ok
+import com.sphereon.wallet.app.LocalWalletInteractionLaunchAuthority
 import com.sphereon.wallet.interaction.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -15,7 +15,7 @@ class WalletInteractionCacheConvergenceTest {
             adapters = listOf(StaticWalletInteractionProtocolAdapter.oid4vci()),
             sensitiveInputAuthority = StoreBackedWalletInteractionSensitiveInputAuthority(privateSessions),
             privateSessionStore = privateSessions, sessionStore = sessions,
-            launchAuthorities = setOf(WalletInteractionLaunchAuthority { Ok(null) }),
+            launchAuthorities = setOf(LocalWalletInteractionLaunchAuthority),
         )
         val started = engine.start(WalletInteractionInput("wallet", WalletEntryPoint.rawQr("openid-credential-offer://?credential_offer=x")))
         val observed = engine.observe(started.sessionId)

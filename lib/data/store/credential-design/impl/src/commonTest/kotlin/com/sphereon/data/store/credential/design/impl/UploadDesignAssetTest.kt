@@ -43,6 +43,7 @@ import com.sphereon.data.store.credential.design.model.CredentialDesignModuleCon
 import com.sphereon.data.store.credential.design.model.CredentialDesignRecord
 import com.sphereon.data.store.credential.design.model.DerivedRenderHintsRecord
 import com.sphereon.data.store.credential.design.model.DesignAssetType
+import com.sphereon.data.store.credential.design.model.GetDesignAssetInput
 import com.sphereon.data.store.credential.design.model.DesignBinding
 import com.sphereon.data.store.credential.design.model.DesignBindingKey
 import com.sphereon.data.store.credential.design.model.DesignFilter
@@ -50,6 +51,7 @@ import com.sphereon.data.store.credential.design.model.IssuerDesignRecord
 import com.sphereon.data.store.credential.design.model.RenderVariantRecord
 import com.sphereon.data.store.credential.design.model.SourceSnapshotRecord
 import com.sphereon.data.store.credential.design.model.UploadDesignAssetInput
+import com.sphereon.data.store.credential.design.model.UploadTenantAssetInput
 import com.sphereon.data.store.credential.design.model.VerifierDesignRecord
 import com.sphereon.data.store.credential.design.persistence.CredentialDesignRepository
 import com.sphereon.data.store.credential.design.persistence.DerivedRenderHintsRepository
@@ -240,7 +242,8 @@ class UploadDesignAssetTest {
             assertEquals(first.value.uri, second.value.uri)
             assertEquals(first.value.integrity, second.value.integrity)
             // Identical bytes must not be written a second time.
-            assertEquals(1, blob.storeCount)
+            assertEquals(1, blob.contentAddressedStoreCount)
+            assertEquals(2, blob.slotPointerStoreCount)
         }
 
     @Test
@@ -277,6 +280,67 @@ class UploadDesignAssetTest {
             assertTrue(fetched.isOk)
             assertEquals(pngBytes.toList(), fetched.value.data.toList())
             assertEquals(contentType, fetched.value.contentType)
+        }
+
+    @Test
+    fun getDesignAsset_afterUploadDesignAsset_returnsUploadedBytes() =
+        runTest {
+            val service = makeService(externalBaseUrl = null)
+            val uploaded = service.uploadDesignAsset(tenantId, makeInput())
+            assertTrue(uploaded.isOk)
+
+            val fetched = service.getDesignAsset(tenantId, GetDesignAssetInput(designId, locale, assetType))
+
+            assertTrue(fetched.isOk)
+            assertEquals(pngBytes.toList(), fetched.value.data.toList())
+            assertEquals(contentType, fetched.value.contentType)
+            assertEquals(uploaded.value.uri, fetched.value.reference.uri)
+            assertEquals(uploaded.value.integrity, fetched.value.reference.integrity)
+        }
+
+    @Test
+    fun getDesignAsset_secondUploadToSameSlot_returnsLatestBytes() =
+        runTest {
+            val service = makeService(externalBaseUrl = null)
+            service.uploadDesignAsset(tenantId, makeInput())
+            val latestBytes = byteArrayOf(0x01, 0x02, 0x03)
+            val latest = service.uploadDesignAsset(tenantId, makeInput().copy(data = latestBytes))
+            assertTrue(latest.isOk)
+
+            val fetched = service.getDesignAsset(tenantId, GetDesignAssetInput(designId, locale, assetType))
+
+            assertTrue(fetched.isOk)
+            assertEquals(latestBytes.toList(), fetched.value.data.toList())
+            assertEquals(latest.value.uri, fetched.value.reference.uri)
+            assertEquals(latest.value.integrity, fetched.value.reference.integrity)
+        }
+
+    @Test
+    fun getDesignAsset_otherLocaleOrType_returnsNotFound() =
+        runTest {
+            val service = makeService(externalBaseUrl = null)
+            service.uploadDesignAsset(tenantId, makeInput())
+
+            val otherLocale = service.getDesignAsset(tenantId, GetDesignAssetInput(designId, "nl", assetType))
+            val otherType = service.getDesignAsset(tenantId, GetDesignAssetInput(designId, locale, DesignAssetType.BACKGROUND_IMAGE))
+
+            assertTrue(otherLocale.isErr)
+            assertTrue(otherType.isErr)
+            assertEquals(IdkError.NOT_FOUND_ERROR(message = "Design asset not found: LOGO for design $designId").code, otherLocale.error.code)
+            assertEquals(IdkError.NOT_FOUND_ERROR(message = "Design asset not found: BACKGROUND_IMAGE for design $designId").code, otherType.error.code)
+        }
+
+    @Test
+    fun uploadTenantAsset_doesNotFillADesignSlot() =
+        runTest {
+            val service = makeService(externalBaseUrl = null)
+            val uploaded = service.uploadTenantAsset(tenantId, UploadTenantAssetInput(assetType, pngBytes, contentType))
+            assertTrue(uploaded.isOk)
+
+            val fetched = service.getDesignAsset(tenantId, GetDesignAssetInput(designId, locale, assetType))
+
+            assertTrue(fetched.isErr)
+            assertEquals(IdkError.NOT_FOUND_ERROR(message = "Design asset not found: LOGO for design $designId").code, fetched.error.code)
         }
 
     @Test
@@ -348,6 +412,10 @@ class UploadDesignAssetTest {
         private val store = mutableMapOf<String, Pair<ByteArray, String?>>()
         var storeCount: Int = 0
             private set
+        var contentAddressedStoreCount: Int = 0
+            private set
+        var slotPointerStoreCount: Int = 0
+            private set
         var getCount: Int = 0
             private set
 
@@ -360,6 +428,8 @@ class UploadDesignAssetTest {
         ): IdkResult<BlobDescriptor, IdkError> {
             storeCount++
             val path = target.path ?: ""
+            if (path.contains("/assets/by-hash/")) contentAddressedStoreCount++
+            if (path.contains("/assets/slots/")) slotPointerStoreCount++
             store[path] = data to target.contentType
             return Ok(BlobDescriptor(path = path, storeId = "default", sizeBytes = data.size.toLong(), contentType = target.contentType))
         }

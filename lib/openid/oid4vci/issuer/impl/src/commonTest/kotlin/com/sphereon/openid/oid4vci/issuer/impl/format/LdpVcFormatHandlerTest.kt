@@ -280,6 +280,10 @@ class LdpVcFormatHandlerTest {
         assertNull(status.cancelledHandle)
         assertEquals(credentialId, command.lastInput!!.unsecuredDocument["id"]!!.jsonPrimitive.content)
         assertNotNull(command.lastInput!!.unsecuredDocument["credentialStatus"])
+        assertEquals(
+            listOf(VcdmProfiles.V2_0_CONTEXT),
+            command.lastInput!!.unsecuredDocument["@context"]!!.jsonArray.map { it.jsonPrimitive.content },
+        )
         assertFalse(command.lastInput!!.unsecuredDocument.containsKey("proof"))
     }
 
@@ -298,6 +302,25 @@ class LdpVcFormatHandlerTest {
         assertTrue(result.isErr)
         assertEquals(0, status.reserveCalls)
         assertEquals(0, command.calls)
+    }
+
+    @Test
+    fun vcdm11StatusAddsTheBitstringVocabularyBeforeProof() = runTest {
+        val command = RecordingAddProofCommand()
+        val status = RecordingStatusEnricher()
+        val result =
+            LdpVcFormatHandler(command, Provider { status }).issueCredential(
+                CredentialRequest(format = CredentialFormat.LDP_VC.value),
+                context(VcdmProfiles.V1_1_CONTEXT).copy(
+                    statusListBinding = StatusListBinding("status-list", StatusListSpec.BITSTRING_STATUS_LIST),
+                ),
+            )
+
+        assertTrue(result.isOk)
+        assertEquals(
+            listOf(VcdmProfiles.V1_1_CONTEXT, "https://www.w3.org/ns/credentials/status/v1"),
+            command.lastInput!!.unsecuredDocument["@context"]!!.jsonArray.map { it.jsonPrimitive.content },
+        )
     }
 
     @Test

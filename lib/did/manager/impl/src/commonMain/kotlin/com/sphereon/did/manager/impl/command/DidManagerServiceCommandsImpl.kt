@@ -1427,7 +1427,7 @@ class AddControllerServiceCommandImpl(
                 createdAt = now,
                 updatedAt = now,
             )
-        repository.saveController(rec).getOrElse { return Err(it) }
+        repository.saveController(execution.tenantId, rec).getOrElse { return Err(it) }
         return Ok(rec.toServiceView())
     }
 }
@@ -1527,7 +1527,7 @@ class AddAlsoKnownAsServiceCommandImpl(
                 createdAt = now,
                 updatedAt = now,
             )
-        repository.saveAlsoKnownAs(rec).getOrElse { return Err(it) }
+        repository.saveAlsoKnownAs(execution.tenantId, rec).getOrElse { return Err(it) }
         return Ok(rec.toServiceView())
     }
 }
@@ -1627,7 +1627,7 @@ class AddEquivalentIdServiceCommandImpl(
                 createdAt = now,
                 updatedAt = now,
             )
-        repository.saveEquivalentId(rec).getOrElse { return Err(it) }
+        repository.saveEquivalentId(execution.tenantId, rec).getOrElse { return Err(it) }
         return Ok(rec.toServiceView())
     }
 }

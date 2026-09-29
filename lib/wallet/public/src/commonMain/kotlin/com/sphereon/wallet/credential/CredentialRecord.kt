@@ -745,6 +745,11 @@ data class DeferredIssuanceState(
     val nextPollAt: Instant? = null,
     val attempts: Int = 0,
     val lastError: DeferredIssuanceError? = null,
+    /**
+     * True when the access token is DPoP-bound, so each deferred request carries a DPoP proof signed
+     * with the wallet's client key.
+     */
+    val dpopBound: Boolean = false,
 ) {
     init {
         require(transactionId.isNotBlank()) { "DeferredIssuanceState.transactionId must not be blank" }

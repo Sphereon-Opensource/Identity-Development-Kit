@@ -24,6 +24,9 @@ import com.sphereon.core.api.error.IdkError
 import com.sphereon.oauth2.common.config.OAuth2ServerInstanceConfig
 import com.sphereon.oauth2.common.config.OAuth2ServersConfig
 import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestData
+import com.sphereon.oauth2.server.authorization.command.VerifiedAuthorizationRequest
+import com.sphereon.oauth2.server.authorization.command.RetrieveByRequestUriArgs
+import com.sphereon.oauth2.server.authorization.command.RetrieveAuthorizationRequestByUriCommand
 import com.sphereon.oauth2.server.authorization.command.AuthorizationRequestOutcome
 import com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestArgs
 import com.sphereon.oauth2.server.authorization.command.ParseAuthorizationRequestCommand
@@ -134,19 +137,22 @@ class StandardAuthorizeRequestCommandImplTest {
         override suspend fun remove(sessionId: String): IdkResult<Unit, IdkError> = Ok(Unit)
     }
 
-    private fun service(parseStub: ParseAuthorizationRequestCommand): AuthorizationServerService =
+    private fun service(
+        parseStub: ParseAuthorizationRequestCommand,
+        retrieveStub: RetrieveAuthorizationRequestByUriCommand? = null,
+    ): AuthorizationServerService =
         object : StubAuthorizationServerService() {
-            override val commands: AuthorizationServerService.Commands = TestCommands(parseStub)
+            override val commands: AuthorizationServerService.Commands = TestCommands(parseStub, retrieveStub)
         }
 
     private class TestCommands(
         private val parseStub: ParseAuthorizationRequestCommand,
+        private val retrieveStub: RetrieveAuthorizationRequestByUriCommand?,
     ) : AuthorizationServerService.Commands {
         override val parseTokenRequest get(): com.sphereon.oauth2.server.authorization.command.ParseTokenRequestCommand = throw NotImplementedError()
         override val verifyAuthorizationCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantCommand = throw NotImplementedError()
         override val verifyRefreshTokenGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyRefreshTokenGrantCommand = throw NotImplementedError()
         override val verifyClientCredentialsGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantCommand = throw NotImplementedError()
-        override val verifyTokenExchangeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantCommand = throw NotImplementedError()
         override val verifyPreAuthorizedCodeGrant get(): com.sphereon.oauth2.server.authorization.command.VerifyPreAuthorizedCodeGrantCommand = throw NotImplementedError()
         override val createAccessToken get(): com.sphereon.oauth2.server.authorization.command.CreateAccessTokenCommand = throw NotImplementedError()
         override val createRefreshToken get(): com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenCommand = throw NotImplementedError()
@@ -161,7 +167,7 @@ class StandardAuthorizeRequestCommandImplTest {
         override val verifyPushedAuthorizationRequest get(): com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand = throw NotImplementedError()
         override val createRequestUri get(): com.sphereon.oauth2.server.authorization.command.CreateRequestUriCommand = throw NotImplementedError()
         override val createPushedAuthorizationResponse get(): com.sphereon.oauth2.server.authorization.command.CreatePushedAuthorizationResponseCommand = throw NotImplementedError()
-        override val retrieveAuthorizationRequestByUri get(): com.sphereon.oauth2.server.authorization.command.RetrieveAuthorizationRequestByUriCommand = throw NotImplementedError()
+        override val retrieveAuthorizationRequestByUri get() = retrieveStub ?: throw NotImplementedError()
         override val parseIntrospectionRequest get(): com.sphereon.oauth2.server.authorization.command.ParseIntrospectionRequestCommand = throw NotImplementedError()
         override val introspectToken get(): com.sphereon.oauth2.server.authorization.command.IntrospectTokenCommand = throw NotImplementedError()
         override val parseRevocationRequest get(): com.sphereon.oauth2.server.authorization.command.ParseRevocationRequestCommand = throw NotImplementedError()
@@ -194,6 +200,8 @@ class StandardAuthorizeRequestCommandImplTest {
             },
             verifyRequestObjectCommand = StubVerifyRequestObjectCommand(ctx.execution),
             clock = FixedClock(Instant.fromEpochSeconds(1_700_000_000)),
+            credentialIssuerAudienceResolver = com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
+            unregisteredClientAdmissionRule = Oid4vciUnregisteredWalletAdmissionRule(),
         )
 
     private class NoOpLoginSessionStore : OidcLoginSessionStore {
@@ -243,6 +251,60 @@ class StandardAuthorizeRequestCommandImplTest {
             val pre = assertIs<AuthorizationRequestOutcome.PreRedirectError>(outcome)
             assertEquals("invalid_request", pre.error)
         }
+
+    @Test
+    fun admittedWalletAuthorizationRequestRejectsRedirectDifferentFromPar() = runTest {
+        val requestUri = "urn:ietf:params:oauth:request_uri:admitted-wallet"
+        val pushedRequest = AuthorizationRequestData(
+            clientId = "unregistered-wallet",
+            redirectUri = "wallet://callback/pushed",
+            responseType = emptyList(),
+            requestUri = requestUri,
+        )
+        val admittedClient = ClientRegistration(
+            clientId = "unregistered-wallet",
+            clientType = com.sphereon.oauth2.server.authorization.model.ClientType.PUBLIC,
+            grantTypes = listOf(com.sphereon.oauth2.common.model.GrantType.AUTHORIZATION_CODE),
+            tokenEndpointAuthMethod = com.sphereon.oauth2.common.model.ClientAuthenticationMethod.NONE,
+            requirePkce = true,
+            requirePushedAuthorizationRequests = true,
+        )
+        val retrieved = VerifiedAuthorizationRequest(
+            request = pushedRequest,
+            clientId = admittedClient.clientId,
+            redirectUri = pushedRequest.redirectUri!!,
+            grantedScopes = emptyList(),
+            pkceRequired = true,
+            parRequired = true,
+            admittedClient = admittedClient,
+            admittedAudiences = listOf("https://issuer.example"),
+        )
+        val retrieveStub = object : RetrieveAuthorizationRequestByUriCommand {
+            override val inputTypeToken = typeToken<RetrieveByRequestUriArgs>()
+            override val outputTypeToken = typeToken<VerifiedAuthorizationRequest>()
+            override val isEnabled = true
+
+            override suspend fun execute(args: RetrieveByRequestUriArgs): IdkResult<VerifiedAuthorizationRequest, IdkError> = Ok(retrieved)
+        }
+        val parseStub = stubParseAuthorizationRequest {
+            Ok(
+                AuthorizationRequestData(
+                    clientId = admittedClient.clientId,
+                    redirectUri = "wallet://callback/attacker-selected",
+                    responseType = emptyList(),
+                    requestUri = requestUri,
+                ),
+            )
+        }
+
+        val result = command(service(parseStub, retrieveStub)).execute(
+            HandleAuthorizeRequestArgs(queryParameters = mapOf("request_uri" to requestUri)),
+        )
+
+        assertTrue(result.isOk)
+        val error = assertIs<AuthorizationRequestOutcome.PreRedirectError>(result.value)
+        assertEquals("invalid_request", error.error)
+    }
 
     @Test
     fun supportsRejectsWalletLoginHint() =

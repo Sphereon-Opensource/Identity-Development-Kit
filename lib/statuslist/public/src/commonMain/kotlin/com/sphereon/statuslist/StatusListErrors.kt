@@ -153,12 +153,12 @@ object StatusListErrors {
             exception = cause as? Exception,
         )
 
-    fun bitstringListTooShort(bits: Long): IdkError =
+    fun bitstringListTooShort(entries: Int): IdkError =
         IdkError.fromString(
             code = "STATUSLIST_LENGTH_TOO_SHORT",
             message =
-                "A Bitstring Status List must encode at least $MIN_BITSTRING_STATUS_LIST_BITS bits (16KB) " +
-                    "for herd privacy (length * bitsPerStatus); got $bits",
+                "A Bitstring Status List must hold at least $MIN_BITSTRING_STATUS_LIST_ENTRIES entries " +
+                    "for herd privacy; got $entries",
             category = ErrorCategory.VALIDATION,
         )
 
@@ -200,6 +200,21 @@ object StatusListErrors {
                 "Credential configuration '$credentialConfigurationId' binds an ISO 18013-5 " +
                     "status-list profile, but format '$format' is not mso_mdoc; refusing to issue " +
                     "a credential with an incompatible status representation",
+            category = ErrorCategory.VALIDATION,
+        )
+
+    /** A status-list specification must match the credential format's representation. */
+    fun specUnsupportedForFormat(
+        credentialConfigurationId: String,
+        format: String,
+        spec: StatusListSpec,
+        required: StatusListSpec,
+    ): IdkError =
+        IdkError.fromString(
+            code = "STATUSLIST_SPEC_UNSUPPORTED_FORMAT",
+            message =
+                "Credential configuration '$credentialConfigurationId' binds a ${spec.value} status list, but format '$format' " +
+                    "requires ${required.value}; refusing to issue a credential with an incompatible status representation",
             category = ErrorCategory.VALIDATION,
         )
 
@@ -277,8 +292,7 @@ object StatusListErrors {
             }
         }
         if (args.spec == StatusListSpec.BITSTRING_STATUS_LIST) {
-            val bits = args.length.toLong() * args.bitsPerStatus
-            if (bits < MIN_BITSTRING_STATUS_LIST_BITS) return bitstringListTooShort(bits)
+            if (args.length < MIN_BITSTRING_STATUS_LIST_ENTRIES) return bitstringListTooShort(args.length)
         }
         return null
     }

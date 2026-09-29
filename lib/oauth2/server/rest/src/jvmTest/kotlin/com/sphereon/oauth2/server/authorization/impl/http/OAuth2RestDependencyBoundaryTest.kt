@@ -10,12 +10,24 @@ class OAuth2RestDependencyBoundaryTest {
     @Test
     fun neutralRestKeepsAuthorizationImplementationInExecutableAssemblies() {
         val build = Files.readString(workspaceRoot().resolve("lib/oauth2/server/rest/build.gradle.kts"))
+        val production = sourceSetBlock(build, "commonMain", "commonTest")
 
-        assertFalse(build.contains("libOauth2ServerAuthorizationImpl"))
-        assertTrue(build.contains("libOauth2ServerAuthorizationPublic"))
-        assertTrue(build.contains("libOauth2ServerResourceImpl"))
-        assertTrue(build.contains("libOauth2ClientImpl"))
-        assertTrue(build.contains("libOauth2JwtValidationImpl"))
+        assertFalse(production.contains("libOauth2ServerAuthorizationImpl"))
+        assertTrue(production.contains("libOauth2ServerAuthorizationPublic"))
+        assertTrue(production.contains("libOauth2ServerResourceImpl"))
+        assertTrue(production.contains("libOauth2ClientImpl"))
+        assertTrue(production.contains("libOauth2JwtValidationImpl"))
+    }
+
+    private fun sourceSetBlock(
+        build: String,
+        sourceSet: String,
+        nextSourceSet: String,
+    ): String {
+        val start = build.indexOf("val $sourceSet by getting")
+        val end = build.indexOf("val $nextSourceSet by getting")
+        assertTrue(start >= 0 && end > start, "expected $sourceSet to be declared before $nextSourceSet")
+        return build.substring(start, end)
     }
 
     private fun workspaceRoot(): Path =

@@ -31,6 +31,7 @@ class CreateCredentialOfferUriTest {
                     asBridge = NoOpAsBridge(),
                     offerStore = NoOpOfferStore(),
                     sessionStore = RecordingSessionStore(),
+                    issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("UniversityDegree"),
                     lifecycleInitializer = OfferLifecycleInitializer(),
                 )
 
@@ -67,6 +68,7 @@ class CreateCredentialOfferUriTest {
                     asBridge = NoOpAsBridge(),
                     offerStore = NoOpOfferStore(),
                     sessionStore = RecordingSessionStore(),
+                    issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("UniversityDegree"),
                     lifecycleInitializer = OfferLifecycleInitializer(),
                 )
 

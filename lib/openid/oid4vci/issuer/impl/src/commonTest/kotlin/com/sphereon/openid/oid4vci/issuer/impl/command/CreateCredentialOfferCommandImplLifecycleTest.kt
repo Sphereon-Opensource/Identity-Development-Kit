@@ -112,6 +112,7 @@ class CreateCredentialOfferCommandImplLifecycleTest {
                 asBridge = asBridge,
                 offerStore = offerStore,
                 sessionStore = sessionStore,
+                issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("PID"),
                 lifecycleInitializer = OfferLifecycleInitializer(lifecycleHook = hook),
             )
 
@@ -138,6 +139,7 @@ class CreateCredentialOfferCommandImplLifecycleTest {
                     asBridge = asBridge,
                     offerStore = NoOpOfferStore(),
                     sessionStore = sessionStore,
+                    issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("PID"),
                     lifecycleInitializer = OfferLifecycleInitializer(lifecycleHook = hook),
                 )
 
@@ -177,6 +179,7 @@ class CreateCredentialOfferCommandImplLifecycleTest {
                     asBridge = NoOpAsBridge(),
                     offerStore = NoOpOfferStore(),
                     sessionStore = sessionStore,
+                    issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("PID"),
                     lifecycleInitializer = OfferLifecycleInitializer(),
                 )
 
@@ -198,6 +201,7 @@ class CreateCredentialOfferCommandImplLifecycleTest {
                     asBridge = asBridge,
                     offerStore = NoOpOfferStore(),
                     sessionStore = sessionStore,
+                    issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("PID"),
                     lifecycleInitializer = OfferLifecycleInitializer(),
                     clock = object : Clock {
                         override fun now(): Instant = fixedNow
@@ -222,6 +226,7 @@ class CreateCredentialOfferCommandImplLifecycleTest {
                     asBridge = NoOpAsBridge(),
                     offerStore = NoOpOfferStore(),
                     sessionStore = sessionStore,
+                    issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("PID"),
                     lifecycleInitializer = OfferLifecycleInitializer(policyResolver = policyResolver),
                     clock = object : Clock {
                         override fun now(): Instant = Instant.fromEpochSeconds(1L)
@@ -246,6 +251,7 @@ class CreateCredentialOfferCommandImplLifecycleTest {
                     asBridge = NoOpAsBridge(),
                     offerStore = NoOpOfferStore(),
                     sessionStore = sessionStore,
+                    issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("PID"),
                     lifecycleInitializer = OfferLifecycleInitializer(),
                     clock = object : Clock {
                         override fun now(): Instant = Instant.fromEpochSeconds(0L)
@@ -269,6 +275,7 @@ class CreateCredentialOfferCommandImplLifecycleTest {
                 asBridge = NoOpAsBridge(),
                 offerStore = NoOpOfferStore(),
                 sessionStore = sessionStore,
+                issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("PID"),
                 lifecycleInitializer = OfferLifecycleInitializer(lifecycleHook = hook),
             )
 

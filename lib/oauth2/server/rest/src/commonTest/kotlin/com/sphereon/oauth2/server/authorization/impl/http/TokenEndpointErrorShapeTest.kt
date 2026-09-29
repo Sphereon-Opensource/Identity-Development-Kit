@@ -22,91 +22,172 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
-/**
- * WP2 Task 2.9 — RFC 6749 §5.2 error response conformance pass.
- *
- * Every OAuth2 error rendered by the AS must:
- * - Be `application/json`.
- * - Carry `Cache-Control: no-store` AND `Pragma: no-cache`.
- * - Have a JSON body with an `error` field (and optional `error_description`, `error_uri`).
- * - Map to the RFC-specified HTTP status.
- */
 class TokenEndpointErrorShapeTest {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** (errorCode → expectedHttpStatus). Derived from RFC 6749 §5.2 + RFC 8628 §3.5. */
-    private val rfcStatusMap =
+    private val clientAndProtocolErrors =
         listOf(
-            "invalid_request" to 400,
-            "invalid_client" to 401,
-            "invalid_grant" to 400,
-            "unauthorized_client" to 401,
-            "unsupported_grant_type" to 400,
-            "invalid_scope" to 400,
-            // RFC 8628 §3.5 device-code grant token-endpoint errors
-            "authorization_pending" to 400,
-            "slow_down" to 400,
-            "expired_token" to 400,
-            "access_denied" to 400,
+            "invalid_request" to "invalid_request",
+            "unauthorized_client" to "unauthorized_client",
+            "invalid_grant" to "invalid_grant",
+            "unsupported_grant_type" to "unsupported_grant_type",
+            "invalid_scope" to "invalid_scope",
+            "invalid_target" to "invalid_target",
+            "access_denied" to "access_denied",
+            "unsupported_response_type" to "unsupported_response_type",
+            "request_not_supported" to "request_not_supported",
+            "request_uri_not_supported" to "request_uri_not_supported",
+            "invalid_request_object" to "invalid_request_object",
+            "invalid_request_uri" to "invalid_request_uri",
+            "invalid_authorization_details" to "invalid_authorization_details",
+            "insufficient_user_authentication" to "insufficient_user_authentication",
+            "interaction_required" to "interaction_required",
+            "invalid_dpop_proof" to "invalid_dpop_proof",
+            "use_dpop_nonce" to "use_dpop_nonce",
+            "invalid_client_attestation" to "invalid_client_attestation",
+            "use_attestation_challenge" to "use_attestation_challenge",
+            "use_fresh_attestation" to "use_fresh_attestation",
+            "authorization_pending" to "authorization_pending",
+            "slow_down" to "slow_down",
+            "expired_token" to "expired_token",
+            "session_not_found" to "invalid_request",
+            "client_not_found" to "invalid_client",
+            "UNAUTHORIZED" to "invalid_client",
+            "FORBIDDEN" to "invalid_grant",
+            "ILLEGAL_ARGUMENT_ERROR" to "invalid_request",
+            "COMMAND_ARG_NOT_SUPPORTED_ERROR" to "invalid_request",
+            "COMMAND_DISABLED" to "temporarily_unavailable",
+            "TIMEOUT" to "temporarily_unavailable",
+            "SERVICE_UNAVAILABLE" to "temporarily_unavailable",
+            "COMMAND_NOT_AUTHORIZED" to "invalid_grant",
         )
 
     @Test
-    fun allStandardErrorCodes_mapToRfcStatusWithConformantShape() {
-        for ((code, expectedStatus) in rfcStatusMap) {
-            val err =
-                IdkError(
-                    code = code,
-                    message = IdkError.Message(i18nKey = "test.$code", defaultMessage = "fake $code"),
-                )
-            val response = mapOAuth2ErrorToResponse(err, json)
-
-            assertEquals(expectedStatus, response.statusCode, "$code must map to HTTP $expectedStatus")
-            assertEquals("application/json", response.headers["Content-Type"], "$code response must be JSON")
-            assertEquals("no-store", response.headers["Cache-Control"], "$code must be uncached (Cache-Control)")
-            assertEquals("no-cache", response.headers["Pragma"], "$code must be uncached (Pragma)")
-
+    fun everyKnownClientOrProtocolErrorMapsToItsWireCodeWithoutLeakingDetails() {
+        for ((idkCode, wireCode) in clientAndProtocolErrors) {
+            val response = mapOAuth2ErrorToResponse(error(idkCode), json, endpoint = OAuth2ErrorEndpoint.TOKEN)
             val body = json.parseToJsonElement(response.body!!).jsonObject
-            assertEquals(code, body["error"]?.jsonPrimitive?.content, "$code body must carry error code")
-            assertEquals("fake $code", body["error_description"]?.jsonPrimitive?.content)
+
+            val expectedStatus = if (wireCode == "temporarily_unavailable") 503 else 400
+            assertEquals(expectedStatus, response.statusCode, "$idkCode status")
+            assertEquals(wireCode, body["error"]?.jsonPrimitive?.content, "$idkCode wire error")
+            if (wireCode == "temporarily_unavailable") {
+                assertEquals("The authorization server is temporarily unavailable.", body["error_description"]?.jsonPrimitive?.content)
+            } else {
+                assertNull(body["error_description"], "$idkCode must not expose the internal message")
+            }
+            assertEquals("application/json", response.headers["Content-Type"])
+            assertEquals("no-store", response.headers["Cache-Control"])
+            assertEquals("no-cache", response.headers["Pragma"])
         }
     }
 
     @Test
-    fun errorResponse_withoutDescription_omitsErrorDescriptionField() {
-        val response = oauth2ErrorResponse(400, "invalid_request", errorDescription = null, jsonFormat = json)
-        val body = json.parseToJsonElement(response.body!!).jsonObject
-        assertEquals("invalid_request", body["error"]?.jsonPrimitive?.content)
-        assertNull(body["error_description"], "error_description must be omitted, not nulled, when absent")
+    fun invalidClientStatusDependsOnEndpointAndHttpAuthenticationAttempt() {
+        val tokenWithoutHttpAuth = mapOAuth2ErrorToResponse(error("invalid_client"), json, endpoint = OAuth2ErrorEndpoint.TOKEN)
+        val tokenWithBasic =
+            mapOAuth2ErrorToResponse(
+                error("invalid_client"),
+                json,
+                endpoint = OAuth2ErrorEndpoint.TOKEN,
+                httpAuthenticationAttempted = true,
+            )
+        val introspection = mapOAuth2ErrorToResponse(error("invalid_client"), json, endpoint = OAuth2ErrorEndpoint.INTROSPECTION)
+        val revocation = mapOAuth2ErrorToResponse(error("invalid_client"), json, endpoint = OAuth2ErrorEndpoint.REVOCATION)
+
+        assertEquals(400, tokenWithoutHttpAuth.statusCode)
+        assertEquals(401, tokenWithBasic.statusCode)
+        assertEquals(401, introspection.statusCode)
+        assertEquals(401, revocation.statusCode)
     }
 
     @Test
-    fun unknownErrorCode_mapsToServerError500() {
-        val err =
-            IdkError(
-                code = "mysterious_unknown_code",
-                message = IdkError.Message(i18nKey = "unknown", defaultMessage = "oops"),
-            )
-        val response = mapOAuth2ErrorToResponse(err, json)
-        assertEquals(500, response.statusCode)
-        val body = json.parseToJsonElement(response.body!!).jsonObject
-        assertEquals("server_error", body["error"]?.jsonPrimitive?.content)
+    fun coreAuthorizationRefusalsAreEndpointAwareAndDeviceAccessDeniedStaysLiteral() {
+        val tokenRefusal = mapOAuth2ErrorToResponse(error("COMMAND_NOT_AUTHORIZED"), json, endpoint = OAuth2ErrorEndpoint.TOKEN)
+        val otherRefusal = mapOAuth2ErrorToResponse(error("FORBIDDEN"), json, endpoint = OAuth2ErrorEndpoint.OTHER)
+        val devicePollRefusal = mapOAuth2ErrorToResponse(error("access_denied"), json, endpoint = OAuth2ErrorEndpoint.TOKEN)
+
+        assertEquals("invalid_grant", errorCode(tokenRefusal))
+        assertEquals("access_denied", errorCode(otherRefusal))
+        assertEquals("access_denied", errorCode(devicePollRefusal))
     }
 
     @Test
-    fun commandAuthorizationFailure_mapsToAccessDenied403() {
-        val err =
-            IdkError(
-                code = "COMMAND_NOT_AUTHORIZED",
-                message = IdkError.Message(i18nKey = "command.denied", defaultMessage = "command denied"),
+    fun genuineServerFailuresUseSanitized500And503Responses() {
+        val secretMessage = "private key material and internal exception text"
+        val serverError = mapOAuth2ErrorToResponse(error("server_error", secretMessage), json)
+        val storageError = mapOAuth2ErrorToResponse(error("storage_error", secretMessage), json)
+        val unknownError = mapOAuth2ErrorToResponse(error("unknown_internal_code", secretMessage), json)
+        val unavailable = mapOAuth2ErrorToResponse(error("temporarily_unavailable", secretMessage), json)
+
+        for (response in listOf(serverError, storageError, unknownError)) {
+            assertEquals(500, response.statusCode)
+            assertEquals("server_error", errorCode(response))
+            assertTrue(response.body!!.contains("An unexpected error occurred."))
+            assertFalse(response.body!!.contains(secretMessage))
+        }
+        assertEquals(503, unavailable.statusCode)
+        assertEquals("temporarily_unavailable", errorCode(unavailable))
+        assertTrue(unavailable.body!!.contains("temporarily unavailable"))
+        assertFalse(unavailable.body!!.contains(secretMessage))
+    }
+
+    @Test
+    fun nonceAndAttestationChallengesSurviveErrorMappingAndBasicChallenge() {
+        val dpopError = error("use_dpop_nonce", meta = mapOf("dpop_nonce" to "nonce-123"))
+        val dpopResponse = mapOAuth2ErrorToResponse(dpopError, json, endpoint = OAuth2ErrorEndpoint.TOKEN)
+        assertEquals("nonce-123", dpopResponse.headers["DPoP-Nonce"])
+
+        val attestationError = error("use_attestation_challenge", meta = mapOf("attestation_challenge" to "challenge-456"))
+        val attestationResponse = mapOAuth2ErrorToResponse(attestationError, json, endpoint = OAuth2ErrorEndpoint.TOKEN)
+        assertEquals(400, attestationResponse.statusCode)
+        assertEquals("challenge-456", attestationResponse.headers["OAuth-Client-Attestation-Challenge"])
+
+        val combined =
+            com.sphereon.core.api.http.GenericHttpResponse(
+                statusCode = 401,
+                headers =
+                    mapOf(
+                        "DPoP-Nonce" to "nonce-123",
+                        "OAuth-Client-Attestation-Challenge" to "challenge-456",
+                    ),
+                body = "{}",
+            ).withWwwAuthenticateIfBasicInternal(basicWasAttempted = true)
+        assertEquals("nonce-123", combined.headers["DPoP-Nonce"])
+        assertEquals("challenge-456", combined.headers["OAuth-Client-Attestation-Challenge"])
+        assertEquals("Basic realm=\"oauth2\"", combined.headers["WWW-Authenticate"])
+    }
+
+    @Test
+    fun withWwwAuthenticatePreservesAnExistingAuthenticationChallenge() {
+        val response =
+            com.sphereon.core.api.http.GenericHttpResponse(
+                statusCode = 401,
+                headers = mapOf("www-authenticate" to "DPoP error=\"invalid_token\"", "X-Test" to "kept"),
+                body = "{}",
             )
 
-        val response = mapOAuth2ErrorToResponse(err, json)
+        val challenged = response.withWwwAuthenticateIfBasicInternal(basicWasAttempted = true)
 
-        assertEquals(403, response.statusCode)
-        val body = json.parseToJsonElement(response.body!!).jsonObject
-        assertEquals("access_denied", body["error"]?.jsonPrimitive?.content)
-        assertEquals("command denied", body["error_description"]?.jsonPrimitive?.content)
+        assertEquals("DPoP error=\"invalid_token\"", challenged.headers["www-authenticate"])
+        assertEquals("kept", challenged.headers["X-Test"])
     }
+
+    private fun error(
+        code: String,
+        message: String = "internal detail that must never reach the response",
+        meta: Map<String, Any?> = emptyMap(),
+    ): IdkError =
+        IdkError(
+            code = code,
+            message = IdkError.Message(i18nKey = "test.$code", defaultMessage = message),
+            meta = meta,
+        )
+
+    private fun errorCode(response: com.sphereon.core.api.http.GenericHttpResponse): String? =
+        json.parseToJsonElement(response.body!!).jsonObject["error"]?.jsonPrimitive?.content
 }

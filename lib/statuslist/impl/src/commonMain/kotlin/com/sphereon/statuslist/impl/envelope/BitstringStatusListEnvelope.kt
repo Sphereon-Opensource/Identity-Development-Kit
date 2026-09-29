@@ -16,9 +16,12 @@
 
 package com.sphereon.statuslist.impl.envelope
 
+import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import kotlinx.datetime.Instant
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
@@ -31,9 +34,11 @@ import kotlinx.serialization.json.putJsonObject
 /** Decoded content of a W3C `BitstringStatusListCredential` credentialSubject. */
 internal data class BitstringStatusListContent(
     val encodedList: String,
-    val statusPurpose: String,
-    val statusSize: Int,
-)
+    val statusPurposes: List<String>,
+    val declaredStatusSize: Int?,
+) {
+    val statusSize: Int get() = declaredStatusSize ?: 1
+}
 
 /**
  * Builds and parses the W3C `BitstringStatusListCredential` (VCDM 2.0), enveloped as a VC-JWT.
@@ -58,23 +63,17 @@ internal object BitstringStatusListEnvelope {
             putJsonObject("credentialSubject") {
                 put("id", args.statusListUri + "#list")
                 put("type", "BitstringStatusList")
-                put("statusPurpose", args.purposes.firstOrNull()?.value ?: "revocation")
+                if (args.purposes.size > 1) {
+                    putJsonArray("statusPurpose") { args.purposes.forEach { add(it.value) } }
+                } else {
+                    put("statusPurpose", args.purposes.firstOrNull()?.value ?: "revocation")
+                }
                 put("encodedList", args.encodedList)
-                if (args.bitsPerStatus > 1) {
+                if (args.bitsPerStatus > 1 || StatusPurpose.MESSAGE in args.purposes) {
                     put("statusSize", args.bitsPerStatus)
-                    // Spec §3: when statusSize > 1, statusMessage MUST be present with one entry per
-                    // possible value (length 2^statusSize), each mapping a `0x`-prefixed value to a
-                    // debug message (SHOULD NOT be shown to end users).
-                    putJsonArray("statusMessage") {
-                        for (value in 0 until (1 shl args.bitsPerStatus)) {
-                            add(
-                                buildJsonObject {
-                                    put("status", "0x" + value.toString(16))
-                                    put("message", statusMessageLabel(value))
-                                },
-                            )
-                        }
-                    }
+                }
+                if (StatusPurpose.MESSAGE in args.purposes) {
+                    put("statusMessages", statusMessages(args.bitsPerStatus))
                 }
                 // ttl is OPTIONAL and expressed in milliseconds; servers SHOULD align HTTP
                 // Cache-Control with it. We carry the same hint the token TTL uses (seconds → ms).
@@ -82,7 +81,16 @@ internal object BitstringStatusListEnvelope {
             }
         }
 
-    /** Debug label for a status value in the `statusMessage` array (not for end-user display). */
+    fun statusMessages(bitsPerStatus: Int): JsonArray =
+        JsonArray(
+            (0 until (1 shl bitsPerStatus)).map { value ->
+                buildJsonObject {
+                    put("status", "0x" + value.toString(16))
+                    put("message", statusMessageLabel(value))
+                }
+            },
+        )
+
     private fun statusMessageLabel(value: Int): String =
         when (value) {
             0x00 -> "valid"
@@ -98,10 +106,21 @@ internal object BitstringStatusListEnvelope {
         val encodedList =
             subject["encodedList"]?.jsonPrimitive?.content
                 ?: throw IllegalArgumentException("BitstringStatusListCredential missing 'encodedList'")
+        val purposes =
+            when (val value = subject["statusPurpose"]) {
+                is JsonPrimitive -> listOf(value.takeIf { it.isString }?.content ?: throw IllegalArgumentException("statusPurpose must be a string"))
+                is JsonArray -> value.map { (it as? JsonPrimitive)?.takeIf { primitive -> primitive.isString }?.content ?: throw IllegalArgumentException("statusPurpose must contain strings") }
+                else -> throw IllegalArgumentException("BitstringStatusListCredential missing statusPurpose")
+            }
+        require(purposes.isNotEmpty() && purposes.all { it.isNotBlank() }) { "statusPurpose must contain non-empty strings" }
         return BitstringStatusListContent(
             encodedList = encodedList,
-            statusPurpose = subject["statusPurpose"]?.jsonPrimitive?.content ?: "revocation",
-            statusSize = subject["statusSize"]?.jsonPrimitive?.intOrNull ?: 1,
+            statusPurposes = purposes,
+            declaredStatusSize =
+                subject["statusSize"]?.let { size ->
+                    (size as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull?.takeIf { it > 0 }
+                        ?: throw IllegalArgumentException("statusSize must be a positive integer")
+                },
         )
     }
 }

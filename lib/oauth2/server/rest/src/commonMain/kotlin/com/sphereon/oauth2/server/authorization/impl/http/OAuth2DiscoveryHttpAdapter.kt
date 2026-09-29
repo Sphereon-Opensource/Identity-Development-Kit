@@ -40,8 +40,10 @@ import dev.zacsweers.metro.binding
  * Routes:
  * - `GET /.well-known/oauth-authorization-server` (RFC 8414)
  * - `GET /.well-known/oauth-authorization-server/{tenant-path}` (RFC 8414)
+ * - `GET /.well-known/oauth-authorization-server/{issuer-prefix}/{issuer-slug}` (RFC 8414, hosted `/as/<slug>` issuers)
  * - `GET /.well-known/openid-configuration` (OpenID Connect Discovery 1.0)
  * - `GET /.well-known/openid-configuration/{tenant-path}` (OpenID Connect Discovery 1.0)
+ * - `GET /.well-known/openid-configuration/{issuer-prefix}/{issuer-slug}`
  * - `GET /.well-known/jwks.json`
  */
 @Inject

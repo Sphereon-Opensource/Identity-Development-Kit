@@ -99,6 +99,13 @@ sealed class Oid4vciIssuanceExecutionResult {
         val retryable: Boolean = false,
         val arguments: Map<String, String> = emptyMap(),
     ) : Oid4vciIssuanceExecutionResult()
+
+    /**
+     * The token endpoint answered `invalid_grant` to a pre-authorized request that carried a
+     * tx_code: the code was wrong. The offer and the pre-authorized code stay usable, so the
+     * interaction returns to the transaction-code step instead of failing.
+     */
+    data object TxCodeRejected : Oid4vciIssuanceExecutionResult()
 }
 
 sealed class Oid4vciIssuerNotificationResult {

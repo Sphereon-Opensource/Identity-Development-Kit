@@ -58,6 +58,7 @@ import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.storage.ClientAssertionJtiStore
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -392,6 +393,23 @@ class VerifyClientAuthenticationCommandImplTest {
         }
 
     @Test
+    fun unknownPublicClientIdIsInvalidAtTheTokenEndpoint() =
+        runTest {
+            val result =
+                createCommand(clientRegistry = StubClientRegistry()).execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication = ClientAuthenticationConfig.None("unknown-wallet"),
+                        clientId = "unknown-wallet",
+                        tokenEndpointUrl = "https://auth.example.com/token",
+                        endpoint = ClientAuthenticationEndpoint.TOKEN,
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
     fun testAnonymousAuthPassesThrough() =
         runTest {
             val registry = StubClientRegistry()
@@ -593,6 +611,10 @@ class VerifyClientAuthenticationCommandImplTest {
             "sig"
     }
 
+    private fun assertionJwtWithHeader(header: JsonObject): String =
+        header.toString().encodeToByteArray().encodeToBase64Url() + "." +
+            buildJsonObject { put("sub", "client1") }.toString().encodeToByteArray().encodeToBase64Url() + ".sig"
+
     private fun ecJwk(kid: String) =
         Jwk(
             kty = JwaKeyType.EC,
@@ -774,6 +796,44 @@ class VerifyClientAuthenticationCommandImplTest {
             assertTrue(result.isErr)
         }
 
+    @Test
+    fun privateKeyJwt_malformedAlgAndKidTypes_returnInvalidClient() =
+        runTest {
+            val malformed =
+                listOf(
+                    kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("ES256"))),
+                    buildJsonObject { put("value", "ES256") },
+                    kotlinx.serialization.json.JsonNull,
+                    kotlinx.serialization.json.JsonPrimitive(256),
+                )
+            malformed.forEach { value ->
+                for (name in listOf("alg", "kid")) {
+                    val header = buildJsonObject {
+                        put("alg", if (name == "alg") value else kotlinx.serialization.json.JsonPrimitive("ES256"))
+                        put("kid", if (name == "kid") value else kotlinx.serialization.json.JsonPrimitive("registered-key"))
+                    }
+                    val args = task25Args().copy(
+                        clientAuthentication = ClientAuthenticationConfig.PrivateKeyJwt(
+                            com.sphereon.oauth2.common.model.ClientAssertion(
+                                "client1",
+                                "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                                assertionJwtWithHeader(header),
+                            ),
+                        ),
+                    )
+                    val command =
+                        createCommand(
+                            clientRegistry = StubClientRegistry(task25Client()),
+                            clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                            jwtService = StubJwtService(claimsOverride = assertionClaims()),
+                        )
+                    val result = command.execute(args)
+                    assertTrue(result.isErr, "$name=$value must return invalid_client")
+                    assertEquals("invalid_client", result.error.code)
+                }
+            }
+        }
+
     // ========================================================================
     // assertion iss/sub/aud/exp/iat/jti validation + jti replay
     // ========================================================================
@@ -781,7 +841,7 @@ class VerifyClientAuthenticationCommandImplTest {
     private fun assertionClaims(
         iss: String = "client1",
         sub: String = "client1",
-        aud: Any = "https://auth.example.com/token",
+        aud: Any = "https://auth.example.com",
         expSecondsFromNow: Long = 120,
         iatSecondsFromNow: Long? = 0,
         jti: String? = "jti-unique-1",
@@ -790,6 +850,8 @@ class VerifyClientAuthenticationCommandImplTest {
             put("iss", iss)
             put("sub", sub)
             when (aud) {
+                is JsonElement -> put("aud", aud)
+
                 is String -> {
                     put("aud", aud)
                 }
@@ -801,6 +863,8 @@ class VerifyClientAuthenticationCommandImplTest {
                         }
                     put("aud", arr)
                 }
+
+                is Number -> put("aud", kotlinx.serialization.json.JsonPrimitive(aud))
             }
             put("exp", kotlinx.serialization.json.JsonPrimitive(Clock.System.now().epochSeconds + expSecondsFromNow))
             if (iatSecondsFromNow != null) {
@@ -965,7 +1029,7 @@ class VerifyClientAuthenticationCommandImplTest {
         }
 
     @Test
-    fun assertion_aud_arrayWithIssuer_accepts() =
+    fun assertion_aud_singleConfiguredIssuer_accepts() =
         runTest {
             val config =
                 OAuth2ServerInstanceConfig(
@@ -976,17 +1040,155 @@ class VerifyClientAuthenticationCommandImplTest {
                 createCommand(
                     clientRegistry = StubClientRegistry(task25Client()),
                     clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
-                    jwtService =
-                        StubJwtService(
-                            claimsOverride =
-                                assertionClaims(
-                                    aud = listOf("https://other.example.com", "https://auth.example.com/issuer"),
-                                ),
-                        ),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = "https://auth.example.com/issuer")),
                     config = config,
                 )
             val result = command.execute(task25Args())
             assertTrue(result.isOk, "expected accept; got: ${if (result.isErr) result.error.message.defaultMessage else ""}")
+        }
+
+    @Test
+    fun assertion_audienceArrayWithSingleConfiguredIssuer_accepts() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry = StubClientRegistry(task25Client()),
+                    clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = listOf("https://auth.example.com"))),
+                )
+
+            assertTrue(command.execute(task25Args()).isOk)
+        }
+
+    @Test
+    fun assertion_audienceArrayWithMultipleValues_rejects() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry = StubClientRegistry(task25Client()),
+                    clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = listOf("https://auth.example.com", "https://other.example.com"))),
+                )
+
+            val result = command.execute(task25Args())
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun privateKeyJwt_duplicateIssuerAudienceArray_rejects() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry = StubClientRegistry(task25Client()),
+                    clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = listOf("https://auth.example.com", "https://auth.example.com"))),
+                )
+            val result = command.execute(task25Args())
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun assertion_audienceTokenEndpoint_rejects() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry = StubClientRegistry(task25Client()),
+                    clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = "https://auth.example.com/token")),
+                )
+
+            val result = command.execute(task25Args())
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun privateKeyJwt_blankConfiguredIssuer_rejectsIssuerAudience() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry = StubClientRegistry(task25Client()),
+                    clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = "https://auth.example.com")),
+                    config = OAuth2ServerInstanceConfig(issuer = " ", attestation = FeaturePolicy.SUPPORTED),
+                )
+
+            val result = command.execute(task25Args())
+
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun assertion_audienceMalformedObject_rejectsWithoutThrowing() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry = StubClientRegistry(task25Client()),
+                    clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = buildJsonObject { put("value", true) })),
+                )
+
+            val result = command.execute(task25Args())
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun assertion_audienceMalformedArrayEntry_rejectsWithoutThrowing() =
+        runTest {
+            val malformedAudience =
+                buildJsonArray {
+                    add(kotlinx.serialization.json.JsonPrimitive("https://auth.example.com"))
+                    add(kotlinx.serialization.json.JsonPrimitive(42))
+                }
+            val command =
+                createCommand(
+                    clientRegistry = StubClientRegistry(task25Client()),
+                    clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = malformedAudience)),
+                )
+
+            val result = command.execute(task25Args())
+            assertTrue(result.isErr)
+            assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun assertion_malformedIdentityAndTimeClaimTypes_returnInvalidClient() =
+        runTest {
+            val malformedValues =
+                listOf(
+                    kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("client1"))),
+                    buildJsonObject { put("value", "client1") },
+                    kotlinx.serialization.json.JsonNull,
+                    kotlinx.serialization.json.JsonPrimitive(42),
+                )
+            val cases =
+                buildList {
+                    listOf("iss", "sub", "jti").forEach { key -> malformedValues.forEach { add(key to it) } }
+                    listOf("exp", "iat").forEach { key ->
+                        add(key to kotlinx.serialization.json.JsonPrimitive("not-a-number"))
+                        add(key to kotlinx.serialization.json.JsonPrimitive("123"))
+                        add(key to kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(123))))
+                        add(key to buildJsonObject { put("value", 123) })
+                        add(key to kotlinx.serialization.json.JsonNull)
+                    }
+                }
+            cases.forEach { (claim, value) ->
+                val claims = JsonObject(assertionClaims().toMutableMap().apply { put(claim, value) })
+                val command =
+                    createCommand(
+                        clientRegistry = StubClientRegistry(task25Client()),
+                        clientJwksResolver = StubClientJwksResolver(listOf(ecJwk("registered-key"))),
+                        jwtService = StubJwtService(claimsOverride = claims),
+                    )
+                val result = command.execute(task25Args())
+                assertTrue(result.isErr, "$claim=$value should be rejected")
+                assertEquals("invalid_client", result.error.code)
+            }
         }
 
     @Test
@@ -1215,6 +1417,136 @@ class VerifyClientAuthenticationCommandImplTest {
 
             assertTrue(result.isErr)
             assertEquals("invalid_client", result.error.code)
+        }
+
+    @Test
+    fun clientSecretJwt_retainsRfc7523TokenEndpointAudience() =
+        runTest {
+            val registry =
+                StubClientRegistry(
+                    client =
+                        ClientRegistration(
+                            clientId = "client1",
+                            clientSecret = "registered-secret",
+                            tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_JWT,
+                            grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                            tokenEndpointAuthSigningAlg = listOf("HS256"),
+                        ),
+                )
+            val command =
+                createCommand(
+                    clientRegistry = registry,
+                    jwtService = StubJwtService(claimsOverride = assertionClaims(aud = "https://auth.example.com/token")),
+                )
+
+            val result =
+                command.execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication =
+                            ClientAuthenticationConfig.SecretJwt(
+                                com.sphereon.oauth2.common.model.ClientAssertion(
+                                    "client1",
+                                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                                    assertionJwt(alg = "HS256", kid = null),
+                                ),
+                            ),
+                        clientId = "client1",
+                        tokenEndpointUrl = "https://auth.example.com/token",
+                    ),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(ClientAuthenticationMethod.CLIENT_SECRET_JWT, result.value.method)
+        }
+
+    @Test
+    fun clientSecretJwt_rejectsMalformedAudienceArrayEntries() =
+        runTest {
+            val malformedAudiences =
+                listOf(
+                    buildJsonArray {
+                        add(kotlinx.serialization.json.JsonPrimitive("https://auth.example.com"))
+                        add(kotlinx.serialization.json.JsonPrimitive(7))
+                    },
+                    buildJsonArray {
+                        add(kotlinx.serialization.json.JsonPrimitive("https://auth.example.com/token"))
+                        add(buildJsonObject { put("value", true) })
+                    },
+                )
+            malformedAudiences.forEach { aud ->
+                val command =
+                    createCommand(
+                        clientRegistry =
+                            StubClientRegistry(
+                                ClientRegistration(
+                                    clientId = "client1",
+                                    clientSecret = "registered-secret",
+                                    tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_JWT,
+                                    grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                                    tokenEndpointAuthSigningAlg = listOf("HS256"),
+                                ),
+                            ),
+                        jwtService = StubJwtService(claimsOverride = assertionClaims(aud = aud)),
+                    )
+                val result =
+                    command.execute(
+                        VerifyClientAuthenticationArgs(
+                            clientAuthentication =
+                                ClientAuthenticationConfig.SecretJwt(
+                                    com.sphereon.oauth2.common.model.ClientAssertion(
+                                        "client1",
+                                        "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                                        assertionJwt(alg = "HS256", kid = null),
+                                    ),
+                                ),
+                            clientId = "client1",
+                            tokenEndpointUrl = "https://auth.example.com/token",
+                        ),
+                    )
+                assertTrue(result.isErr, "malformed client_secret_jwt aud=$aud must be rejected")
+                assertEquals("invalid_client", result.error.code)
+            }
+        }
+
+    @Test
+    fun clientSecretJwt_acceptsMultipleValidAudienceStrings() =
+        runTest {
+            val command =
+                createCommand(
+                    clientRegistry =
+                        StubClientRegistry(
+                            ClientRegistration(
+                                clientId = "client1",
+                                clientSecret = "registered-secret",
+                                tokenEndpointAuthMethod = ClientAuthenticationMethod.CLIENT_SECRET_JWT,
+                                grantTypes = listOf(GrantType.CLIENT_CREDENTIALS),
+                                tokenEndpointAuthSigningAlg = listOf("HS256"),
+                            ),
+                        ),
+                    jwtService =
+                        StubJwtService(
+                            claimsOverride =
+                                assertionClaims(
+                                    aud = listOf("https://other.example.com", "https://auth.example.com/token"),
+                                ),
+                        ),
+                )
+            val result =
+                command.execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication =
+                            ClientAuthenticationConfig.SecretJwt(
+                                com.sphereon.oauth2.common.model.ClientAssertion(
+                                    "client1",
+                                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                                    assertionJwt(alg = "HS256", kid = null),
+                                ),
+                            ),
+                        clientId = "client1",
+                        tokenEndpointUrl = "https://auth.example.com/token",
+                    ),
+                )
+            assertTrue(result.isOk)
         }
 
     @Test

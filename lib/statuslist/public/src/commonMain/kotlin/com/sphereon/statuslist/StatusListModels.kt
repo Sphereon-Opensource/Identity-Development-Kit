@@ -152,10 +152,10 @@ object StatusValues {
 const val DEFAULT_STATUS_LIST_LENGTH: Int = 131_072
 
 /**
- * W3C Bitstring Status List minimum: the uncompressed bitstring MUST be at least 16KB = 131,072 bits
- * (`length * bitsPerStatus`), to provide herd privacy. Not mandated by IETF Token Status List.
+ * W3C Bitstring Status List minimum number of entries (bitstring length divided by `statusSize`), for
+ * herd privacy. Not mandated by IETF Token Status List.
  */
-const val MIN_BITSTRING_STATUS_LIST_BITS: Long = 131_072L
+const val MIN_BITSTRING_STATUS_LIST_ENTRIES: Int = 131_072
 
 /**
  * Issuer configuration binding a credential type to a status list. When present on an issuance,
@@ -475,6 +475,9 @@ data class ListStatusListsArgs(
 data class ResolveStatusArgs(
     val uri: String,
     val index: Int = 0,
+    val expectedPurpose: StatusPurpose? = null,
+    /** W3C Bitstring `statusSize` declared by the credential's status entry; it takes precedence over the list's own value. */
+    val expectedStatusSize: Int? = null,
     /** When null, the spec/format is inferred from the fetched token's media type / envelope. */
     val expectedSpec: StatusListSpec? = null,
     val expectedFormat: StatusProofFormat? = null,

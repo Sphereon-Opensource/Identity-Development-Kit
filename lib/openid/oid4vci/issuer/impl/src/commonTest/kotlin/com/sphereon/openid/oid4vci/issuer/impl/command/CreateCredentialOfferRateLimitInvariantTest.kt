@@ -35,6 +35,7 @@ class CreateCredentialOfferRateLimitInvariantTest {
             asBridge = NoOpAsBridge(),
             offerStore = NoOpOfferStore(),
             sessionStore = RecordingSessionStore(),
+            issuerConfigProvider = PublishedConfigurationsIssuerConfigProvider("PID"),
             lifecycleInitializer = OfferLifecycleInitializer(),
         )
 

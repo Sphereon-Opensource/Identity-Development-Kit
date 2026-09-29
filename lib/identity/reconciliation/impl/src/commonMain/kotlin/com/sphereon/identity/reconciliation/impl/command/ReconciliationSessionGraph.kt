@@ -14,11 +14,15 @@
  * limitations under the License.
  */
 
-package com.sphereon.identity.reconciliation.command
+package com.sphereon.identity.reconciliation.impl.command
 
 import com.sphereon.di.session.SessionGraph
 import com.sphereon.di.session.SessionInstance
 import com.sphereon.di.session.SessionScope
+import com.sphereon.identity.reconciliation.command.CancelReconciliationSessionCommand
+import com.sphereon.identity.reconciliation.command.CompleteReconciliationCommand
+import com.sphereon.identity.reconciliation.command.CreateReconciliationSessionCommand
+import com.sphereon.identity.reconciliation.command.GetReconciliationSessionCommand
 import com.sphereon.identity.reconciliation.store.ReconciliationProviderStore
 import com.sphereon.identity.reconciliation.store.ReconciliationSessionStore
 import dev.zacsweers.metro.ContributesTo

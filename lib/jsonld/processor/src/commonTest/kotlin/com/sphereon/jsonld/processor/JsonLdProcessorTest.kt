@@ -7,6 +7,7 @@ import com.sphereon.jsonld.loader.BuiltInContextLinkedDataDocumentLoader
 import com.sphereon.jsonld.loader.DefaultBuiltInContextRegistry
 import com.sphereon.jsonld.loader.LinkedDataDocumentLoader
 import com.sphereon.jsonld.rdfcanon.RdfBlankNode
+import com.sphereon.jsonld.rdfcanon.RdfDatasetCanonicalizer
 import com.sphereon.jsonld.rdfcanon.RdfIri
 import com.sphereon.jsonld.rdfcanon.RdfLiteral
 import kotlinx.coroutines.test.runTest
@@ -573,6 +574,24 @@ class JsonLdProcessorTest {
             assertTrue(dataset.quads.any { it.predicate.value.endsWith("#issuer") && it.objectTerm == RdfIri("did:example:issuer") })
             assertTrue(dataset.quads.any { it.predicate.value.endsWith("#credentialSubject") && it.objectTerm == RdfIri("did:example:subject") })
         }
+    }
+
+    @Test
+    fun canonicalizesVcdm11CredentialWithBitstringStatusEntryUsingBundledContexts() = runTest {
+        val input = json.parseToJsonElement(
+            """{"@context":["${WellKnownContexts.VCDM_1_1}","${WellKnownContexts.BITSTRING_STATUS_LIST_V1}"],"id":"https://example.test/credential/1","type":["VerifiableCredential"],"issuer":"did:example:issuer","issuanceDate":"2026-01-01T00:00:00Z","credentialSubject":{"id":"did:example:subject"},"credentialStatus":{"id":"https://example.test/status/1#94567","type":"BitstringStatusListEntry","statusPurpose":"revocation","statusListIndex":"94567","statusListCredential":"https://example.test/status/1"}}""",
+        )
+        val dataset = bundledProcessor().toRdf(input)
+        val statusNs = "https://www.w3.org/ns/credentials/status#"
+
+        assertTrue(dataset.quads.any { it.predicate.value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" && it.objectTerm == RdfIri("${statusNs}BitstringStatusListEntry") })
+        assertTrue(dataset.quads.any { it.predicate.value == "${statusNs}statusListCredential" && it.objectTerm == RdfIri("https://example.test/status/1") })
+        assertTrue(dataset.quads.any { it.predicate.value == "${statusNs}statusPurpose" })
+        assertTrue(dataset.quads.any { it.predicate.value == "${statusNs}statusListIndex" })
+
+        val canonical = RdfDatasetCanonicalizer().canonicalize(dataset)
+        assertTrue(canonical.contains("<${statusNs}BitstringStatusListEntry>"), canonical)
+        assertEquals(canonical, RdfDatasetCanonicalizer().canonicalize(bundledProcessor().toRdf(input)))
     }
 
     /** W3C JSON-LD 1.1 expand/td-prefix-* negative term-definition cases. */

@@ -23,13 +23,33 @@ import com.sphereon.core.api.binary.TypeToken
 import com.sphereon.core.api.binary.typeToken
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.core.api.conf.AppConfigService
+import com.sphereon.core.api.conf.ConfigLevel
+import com.sphereon.core.api.conf.ConfigService
+import com.sphereon.core.api.conf.PrincipalConfigService
+import com.sphereon.core.api.conf.TenantConfigService
+import com.sphereon.core.api.context.ContextConfig
+import com.sphereon.core.api.context.IdkScope
+import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.error.IdkErrorType
+import com.sphereon.core.api.log.AsyncLogService
+import com.sphereon.core.api.log.LogMessage
+import com.sphereon.core.api.log.LogService
+import com.sphereon.core.api.log.LoggerConfig
+import com.sphereon.core.api.log.SessionLogManager
+import com.sphereon.core.api.log.SessionLogService
+import com.sphereon.core.api.session.CommandLifecycleInterceptorChain
+import com.sphereon.core.api.session.EmptyInterceptorChain
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.crypto.jose.jws.*
+import com.sphereon.crypto.jose.jws.command.*
 import com.sphereon.crypto.resolution.extern.ExternalIdentifierJwkOpts
 import com.sphereon.oauth2.jwt.validation.AsJwtArtifactScope
 import com.sphereon.oauth2.jwt.validation.AsIssuerTrustMaterial
 import com.sphereon.oauth2.jwt.validation.AccessTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdTokenValidationOptions
 import com.sphereon.oauth2.jwt.validation.IdpConfig
+import com.sphereon.oauth2.jwt.validation.IdpRegistry
 import com.sphereon.oauth2.jwt.validation.JwtArtifactContext
 import com.sphereon.oauth2.jwt.validation.JwtValidationConfig
 import com.sphereon.oauth2.jwt.validation.JwtValidationError
@@ -38,14 +58,21 @@ import com.sphereon.oauth2.jwt.validation.OidcDiscoveryMetadata
 import com.sphereon.oauth2.jwt.validation.OidcDiscoveryService
 import com.sphereon.oauth2.server.resource.command.VerifyJwtArgs
 import com.sphereon.oauth2.server.resource.command.VerifyJwtCommand
+import com.sphereon.oauth2.server.resource.command.StandardJwtArtifactContext
+import com.sphereon.oauth2.server.resource.impl.command.VerifyJwtCommandImpl
 import com.sphereon.oauth2.server.resource.error.ResourceServerError
 import com.sphereon.oauth2.server.resource.model.TokenPayload
 import com.sphereon.oauth2.common.model.CanonicalAuthorizationServerIssuer
+import com.sphereon.di.context.NoOpSessionContext
+import com.sphereon.di.session.SessionContext
+import com.sphereon.di.session.SessionContextManager
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -70,8 +97,8 @@ import kotlin.time.Instant
  *   mixing styles mid-package hurts readability more than it helps.
  * - No backticked test names — this module compiles to JS/Native too.
  * - Test tokens are built structurally (header.payload.signature) with a
- *   placeholder signature; real signature verification is performed by
- *   VerifyJwtCommand, which is stubbed here.
+ *   placeholder signature. Most service dispatch cases use a stub; focused
+ *   ID-token and AS-artifact cases run VerifyJwtCommandImpl with a JOSE boundary fixture.
  */
 class DefaultJwtValidationServiceTest {
     // ========== Common fixtures ==========
@@ -88,17 +115,17 @@ class DefaultJwtValidationServiceTest {
 
     // ========== Helpers ==========
 
-    private fun buildJwt(payloadClaims: Map<String, JsonElement>): String {
+    private fun buildJwt(payloadClaims: Map<String, JsonElement>, typ: String? = "at+jwt"): String {
         val header =
             buildJsonObject {
                 put("alg", JsonPrimitive("RS256"))
-                put("typ", JsonPrimitive("at+jwt"))
+                typ?.let { put("typ", JsonPrimitive(it)) }
             }
         val payload =
             JsonObject(payloadClaims)
         val headerPart = Json.encodeToString(JsonObject.serializer(), header).encodeToByteArray().encodeToBase64Url()
         val payloadPart = Json.encodeToString(JsonObject.serializer(), payload).encodeToByteArray().encodeToBase64Url()
-        // Signature is never checked in these tests; VerifyJwtCommand is stubbed.
+        // Most validation tests stub the command; focused command-path tests use a JOSE boundary fixture.
         val signaturePart = "stub-signature".encodeToByteArray().encodeToBase64Url()
         return "$headerPart.$payloadPart.$signaturePart"
     }
@@ -154,6 +181,60 @@ class DefaultJwtValidationServiceTest {
     }
 
     @Test
+    fun incompleteOrContradictoryPerCallTrustFailsBeforeAnyFallback() =
+        runTest {
+            val token = buildJwt(mapOf("iss" to JsonPrimitive(keycloakIssuer)))
+            val invalidOptions =
+                listOf(
+                    AccessTokenValidationOptions(trustedIssuer = " ", trustedJwksUri = "https://keys.example/jwks"),
+                    AccessTokenValidationOptions(trustedIssuer = keycloakIssuer, trustedJwksUri = " "),
+                    AccessTokenValidationOptions(trustedIssuer = keycloakIssuer),
+                    AccessTokenValidationOptions(trustedJwksUri = "https://keys.example/jwks"),
+                    AccessTokenValidationOptions(
+                        idpId = "configured-idp",
+                        trustedIssuer = keycloakIssuer,
+                        trustedJwksUri = "https://keys.example/jwks",
+                    ),
+                    AccessTokenValidationOptions(
+                        tenantHint = "tenant-1",
+                        trustedIssuer = keycloakIssuer,
+                        trustedJwksUri = "https://keys.example/jwks",
+                    ),
+                    AccessTokenValidationOptions(
+                        trustedIdentifier = ExternalIdentifierJwkOpts(
+                            Jwk.fromJsonObject(
+                                Json.parseToJsonElement("""{"kty":"RSA","n":"AQ","e":"Ag","kid":"local"}""").jsonObject,
+                            ),
+                        ),
+                        trustedIssuer = keycloakIssuer,
+                        trustedJwksUri = "https://keys.example/jwks",
+                    ),
+                )
+
+            invalidOptions.forEach { options ->
+                val registry = NoLookupIdpRegistry()
+                val discovery = StubOidcDiscoveryService.failing(
+                    JwtValidationError.discoveryFailed(keycloakIssuer, "must not be called"),
+                )
+                val verifier = StubVerifyJwtCommand.neverInvoked()
+                val svc =
+                    DefaultJwtValidationService(
+                        verifyJwtCommand = verifier,
+                        idpRegistry = registry,
+                        oidcDiscoveryService = discovery,
+                    )
+
+                val result = svc.validateAccessToken(token, options)
+
+                assertTrue(result.isErr)
+                assertEquals(JwtValidationErrorType.IDP_CONFIGURATION_ERROR, result.error.type)
+                assertEquals(0, registry.lookups)
+                assertEquals(0, discovery.invocationCount)
+                assertEquals(0, verifier.invocationCount)
+            }
+        }
+
+    @Test
     fun testAsIssuedArtifactFailsClosedWithoutCallerEstablishedTrustMaterial() =
         runTest {
             val issuer = CanonicalAuthorizationServerIssuer.parse("https://as.example.com")
@@ -189,6 +270,114 @@ class DefaultJwtValidationServiceTest {
             assertTrue(result.isErr)
             assertEquals("VALIDATION_ERROR", result.error.type.name)
             assertEquals(0, stub.invocationCount)
+        }
+
+    @Test
+    fun testAsIssuedArtifactUsesExplicitStandardContextForIdJarmAndLogout() =
+        runTest {
+            val issuer = CanonicalAuthorizationServerIssuer.parse("https://as.example.com")
+            val now = kotlin.time.Clock.System.now().epochSeconds
+            val contexts =
+                mapOf(
+                    JwtArtifactContext.ID_TOKEN to AsJwtArtifactScope.ID_TOKEN,
+                    JwtArtifactContext.JARM_RESPONSE to AsJwtArtifactScope.JARM_RESPONSE,
+                    JwtArtifactContext.LOGOUT_TOKEN to AsJwtArtifactScope.LOGOUT_TOKEN,
+                )
+            contexts.forEach { (context, scope) ->
+                val claims =
+                    buildMap {
+                        put("iss", JsonPrimitive(issuer.value))
+                        put("aud", JsonPrimitive("client"))
+                        put("exp", JsonPrimitive(now + 600))
+                        if (context == JwtArtifactContext.ID_TOKEN) {
+                            put("sub", JsonPrimitive("client"))
+                            put("iat", JsonPrimitive(now))
+                        }
+                        if (context == JwtArtifactContext.JARM_RESPONSE) {
+                            put("code", JsonPrimitive("authorization-code"))
+                        }
+                        if (context == JwtArtifactContext.LOGOUT_TOKEN) {
+                            put("jti", JsonPrimitive("logout-1"))
+                            put("sid", JsonPrimitive("session-1"))
+                            put("iat", JsonPrimitive(now))
+                            put(
+                                "events",
+                                buildJsonObject {
+                                    put("http://schemas.openid.net/event/backchannel-logout", JsonObject(emptyMap()))
+                                },
+                            )
+                        }
+                    }
+                val compactJwt = buildJwt(claims, typ = if (context == JwtArtifactContext.LOGOUT_TOKEN) null else "JWT")
+                val joseBoundary = SignatureBoundaryJwtService()
+                val verifier = VerifyJwtCommandImpl(TestCommandSessionExecution, joseBoundary)
+                val material =
+                    AsIssuerTrustMaterial(
+                        canonicalIssuer = issuer,
+                        artifactScopes = setOf(scope),
+                        trustedIdentifier =
+                            ExternalIdentifierJwkOpts(
+                                Jwk.fromJsonObject(
+                                    Json.parseToJsonElement("""{"kty":"RSA","n":"AQ","e":"Ag","kid":"as-key"}""").jsonObject,
+                                ),
+                            ),
+                    )
+                val service =
+                    DefaultJwtValidationService(
+                        verifyJwtCommand = verifier,
+                        idpRegistry = NoLookupIdpRegistry(),
+                        oidcDiscoveryService = StubOidcDiscoveryService.conventionBased(),
+                    )
+                val result = service.validateAsIssuedArtifact(compactJwt, material, context)
+
+                assertTrue(result.isOk, "expected $context artifact verification success")
+                assertEquals(1, joseBoundary.verificationCount, "$context must run through VerifyJwtCommandImpl")
+            }
+        }
+
+    @Test
+    fun realArtifactVerificationRejectsIssuerAudienceNonceAndContextMismatches() =
+        runTest {
+            val issuer = CanonicalAuthorizationServerIssuer.parse("https://as.example.com")
+            val now = kotlin.time.Clock.System.now().epochSeconds
+            val baseClaims = mapOf(
+                "iss" to JsonPrimitive(issuer.value),
+                "sub" to JsonPrimitive("client"),
+                "aud" to JsonPrimitive("client"),
+                "exp" to JsonPrimitive(now + 600),
+                "iat" to JsonPrimitive(now),
+            )
+            suspend fun verify(context: JwtArtifactContext, claims: Map<String, JsonElement>, typ: String? = "JWT"): Boolean {
+                val verifier = VerifyJwtCommandImpl(TestCommandSessionExecution, SignatureBoundaryJwtService())
+                val service = DefaultJwtValidationService(verifier, NoLookupIdpRegistry(), StubOidcDiscoveryService.conventionBased())
+                val scope = when (context) {
+                    JwtArtifactContext.ID_TOKEN -> AsJwtArtifactScope.ID_TOKEN
+                    JwtArtifactContext.JARM_RESPONSE -> AsJwtArtifactScope.JARM_RESPONSE
+                    JwtArtifactContext.LOGOUT_TOKEN -> AsJwtArtifactScope.LOGOUT_TOKEN
+                    JwtArtifactContext.ACCESS_TOKEN -> AsJwtArtifactScope.ACCESS_TOKEN
+                }
+                val material = AsIssuerTrustMaterial(
+                    canonicalIssuer = issuer,
+                    artifactScopes = setOf(scope),
+                    trustedIdentifier = ExternalIdentifierJwkOpts(
+                        Jwk.fromJsonObject(Json.parseToJsonElement("""{"kty":"RSA","n":"AQ","e":"Ag","kid":"as-key"}""").jsonObject),
+                    ),
+                )
+                return service.validateAsIssuedArtifact(buildJwt(claims, typ), material, context).isOk
+            }
+
+            assertTrue(!verify(JwtArtifactContext.ID_TOKEN, baseClaims + ("iss" to JsonPrimitive("https://other-as.example"))))
+            assertTrue(!verify(JwtArtifactContext.ID_TOKEN, baseClaims - "aud"), "ID_TOKEN needs aud")
+            assertTrue(!verify(JwtArtifactContext.ID_TOKEN, baseClaims, typ = "at+jwt"), "access typ cannot cross into ID_TOKEN")
+            assertTrue(!verify(JwtArtifactContext.JARM_RESPONSE, baseClaims), "JARM requires a supported response field")
+            assertTrue(!verify(JwtArtifactContext.LOGOUT_TOKEN, baseClaims + mapOf(
+                "sid" to JsonPrimitive("session"),
+                "jti" to JsonPrimitive("logout-2"),
+                "nonce" to JsonPrimitive("forbidden"),
+                "events" to buildJsonObject {
+                    put("http://schemas.openid.net/event/backchannel-logout", JsonObject(emptyMap()))
+                },
+            ), typ = null), "logout nonce is forbidden")
         }
 
     @Test
@@ -272,6 +461,115 @@ class DefaultJwtValidationServiceTest {
             assertNotNull(stub.lastArgs?.trustedIdentifier)
         }
 
+    @Test
+    fun perCallIssuerTrustRejectsIssuerMismatchBeforeSignatureVerification() =
+        runTest {
+            val trustedIssuer = "https://tenant-one.example.com/as"
+            val token = buildJwt(mapOf("iss" to JsonPrimitive("https://tenant-two.example.com/as")))
+            val stub = StubVerifyJwtCommand.neverInvoked()
+            val registry = NoLookupIdpRegistry()
+            val discovery = StubOidcDiscoveryService.failing(
+                JwtValidationError.discoveryFailed(trustedIssuer, "must not be called"),
+            )
+            val svc =
+                DefaultJwtValidationService(
+                    verifyJwtCommand = stub,
+                    idpRegistry = registry,
+                    oidcDiscoveryService = discovery,
+                )
+
+            val result =
+                svc.validateAccessToken(
+                    token,
+                    AccessTokenValidationOptions(
+                        trustedIssuer = trustedIssuer,
+                        trustedJwksUri = "$trustedIssuer/.well-known/jwks.json",
+                    ),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals(JwtValidationErrorType.UNTRUSTED_ISSUER, result.error.type)
+            assertEquals(0, registry.lookups)
+            assertEquals(0, discovery.invocationCount)
+            assertEquals(0, stub.invocationCount)
+        }
+
+    @Test
+    fun perCallIssuerTrustRequiresIssuerAndJwksTogether() =
+        runTest {
+            val token = buildJwt(mapOf("iss" to JsonPrimitive(keycloakIssuer)))
+            val stub = StubVerifyJwtCommand.neverInvoked()
+            val svc = service(stub = stub)
+
+            val result =
+                svc.validateAccessToken(
+                    token,
+                    AccessTokenValidationOptions(trustedIssuer = keycloakIssuer),
+                )
+
+            assertTrue(result.isErr)
+            assertEquals(JwtValidationErrorType.IDP_CONFIGURATION_ERROR, result.error.type)
+            assertEquals(0, stub.invocationCount)
+        }
+
+    @Test
+    fun concurrentPerCallIssuerTrustUsesEachRequestsIssuerAndJwks() =
+        runTest {
+            val tenantTrust =
+                listOf(
+                    Triple("https://tenant-one.example.com/as", "https://tenant-one.example.com/keys/jwks.json", "tenant-one-api"),
+                    Triple("https://tenant-two.example.com/as", "https://tenant-two.example.com/keys/jwks.json", "tenant-two-api"),
+                )
+            val requestsAtVerifier = mutableListOf<VerifyJwtArgs>()
+            val allRequestsArrived = CompletableDeferred<Unit>()
+            val releaseVerification = CompletableDeferred<Unit>()
+            val arrivalCount = atomic(0)
+            val stub =
+                StubVerifyJwtCommand.forPerCallIssuerTrust { args ->
+                    requestsAtVerifier += args
+                    if (arrivalCount.incrementAndGet() == tenantTrust.size) {
+                        allRequestsArrived.complete(Unit)
+                    }
+                    releaseVerification.await()
+                    Ok(jwtPayload(iss = args.authorizationServer))
+                }
+            val svc = service(stub = stub)
+            val validations =
+                tenantTrust.mapIndexed { index, (issuer, jwksUri, audience) ->
+                    val token = buildJwt(mapOf("iss" to JsonPrimitive(issuer), "sub" to JsonPrimitive("tenant-$index")))
+                    async {
+                        svc.validateAccessToken(
+                            token,
+                            AccessTokenValidationOptions(
+                                expectedAudience = audience,
+                                trustedIssuer = issuer,
+                                trustedJwksUri = jwksUri,
+                            ),
+                        )
+                    }
+                }
+            val wrongIssuerValidation =
+                async {
+                    svc.validateAccessToken(
+                        buildJwt(mapOf("iss" to JsonPrimitive(tenantTrust[1].first))),
+                        AccessTokenValidationOptions(
+                            expectedAudience = tenantTrust[0].third,
+                            trustedIssuer = tenantTrust[0].first,
+                            trustedJwksUri = tenantTrust[0].second,
+                        ),
+                    )
+                }
+
+            allRequestsArrived.await()
+            assertEquals(
+                tenantTrust.map { Triple(it.first, it.second, it.third) }.toSet(),
+                requestsAtVerifier.map { Triple(it.authorizationServer, it.jwksUri, it.expectedAudience) }.toSet(),
+            )
+            assertTrue(wrongIssuerValidation.await().isErr)
+            releaseVerification.complete(Unit)
+            validations.awaitAll().forEach { result -> assertTrue(result.isOk) }
+        }
+
     // ========== 1. Happy path access token ==========
 
     @Test
@@ -339,6 +637,7 @@ class DefaultJwtValidationServiceTest {
                         "email" to JsonPrimitive("alice@example.com"),
                         "email_verified" to JsonPrimitive(true),
                     ),
+                    typ = "JWT",
                 )
             val payload =
                 jwtPayload(
@@ -378,6 +677,71 @@ class DefaultJwtValidationServiceTest {
                     fail("Expected Ok but got Err: ${result.error}")
                 }
             }
+            assertEquals(StandardJwtArtifactContext.ID_TOKEN, stub.lastStandardContext)
+        }
+
+    @Test
+    fun validGenericIdTokenUsesRealTypedVerificationCommand() =
+        runTest {
+            val now = kotlin.time.Clock.System.now().epochSeconds
+            val token =
+                buildJwt(
+                    mapOf(
+                        "iss" to JsonPrimitive(keycloakIssuer),
+                        "sub" to JsonPrimitive("user-42"),
+                        "aud" to JsonPrimitive("my-api"),
+                        "exp" to JsonPrimitive(now + 600),
+                        "iat" to JsonPrimitive(now),
+                        "nonce" to JsonPrimitive("nonce-typed"),
+                    ),
+                    typ = "JWT",
+                )
+            val joseBoundary = SignatureBoundaryJwtService()
+            val verifier = VerifyJwtCommandImpl(TestCommandSessionExecution, joseBoundary)
+            val service =
+                DefaultJwtValidationService(
+                    verifyJwtCommand = verifier,
+                    idpRegistry =
+                        DefaultIdpRegistry(
+                            JwtValidationConfig(enabled = true, defaultIdp = keycloakIdp, strictIssuerMatching = true),
+                        ),
+                    oidcDiscoveryService = StubOidcDiscoveryService.conventionBased(),
+                )
+
+            val result = service.validateIdToken(token, IdTokenValidationOptions(expectedNonce = "nonce-typed"))
+
+            assertTrue(result.isOk, "generic JWT ID token should use typed standard verification")
+            assertEquals("user-42", result.value.subject)
+            assertEquals("nonce-typed", result.value.nonce)
+            assertEquals(1, joseBoundary.verificationCount)
+        }
+
+    @Test
+    fun realIdTokenVerifierRejectsAudienceAndNonceMismatch() =
+        runTest {
+            val now = kotlin.time.Clock.System.now().epochSeconds
+            suspend fun validate(audience: String, nonce: String): Boolean {
+                val token = buildJwt(
+                    mapOf(
+                        "iss" to JsonPrimitive(keycloakIssuer),
+                        "sub" to JsonPrimitive("user-42"),
+                        "aud" to JsonPrimitive(audience),
+                        "exp" to JsonPrimitive(now + 600),
+                        "iat" to JsonPrimitive(now),
+                        "nonce" to JsonPrimitive(nonce),
+                    ),
+                    typ = "JWT",
+                )
+                val verifier = VerifyJwtCommandImpl(TestCommandSessionExecution, SignatureBoundaryJwtService())
+                val service = DefaultJwtValidationService(
+                    verifier,
+                    DefaultIdpRegistry(JwtValidationConfig(enabled = true, defaultIdp = keycloakIdp, strictIssuerMatching = true)),
+                    StubOidcDiscoveryService.conventionBased(),
+                )
+                return service.validateIdToken(token, IdTokenValidationOptions(expectedNonce = "expected-nonce")).isOk
+            }
+            assertTrue(!validate("wrong-client", "expected-nonce"), "ID token audience mismatch must fail")
+            assertTrue(!validate("my-api", "wrong-nonce"), "ID token nonce mismatch must fail")
         }
 
     @Test
@@ -389,6 +753,7 @@ class DefaultJwtValidationServiceTest {
                         "iss" to JsonPrimitive(keycloakIssuer),
                         "sub" to JsonPrimitive("user-42"),
                     ),
+                    typ = "JWT",
                 )
             val payload =
                 jwtPayload(
@@ -817,6 +1182,37 @@ class DefaultJwtValidationServiceTest {
         }
 }
 
+private class NoLookupIdpRegistry : IdpRegistry {
+    var lookups = 0
+        private set
+
+    private fun unexpectedLookup(): IdkResult<IdpConfig, JwtValidationError> {
+        lookups++
+        return Err(JwtValidationError.idpConfigurationError("registry lookup was not expected"))
+    }
+
+    override fun getDefaultIdp() = unexpectedLookup()
+
+    override fun getIdpForTenant(tenantId: String) = unexpectedLookup()
+
+    override fun getIdpByIssuer(issuer: String) = unexpectedLookup()
+
+    override fun getIdpById(idpId: String) = unexpectedLookup()
+
+    override fun getAllIdps(): List<IdpConfig> = emptyList()
+
+    override fun isTrustedIssuer(issuer: String): Boolean = false
+
+    override fun registerIdp(config: IdpConfig) = Unit
+
+    override fun registerTenantIdp(
+        tenantId: String,
+        config: IdpConfig,
+    ) = Unit
+
+    override fun removeIdp(idpId: String): Boolean = false
+}
+
 private class StubOidcDiscoveryService(
     private val response: (String) -> IdkResult<OidcDiscoveryMetadata, JwtValidationError>,
 ) : OidcDiscoveryService {
@@ -870,7 +1266,8 @@ private class StubOidcDiscoveryService(
  * Local test stub for VerifyJwtCommand.
  *
  * Avoids the full ExecutionScopedCommandAdapter/SessionExecution wiring because
- * DefaultJwtValidationService only calls `execute`. The ServiceCommand interface
+ * DefaultJwtValidationService calls `execute` for access tokens and
+ * `verifyStandardArtifact` for explicit non-access contexts. The ServiceCommand interface
  * requires a few members (inputTypeToken, outputTypeToken, isEnabled, commandId)
  * that are trivial to provide; the rest inherit defaults from Command/BaseCommand.
  */
@@ -878,12 +1275,15 @@ private class StubVerifyJwtCommand(
     private val responses: Map<String, IdkResult<TokenPayload.Jwt, IdkError>>,
     private val defaultResponse: IdkResult<TokenPayload.Jwt, IdkError>?,
     private val failOnInvocation: Boolean,
+    private val perCallIssuerTrustResponse: (suspend (VerifyJwtArgs) -> IdkResult<TokenPayload.Jwt, IdkError>)? = null,
 ) : VerifyJwtCommand {
     private val invocations = atomic(0)
     private val lastArgsRef = atomic<VerifyJwtArgs?>(null)
+    private val lastStandardContextRef = atomic<StandardJwtArtifactContext?>(null)
 
     val invocationCount: Int get() = invocations.value
     val lastArgs: VerifyJwtArgs? get() = lastArgsRef.value
+    val lastStandardContext: StandardJwtArtifactContext? get() = lastStandardContextRef.value
 
     override val isEnabled: Boolean = true
     override val inputTypeToken: TypeToken<VerifyJwtArgs> = typeToken<VerifyJwtArgs>()
@@ -895,9 +1295,35 @@ private class StubVerifyJwtCommand(
         }
         invocations.incrementAndGet()
         lastArgsRef.value = args
-        return responses[args.jwt]
+        return perCallIssuerTrustResponse?.invoke(args) ?: responses[args.jwt]
             ?: defaultResponse
             ?: error("No stub response for jwt='${args.jwt}'")
+    }
+
+    override suspend fun verifyStandardArtifact(
+        args: VerifyJwtArgs,
+        context: StandardJwtArtifactContext,
+    ): IdkResult<JsonObject, IdkError> {
+        if (failOnInvocation) error("VerifyJwtCommand artifact verification invoked unexpectedly with args=$args, context=$context")
+        invocations.incrementAndGet()
+        lastArgsRef.value = args
+        lastStandardContextRef.value = context
+        val payload = perCallIssuerTrustResponse?.invoke(args) ?: responses[args.jwt]
+            ?: defaultResponse
+            ?: error("No stub response for artifact jwt='${args.jwt}'")
+        return payload.map { token ->
+            buildJsonObject {
+                put("sub", token.sub)
+                put("iss", token.iss)
+                token.aud?.let { audiences -> put("aud", JsonArray(audiences.map { JsonPrimitive(it) })) }
+                put("exp", token.exp.epochSeconds)
+                put("iat", token.iat.epochSeconds)
+                token.scope?.let { put("scope", it) }
+                token.clientId?.let { put("client_id", it) }
+                token.jti?.let { put("jti", it) }
+                token.additionalClaims.forEach { (name, value) -> put(name, value) }
+            }
+        }
     }
 
     companion object {
@@ -917,5 +1343,85 @@ private class StubVerifyJwtCommand(
                 defaultResponse = null,
                 failOnInvocation = true,
             )
+
+        fun forPerCallIssuerTrust(
+            response: suspend (VerifyJwtArgs) -> IdkResult<TokenPayload.Jwt, IdkError>,
+        ): StubVerifyJwtCommand =
+            StubVerifyJwtCommand(
+                responses = emptyMap(),
+                defaultResponse = null,
+                failOnInvocation = false,
+                perCallIssuerTrustResponse = response,
+            )
     }
+}
+
+/** The verifier still parses claims and enforces issuer/audience/time; this fixture isolates JOSE crypto. */
+private class SignatureBoundaryJwtService : JwtService {
+    var verificationCount: Int = 0
+        private set
+
+    override val commands: JwtService.Commands get() = error("the verifier uses the service method")
+
+    override suspend fun prepareJws(args: CreateJwsJsonArgs): IdkResult<PreparedJwsObject, IdkError> = unsupported()
+    override suspend fun createJwsCompact(args: CreateJwsArgs): IdkResult<JwtCompactResult, IdkError> = unsupported()
+    override suspend fun createJwsJsonFlattened(args: CreateJwsJsonArgs): IdkResult<JwsJsonFlattened, IdkError> = unsupported()
+    override suspend fun createJwsJsonGeneral(args: CreateJwsJsonArgs): IdkResult<JwsJsonGeneral, IdkError> = unsupported()
+
+    override suspend fun verifyJws(args: VerifyJwsArgs): IdkResult<JwsValidationResult, IdkError> {
+        verificationCount++
+        val parts = args.jws.value.split('.')
+        val protected = JwsUtils.decodeBase64UrlToJson(parts[0])
+        return Ok(
+            JwsValidationResult(
+                jws =
+                    JwsJsonGeneralWithIdentifiers(
+                        payload = parts[1],
+                        signatures =
+                            listOf(
+                                JwsJsonSignatureWithIdentifier(
+                                    protected = parts[0],
+                                    parsedProtectedHeader = protected,
+                                    signature = parts[2],
+                                ),
+                            ),
+                    ),
+                isValid = true,
+                parsedPayload = JsonObject(emptyMap()),
+            ),
+        )
+    }
+
+    override fun assembleJwsGeneral(prepared: PreparedJwsObject, signatureBytes: ByteArray): JwsJsonGeneral = error("unused")
+    override fun assembleJwsFlattened(prepared: PreparedJwsObject, signatureBytes: ByteArray): JwsJsonFlattened = error("unused")
+    override fun assembleJwsCompact(prepared: PreparedJwsObject, signatureBytes: ByteArray): JwtCompactResult = error("unused")
+
+    private fun <T : Any> unsupported(): IdkResult<T, IdkError> =
+        Err(IdkError.fromString(code = "UNSUPPORTED_TEST_OPERATION", message = "unused JOSE operation"))
+}
+
+private object TestCommandSessionExecution : SessionExecution {
+    override val sessionContextManager: SessionContextManager get() = error("unused")
+    override val sessionContext: SessionContext = com.sphereon.di.context.NoOpSessionContext
+    override val log: SessionLogService = TestCommandSessionLogService
+    override val conf: ContextConfig = TestCommandContextConfig
+    override val interceptorChain: CommandLifecycleInterceptorChain = EmptyInterceptorChain
+}
+
+private object TestCommandContextConfig : ContextConfig {
+    override val app: AppConfigService get() = error("unused")
+    override val tenant: TenantConfigService get() = error("unused")
+    override val principal: PrincipalConfigService get() = error("unused")
+    override fun conf(level: ConfigLevel): ConfigService = error("unused")
+}
+
+private object TestCommandSessionLogService : SessionLogService {
+    override val sessionContext: SessionContext = com.sphereon.di.context.NoOpSessionContext
+    override val id: String = "jwt-validation-command-test"
+    override val scope: IdkScope = IdkScope.SESSION
+    override val isEnabled: Boolean = false
+    override val logManager: SessionLogManager get() = error("unused")
+    override suspend fun setConfig(config: LoggerConfig): LogService = this
+    override fun executeAsync(message: LogMessage): IdkResult<Unit, IdkErrorType> = Ok(Unit)
+    override fun toAsync(): AsyncLogService = error("unused")
 }

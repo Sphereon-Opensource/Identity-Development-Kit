@@ -35,6 +35,8 @@ import com.sphereon.oauth2.server.authorization.model.ConsentDecision
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.service.AuthorizationServerService
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
+import com.sphereon.oauth2.server.authorization.provider.UnregisteredClientAdmissionRule
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -58,6 +60,8 @@ class WalletAuthorizeRequestCommandImpl(
     private val clientRegistry: ClientRegistry,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
     private val userAuthProvider: UserAuthenticationProvider,
+    private val credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
+    private val unregisteredClientAdmissionRule: UnregisteredClientAdmissionRule,
 ) : TypedServiceCommandAdapter<HandleAuthorizeRequestArgs, AuthorizationRequestOutcome, IdkError>(
         commandId = COMMAND_ID,
         execution = execution,
@@ -101,7 +105,7 @@ class WalletAuthorizeRequestCommandImpl(
         val parsed = parseResult.value
 
         val trusted =
-            when (val resolution = resolveTrustedRedirect(parsed, clientRegistry, serversConfigProvider)) {
+            when (val resolution = resolveTrustedRedirect(parsed, clientRegistry, serversConfigProvider, unregisteredClientAdmissionRule, credentialIssuerAudienceResolver)) {
                 is RedirectResolution.RejectPreRedirect -> {
                     return Ok(
                         AuthorizationRequestOutcome.PreRedirectError(

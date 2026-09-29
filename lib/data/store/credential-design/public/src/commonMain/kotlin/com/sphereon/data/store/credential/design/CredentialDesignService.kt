@@ -276,6 +276,7 @@ interface CredentialDesignService {
         input: UploadTenantAssetInput,
     ): IdkResult<AssetReference, IdkError>
 
+    /** Returns the asset most recently uploaded to the design slot (`designId`, `locale`, `assetType`) through [uploadDesignAsset]; NOT_FOUND when nothing was uploaded to that slot. */
     suspend fun getDesignAsset(
         tenantId: String,
         input: GetDesignAssetInput,

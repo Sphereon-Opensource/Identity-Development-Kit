@@ -385,10 +385,9 @@ internal fun parseFormBody(body: String?): Map<String, List<String>>? {
 }
 
 /**
- * Returns `true` if the client authenticated (or attempted to) via HTTP Basic. Used by the
- * `/token`, `/introspect`, `/revoke` endpoints to decide whether to attach a
- * `WWW-Authenticate: Basic realm="oauth2"` header on 401 responses per RFC 6749 §5.2 and
- * RFC 7235 §4.1.
+ * Returns `true` if the client authenticated (or attempted to) via HTTP Basic. `/token` uses it
+ * to distinguish Basic-auth 401 responses from non-HTTP client-auth failures (400); introspection
+ * and revocation challenge every 401, even when no credentials were sent.
  */
 internal fun isBasicAuthorizationHeaderInternal(headers: Map<String, String>): Boolean {
     val auth = headers["Authorization"] ?: headers["authorization"] ?: return false
@@ -396,11 +395,18 @@ internal fun isBasicAuthorizationHeaderInternal(headers: Map<String, String>): B
 }
 
 /**
- * Add `WWW-Authenticate: Basic realm="oauth2"` to a 401 response when the caller attempted
- * Basic auth. Non-401 responses pass through unchanged.
+ * Ensure every 401 from a client-authenticated OAuth endpoint carries an applicable HTTP
+ * authentication challenge. Introspection and revocation require a challenge even when credentials
+ * are absent; an existing scheme-specific challenge is retained.
  */
 internal fun GenericHttpResponse.withWwwAuthenticateIfBasicInternal(basicWasAttempted: Boolean): GenericHttpResponse {
-    if (!basicWasAttempted || statusCode != 401) return this
+    if (!basicWasAttempted) return this
+    return withWwwAuthenticateIfMissingInternal()
+}
+
+internal fun GenericHttpResponse.withWwwAuthenticateIfMissingInternal(): GenericHttpResponse {
+    if (statusCode != 401) return this
+    if (headers.keys.any { it.equals("WWW-Authenticate", ignoreCase = true) }) return this
     return copy(headers = headers + ("WWW-Authenticate" to "Basic realm=\"oauth2\""))
 }
 
@@ -763,42 +769,53 @@ internal fun loginCsrfCookiePath(trustedBaseUrl: String): String {
 }
 
 /**
- * Per-code mapping from `AuthorizationServerError.code` to the wire (statusCode, errorCode) the
- * AS surfaces. Codes absent from this table fall through to `500 server_error`.
- *
- * draft-ietf-oauth-attestation-based-client-auth §6: a failed attestation/PoP verification
- * surfaces as `invalid_client` per RFC 6749 §5.2 with a 401 status. The challenge / staleness
- * errors carry the same client-rejection semantics from the AS's perspective, so they collapse
- * onto the same response shape.
+ * Per-code mapping from known AS/core errors to wire OAuth codes. Endpoint context selects the
+ * client-auth status; unrecognized errors are sanitized as server failures.
  */
-private val OAUTH2_ERROR_MAPPING: Map<String, Pair<Int, String>> =
+internal enum class OAuth2ErrorEndpoint { TOKEN, INTROSPECTION, REVOCATION, OTHER }
+
+private val OAUTH2_ERROR_MAPPING: Map<String, String> =
     mapOf(
-        "invalid_request" to (400 to "invalid_request"),
-        "invalid_client" to (401 to "invalid_client"),
-        "unauthorized_client" to (401 to "unauthorized_client"),
-        "invalid_grant" to (400 to "invalid_grant"),
-        "unsupported_grant_type" to (400 to "unsupported_grant_type"),
-        "invalid_scope" to (400 to "invalid_scope"),
-        "invalid_target" to (400 to "invalid_target"),
-        "access_denied" to (400 to "access_denied"),
-        "unsupported_response_type" to (400 to "unsupported_response_type"),
-        "temporarily_unavailable" to (503 to "temporarily_unavailable"),
-        "invalid_dpop_proof" to (400 to "invalid_dpop_proof"),
-        "use_dpop_nonce" to (400 to "use_dpop_nonce"),
-        "invalid_client_attestation" to (401 to "invalid_client"),
-        "use_attestation_challenge" to (401 to "invalid_client"),
-        "use_fresh_attestation" to (401 to "invalid_client"),
+        "invalid_request" to "invalid_request",
+        "invalid_client" to "invalid_client",
+        "unauthorized_client" to "unauthorized_client",
+        "invalid_grant" to "invalid_grant",
+        "unsupported_grant_type" to "unsupported_grant_type",
+        "invalid_scope" to "invalid_scope",
+        "invalid_target" to "invalid_target",
+        "access_denied" to "access_denied",
+        "unsupported_response_type" to "unsupported_response_type",
+        "request_not_supported" to "request_not_supported",
+        "request_uri_not_supported" to "request_uri_not_supported",
+        "invalid_request_object" to "invalid_request_object",
+        "invalid_request_uri" to "invalid_request_uri",
+        "invalid_authorization_details" to "invalid_authorization_details",
+        "insufficient_user_authentication" to "insufficient_user_authentication",
+        "interaction_required" to "interaction_required",
+        "temporarily_unavailable" to "temporarily_unavailable",
+        "invalid_dpop_proof" to "invalid_dpop_proof",
+        "use_dpop_nonce" to "use_dpop_nonce",
+        "invalid_client_attestation" to "invalid_client_attestation",
+        "use_attestation_challenge" to "use_attestation_challenge",
+        "use_fresh_attestation" to "use_fresh_attestation",
         // RFC 8628 §3.5 token-endpoint error codes for the device-code grant. All four return
         // HTTP 400 per RFC 6749 §5.2 with the literal wire `error` code; the spec does not define
         // separate status codes for the polling lifecycle.
-        "authorization_pending" to (400 to "authorization_pending"),
-        "slow_down" to (400 to "slow_down"),
-        "expired_token" to (400 to "expired_token"),
-        "server_error" to (500 to "server_error"),
-        "storage_error" to (500 to "server_error"),
-        "session_not_found" to (400 to "invalid_request"),
-        "client_not_found" to (401 to "invalid_client"),
-        "COMMAND_NOT_AUTHORIZED" to (403 to "access_denied"),
+        "authorization_pending" to "authorization_pending",
+        "slow_down" to "slow_down",
+        "expired_token" to "expired_token",
+        "server_error" to "server_error",
+        "storage_error" to "server_error",
+        "session_not_found" to "invalid_request",
+        "client_not_found" to "invalid_client",
+        "UNAUTHORIZED" to "invalid_client",
+        "FORBIDDEN" to "access_denied",
+        "ILLEGAL_ARGUMENT_ERROR" to "invalid_request",
+        "COMMAND_ARG_NOT_SUPPORTED_ERROR" to "invalid_request",
+        "COMMAND_NOT_AUTHORIZED" to "access_denied",
+        "COMMAND_DISABLED" to "temporarily_unavailable",
+        "TIMEOUT" to "temporarily_unavailable",
+        "SERVICE_UNAVAILABLE" to "temporarily_unavailable",
     )
 
 /**
@@ -809,38 +826,61 @@ private val OAUTH2_ERROR_MAPPING: Map<String, Pair<Int, String>> =
  * (key `dpop_nonce`) and is rendered as a `DPoP-Nonce` response header so the client can
  * retry the request with the current nonce.
  *
- * When [execution] is supplied, every mapped error is also logged at WARN level with the
- * resolved status, OAuth2 error code, and the original `error.code` / `error.message` —
- * otherwise these client-visible 4xx/5xx responses leave no server-side trace, which makes
- * conformance debugging painful (the suite logs `Invalid request: redirect_uri does not match
- * any registered redirect URI` but our `docker logs` would only show the inbound POST).
+ * When [execution] is supplied, logs retain the resolved status, OAuth2 code, IDK code, and
+ * message key. Error text and metadata are deliberately omitted because they may contain secrets.
  */
 internal fun mapOAuth2ErrorToResponse(
     error: IdkError,
     jsonFormat: Json,
     execution: com.sphereon.core.api.context.SessionExecution? = null,
+    endpoint: OAuth2ErrorEndpoint = OAuth2ErrorEndpoint.OTHER,
+    httpAuthenticationAttempted: Boolean = false,
 ): GenericHttpResponse {
-    val errorDescription = error.message.defaultMessage
-    val mapped = OAUTH2_ERROR_MAPPING[error.code]
-    val response =
-        if (mapped != null) {
-            val (status, errorCode) = mapped
-            oauth2ErrorResponse(status, errorCode, errorDescription, jsonFormat)
-        } else {
-            oauth2ErrorResponse(500, "server_error", errorDescription ?: "An unexpected error occurred", jsonFormat)
+    // A generic core authorization refusal at /token means the presented grant is not acceptable.
+    // Keep protocol errors with explicit codes (including RFC 8628 access_denied) unchanged.
+    val endpointAwareErrorCode =
+        when (error.code) {
+            "FORBIDDEN", "COMMAND_NOT_AUTHORIZED" ->
+                if (endpoint == OAuth2ErrorEndpoint.TOKEN) "invalid_grant" else "access_denied"
+            else -> OAUTH2_ERROR_MAPPING[error.code]
         }
+    val errorCode = endpointAwareErrorCode
+    val isTemporaryFailure = errorCode == "temporarily_unavailable"
+    val isServerFailure = errorCode == "server_error" || errorCode == null
+    val clientAuthenticationFailure = errorCode == "invalid_client"
+    val status =
+        when {
+            isTemporaryFailure -> 503
+            isServerFailure -> 500
+            clientAuthenticationFailure && endpoint in setOf(OAuth2ErrorEndpoint.INTROSPECTION, OAuth2ErrorEndpoint.REVOCATION) -> 401
+            clientAuthenticationFailure && endpoint == OAuth2ErrorEndpoint.TOKEN && httpAuthenticationAttempted -> 401
+            else -> 400
+        }
+    val wireError = if (isServerFailure) "server_error" else errorCode!!
+    val errorDescription =
+        when {
+            isTemporaryFailure -> "The authorization server is temporarily unavailable."
+            isServerFailure -> "An unexpected error occurred."
+            else -> null
+        }
+    val response = oauth2ErrorResponse(status, wireError, errorDescription, jsonFormat)
     if (execution != null) {
         val log = execution.log.logManager.withTag("OAuth2HttpResponses")
         log.warn(
-            "OAuth2 error response status=${response.statusCode} oauth2_error=${
-                if (mapped != null) mapped.second else "server_error"
-            } idk_code=${error.code} message=${errorDescription ?: ""}",
+            "OAuth2 error response status=${response.statusCode} oauth2_error=$wireError idk_code=${error.code} " +
+                "error_key=${error.message.i18nKey}",
         )
     }
     if (error.code == "use_dpop_nonce") {
         val freshNonce = error.meta["dpop_nonce"] as? String
         if (freshNonce != null) {
             return response.copy(headers = response.headers + ("DPoP-Nonce" to freshNonce))
+        }
+    }
+    if (error.code == "use_attestation_challenge") {
+        val challenge = error.meta["attestation_challenge"] as? String
+        if (challenge != null) {
+            return response.copy(headers = response.headers + ("OAuth-Client-Attestation-Challenge" to challenge))
         }
     }
     return response

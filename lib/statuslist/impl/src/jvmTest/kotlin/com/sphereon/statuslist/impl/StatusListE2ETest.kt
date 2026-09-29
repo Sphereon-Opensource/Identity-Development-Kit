@@ -58,6 +58,7 @@ import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.StatusValues
 import com.sphereon.statuslist.UpdateEntryStatusArgs
 import com.sphereon.statuslist.impl.codec.StatusListCodec
+import com.sphereon.statuslist.impl.codec.untagStatusListCoseSign1
 import com.sphereon.statuslist.impl.command.RevokeCredentialStatusCommandImpl
 import com.sphereon.statuslist.impl.driver.InMemoryStatusListDriver
 import com.sphereon.statuslist.impl.driver.InMemoryStatusListStore
@@ -386,7 +387,9 @@ class StatusListE2ETest {
             val bytes = token.tokenBytes ?: fail("CWT token must carry binary bytes")
 
             // Decodes as a COSE_Sign1 whose protected header carries typ (label 16) = the CWT media type.
-            val coseSign1 = CoseSign1CborCodecImpl().decode(bytes).getOrElse { fail("decode COSE_Sign1: $it") }.value
+            assertEquals(0xd2, bytes[0].toInt() and 0xff, "CWT must carry COSE_Sign1 tag 18")
+            assertEquals(0x84, bytes[1].toInt() and 0xff, "tagged COSE_Sign1 must contain four items")
+            val coseSign1 = CoseSign1CborCodecImpl().decode(bytes.untagStatusListCoseSign1()).getOrElse { fail("decode COSE_Sign1: $it") }.value
             assertEquals(StatusListContentTypes.STATUSLIST_CWT, coseSign1.protectedHeader.typ?.value)
             assertNotNull(coseSign1.protectedHeader.alg, "CWT must carry a signing alg")
             assertNotNull(coseSign1.payload, "CWT must carry the CWT claims payload")

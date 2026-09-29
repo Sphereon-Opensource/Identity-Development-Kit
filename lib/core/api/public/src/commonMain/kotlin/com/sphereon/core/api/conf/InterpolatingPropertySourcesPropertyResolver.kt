@@ -18,6 +18,7 @@
 package com.sphereon.core.api.conf
 
 import com.sphereon.core.api.coroutines.runBlockingCompat
+import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.log.Log
 import com.sphereon.core.compat.JsExportCompat
 import kotlin.experimental.ExperimentalObjCName
@@ -180,16 +181,33 @@ class InterpolatingPropertySourcesPropertyResolver(
             }
         if (result.isErr) {
             val causeType = result.error::class.simpleName ?: "IdkError"
+            val property = key.configurationLogToken()
+            val source = raw.metadata.source.configurationLogToken()
             val detail =
                 result.error.message.defaultMessage
                     .replace('\r', ' ')
                     .replace('\n', ' ')
                     .take(240)
+            // A missing environment variable is reported as not found. Unresolvable property
+            // references stay classified as denied so a failure cannot reveal whether a
+            // protected key exists.
+            if (result.error.category == ErrorCategory.NOT_FOUND) {
+                logger.warn(
+                    "VDX_CONFIGURATION_INTERPOLATION_UNRESOLVED " +
+                        "property=$property source=$source cause=$causeType detail=$detail",
+                )
+                throw IllegalStateException(
+                    "Configuration interpolation could not resolve a reference for property '$property' " +
+                        "from source '$source': $detail",
+                )
+            }
             logger.warn(
                 "VDX_CONFIGURATION_INTERPOLATION_DENIED " +
-                    "property=${key.configurationLogToken()} cause=$causeType detail=$detail",
+                    "property=$property source=$source cause=$causeType detail=$detail",
             )
-            throw IllegalStateException("Configuration interpolation was denied")
+            throw IllegalStateException(
+                "Configuration interpolation was denied for property '$property' from source '$source': $detail",
+            )
         }
         val provenance = result.value.provenance
         return ResolvedValue(
@@ -214,7 +232,7 @@ class InterpolatingPropertySourcesPropertyResolver(
         val rawValue = resolved.value as? String
             ?: return com.sphereon.core.api.Err(
                 ConfigErrors.interpolationError(
-                    key = "property",
+                    key = key,
                     reason = "property value is not interpolatable",
                 ),
             )

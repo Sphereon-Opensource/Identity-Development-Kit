@@ -42,8 +42,9 @@ import kotlinx.serialization.json.Json
  * `${OAuth2ServerInstanceConfig.CONFIG_PREFIX}.<asId>` without taking the id as a method
  * argument.
  *
- * On resolver failure the deployment config is broken, so the helper short-circuits with an
- * RFC 6749 §5.2 `server_error` (HTTP 500) instead of routing to a guessed AS.
+ * A request under an issuer path that hosts no server resolves to not-found and is answered with
+ * HTTP 404. Any other resolver failure means the deployment config is broken, so the helper
+ * short-circuits with an RFC 6749 §5.2 `server_error` (HTTP 500) instead of routing to a guessed AS.
  */
 abstract class AbstractOAuth2HttpAdapter(
     id: String,
@@ -95,7 +96,13 @@ abstract class AbstractOAuth2HttpAdapter(
             }
         val resolution = asInstanceResolver.resolve(resolutionRequest)
         if (resolution.isErr) {
-            return Ok(oauth2ErrorResponse(500, "server_error", resolution.error.message.defaultMessage, errorJson))
+            // A path that names no hosted server is a client addressing error; anything else means
+            // the deployment configuration cannot route the request.
+            return if (resolution.error.code == NOT_FOUND_CODE) {
+                Ok(oauth2ErrorResponse(404, "not_found", resolution.error.message.defaultMessage, errorJson))
+            } else {
+                Ok(oauth2ErrorResponse(500, "server_error", resolution.error.message.defaultMessage, errorJson))
+            }
         }
         asInstanceIdProvider.setCurrentAsInstanceId(resolution.value)
         // Command-backed endpoint handlers also resolve issuer/base URLs from the request. Keep
@@ -128,3 +135,5 @@ abstract class AbstractOAuth2HttpAdapter(
             this
         }
 }
+
+private val NOT_FOUND_CODE: String = IdkError.NOT_FOUND_ERROR().code

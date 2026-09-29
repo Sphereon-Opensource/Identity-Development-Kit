@@ -51,10 +51,39 @@ internal fun fallbackProviderDisplayName(providerType: String, providerId: Strin
         else -> providerId.trim().takeIf { it.isNotEmpty() } ?: "KMS Provider"
     }
 
+/**
+ * The published technology for an engine provider type, or null when the engine type is not one the
+ * API describes. Engine spellings differ in separators and case, so they are normalised first.
+ */
+fun keyProviderTypeOf(providerType: String): KeyProviderType? =
+    when (providerType.trim().lowercase().replace('-', '_')) {
+        "software" -> KeyProviderType.SOFTWARE
+        "aws_kms" -> KeyProviderType.AWS_KMS
+        "azure_keyvault", "azure_key_vault" -> KeyProviderType.AZURE_KEYVAULT
+        else -> null
+    }
+
+/**
+ * Renders a provider for an inventory. A provider whose technology neither a presentation record
+ * nor its engine type can name is left out, so one unrecognised provider cannot fail the listing.
+ */
+fun KmsProvider.toRestOrNull(presentation: KeyProviderPresentation? = null): KeyProvider? {
+    val type = presentation?.type ?: keyProviderTypeOf(this.kmsProviderType) ?: return null
+    return toRest(presentation, type)
+}
+
 fun KmsProvider.toRest(presentation: KeyProviderPresentation? = null): KeyProvider =
+    toRest(
+        presentation,
+        presentation?.type
+            ?: keyProviderTypeOf(this.kmsProviderType)
+            ?: throw IllegalStateException("Provider '${this.id}' has no published provider type"),
+    )
+
+private fun KmsProvider.toRest(presentation: KeyProviderPresentation?, type: KeyProviderType): KeyProvider =
     KeyProvider(
         providerId = this.id,
-        type = presentation?.type ?: KeyProviderType.valueOf(this.kmsProviderType.uppercase()),
+        type = type,
         displayName = presentation?.displayName ?: fallbackProviderDisplayName(this.kmsProviderType, this.id),
         ownership = presentation?.ownership,
         sharedFromPlatform = presentation?.sharedFromPlatform,

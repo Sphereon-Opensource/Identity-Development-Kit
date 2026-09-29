@@ -47,7 +47,6 @@ import com.sphereon.openid.oid4vci.issuer.store.IssuanceSession
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import com.sphereon.data.store.credential.design.model.SdPolicy as DesignSdPolicy
 
 /**
  * File-private helper that owns the pipeline re-execution flow on
@@ -270,7 +269,7 @@ class DeferredPipelineReExecutor(
         inputs: DispatchInputs,
         tokenContext: ValidatedTokenContext,
     ): IssuanceContext? {
-        val signingConfig = issuerConfigProvider.credentialSigningConfigs()[inputs.configId] ?: return null
+        val signingConfig = issuerConfigProvider.signingConfigReloadingOnMiss(inputs.configId) ?: return null
         val expirationInDays = signingConfig.expirationInDays ?: return null
         val designContext = resolveDesignContext(inputs.configId)
         return IssuanceContext(
@@ -355,17 +354,7 @@ class DeferredPipelineReExecutor(
     }
 
     private fun mapDesignToContext(claims: List<ClaimPresentation>): DesignContext {
-        val sdPolicies: Map<String, SdPolicy> =
-            claims.associate { claim ->
-                val pathStr = Oid4vciDesignMapper.claimPathString(claim)
-                val issuerPolicy =
-                    when (claim.sdPolicy) {
-                        DesignSdPolicy.ALWAYS -> SdPolicy.ALWAYS_DISCLOSED
-                        DesignSdPolicy.ALLOWED -> SdPolicy.SELECTIVELY_DISCLOSABLE
-                        DesignSdPolicy.NEVER -> SdPolicy.NEVER_DISCLOSED
-                    }
-                pathStr to issuerPolicy
-            }
+        val sdPolicies = designIssuanceSdPolicies(claims)
         val mandatoryClaims: Set<String> =
             claims
                 .filter { it.mandatory }

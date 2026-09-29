@@ -16,6 +16,8 @@
 
 package com.sphereon.oauth2.server.authorization.impl.command
 
+import com.sphereon.oauth2.common.model.ActorClaim
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -119,6 +121,10 @@ fun JsonObjectBuilder.putClaimValue(
 
         is JsonElement -> {
             put(key, value)
+        }
+
+        is ActorClaim -> {
+            put(key, Json.encodeToJsonElement(ActorClaim.serializer(), value))
         }
 
         is List<*> -> {

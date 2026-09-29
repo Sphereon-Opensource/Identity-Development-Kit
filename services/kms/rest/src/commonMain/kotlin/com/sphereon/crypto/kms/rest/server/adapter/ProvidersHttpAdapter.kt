@@ -41,6 +41,7 @@ import com.sphereon.crypto.kms.rest.api.generated.models.ListKeyProvidersRespons
 import com.sphereon.crypto.kms.rest.api.generated.models.ListKeysResponse
 import com.sphereon.crypto.kms.rest.api.mapper.toRest
 import com.sphereon.crypto.kms.rest.api.mapper.toRestResponse
+import com.sphereon.crypto.kms.rest.api.mapper.toRestOrNull
 import com.sphereon.crypto.kms.rest.api.mapper.toSdk
 import com.sphereon.crypto.kms.rest.server.service.KeyProviderPresentationSource
 import com.sphereon.crypto.kms.rest.server.service.ProvidersRestService
@@ -151,7 +152,7 @@ class ProvidersHttpAdapter(
             try {
                 providersService
                     .listKeyProviders()
-                    .map { it.toRest(presentation.presentationFor(it)) }
+                    .mapNotNull { it.toRestOrNull(presentation.presentationFor(it)) }
                     .toTypedArray()
             } catch (expected: Exception) {
                 return errorResponse(expected)
@@ -288,7 +289,9 @@ class ProvidersHttpAdapter(
                 ?: return errorResponse(400, "Missing path parameter: aliasOrKid")
 
         try {
-            providersService.providerDeleteKey(providerId, aliasOrKid)
+            if (!providersService.providerDeleteKey(providerId, aliasOrKid)) {
+                return keyDeleteNotFoundResponse(aliasOrKid)
+            }
         } catch (expected: Exception) {
             return errorResponse(expected)
         }

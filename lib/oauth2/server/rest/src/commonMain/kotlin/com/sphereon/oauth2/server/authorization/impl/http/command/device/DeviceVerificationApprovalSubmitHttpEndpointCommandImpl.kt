@@ -34,7 +34,7 @@ import com.sphereon.oauth2.server.authorization.command.device.DeviceVerificatio
 import com.sphereon.oauth2.server.authorization.impl.http.OAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
-import com.sphereon.oauth2.server.authorization.impl.provider.AcceptLanguageNegotiation
+import com.sphereon.oauth2.server.authorization.provider.AcceptLanguageNegotiation
 import com.sphereon.oauth2.server.authorization.provider.DeviceResultContext
 import com.sphereon.oauth2.server.authorization.provider.DeviceResultOutcome
 import com.sphereon.oauth2.server.authorization.provider.DeviceVerificationPageRenderer

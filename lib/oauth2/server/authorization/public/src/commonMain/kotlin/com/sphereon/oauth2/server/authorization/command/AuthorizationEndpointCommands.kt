@@ -23,6 +23,7 @@ import com.sphereon.oauth2.common.model.OAuth2ResponseMode
 import com.sphereon.oauth2.common.model.PkceMethod
 import com.sphereon.oauth2.common.model.ResponseType
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
+import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ConsentDecision
 import com.sphereon.oauth2.server.authorization.model.Prompt
 import kotlinx.serialization.json.JsonObject
@@ -378,6 +379,10 @@ data class VerifiedAuthorizationRequest(
      * OIDC Core §3.1.2.1 default per response_type when the parameter is absent.
      */
     val responseMode: OAuth2ResponseMode = OAuth2ResponseMode.QUERY,
+    /** Credential issuer audiences selected by the unregistered-wallet admission rule. */
+    val admittedAudiences: List<String>? = null,
+    /** Synthesized registration produced by the typed wallet admission rule. */
+    val admittedClient: ClientRegistration? = null,
 )
 
 /**

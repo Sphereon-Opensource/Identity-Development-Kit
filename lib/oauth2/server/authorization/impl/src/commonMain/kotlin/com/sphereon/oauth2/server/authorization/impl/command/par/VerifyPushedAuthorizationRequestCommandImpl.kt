@@ -31,8 +31,9 @@ import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizatio
 import com.sphereon.oauth2.server.authorization.command.VerifyPushedAuthorizationRequestCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
 import com.sphereon.oauth2.server.authorization.impl.command.authorization.matchesRegisteredRedirectUri
-import com.sphereon.oauth2.server.authorization.impl.command.authorization.resolvePublicClientFallback
 import com.sphereon.oauth2.server.authorization.model.ClientType
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
+import com.sphereon.oauth2.server.authorization.provider.UnregisteredClientAdmissionRule
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -71,6 +72,8 @@ class VerifyPushedAuthorizationRequestCommandImpl(
     execution: SessionExecution,
     private val clientRegistry: ClientRegistry,
     private val configProvider: com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider,
+    private val credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
+    private val unregisteredClientAdmissionRule: UnregisteredClientAdmissionRule,
 ) : TypedServiceCommandAdapter<VerifyPushedAuthorizationRequestArgs, VerifiedAuthorizationRequest, IdkError>(
         commandId = VerifyPushedAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
@@ -104,18 +107,18 @@ class VerifyPushedAuthorizationRequestCommandImpl(
         }
 
         // Retrieve client registration
-        val client =
-            clientRegistry
-                .getClient(request.clientId)
-                .mapError { error ->
-                    AuthorizationServerError.ServerError(
-                        details = "Failed to retrieve client registration: $error",
-                    )
-                }.getOrElse { return Err(it) }
-                // Permissive public-client fallback — mirrors resolveTrustedRedirect at the
-                // authorization endpoint so PAR accepts unregistered public clients when the
-                // server permits any public client (publicClients.allowAny + permissiveRedirectUri).
-                ?: resolvePublicClientFallback(request.clientId, configProvider)
+        val registeredClient =
+            clientRegistry.getClient(request.clientId)
+                .mapError { error -> AuthorizationServerError.ServerError(details = "Failed to retrieve client registration: $error") }
+                .getOrElse { return Err(it) }
+        val admission = if (registeredClient == null) {
+            unregisteredClientAdmissionRule.admit(
+                request,
+                credentialIssuerAudienceResolver.boundCredentialIssuers(),
+                isPushedAuthorizationRequest = true,
+            )
+        } else null
+        val client = registeredClient ?: admission?.client
 
         if (client == null) {
             return Err(
@@ -175,10 +178,8 @@ class VerifyPushedAuthorizationRequestCommandImpl(
                 )
             }
         } else if (client.redirectUris.isEmpty()) {
-            // Permissive fallback (empty redirectUris on a synthesised public client) accepts any
-            // explicit URI — mirrors resolveTrustedRedirect at the authorization endpoint. Normal
-            // registered clients always have a redirect-URI list, so this only loosens the synthetic
-            // public-client path.
+            // For an admitted wallet, the explicit URI is stored with this PAR request and the
+            // authorization endpoint later requires an exact match against it.
         } else {
             // Verify redirect_uri matches one of the registered URIs per RFC 6749 §3.1.2.2:
             // strict simple-string match wins; otherwise scheme + authority + path match against
@@ -244,6 +245,8 @@ class VerifyPushedAuthorizationRequestCommandImpl(
                 clientId = request.clientId,
                 redirectUri = finalRedirectUri,
                 grantedScopes = grantedScopes,
+                admittedAudiences = admission?.audiences?.toList(),
+                admittedClient = admission?.client,
                 pkceRequired = client.requirePkce || client.clientType == ClientType.PUBLIC,
                 parRequired = false, // Will be determined by client configuration
             ),

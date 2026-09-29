@@ -67,45 +67,6 @@ interface ParseTokenRequestCommand : ServiceCommand<ParseTokenRequestArgs, Token
 }
 
 // ============================================================================
-// VerifyTokenExchangeGrantCommand
-// ============================================================================
-
-/**
- * Arguments for verifying a token exchange grant
- */
-data class VerifyTokenExchangeGrantArgs(
-    val subjectToken: String,
-    val subjectTokenType: String,
-    val actorToken: String? = null,
-    val actorTokenType: String? = null,
-    val resources: List<String> = emptyList(),
-    val audiences: List<String> = emptyList(),
-    val scope: String? = null,
-    val requestedTokenType: String? = null,
-    val clientId: String,
-)
-
-/**
- * Verify token exchange grant command
- *
- * RFC 8693: OAuth 2.0 Token Exchange
- *
- * Verifies a token exchange grant:
- * - Validates subject token
- * - Validates actor token (if present)
- * - Evaluates token exchange policy
- * - Determines delegation vs impersonation
- * - Builds actor claim chain for delegation
- */
-interface VerifyTokenExchangeGrantCommand : ServiceCommand<VerifyTokenExchangeGrantArgs, VerifiedTokenExchangeGrant, IdkError> {
-    override val commandId: String get() = COMMAND_ID
-
-    companion object {
-        const val COMMAND_ID = "oauth2.tokenexchange.verify"
-    }
-}
-
-// ============================================================================
 // VerifyAuthorizationCodeGrantCommand
 // ============================================================================
 
@@ -153,6 +114,7 @@ data class VerifyRefreshTokenGrantArgs(
     val clientInstanceKeyJkt: String? = null,
     val requestedScope: String? = null,
     val requestedResource: List<String> = emptyList(),
+    val clientAuthorization: VerifiedClientAuthorization? = null,
 )
 
 /**
@@ -596,29 +558,4 @@ data class VerifiedClientCredentialsGrant(
     val audience: List<String> = emptyList(),
     /** Claims copied only from the authenticated client's server-side registration. */
     val additionalClaims: Map<String, Any> = emptyMap(),
-)
-
-/**
- * Verified token exchange grant (RFC 8693)
- *
- * @property subjectCnfJkt Confirmation-key JWK thumbprint extracted from `cnf.jkt` on the
- *                         subject token, when present. Surfaced to the orchestrator so it can
- *                         enforce RFC 9449 §10.1 proof-jkt continuity: the exchanged token's
- *                         DPoP proof MUST be from the same key the subject token was bound to.
- */
-data class VerifiedTokenExchangeGrant(
-    val subject: String,
-    val clientId: String,
-    val scope: String? = null,
-    val audience: List<String> = emptyList(),
-    val resource: List<String> = emptyList(),
-    val issuedTokenType: String,
-    val isDelegation: Boolean,
-    val actorSubject: String? = null,
-    val actorClaim: ActorClaim? = null,
-    val authTime: Long? = null,
-    val acr: String? = null,
-    val amr: List<String>? = null,
-    val additionalClaims: Map<String, Any> = emptyMap(),
-    val subjectCnfJkt: String? = null,
 )

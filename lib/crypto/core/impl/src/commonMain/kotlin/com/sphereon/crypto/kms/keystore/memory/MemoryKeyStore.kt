@@ -19,6 +19,7 @@ package com.sphereon.crypto.kms.keystore.memory
 
 import com.sphereon.core.api.error.NotFoundException
 import com.sphereon.core.compat.JsExportCompat
+import com.sphereon.crypto.core.CoseJoseKeyMappingService
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
 import com.sphereon.crypto.core.ManagedKeyInfo
@@ -64,7 +65,7 @@ class PublicFromPrivateKeyStore(
         require(keyInfo.keyVisibility === KeyVisibility.PRIVATE) {
             "Public key to private key store adapter is backed by a private key store. This means for storing you can only use private keys, as the key would otherwise not be backed"
         }
-        return privateKeyStore.storeKey(keyInfo, providerId, alias).toManagedPublicKeyInfo()
+        return privateKeyStore.storeKey(keyInfo, providerId, alias, certChain).toManagedPublicKeyInfo()
     }
 
     override suspend fun deleteKey(keyInfo: KeyInfoType<*>): Boolean = privateKeyStore.deleteKey(keyInfo)
@@ -230,11 +231,23 @@ class MemoryKeyStoreService(
         if (config.keyVisibility === KeyVisibility.PUBLIC.keyVisibility && visibility === KeyVisibility.PRIVATE) {
             throw PKIException("Cannot get private key info for a public key store")
         }
-        val managedKeyInfo = ManagedKeyInfo(providerId = providerId, alias = alias, resolvedKeyInfo = keyInfo)
         if (!config.overwriteAlias) {
             check(!this.keys.containsKey(alias)) { "Cannot overwrite key alias $alias, as alias already exists in keystore and overwriting is not enabled" }
         }
+        // The supplied chain replaces any x5c already on the key, as the file-backed stores do.
+        val storedKeyInfo =
+            if (certChain.isNullOrEmpty()) {
+                keyInfo
+            } else {
+                val x5c = certChain.map { it.derToBase64() }.toTypedArray()
+                val jwkKeyInfo = CoseJoseKeyMappingService.toResolvedJwkKeyInfo(keyInfo)
+                jwkKeyInfo.copy(key = jwkKeyInfo.key.copy(x5c = x5c), x5c = x5c, noCache = keyInfo.noCache)
+            }
+        val managedKeyInfo = ManagedKeyInfo(providerId = providerId, alias = alias, resolvedKeyInfo = storedKeyInfo)
         this.keys[alias] = managedKeyInfo
+        if (!certChain.isNullOrEmpty()) {
+            certificateChains[alias] = certChain
+        }
         return managedKeyInfo
     }
 

@@ -18,6 +18,7 @@
 package com.sphereon.crypto.key.persistence.impl
 
 import com.sphereon.core.api.context.SessionExecution
+import com.sphereon.core.api.model.Origin
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyInfoType
 import com.sphereon.crypto.core.KeyVisibility
@@ -202,16 +203,16 @@ class ManagedKeyStoreSelector(
             // A repeated DELETE for an externally managed reference is idempotent. The persisted
             // ownership decision is still authoritative after a new session or process restart;
             // never fall through to a provider delete merely because the active row is gone.
-            return reference.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
+            return reference.controlMode == ResourceControlMode.EXTERNALLY_MANAGED || reference.origin == Origin.EXTERNAL
         }
-        if (reference == null && keyInfo.providerId == null) {
-            return false
-        }
-
         if (reference == null) {
-            return deleteFromProvider(keyInfo)
+            // A provider that writes its own index rows (under its internal address) also applies
+            // their ownership on delete, so the decision is its to make. Any other unindexed key has
+            // no persisted ownership and is never deleted at a provider.
+            val providerId = keyInfo.providerId ?: return false
+            return iteratingStore.maintainsKeyReferenceIndex(providerId) && iteratingStore.deleteKey(keyInfo)
         }
-        if (reference.controlMode == ResourceControlMode.EXTERNALLY_MANAGED) {
+        if (reference.controlMode == ResourceControlMode.EXTERNALLY_MANAGED || reference.origin == Origin.EXTERNAL) {
             return keyReferenceStore
                 .delete(tenantId, reference.alias, reference.providerId)
                 .getOrElse { error -> throw PKIException("Failed to delete key reference: ${error.code}") }

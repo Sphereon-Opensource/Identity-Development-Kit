@@ -15,12 +15,15 @@ import com.sphereon.catalog.model.AttestationSchemaRecord
 import com.sphereon.catalog.model.CatalogDocumentKind
 import com.sphereon.catalog.model.CatalogListingWindow
 import com.sphereon.catalog.model.SchemaMeta
+import com.sphereon.catalog.model.SchemaUriRef
 import com.sphereon.catalog.store.AttestationCatalogStore
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.error.ErrorCategory
 import com.sphereon.core.api.error.IdkError
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 internal suspend fun AttestationCatalogStore.requireCatalog(
     tenantId: String,
@@ -72,6 +75,68 @@ internal fun requireListedDocuments(
         return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "A RULEBOOK document is required for listed schemas"))
     }
     return FormatDocumentValidator.validateListedFormats(schema.supportedFormats, documents)
+}
+
+/**
+ * Adds a minimal FORMAT document for every SD-JWT VC or mdoc type named in [schemaURIs] that has
+ * none yet, so the type identity (`vct` or `docType`) is persisted with the record. Publishing
+ * rewrites a non-URL schema URI to the hosted format URL; the format document keeps the identity.
+ */
+internal fun withTypeIdentityFormats(
+    schemaURIs: List<SchemaUriRef>,
+    documents: List<AttestationSchemaDocument>,
+): List<AttestationSchemaDocument> {
+    val added =
+        schemaURIs.mapNotNull { ref ->
+            val value = ref.uri.trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val field =
+                when (ref.formatIdentifier) {
+                    "dc+sd-jwt" -> "vct"
+                    "mso_mdoc" -> "docType"
+                    else -> return@mapNotNull null
+                }
+            if (documents.any { it.kind == CatalogDocumentKind.FORMAT && it.formatIdentifier == ref.formatIdentifier }) {
+                return@mapNotNull null
+            }
+            AttestationSchemaDocument(
+                kind = CatalogDocumentKind.FORMAT,
+                formatIdentifier = ref.formatIdentifier,
+                mediaType = "application/json",
+                bytes = JsonObject(mapOf(field to JsonPrimitive(value))).toString().encodeToByteArray(),
+            )
+        }.distinctBy { it.formatIdentifier }
+    return documents + added
+}
+
+/**
+ * SD-JWT VC schema URIs as the absolute URIs a vct must be. A relative hosted path such as
+ * `/public/schema/vct/{id}` is resolved against [baseUrl] (the tenant public base URL). Other
+ * formats and absolute values are kept; without a base URL nothing changes.
+ */
+internal fun absoluteVctSchemaUris(
+    schemaURIs: List<SchemaUriRef>,
+    baseUrl: String,
+): List<SchemaUriRef> {
+    val base = baseUrl.trim().trimEnd('/')
+    if (base.isEmpty()) return schemaURIs
+    return schemaURIs.map { ref ->
+        val uri = ref.uri.trim()
+        if (ref.formatIdentifier == "dc+sd-jwt" && uri.startsWith("/") && !uri.startsWith("//")) {
+            SchemaUriRef(ref.formatIdentifier, "$base$uri")
+        } else {
+            ref
+        }
+    }
+}
+
+/** [supplied] documents replace the stored document of the same kind and format; the rest are kept. */
+internal fun mergeDocuments(
+    current: List<AttestationSchemaDocument>,
+    supplied: List<AttestationSchemaDocument>,
+): List<AttestationSchemaDocument> {
+    fun key(document: AttestationSchemaDocument) = document.kind to document.formatIdentifier
+    val replaced = supplied.map(::key).toSet()
+    return current.filterNot { key(it) in replaced } + supplied
 }
 
 internal fun matchesLinkedType(

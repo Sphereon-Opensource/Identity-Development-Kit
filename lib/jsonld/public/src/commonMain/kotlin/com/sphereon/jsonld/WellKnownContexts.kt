@@ -28,6 +28,9 @@ object WellKnownContexts {
     /** W3C Verifiable Credentials Data Model 2.0 base context. */
     const val VCDM_2_0: String = "https://www.w3.org/ns/credentials/v2"
 
+    /** W3C Bitstring Status List v1.0 context, used alongside VCDM 1.1. */
+    const val BITSTRING_STATUS_LIST_V1: String = "https://www.w3.org/ns/credentials/status/v1"
+
     /** W3C Verifiable Credential Data Integrity 1.0 context. */
     const val VC_DATA_INTEGRITY_V1: String = "https://w3id.org/security/data-integrity/v1"
 

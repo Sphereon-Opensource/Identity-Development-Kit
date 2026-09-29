@@ -47,13 +47,14 @@ class StatusListHostingHttpAdapterTest {
         ttlSeconds: Long?,
         hostingMode: StatusListHostingMode = StatusListHostingMode.HOSTED,
         hostingConfig: StatusListHostingConfig = StatusListHostingConfig(),
+        hostedToken: StatusListToken? = null,
     ) {
         val execution: SessionExecution = createTestSessionExecution()
         val metadataStub = StubGetStatusList(execution, hostingMode)
         val tokenStub =
             StubGetToken(
                 execution,
-                StatusListToken(
+                hostedToken ?: StatusListToken(
                     token = signedToken,
                     contentType = StatusListContentTypes.STATUSLIST_JWT,
                     ttlSeconds = ttlSeconds,
@@ -75,6 +76,28 @@ class StatusListHostingHttpAdapterTest {
     }
 
     private fun base(suffix: String) = StatusListHostingApiConstants.BASE_PATH + suffix
+
+    @Test
+    fun cwtHostingPreservesTaggedBinaryAndContentType() =
+        runTest {
+            val bytes = byteArrayOf(0xd2.toByte(), 0x84.toByte(), 0x40, 0xa0.toByte(), 0x40, 0x40)
+            val fixture = Fixture(
+                ttlSeconds = 300,
+                hostedToken = StatusListToken(
+                    token = "0oRAoEBA",
+                    contentType = StatusListContentTypes.STATUSLIST_CWT,
+                    ttlSeconds = 300,
+                    tokenBytes = bytes,
+                ),
+            )
+            val response = fixture.adapter.dispatch(
+                GenericHttpRequest.withTextBody(method = "GET", path = base("/mdoc-revocation"), body = null),
+            )
+            assertEquals(200, response.statusCode)
+            assertEquals(StatusListContentTypes.STATUSLIST_CWT, response.contentType)
+            assertEquals(bytes.toList(), response.bodyBytes?.toList())
+            assertEquals("public, max-age=300", response.headers["Cache-Control"])
+        }
 
     @Test
     fun getByCorrelationId_returnsRawToken_withContentType_andTtlCacheControl() =

@@ -16,6 +16,8 @@
 
 package com.sphereon.statuslist.impl.driver
 
+import com.sphereon.compression.CompressionAlgorithm
+import com.sphereon.compression.decompress
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
@@ -43,6 +45,8 @@ import com.sphereon.statuslist.spi.StatusListSigner
 import com.sphereon.statuslist.spi.StatusListSigningKeyNameResolver
 import com.sphereon.statuslist.spi.StatusEnrichmentContext
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -512,7 +516,7 @@ class InMemoryStatusListDriverTest {
         }
 
     @Test
-    fun mdocStatusListProfilePassesOneBitBinaryPayloadToSigner() =
+    fun mdocStatusListProfilePassesOneBitCompressedPayloadToSigner() =
         runTest {
             val signer = EchoStatusListSigner()
             val d = driverWithSigner(signer)
@@ -529,7 +533,7 @@ class InMemoryStatusListDriverTest {
             assertEquals(MdocStatusListProfile.STATUS_LIST, (created as Ok).value.mdocProfile)
             val initial = signer.lastArgs?.mdocPayload as MdocStatusListPayload.Token
             assertEquals(1, initial.bits)
-            assertEquals(2, initial.list.size)
+            assertEquals(2, decompress(initial.list, CompressionAlgorithm.DEFLATE_ZLIB).size)
             assertEquals(args.aggregationUri, initial.aggregationUri)
 
             d.allocateEntry(AllocateEntryArgs(StatusListRef(correlationId = args.correlationId), explicitIndex = 3))
@@ -540,7 +544,8 @@ class InMemoryStatusListDriverTest {
                 ),
             )
             val updated = signer.lastArgs?.mdocPayload as MdocStatusListPayload.Token
-            assertEquals(1, (updated.list[0].toInt() ushr 3) and 1)
+            val packed = decompress(updated.list, CompressionAlgorithm.DEFLATE_ZLIB)
+            assertEquals(1, (packed[0].toInt() ushr 3) and 1)
         }
 
     @Test
@@ -620,6 +625,32 @@ class InMemoryStatusListDriverTest {
                 (d.getEntry(EntryRef(correlationId = args.correlationId, statusListIndex = 0)) as Ok).value,
                 "profile mismatch must be rejected before an entry is allocated",
             )
+        }
+
+    @Test
+    fun twoBitBitstringReferenceDeclaresStatusSizeAndMessages() =
+        runTest {
+            val driver = driver()
+            val args = createArgs(correlationId = "bitstring-two-bit", length = 131_072, bitsPerStatus = 2).copy(
+                spec = StatusListSpec.BITSTRING_STATUS_LIST,
+                proofFormat = StatusProofFormat.VC_JWT,
+                purposes = listOf(StatusPurpose.REVOCATION, StatusPurpose.SUSPENSION),
+            )
+            assertTrue(driver.createStatusList(args).isOk)
+            val reserved = CredentialStatusEnricherImpl(driver).reserve(
+                StatusEnrichmentContext(
+                    credentialConfigurationId = "EmployeeBadge",
+                    format = "jwt_vc_json",
+                    spec = StatusListSpec.BITSTRING_STATUS_LIST,
+                    purposes = listOf(StatusPurpose.SUSPENSION),
+                    statusListCorrelationId = args.correlationId,
+                ),
+            )
+            assertTrue(reserved.isOk)
+            val claim = (reserved as Ok).value.claim
+            assertEquals("suspension", claim["statusPurpose"]?.jsonPrimitive?.content)
+            assertEquals(2, claim["statusSize"]?.jsonPrimitive?.content?.toInt())
+            assertEquals(4, claim["statusMessage"]?.jsonArray?.size)
         }
 }
 

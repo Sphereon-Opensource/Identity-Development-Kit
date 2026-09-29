@@ -89,15 +89,17 @@ class HandlePushedAuthorizationRequestCommandImpl(
             extracted.clientId
                 ?: return Err(IdkError.UNAUTHORIZED_ERROR(message = "client_id is required at /par"))
 
-        commands.verifyClientAuthentication
-            .execute(
-                VerifyClientAuthenticationArgs(
-                    clientAuthentication = clientAuth,
-                    clientId = resolvedClientId,
-                    tokenEndpointUrl = applied.parEndpointUrl ?: "",
-                    endpoint = ClientAuthenticationEndpoint.PAR,
-                ),
-            ).getOrElse { error -> return Err(error) }
+        if (clientAuth !is com.sphereon.oauth2.common.model.ClientAuthenticationConfig.None) {
+            commands.verifyClientAuthentication
+                .execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication = clientAuth,
+                        clientId = resolvedClientId,
+                        tokenEndpointUrl = applied.parEndpointUrl ?: "",
+                        endpoint = ClientAuthenticationEndpoint.PAR,
+                    ),
+                ).getOrElse { error -> return Err(error) }
+        }
 
         // RFC 9449 §10.1 (`dpop_jkt` authorization request parameter): "If the request
         // includes the dpop_jkt authorization request parameter and a DPoP HTTP Header, the
@@ -182,6 +184,18 @@ class HandlePushedAuthorizationRequestCommandImpl(
                 .execute(
                     VerifyPushedAuthorizationRequestArgs(authRequest, authRequest.clientId),
                 ).getOrElse { error -> return Err(error) }
+
+        if (clientAuth is com.sphereon.oauth2.common.model.ClientAuthenticationConfig.None && verified.admittedClient == null) {
+            commands.verifyClientAuthentication
+                .execute(
+                    VerifyClientAuthenticationArgs(
+                        clientAuthentication = clientAuth,
+                        clientId = resolvedClientId,
+                        tokenEndpointUrl = applied.parEndpointUrl ?: "",
+                        endpoint = ClientAuthenticationEndpoint.PAR,
+                    ),
+                ).getOrElse { error -> return Err(error) }
+        }
 
         // Create request_uri
         val requestUriData =

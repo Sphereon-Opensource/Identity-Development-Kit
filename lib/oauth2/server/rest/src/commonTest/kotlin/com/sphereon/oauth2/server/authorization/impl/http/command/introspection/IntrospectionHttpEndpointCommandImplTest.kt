@@ -27,11 +27,14 @@ import com.sphereon.oauth2.server.authorization.audit.NoOpOAuth2AuditEmitter
 import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestArgs
 import com.sphereon.oauth2.server.authorization.command.introspection.HandleIntrospectionRequestCommand
 import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
+import com.sphereon.oauth2.server.authorization.impl.command.introspection.HandleIntrospectionRequestCommandImpl
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
+import com.sphereon.oauth2.server.authorization.impl.http.command.NoCredentialsAuthorizationServerService
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class IntrospectionHttpEndpointCommandImplTest {
@@ -130,5 +133,58 @@ class IntrospectionHttpEndpointCommandImplTest {
             assertTrue(result.isOk)
             assertEquals(401, result.value.statusCode)
             assertEquals("Basic realm=\"oauth2\"", result.value.headers["WWW-Authenticate"])
+        }
+
+    @Test
+    fun unauthenticatedClientFailure_returns401InvalidClientWithBasicChallenge() =
+        runTest {
+            val command =
+                IntrospectionHttpEndpointCommandImpl(
+                    execution = TestSessionExecution(),
+                    handleIntrospectionRequestCommand =
+                        FakeIntrospectionCommand { Err(IdkError.UNAUTHORIZED_ERROR(message = "secret detail")) },
+                    configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
+                    auditEmitter = NoOpOAuth2AuditEmitter,
+                )
+
+            val result =
+                command.execute(
+                    GenericHttpRequest.withTextBody(method = "POST", path = "/introspect", body = "token=x"),
+                )
+
+            assertTrue(result.isOk)
+            assertEquals(401, result.value.statusCode)
+            assertTrue(result.value.body!!.contains("\"error\":\"invalid_client\""))
+            assertFalse(result.value.body!!.contains("secret detail"))
+            assertEquals("Basic realm=\"oauth2\"", result.value.headers["WWW-Authenticate"])
+        }
+
+    @Test
+    fun realHandleCommandMissingAuthenticationFlowsThroughHttpEndpoint() =
+        runTest {
+            val endpoint =
+                IntrospectionHttpEndpointCommandImpl(
+                    execution = TestSessionExecution(),
+                    handleIntrospectionRequestCommand =
+                        HandleIntrospectionRequestCommandImpl(
+                            TestSessionExecution(),
+                            NoCredentialsAuthorizationServerService,
+                        ),
+                    configProvider = TestOAuth2ServersConfigProvider(),
+                    baseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
+                    auditEmitter = NoOpOAuth2AuditEmitter,
+                )
+
+            val response =
+                endpoint.execute(
+                    GenericHttpRequest.withTextBody(method = "POST", path = "/introspect", body = "token=x"),
+                )
+
+            assertTrue(response.isOk)
+            assertEquals(401, response.value.statusCode)
+            assertTrue(response.value.body!!.contains("\"error\":\"invalid_client\""))
+            assertEquals("Basic realm=\"oauth2\"", response.value.headers["WWW-Authenticate"])
+            assertFalse(response.value.body!!.contains("client authentication is required"))
         }
 }

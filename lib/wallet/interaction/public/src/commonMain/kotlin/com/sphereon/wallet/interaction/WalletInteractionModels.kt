@@ -676,7 +676,13 @@ data class WalletCredentialBranding(
 @Serializable
 data class WalletCredentialOfferInfoDescriptor(
     val path: List<String>,
+    /** The issuer's first display name, or the last path segment when it gave none. */
     val displayName: String,
+    /**
+     * Every display name the issuer gave, keyed by its BCP 47 locale. The renderer picks the entry
+     * for the holder's language; the engine carries no locale of its own.
+     */
+    val localizedDisplayNames: Map<String, String> = emptyMap(),
 ) {
     init {
         require(path.isNotEmpty() && path.none(String::isBlank)) { "wallet_credential_offer_info_path_invalid" }
@@ -690,6 +696,10 @@ data class WalletTxCodeSpec(
     val length: Int? = null,
     val descriptionKey: String? = null,
     val arguments: Map<String, String> = emptyMap(),
+    /** The issuer rejected the last code submitted for this offer; the holder may try again. */
+    val rejected: Boolean = false,
+    /** The issuer rejected two or more codes in a row; the offer may have expired. */
+    val possiblyExpired: Boolean = false,
 ) {
     init {
         requireWalletInteractionLocalizationKey("descriptionKey", descriptionKey)

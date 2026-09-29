@@ -41,6 +41,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 
+private const val PUBLIC_JWK = "{\"kty\":\"EC\",\"x\":\"public\"}"
+
 class ManagedKeyReferenceRegistrarTest {
     private lateinit var store: KeyReferenceStore
     private lateinit var execution: SessionExecution
@@ -266,57 +268,106 @@ class ManagedKeyReferenceRegistrarTest {
         }
 
     @Test
-    fun reRegistrationReclassifiesExistingReferenceAsExternal() =
+    fun registeringAPlatformManagedKeyIsAConflictAndNeverChangesItsOwnership() =
         runTest {
             every { store.isAvailable } returns true
             coEvery { store.findByAlias("test-tenant", "ext-alias", "ext-provider") } returns
-                Ok(
-                    KeyReferenceRecord(
-                        id = "existing",
-                        tenantId = "test-tenant",
-                        alias = "ext-alias",
-                        kid = "ext-kid",
-                        providerId = "ext-provider",
-                        origin = Origin.MANAGED,
-                        createdAt = Clock.System.now(),
-                        updatedAt = Clock.System.now(),
-                    ),
-                )
+                Ok(existingRecord(origin = Origin.MANAGED, controlMode = ResourceControlMode.PLATFORM_MANAGED))
+
+            val result = registrar.registerKeyReference(providerId = "ext-provider", alias = "ext-alias", kid = "ext-kid")
+
+            assertTrue(result.isErr)
+            assertEquals(KeyReferenceStoreErrorCodes.EXTERNAL_KEY_REGISTRATION_CONFLICT, result.error.code)
+            assertEquals(ALREADY_PLATFORM_MANAGED, result.error.message.defaultMessage)
+            coVerify(exactly = 0) { store.upsert(any()) }
+        }
+
+    @Test
+    fun registeringAPlatformManagedKeyUnderANewAliasIsTheSameConflict() =
+        runTest {
+            every { store.isAvailable } returns true
+            coEvery { store.findByAlias("test-tenant", "new-alias", "ext-provider") } returns Ok(null)
             coEvery { store.findByKid("test-tenant", "ext-kid", "ext-provider") } returns
-                Ok(
-                    KeyReferenceRecord(
-                        id = "existing",
-                        tenantId = "test-tenant",
-                        alias = "ext-alias",
-                        kid = "ext-kid",
-                        providerId = "ext-provider",
-                        origin = Origin.MANAGED,
-                        createdAt = Clock.System.now(),
-                        updatedAt = Clock.System.now(),
-                    ),
-                )
-            coEvery { store.upsert(any()) } answers { Ok(firstArg<KeyReferenceRecord>()) }
+                Ok(existingRecord(origin = Origin.MANAGED, controlMode = ResourceControlMode.PLATFORM_MANAGED))
+
+            val result = registrar.registerKeyReference(providerId = "ext-provider", alias = "new-alias", kid = "ext-kid")
+
+            assertTrue(result.isErr)
+            assertEquals(ALREADY_PLATFORM_MANAGED, result.error.message.defaultMessage)
+            coVerify(exactly = 0) { store.upsert(any()) }
+        }
+
+    @Test
+    fun reRegisteringTheSameExternalKeyIsAnIdempotentNoOp() =
+        runTest {
+            every { store.isAvailable } returns true
+            val existing = existingRecord(publicKeyJwk = PUBLIC_JWK)
+            coEvery { store.findByAlias("test-tenant", "ext-alias", "ext-provider") } returns Ok(existing)
 
             val result =
                 registrar.registerKeyReference(
                     providerId = "ext-provider",
                     alias = "ext-alias",
                     kid = "ext-kid",
+                    publicKeyJwk = PUBLIC_JWK,
                 )
 
             assertTrue(result.isOk)
-            assertEquals(Origin.EXTERNAL, result.value.origin)
-            assertEquals(ResourceControlMode.EXTERNALLY_MANAGED, result.value.controlMode)
-            coVerify {
-                store.upsert(
-                    match {
-                        it.id == "existing" &&
-                            it.origin == Origin.EXTERNAL &&
-                            it.controlMode == ResourceControlMode.EXTERNALLY_MANAGED
-                    },
-                )
-            }
+            assertEquals(existing, result.value)
+            coVerify(exactly = 0) { store.upsert(any()) }
         }
+
+    @Test
+    fun reRegisteringAnExternalAliasForADifferentKidOrVersionIsAConflict() =
+        runTest {
+            every { store.isAvailable } returns true
+            coEvery { store.findByAlias("test-tenant", "ext-alias", "ext-provider") } returns Ok(existingRecord(kid = "ext-kid:v1"))
+
+            val result = registrar.registerKeyReference(providerId = "ext-provider", alias = "ext-alias", kid = "ext-kid:v2")
+
+            assertTrue(result.isErr)
+            assertEquals(DIFFERENT_KEY_ID, result.error.message.defaultMessage)
+            coVerify(exactly = 0) { store.upsert(any()) }
+        }
+
+    @Test
+    fun reRegisteringAnExternalAliasWithDifferentKeyMaterialIsAConflict() =
+        runTest {
+            every { store.isAvailable } returns true
+            coEvery { store.findByAlias("test-tenant", "ext-alias", "ext-provider") } returns
+                Ok(existingRecord(publicKeyJwk = PUBLIC_JWK))
+
+            val result =
+                registrar.registerKeyReference(
+                    providerId = "ext-provider",
+                    alias = "ext-alias",
+                    kid = "ext-kid",
+                    publicKeyJwk = "{\"kty\":\"EC\",\"x\":\"other\"}",
+                )
+
+            assertTrue(result.isErr)
+            assertEquals(DIFFERENT_KEY_MATERIAL, result.error.message.defaultMessage)
+            coVerify(exactly = 0) { store.upsert(any()) }
+        }
+
+    private fun existingRecord(
+        kid: String = "ext-kid",
+        origin: Origin = Origin.EXTERNAL,
+        controlMode: ResourceControlMode = ResourceControlMode.EXTERNALLY_MANAGED,
+        publicKeyJwk: String? = null,
+    ): KeyReferenceRecord =
+        KeyReferenceRecord(
+            id = "existing",
+            tenantId = "test-tenant",
+            alias = "ext-alias",
+            kid = kid,
+            providerId = "ext-provider",
+            origin = origin,
+            controlMode = controlMode,
+            publicKeyJwk = publicKeyJwk,
+            createdAt = Clock.System.now(),
+            updatedAt = Clock.System.now(),
+        )
 
     @Test
     fun reRegistrationRejectsIdentityConflictBeforeUpsert() =
@@ -377,6 +428,7 @@ class ManagedKeyReferenceRegistrarTest {
 
             assertTrue(result.isErr)
             assertEquals("KMS_EXTERNAL_KEY_REGISTRATION_CONFLICT", result.error.code)
+            assertEquals(DIFFERENT_ALIAS, result.error.message.defaultMessage)
             coVerify(exactly = 0) { store.upsert(any()) }
         }
 

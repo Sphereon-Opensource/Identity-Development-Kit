@@ -19,6 +19,11 @@ package com.sphereon.oauth2.server.authorization.provider
  * the credential issuers it is bound to: their identifiers become the token audience. A deployment
  * without credential issuers contributes no audiences and the token request keeps failing closed.
  */
+data class CredentialIssuerAudience(
+    val audience: String,
+    val credentialScopes: Set<String>,
+)
+
 interface CredentialIssuerAudienceResolver {
-    suspend fun defaultAudiences(): List<String>
+    suspend fun boundCredentialIssuers(): List<CredentialIssuerAudience>
 }

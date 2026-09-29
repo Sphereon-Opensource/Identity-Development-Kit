@@ -20,6 +20,8 @@ import com.sphereon.core.api.Ok
 import com.sphereon.core.defaults.random.defaultSecureRandom
 import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.common.model.PkceMethod
+import com.sphereon.oauth2.common.model.ClientAuthenticationMethod
+import com.sphereon.oauth2.common.model.ResponseType
 import com.sphereon.oauth2.server.authorization.command.CreateRefreshTokenArgs
 import com.sphereon.oauth2.server.authorization.command.IntrospectTokenArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
@@ -39,6 +41,8 @@ import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryToke
 import com.sphereon.oauth2.server.authorization.impl.testutil.OAuth2ServerTestContext
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.AuthorizationCodeData
+import com.sphereon.oauth2.server.authorization.model.ClientRegistration
+import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.model.RefreshTokenData
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -66,6 +70,66 @@ class TokenEndpointFlowTest {
     private val ctx = OAuth2ServerTestContext("token-endpoint-test", this)
     private val execution = ctx.execution
     private val configProvider = TestOAuth2ServersConfigProvider()
+
+    @Test
+    fun admittedWalletAuthorizationCodeIsBoundToItsPersistedClient() = runTest {
+        val backing = InMemoryOAuth2BackingStorageImpl()
+        val codes = InMemoryAuthorizationCodeStorageImpl(backing)
+        val now = Clock.System.now()
+        val admittedClient = ClientRegistration(
+            clientId = "wallet-admitted-at-par",
+            clientType = ClientType.PUBLIC,
+            grantTypes = listOf(GrantType.AUTHORIZATION_CODE),
+            responseTypes = listOf(ResponseType.CODE),
+            tokenEndpointAuthMethod = ClientAuthenticationMethod.NONE,
+            requirePkce = true,
+        )
+        val codeData = AuthorizationCodeData(
+            code = "admitted-wallet-code",
+            clientId = admittedClient.clientId,
+            subject = "user-admitted",
+            redirectUri = "wallet://callback",
+            codeChallenge = TestFixtures.Pkce.CODE_CHALLENGE_S256,
+            codeChallengeMethod = PkceMethod.S256,
+            issuedAt = now,
+            expiresAt = now + 10.minutes,
+            admittedClient = admittedClient,
+            admittedAudiences = listOf("https://issuer.example"),
+        )
+        assertTrue(codes.storeAuthorizationCode(codeData.code, codeData).isOk)
+        val verifier = VerifyAuthorizationCodeGrantCommandImpl(
+            execution = execution,
+            authorizationCodeStorage = codes,
+            tokenStorage = InMemoryTokenStorageImpl(backing),
+            clientRegistry = InMemoryClientRegistryImpl(backing),
+            configProvider = configProvider,
+        )
+
+        val accepted = verifier.execute(
+            VerifyAuthorizationCodeGrantArgs(
+                code = codeData.code,
+                redirectUri = codeData.redirectUri,
+                clientId = admittedClient.clientId,
+                codeVerifier = TestFixtures.Pkce.CODE_VERIFIER,
+            ),
+        )
+        assertTrue(accepted.isOk)
+        assertEquals(admittedClient.clientId, accepted.value.clientId)
+        assertEquals(listOf("https://issuer.example"), accepted.value.codeData.admittedAudiences)
+
+        val otherCode = codeData.copy(code = "admitted-wallet-code-other")
+        assertTrue(codes.storeAuthorizationCode(otherCode.code, otherCode).isOk)
+        val rejected = verifier.execute(
+            VerifyAuthorizationCodeGrantArgs(
+                code = otherCode.code,
+                redirectUri = otherCode.redirectUri,
+                clientId = "different-unknown-wallet",
+                codeVerifier = TestFixtures.Pkce.CODE_VERIFIER,
+            ),
+        )
+        assertTrue(rejected.isErr)
+        assertTrue(rejected.error.code in setOf("invalid_client", "invalid_grant"))
+    }
 
     @Test
     fun `test authorization code grant verification with S256 PKCE`() =
@@ -316,6 +380,7 @@ class TokenEndpointFlowTest {
                     execution = execution,
                     tokenStorage = tokenStorage,
                     configProvider = configProvider,
+                    clientRegistry = com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry(),
                 )
 
             val result =
@@ -347,7 +412,7 @@ class TokenEndpointFlowTest {
         val restored = Json.decodeFromString(RefreshTokenData.serializer(), serialized)
         assertEquals(metadata, restored.federationClaims)
         assertTrue(tokenStorage.storeRefreshToken(token, restored).isOk)
-        val verified = VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider)
+        val verified = VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider, com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry())
             .execute(VerifyRefreshTokenGrantArgs(refreshToken = token, clientId = "wallet"))
         assertTrue(verified.isOk)
         assertEquals(metadata, verified.value.federationClaims)
@@ -389,6 +454,7 @@ class TokenEndpointFlowTest {
                     execution = execution,
                     tokenStorage = tokenStorage,
                     configProvider = configProvider,
+                    clientRegistry = com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry(),
                 )
 
             val result =
@@ -422,7 +488,7 @@ class TokenEndpointFlowTest {
             tokenStorage.rotateRefreshToken(original, "successor-token", Clock.System.now())
 
             val verified =
-                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider)
+                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider, com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry())
                     .execute(
                         VerifyRefreshTokenGrantArgs(
                             refreshToken = original,
@@ -451,7 +517,7 @@ class TokenEndpointFlowTest {
                     ).value.value
 
             val verified =
-                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider)
+                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider, com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry())
                     .execute(
                         VerifyRefreshTokenGrantArgs(
                             refreshToken = original,
@@ -475,7 +541,7 @@ class TokenEndpointFlowTest {
             tokenStorage.rotateRefreshToken(original, "successor-token", Clock.System.now() - 61.seconds)
 
             val verified =
-                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider)
+                VerifyRefreshTokenGrantCommandImpl(execution, tokenStorage, configProvider, com.sphereon.oauth2.server.authorization.impl.testutil.StubClientRegistry())
                     .execute(VerifyRefreshTokenGrantArgs(refreshToken = original, clientId = "wallet-client"))
 
             assertTrue(verified.isErr)

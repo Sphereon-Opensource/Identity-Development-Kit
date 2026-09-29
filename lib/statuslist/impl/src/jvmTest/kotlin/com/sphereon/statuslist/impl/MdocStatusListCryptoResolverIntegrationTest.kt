@@ -54,6 +54,8 @@ import com.sphereon.statuslist.StatusPurpose
 import com.sphereon.statuslist.StatusValues
 import com.sphereon.statuslist.UpdateEntryStatusArgs
 import com.sphereon.statuslist.impl.codec.MdocRevocationCwtClaimsCodecImpl
+import com.sphereon.statuslist.impl.codec.tagStatusListCoseSign1
+import com.sphereon.statuslist.impl.codec.untagStatusListCoseSign1
 import com.sphereon.statuslist.impl.driver.InMemoryStatusListDriver
 import com.sphereon.statuslist.impl.driver.InMemoryStatusListStore
 import com.sphereon.statuslist.impl.resolve.StatusListResolverImpl
@@ -156,7 +158,7 @@ class MdocStatusListCryptoResolverIntegrationTest {
             hosted[uri] = token.rawBytes()
             hostedContentTypes[uri] = token.contentType
 
-            val result = resolveResult(uri, 0)
+            val result = resolveResult(uri, 0, mdocTrust = false)
             val error = (result as? com.sphereon.core.api.Err)?.error ?: fail("expired generic CWT must fail through the public resolver path")
             assertTrue(
                 error.message.defaultMessage.contains("status-list CWT is expired"),
@@ -196,10 +198,11 @@ class MdocStatusListCryptoResolverIntegrationTest {
                 decodeGenericCwtExpiry(token) > Clock.System.now().epochSeconds,
                 "generic CWT claim 4 must be after the current time",
             )
+            assertEquals(setOf("bits", "lst"), decodeGenericCwtStatusListKeys(token))
             hosted[uri] = token.rawBytes()
             hostedContentTypes[uri] = token.contentType
 
-            val resolved = resolveResult(uri, 0).getOrElse { fail("resolve future generic CWT: $it") }
+            val resolved = resolveResult(uri, 0, mdocTrust = false).getOrElse { fail("resolve future generic CWT: $it") }
             assertEquals(StatusValues.VALID, resolved.value)
         }
 
@@ -364,7 +367,7 @@ class MdocStatusListCryptoResolverIntegrationTest {
                     .getOrElse { fail("get generic status-list token for short typ rejection: $it") }
                     ?: fail("generic status-list token for short typ rejection was not published")
             val genericShort = resignWithProtectedType(genericLong, alias, "statuslist+cwt")
-            assertResolverError(genericUri, genericShort, "status-list CWT has an unsupported protected typ")
+            assertResolverError(genericUri, genericShort, "status-list CWT has an unsupported protected typ", mdocTrust = false)
         }
 
     @Test
@@ -509,7 +512,7 @@ class MdocStatusListCryptoResolverIntegrationTest {
         issuedAt: Long?,
         ttl: Long?,
         expiresAt: Long,
-        payload: MdocStatusListPayload = MdocStatusListPayload.Token(bits = 1, list = byteArrayOf(0)),
+        payload: MdocStatusListPayload = MdocStatusListPayload.Token(bits = 1, list = byteArrayOf(0x78, 0x9c.toByte(), 0x63, 0, 0, 0, 1, 0, 1)),
     ): StatusListToken =
         MdocCwtStatusListSigner(coseCrypto, CoseSign1CborCodecImpl(), kms)
             .sign(
@@ -533,7 +536,7 @@ class MdocStatusListCryptoResolverIntegrationTest {
             kms.getKeyResult(KeyInfo<Nothing>(alias = alias)).getOrElse { fail("get signing key for protected typ: $it") }.key
                 ?: fail("missing signing key for protected typ")
         val codec = CoseSign1CborCodecImpl()
-        val decoded = codec.decode(source.rawBytes()).getOrElse { fail("decode source mdoc CWT: $it") }.value
+        val decoded = codec.decode(source.rawBytes().untagStatusListCoseSign1()).getOrElse { fail("decode source mdoc CWT: $it") }.value
         val payload = decoded.payload?.value ?: fail("source mdoc CWT has detached payload")
         val input =
             CoseSign1Input
@@ -549,7 +552,8 @@ class MdocStatusListCryptoResolverIntegrationTest {
                 requireX5Chain = true,
             )
         val encoded = codec.encode(signed.coseSign1).getOrElse { fail("encode re-signed mdoc CWT: $it") }
-        return source.copy(token = encoded.encodeToBase64Url(), tokenBytes = encoded)
+        val tagged = encoded.tagStatusListCoseSign1()
+        return source.copy(token = tagged.encodeToBase64Url(), tokenBytes = tagged)
     }
 
     private fun rewriteHeaders(
@@ -558,7 +562,7 @@ class MdocStatusListCryptoResolverIntegrationTest {
         unprotectedAlgorithm: CoseAlgorithm? = null,
     ): StatusListToken {
         val codec = CoseSign1CborCodecImpl()
-        val decoded = codec.decode(source.rawBytes()).getOrElse { fail("decode signed mdoc CWT: $it") }.value
+        val decoded = codec.decode(source.rawBytes().untagStatusListCoseSign1()).getOrElse { fail("decode signed mdoc CWT: $it") }.value
         val rewritten =
             decoded.copy(
                 protectedHeader = decoded.protectedHeader.copy(alg = protectedAlgorithm),
@@ -568,7 +572,7 @@ class MdocStatusListCryptoResolverIntegrationTest {
                     },
             )
         val encoded = codec.encode(rewritten).getOrElse { fail("encode rewritten mdoc CWT: $it") }
-        return source.copy(tokenBytes = encoded)
+        return source.copy(tokenBytes = encoded.tagStatusListCoseSign1())
     }
 
     private fun validSubject(token: StatusListToken): String =
@@ -578,10 +582,11 @@ class MdocStatusListCryptoResolverIntegrationTest {
         uri: String,
         token: StatusListToken,
         expectedMessage: String,
+        mdocTrust: Boolean = true,
     ) {
         hosted[uri] = token.rawBytes()
         hostedContentTypes[uri] = token.contentType
-        val error = (resolveResult(uri, 0) as? com.sphereon.core.api.Err)?.error
+        val error = (resolveResult(uri, 0, mdocTrust = mdocTrust) as? com.sphereon.core.api.Err)?.error
             ?: fail("resolver must reject $uri")
         assertTrue(
             error.message.defaultMessage.contains(expectedMessage),
@@ -599,14 +604,14 @@ class MdocStatusListCryptoResolverIntegrationTest {
 
     private fun decodeClaims(token: com.sphereon.statuslist.StatusListToken) =
         MdocRevocationCwtClaimsCodecImpl.decode(
-            CoseSign1CborCodecImpl().decode(token.rawBytes()).getOrElse { fail("decode COSE: $it") }.value.payload?.value
+            CoseSign1CborCodecImpl().decode(token.rawBytes().untagStatusListCoseSign1()).getOrElse { fail("decode COSE: $it") }.value.payload?.value
                 ?: fail("detached payload"),
         )
 
     private fun decodeGenericCwt(token: com.sphereon.statuslist.StatusListToken) =
-        CoseSign1CborCodecImpl().decode(token.rawBytes()).getOrElse { fail("decode generic CWT: $it") }.value
+        CoseSign1CborCodecImpl().decode(token.rawBytes().untagStatusListCoseSign1()).getOrElse { fail("decode generic CWT: $it") }.value
 
-    private fun decodeGenericCwtExpiry(token: com.sphereon.statuslist.StatusListToken): Long {
+    private fun decodeGenericCwtClaims(token: com.sphereon.statuslist.StatusListToken): CborMap<*, *> {
         val payload = decodeGenericCwt(token).payload?.value ?: fail("generic CWT payload is detached")
         val decoded = Cbor.tryDecode(payload).getOrElse { fail("decode generic CWT payload: $it") }
         val claimsItem =
@@ -614,7 +619,18 @@ class MdocStatusListCryptoResolverIntegrationTest {
                 is CborEncodedItem<*> -> Cbor.tryDecode(decoded.value.taggedItem.value).getOrElse { fail("decode generic CWT claims: $it") }
                 else -> decoded
             }
-        val claims = claimsItem as? CborMap<*, *> ?: fail("generic CWT claims must be a CBOR map")
+        return claimsItem as? CborMap<*, *> ?: fail("generic CWT claims must be a CBOR map")
+    }
+
+    private fun decodeGenericCwtStatusListKeys(token: com.sphereon.statuslist.StatusListToken): Set<String> {
+        val statusList = decodeGenericCwtClaims(token).value.entries
+            .firstOrNull { (key, _) -> key is CborUInt && key.value == 65533L }
+            ?.value as? CborMap<*, *> ?: fail("generic CWT claim 65533 must be a CBOR map")
+        return statusList.value.keys.map { (it as? CborString)?.value ?: fail("status_list keys must be text") }.toSet()
+    }
+
+    private fun decodeGenericCwtExpiry(token: com.sphereon.statuslist.StatusListToken): Long {
+        val claims = decodeGenericCwtClaims(token)
         return claims.value.entries
             .firstOrNull { (key, _) -> key is CborUInt && key.value == 4L }
             ?.value
@@ -630,7 +646,7 @@ class MdocStatusListCryptoResolverIntegrationTest {
         return result.value
     }
 
-    private suspend fun resolveResult(uri: String, index: Int, identifier: ByteArray? = null) =
+    private suspend fun resolveResult(uri: String, index: Int, identifier: ByteArray? = null, mdocTrust: Boolean = true) =
         resolver().resolveStatus(
             ResolveStatusArgs(
                 uri = uri,
@@ -638,8 +654,8 @@ class MdocStatusListCryptoResolverIntegrationTest {
                 expectedSpec = if (identifier == null) StatusListSpec.TOKEN_STATUS_LIST else null,
                 expectedFormat = StatusProofFormat.CWT,
                 identifier = identifier,
-                trustedCerts = arrayOf(issuerCertificate),
-                expectedCertificate = issuerCertificateDer,
+                trustedCerts = if (mdocTrust) arrayOf(issuerCertificate) else null,
+                expectedCertificate = if (mdocTrust) issuerCertificateDer else null,
             ),
         )
 

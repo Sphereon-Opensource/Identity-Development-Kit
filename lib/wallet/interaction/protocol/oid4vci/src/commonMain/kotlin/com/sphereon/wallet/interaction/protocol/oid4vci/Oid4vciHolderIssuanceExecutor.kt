@@ -650,10 +650,14 @@ class Oid4vciHolderIssuanceExecutor(
                 clientAuthentication = tokenProofs.clientAuthentication,
             )
         if (token.isErr) {
+            if (token.error.code == OAUTH_INVALID_GRANT && !sessionState.txCode.isNullOrBlank()) {
+                return Oid4vciIssuanceExecutionResult.TxCodeRejected
+            }
             return failed(WalletInteractionFailureCodes.OID4VCI_TOKEN_EXCHANGE_FAILED, "wallet.interaction.error.oid4vci_token_exchange_failed", token.error)
         }
         context.updateOid4vciState {
             it.copy(
+                txCodeRejections = 0,
                 tokens =
                     Oid4vciPrivateSessionState.TokenLeg(
                         accessToken = token.value.accessToken,
@@ -704,7 +708,7 @@ class Oid4vciHolderIssuanceExecutor(
             return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_REQUEST_FAILED, "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
         }
 
-        return handleCredentialResponse(context, state, resolved.value, credential.value)
+        return handleCredentialResponse(context, state, resolved.value, credential.value, options.isDpopBound())
     }
 
     /**
@@ -1028,10 +1032,105 @@ class Oid4vciHolderIssuanceExecutor(
                 requestEncryptionAlg = requestEncryption?.alg,
                 requestEncryptionEnc = requestEncryption?.enc,
             )
-        if (credential.isErr) {
-            return failed(WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED, "wallet.interaction.error.oid4vci_deferred_request_failed", credential.error, retryable = true)
+        val answered =
+            if (credential.isErr && credential.error.code == OAUTH_INVALID_TOKEN) {
+                val refreshedToken =
+                    refreshDeferredAccessToken(context, state, resolved.value, options, sessionState)
+                        ?: return failed(
+                            WalletInteractionFailureCodes.OID4VCI_OFFER_EXPIRED,
+                            "wallet.interaction.error.oid4vci_offer_expired",
+                        )
+                if (refreshedToken.isErr) {
+                    return failed(
+                        WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED,
+                        "wallet.interaction.error.oid4vci_deferred_request_failed",
+                        refreshedToken.error,
+                        retryable = true,
+                    )
+                }
+                val refreshedDpopProof =
+                    deferredEndpointDpopProof(
+                        context = context,
+                        state = state,
+                        resolvedOffer = resolved.value,
+                        options = options,
+                        deferredCredentialEndpoint = deferred.deferredCredentialEndpoint,
+                        accessToken = refreshedToken.value,
+                    ).getOrElse {
+                        return failed(WalletInteractionFailureCodes.OID4VCI_DEFERRED_DPOP_PROOF_FAILED, "wallet.interaction.error.oid4vci_deferred_dpop_proof_failed", it, retryable = true)
+                    }
+                requestDeferredCredentialWithDpopNonceRetry(
+                    context = context,
+                    state = state,
+                    resolvedOffer = resolved.value,
+                    options = options,
+                    deferredCredentialEndpoint = deferred.deferredCredentialEndpoint,
+                    accessToken = refreshedToken.value,
+                    dpopProofJwt = refreshedDpopProof,
+                    transactionId = deferred.transactionId,
+                    requestEncryptionJwk = requestEncryption?.jwk,
+                    requestEncryptionAlg = requestEncryption?.alg,
+                    requestEncryptionEnc = requestEncryption?.enc,
+                )
+            } else {
+                credential
+            }
+        if (answered.isErr) {
+            return failed(WalletInteractionFailureCodes.OID4VCI_DEFERRED_REQUEST_FAILED, "wallet.interaction.error.oid4vci_deferred_request_failed", answered.error, retryable = true)
         }
-        return handleCredentialResponse(context, state, resolved.value, credential.value)
+        return handleCredentialResponse(context, state, resolved.value, answered.value, options.isDpopBound())
+    }
+
+    /**
+     * Exchanges the session's refresh token for a new access token after the deferred endpoint
+     * answered `invalid_token`, and persists it as the deferred access token. Returns null when the
+     * offer has to be restarted: there is no refresh token or token endpoint, or the authorization
+     * server answered `invalid_grant`. Other failures are returned as errors and stay retryable.
+     */
+    private suspend fun refreshDeferredAccessToken(
+        context: WalletInteractionContext,
+        state: WalletInteractionState,
+        resolvedOffer: ResolvedCredentialOffer,
+        options: Oid4vciHolderIssuanceOptions,
+        sessionState: Oid4vciPrivateSessionState,
+    ): IdkResult<String, IdkError>? {
+        val tokens = sessionState.tokens
+        val refreshToken = tokens?.refreshToken?.takeIf { it.isNotBlank() } ?: return null
+        val tokenEndpoint =
+            (tokens.tokenEndpoint ?: sessionState.authorization?.tokenEndpoint)?.takeIf { it.isNotBlank() } ?: return null
+        val exchanged =
+            exchangeRefreshTokenWithDpopNonceRetry(
+                context = context,
+                state = state,
+                resolvedOffer = resolvedOffer,
+                options = options,
+                tokenEndpoint = tokenEndpoint,
+                authorizationServerIssuer = sessionState.authorization?.authorizationServerIssuer,
+                refreshToken = refreshToken,
+            )
+        if (exchanged.isErr) {
+            return if (exchanged.error.code == OAUTH_INVALID_GRANT) null else Err(exchanged.error)
+        }
+        val token = exchanged.value
+        val stored =
+            try {
+                issuanceSessionStore.storeDeferredAccessToken(context.walletUnitId, context.sessionId.value, token.accessToken)
+            } catch (failure: Exception) {
+                return Err(IdkError.fromString(code = "oid4vci.deferred_token_store_failed", message = failure.message ?: "Deferred access token could not be stored"))
+            }
+        if (stored.isErr) return Err(stored.error)
+        context.updateOid4vciState {
+            it.copy(
+                tokens =
+                    Oid4vciPrivateSessionState.TokenLeg(
+                        accessToken = token.accessToken,
+                        // RFC 6749 Section 6: keep the presented refresh token when the AS does not rotate it.
+                        refreshToken = token.refreshToken ?: refreshToken,
+                        tokenEndpoint = tokenEndpoint,
+                    ),
+            )
+        }
+        return Ok(token.accessToken)
     }
 
     override suspend fun notifyCredentialAccepted(
@@ -1489,7 +1588,7 @@ class Oid4vciHolderIssuanceExecutor(
         if (credential.isErr) {
             return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_REQUEST_FAILED, "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
         }
-        return handleCredentialResponse(context, state, resolvedOffer, credential.value)
+        return handleCredentialResponse(context, state, resolvedOffer, credential.value, options.isDpopBound())
     }
 
     private suspend fun createCredentialRequestProofs(
@@ -1898,7 +1997,7 @@ class Oid4vciHolderIssuanceExecutor(
         if (credential.isErr) {
             return failed(WalletInteractionFailureCodes.OID4VCI_CREDENTIAL_REQUEST_FAILED, "wallet.interaction.error.oid4vci_credential_request_failed", credential.error)
         }
-        return handleCredentialResponse(context, state, resolvedOffer, credential.value)
+        return handleCredentialResponse(context, state, resolvedOffer, credential.value, options.isDpopBound())
     }
 
     private suspend fun exchangePreAuthorizedCodeWithDpopNonceRetry(
@@ -2276,6 +2375,8 @@ class Oid4vciHolderIssuanceExecutor(
         state: WalletInteractionState,
         resolvedOffer: ResolvedCredentialOffer,
         credentialResponse: CredentialResponse,
+        /** Whether the access token is DPoP-bound; persisted on a deferral for unattended checks. */
+        dpopBound: Boolean = false,
     ): Oid4vciIssuanceExecutionResult {
         val notificationId = credentialResponse.notificationId
         val notificationEndpoint = resolvedOffer.issuerMetadata.notificationEndpoint
@@ -2343,6 +2444,7 @@ class Oid4vciHolderIssuanceExecutor(
                                 accessTokenRef = accessTokenRef.value,
                                 retryPolicy = RetryPolicy(initialDelaySeconds = intervalSeconds.toLong(), maxDelaySeconds = intervalSeconds.toLong()),
                                 nextPollAt = now.plus(intervalSeconds.toLong().seconds),
+                                dpopBound = dpopBound,
                             ),
                         createdAt = now,
                         updatedAt = now,
@@ -2474,6 +2576,12 @@ class Oid4vciHolderIssuanceExecutor(
             arguments = mapOf("causeType" to (failure::class.simpleName ?: "Exception"), "cause" to failure.message.orEmpty()),
         )
 
+    private companion object {
+        /** RFC 6749 section 5.2; for a pre-authorized request with a tx_code it means a wrong code. */
+        const val OAUTH_INVALID_GRANT = "invalid_grant"
+        const val OAUTH_INVALID_TOKEN = "invalid_token"
+    }
+
     private fun failed(
         code: String,
         messageKey: String,
@@ -2522,3 +2630,6 @@ private fun signatureAlgorithm(joseAlgorithm: String): SignatureAlgorithm =
         "EDDSA" -> SignatureAlgorithm.ED25519
         else -> SignatureAlgorithm.ECDSA_SHA256
     }
+
+/** A DPoP proof accompanies every request made with the access token these options produce. */
+internal fun Oid4vciHolderIssuanceOptions.isDpopBound(): Boolean = dpopEnabled || haipTokenProofs != null

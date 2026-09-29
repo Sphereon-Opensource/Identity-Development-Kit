@@ -67,6 +67,7 @@ kotlin {
                 implementation(projects.libDidResolverImpl)
                 implementation(projects.libDidMethodsKey)
                 implementation(projects.libDidMethodsJwk)
+                implementation(projects.walletAppImpl)
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
                 implementation(sphereonlib.org.jetbrains.kotlinx.serialization.json)
             }

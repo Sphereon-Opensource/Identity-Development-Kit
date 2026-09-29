@@ -60,6 +60,9 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
+/** From the second consecutive rejected tx code on, the holder is told the offer may have expired. */
+private const val POSSIBLY_EXPIRED_AFTER_REJECTIONS = 2
+
 class Oid4vciWalletInteractionProtocolAdapter(
     private val holder: Oid4vciHolderService? = null,
     private val issuanceExecutor: Oid4vciIssuanceExecutor,
@@ -223,7 +226,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
                     credentialOffer = summary,
                     txCode =
                         if (summary.txCodeRequired) {
-                            WalletTxCodeSpec(descriptionKey = "wallet.interaction.tx_code.required")
+                            offer?.grants?.preAuthorizedCode?.txCode.toTxCodeSpec()
                         } else {
                             null
                         },
@@ -331,6 +334,7 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 is Oid4vciIssuanceExecutionResult.Deferred,
                 is Oid4vciIssuanceExecutionResult.AuthorizationRequired,
                 is Oid4vciIssuanceExecutionResult.NestedPresentationRequired,
+                Oid4vciIssuanceExecutionResult.TxCodeRejected,
                 -> {
                     // A wallet-initiated refresh never involves deferred issuance, an authorization
                     // redirect, or a nested OID4VP presentation - an executor returning one of these
@@ -749,6 +753,19 @@ class Oid4vciWalletInteractionProtocolAdapter(
                 )
             }
 
+            Oid4vciIssuanceExecutionResult.TxCodeRejected -> {
+                // The wrong code is forgotten; the offer and pre-authorized code stay for the retry.
+                updateOid4vciState { it.copy(txCode = null, txCodeRejections = it.txCodeRejections + 1) }
+                val rejections = oid4vciState().txCodeRejections
+                sessionState
+                    .next(status = WalletInteractionStatus.TxCodeRequired)
+                    .copy(
+                        txCode =
+                            (sessionState.txCode ?: WalletTxCodeSpec(descriptionKey = "wallet.interaction.tx_code.required"))
+                                .copy(rejected = true, possiblyExpired = rejections >= POSSIBLY_EXPIRED_AFTER_REJECTIONS),
+                    )
+            }
+
             is Oid4vciIssuanceExecutionResult.Failed -> {
                 sessionState.next(
                     status = WalletInteractionStatus.Failed,
@@ -775,6 +792,25 @@ class Oid4vciWalletInteractionProtocolAdapter(
             ),
         )
     }
+
+    /** The offer's tx_code object as UI-safe guidance; the description stays plain text, at most 300 characters. */
+    private fun com.sphereon.openid.oid4vci.common.model.TxCodeConfig?.toTxCodeSpec(): WalletTxCodeSpec =
+        WalletTxCodeSpec(
+            inputMode = this?.inputMode?.takeIf(String::isNotBlank),
+            length = this?.length?.takeIf { it > 0 },
+            descriptionKey = "wallet.interaction.tx_code.required",
+            arguments =
+                this?.description?.trim()?.take(300)?.takeIf(String::isNotEmpty)
+                    ?.let { mapOf("description" to it) }
+                    .orEmpty(),
+        )
+
+    private fun localizedClaimNames(displays: List<com.sphereon.openid.oid4vci.common.model.ClaimDisplay>?): Map<String, String> =
+        displays.orEmpty()
+            .mapNotNull { display -> display.locale?.takeIf(String::isNotBlank)?.let { it to display.name } }
+            .filter { (_, name) -> name.isNotBlank() }
+            .distinctBy { (locale, _) -> locale.lowercase() }
+            .toMap()
 
     private fun CredentialOffer.toSummary(metadata: CredentialIssuerMetadata? = null): WalletCredentialOfferSummary {
         val issuerDisplays = metadata?.display.orEmpty()
@@ -816,11 +852,23 @@ class Oid4vciWalletInteractionProtocolAdapter(
                         configuration?.credentialMetadata?.claims.orEmpty().mapNotNull { claim ->
                             val path = claim.path.mapNotNull { element -> element.toString().trim('"').takeIf(String::isNotBlank) }
                             val name = claim.display?.firstOrNull()?.name ?: path.lastOrNull()
-                            name?.let { WalletCredentialOfferInfoDescriptor(path = path, displayName = it) }
+                            name?.let {
+                                WalletCredentialOfferInfoDescriptor(
+                                    path = path,
+                                    displayName = it,
+                                    localizedDisplayNames = localizedClaimNames(claim.display),
+                                )
+                            }
                         }.ifEmpty {
                             configuration?.claims.orEmpty().mapNotNull { claim ->
                                 val name = claim.display?.firstOrNull()?.name ?: claim.path.lastOrNull()
-                                name?.let { WalletCredentialOfferInfoDescriptor(path = claim.path, displayName = it) }
+                                name?.let {
+                                    WalletCredentialOfferInfoDescriptor(
+                                        path = claim.path,
+                                        displayName = it,
+                                        localizedDisplayNames = localizedClaimNames(claim.display),
+                                    )
+                                }
                             }
                         }
                     WalletCredentialBranding(

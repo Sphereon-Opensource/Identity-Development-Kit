@@ -19,6 +19,7 @@ package com.sphereon.statuslist.impl.driver
 import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
+import com.sphereon.core.api.decodeFromBase64Url
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
 import com.sphereon.core.api.pagination.Page
@@ -427,14 +428,19 @@ class InMemoryStatusListStore {
             return Ok(explicitIndex)
         }
         if (state.entriesByIndex.size >= length) return Err(StatusListErrors.listExhausted(state.args.correlationId))
-        // Random-unused: try random candidates, then fall back to enumerating the remaining free slots.
         repeat(RANDOM_ALLOCATION_TRIES) {
             val candidate = Random.nextInt(length)
             if (!state.entriesByIndex.containsKey(candidate)) return Ok(candidate)
         }
+        var selected = -1
+        var free = 0
         for (i in 0 until length) {
-            if (!state.entriesByIndex.containsKey(i)) return Ok(i)
+            if (!state.entriesByIndex.containsKey(i)) {
+                free++
+                if (Random.nextInt(free) == 0) selected = i
+            }
         }
+        if (selected >= 0) return Ok(selected)
         return Err(StatusListErrors.listExhausted(state.args.correlationId))
     }
 
@@ -709,7 +715,7 @@ class InMemoryStatusListDriver(
                 MdocStatusListProfile.STATUS_LIST ->
                     MdocStatusListPayload.Token(
                         bits = 1,
-                        list = state.bitset.toByteArray(),
+                        list = encoded.decodeFromBase64Url(),
                         aggregationUri = state.args.aggregationUri,
                     )
 

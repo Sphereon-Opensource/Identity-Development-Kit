@@ -22,6 +22,7 @@ import com.sphereon.core.api.log.LoggerConfig
 import com.sphereon.core.api.log.SessionLogManager
 import com.sphereon.core.api.log.SessionLogService
 import com.sphereon.core.api.session.CommandId
+import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.PrincipalType
 import com.sphereon.di.context.SecuredTenantContextDetails
 import com.sphereon.di.context.TenantContextData
@@ -41,6 +42,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class GetDidJsonEndpointCommandImplTest {
     @Test
@@ -69,8 +72,8 @@ class GetDidJsonEndpointCommandImplTest {
                             "ui174507.saas.localtest.me" to HostedDid("""{"id":"did:web:ui174507.saas.localtest.me"}""", "web"),
                         ),
                 )
-            val command = GetDidJsonEndpointCommandImpl(UnusedExecution, registry, DidHostingConfig())
-            val adapter = TestAdapter(UnusedExecution, listOf(command))
+            val command = GetDidJsonEndpointCommandImpl(TenantExecution, registry, DidHostingConfig())
+            val adapter = TestAdapter(TenantExecution, listOf(command))
 
             val response =
                 adapter.dispatch(
@@ -101,8 +104,8 @@ class GetDidJsonEndpointCommandImplTest {
                             "port.example.com" to HostedDid("""{"id":"did:web:port.example.com"}""", "web"),
                         ),
                 )
-            val command = GetDidJsonEndpointCommandImpl(UnusedExecution, registry, DidHostingConfig())
-            val adapter = TestAdapter(UnusedExecution, listOf(command))
+            val command = GetDidJsonEndpointCommandImpl(TenantExecution, registry, DidHostingConfig())
+            val adapter = TestAdapter(TenantExecution, listOf(command))
 
             val response =
                 adapter.dispatch(
@@ -118,10 +121,85 @@ class GetDidJsonEndpointCommandImplTest {
             assertEquals(listOf("port.example.com%3A3443"), registry.requestedLocations)
         }
 
+    @Test
+    fun anonymousRequestWithoutResolvedTenantIsRefusedWithoutLookup() =
+        runTest {
+            val registry = RecordingRegistry(hostedByLocation = mapOf("example.com" to HOSTED))
+            val response = dispatch(registry, AnonymousExecution, request("example.com"))
+
+            assertEquals(404, response.statusCode)
+            assertTrue(registry.requestedLocations.isEmpty())
+            val body = response.bodyBytes?.decodeToString().orEmpty()
+            assertFalse(body.contains("example.com"))
+            assertFalse(body.contains("did:web"))
+        }
+
+    @Test
+    fun blankTenantOnRequestAndSessionIsRefusedWithoutLookup() =
+        runTest {
+            val registry = RecordingRegistry(hostedByLocation = mapOf("example.com" to HOSTED))
+            val response = dispatch(registry, TestExecution(" ", anonymous = true), request("example.com", resolvedTenantId = " "))
+
+            assertEquals(404, response.statusCode)
+            assertTrue(registry.requestedLocations.isEmpty())
+        }
+
+    @Test
+    fun anonymousTenantStampedOnRequestIsRefusedWithoutLookup() =
+        runTest {
+            val registry = RecordingRegistry(hostedByLocation = mapOf("example.com" to HOSTED))
+            val response =
+                dispatch(
+                    registry,
+                    AnonymousExecution,
+                    request("example.com", resolvedTenantId = IdentityConstants.ANONYMOUS_TENANT_ID),
+                )
+
+            assertEquals(404, response.statusCode)
+            assertTrue(registry.requestedLocations.isEmpty())
+        }
+
+    @Test
+    fun resolvedRequestTenantIsUsedForLookup() =
+        runTest {
+            val registry = RecordingRegistry(hostedByLocation = mapOf("example.com" to HOSTED))
+            val response = dispatch(registry, AnonymousExecution, request("example.com", resolvedTenantId = "acme"))
+
+            assertEquals(200, response.statusCode)
+            assertEquals(listOf<String?>("acme"), registry.requestedTenants)
+        }
+
+    @Test
+    fun sessionTenantFromRequestIsUsedWhenNoTenantIsStamped() =
+        runTest {
+            val registry = RecordingRegistry(hostedByLocation = mapOf("example.com" to HOSTED))
+            val response = dispatch(registry, TenantExecution, request("example.com"))
+
+            assertEquals(200, response.statusCode)
+            assertEquals(listOf<String?>("tenant-1"), registry.requestedTenants)
+        }
+
+    private suspend fun dispatch(
+        registry: RecordingRegistry,
+        execution: SessionExecution,
+        request: GenericHttpRequest,
+    ) = TestAdapter(execution, listOf(GetDidJsonEndpointCommandImpl(execution, registry, DidHostingConfig()))).dispatch(request)
+
+    private fun request(
+        host: String,
+        resolvedTenantId: String? = null,
+    ) = GenericHttpRequest(
+        method = "GET",
+        path = "/.well-known/did.json",
+        headers = mapOf("Host" to host),
+        resolvedTenantId = resolvedTenantId,
+    )
+
     private class RecordingRegistry(
         private val hostedByLocation: Map<String, HostedDid>,
     ) : DidHostingRegistry {
         val requestedLocations = mutableListOf<String>()
+        val requestedTenants = mutableListOf<String?>()
 
         override fun hostableMethods(): Set<String> = setOf("web")
 
@@ -130,20 +208,30 @@ class GetDidJsonEndpointCommandImplTest {
             webLocation: String,
         ): IdkResult<HostedDid?, IdkError> {
             requestedLocations += webLocation
+            requestedTenants += tenantId
             return Ok(hostedByLocation[webLocation])
         }
     }
 
-    private object UnusedExecution : SessionExecution {
+    private companion object {
+        val HOSTED = HostedDid("""{"id":"did:web:example.com"}""", "web")
+        val TenantExecution: SessionExecution = TestExecution("tenant-1", anonymous = false)
+        val AnonymousExecution: SessionExecution = TestExecution(IdentityConstants.ANONYMOUS_TENANT_ID, anonymous = true)
+    }
+
+    private class TestExecution(
+        sessionTenantId: String,
+        anonymous: Boolean,
+    ) : SessionExecution {
         private val tenant =
             object : TenantContextData {
-                override val tenantId: String = "tenant-1"
+                override val tenantId: String = sessionTenantId
             }
         private val user =
             object : UserContext {
                 override val id: String = "user-1"
                 override val secureDetails: SecuredTenantContextDetails? = null
-                override val tenant: TenantContextData = this@UnusedExecution.tenant
+                override val tenant: TenantContextData = this@TestExecution.tenant
                 override val principal: Any? = "user-1"
             }
         override val sessionContext: SessionContext =
@@ -151,7 +239,7 @@ class GetDidJsonEndpointCommandImplTest {
                 override val sessionId: String = "session-1"
                 override val context: UserContext = user
 
-                override fun isAnonymous(): Boolean = false
+                override fun isAnonymous(): Boolean = anonymous
             }
         override val sessionContextManager: SessionContextManager =
             object : SessionContextManager {
@@ -194,7 +282,7 @@ class GetDidJsonEndpointCommandImplTest {
             }
         override val log: SessionLogService =
             object : SessionLogService {
-                override val sessionContext: SessionContext = this@UnusedExecution.sessionContext
+                override val sessionContext: SessionContext = this@TestExecution.sessionContext
                 override val id: String = "session-1"
                 override val isEnabled: Boolean = true
                 override val scope: IdkScope = IdkScope.SESSION

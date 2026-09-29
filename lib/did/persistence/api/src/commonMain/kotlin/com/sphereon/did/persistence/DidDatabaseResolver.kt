@@ -21,10 +21,9 @@ package com.sphereon.did.persistence
  *
  * The database type is deliberately supplied by the concrete persistence module. The public
  * contract therefore carries no SQLDelight-generated schema or JDBC dependency, while final
- * application graphs can still bind tenant-aware routing explicitly.
+ * application graphs can still bind tenant-aware routing explicitly. Callers always pass the tenant
+ * resolved for the executing request; the resolver never looks up a current tenant itself.
  */
 interface DidDatabaseResolver<out Database> {
     fun getDatabase(tenantId: String?): Database
-
-    fun getCurrentTenantDatabase(label: String): Database
 }

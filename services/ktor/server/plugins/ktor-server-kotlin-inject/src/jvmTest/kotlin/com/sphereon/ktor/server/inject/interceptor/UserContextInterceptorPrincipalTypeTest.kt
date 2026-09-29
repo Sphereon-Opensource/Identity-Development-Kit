@@ -25,6 +25,7 @@ import com.sphereon.core.defaults.context.JwtClaimsInput
 import com.sphereon.core.defaults.context.markValidated
 import com.sphereon.di.app.AppGraph
 import com.sphereon.di.context.BasicSecuredDetails
+import com.sphereon.di.context.ClassifiedPrincipalInput
 import com.sphereon.di.context.IdentityConstants
 import com.sphereon.di.context.IdentityMetadata
 import com.sphereon.di.context.IdentityResolutionInput
@@ -38,6 +39,7 @@ import com.sphereon.di.context.UserContextInstance
 import com.sphereon.di.context.UserContextManager
 import com.sphereon.di.session.SessionContextManager
 import com.sphereon.di.session.SessionInstance
+import com.sphereon.ktor.server.inject.AuthoritativePrincipalTypeAttribute
 import com.sphereon.ktor.server.inject.ValidatedJwtClaimsAttribute
 import com.sphereon.ktor.server.inject.resolver.FixedTenantResolver
 import com.sphereon.ktor.server.inject.resolver.PrincipalResolver
@@ -94,134 +96,186 @@ class UserContextInterceptorPrincipalTypeTest {
     @Test
     fun workloadClassificationFromPipelineReachesSessionCreation() =
         runTest {
-            val workloadResolution =
-                IdentityResolutionResult(
-                    tenantId = "platform",
-                    principalId = "service-crypto",
-                    principalType = PrincipalType.WORKLOAD,
-                    metadata = IdentityMetadata(resolvedFrom = ResolutionSource.TOKEN),
-                )
+            val captured = interceptWorkloadToken(authoritativePrincipalType = null)
 
-            var capturedIdentityResolution: IdentityResolutionResult? = null
-            var capturedSessionArgs: Array<out Any?>? = null
-
-            val sessionInstance =
-                proxy<SessionInstance> { method, _ ->
-                    when (method.name) {
-                        "getSessionId" -> "session-under-test"
-                        else -> error("Unexpected SessionInstance call: ${method.name}")
-                    }
-                }
-            val sessionContextManager =
-                proxy<SessionContextManager> { method, arguments ->
-                    if (method.name == "createOrGetFromId" && arguments?.size == 5) {
-                        capturedSessionArgs = arguments
-                        sessionInstance
-                    } else {
-                        error("Unexpected SessionContextManager call: ${method.name}")
-                    }
-                }
-            val tenantData =
-                object : TenantContextData {
-                    override val tenantId: String = "platform"
-                }
-            val userContext =
-                proxy<UserContext> { method, _ ->
-                    when (method.name) {
-                        "getTenant" -> tenantData
-                        else -> error("Unexpected UserContext call: ${method.name}")
-                    }
-                }
-            val contextInstance =
-                proxy<UserContextInstance> { method, _ ->
-                    when (method.name) {
-                        "getContext" -> userContext
-                        "getContextId" -> "user-context-under-test"
-                        "getSessionContextManager" -> sessionContextManager
-                        else -> error("Unexpected UserContextInstance call: ${method.name}")
-                    }
-                }
-            val userContextManager =
-                proxy<UserContextManager> { method, arguments ->
-                    if (method.name == "createOrGetFromResolvedInputs" && arguments?.size == 4) {
-                        capturedIdentityResolution = arguments[2] as IdentityResolutionResult
-                        contextInstance
-                    } else {
-                        error("Unexpected UserContextManager call: ${method.name}")
-                    }
-                }
-
-            val logService = proxy<LogService> { _, _ -> null }
-            val appLogManager =
-                proxy<AppLogManager> { method, _ ->
-                    when (method.name) {
-                        "withTag" -> logService
-                        else -> error("Unexpected AppLogManager call: ${method.name}")
-                    }
-                }
-            val pipeline =
-                object : IdentityResolutionPipeline {
-                    override suspend fun resolve(input: IdentityResolutionInput): IdentityResolutionResult = workloadResolution
-                }
-            val appGraph =
-                Proxy.newProxyInstance(
-                    AppGraph::class.java.classLoader,
-                    arrayOf(AppGraph::class.java, CoreApiAppExtensionGraph::class.java),
-                ) { _, method, _ ->
-                    when (method.name) {
-                        "getAppLogManager" -> appLogManager
-                        "getIdentityResolutionPipeline" -> pipeline
-                        "getUserContextManager" -> userContextManager
-                        else -> error("Unexpected AppGraph call: ${method.name}")
-                    }
-                } as AppGraph
-
-            val attributes = Attributes()
-            attributes.put(
-                ValidatedJwtClaimsAttribute,
-                JwtClaimsInput(
-                    claims =
-                        mapOf(
-                            "sub" to JsonPrimitive("service-crypto"),
-                            "azp" to JsonPrimitive("service-crypto"),
-                        ),
-                    rawToken = "validated-workload-token",
-                ).markValidated(),
-            )
-            val request =
-                proxy<ApplicationRequest> { method, _ ->
-                    when (method.name) {
-                        "getHeaders" -> Headers.Empty
-                        else -> error("Unexpected ApplicationRequest call: ${method.name}")
-                    }
-                }
-            val call =
-                proxy<ApplicationCall> { method, _ ->
-                    when (method.name) {
-                        "getAttributes" -> attributes
-                        "getRequest" -> request
-                        else -> error("Unexpected ApplicationCall call: ${method.name}")
-                    }
-                }
-
-            val interceptor =
-                UserContextInterceptor(
-                    appGraph = appGraph,
-                    tenantResolver = FixedTenantResolver("platform"),
-                    principalResolver =
-                        object : PrincipalResolver {
-                            override fun resolve(call: ApplicationCall) = DefaultPrincipalInputString("service-crypto")
-                        },
-                )
-
-            interceptor.intercept(call)
-
-            assertEquals(PrincipalType.WORKLOAD, requireNotNull(capturedIdentityResolution).principalType)
-            val arguments = requireNotNull(capturedSessionArgs)
+            assertEquals(PrincipalType.WORKLOAD, captured.identityResolution.principalType)
+            assertEquals(PrincipalType.WORKLOAD, (captured.principalInput as ClassifiedPrincipalInput).principalType)
+            val arguments = captured.sessionArgs
             assertEquals(false, arguments[2])
             assertEquals("validated-workload-token", (arguments[3] as BasicSecuredDetails).jwt)
             assertEquals(PrincipalType.WORKLOAD, arguments[4])
         }
+
+    /**
+     * An external tenant service client token is classified WORKLOAD by the pipeline, but the host
+     * transport treats it as a tenant principal. The context the interceptor opens must carry the
+     * host's classification, or the command transport opening the same `tenant:principal` context
+     * afterwards fails with "Principal classification mismatch for existing context".
+     */
+    @Test
+    fun hostIngressClassificationOverridesPipelineForUserAndSessionContext() =
+        runTest {
+            val captured = interceptWorkloadToken(authoritativePrincipalType = PrincipalType.USER)
+
+            assertEquals(PrincipalType.USER, captured.identityResolution.principalType)
+            assertEquals("service-crypto", captured.identityResolution.principalId)
+            val principalInput = captured.principalInput as ClassifiedPrincipalInput
+            assertEquals("service-crypto", principalInput.principal)
+            assertEquals(PrincipalType.USER, principalInput.principalType)
+            assertEquals(PrincipalType.USER, captured.sessionArgs[4])
+        }
+
+    @Test
+    fun hostClassificationNeverReclassifiesAnAnonymousTokenIdentity() {
+        val anonymous =
+            IdentityResolutionResult(
+                tenantId = "tenant-1",
+                principalId = null,
+                principalType = PrincipalType.ANONYMOUS,
+                metadata = IdentityMetadata(resolvedFrom = ResolutionSource.TOKEN),
+            )
+
+        assertSame(anonymous, anonymous.withAuthoritativePrincipalType(PrincipalType.USER))
+    }
+
+    private class CapturedInterception(
+        val identityResolution: IdentityResolutionResult,
+        val principalInput: Any,
+        val sessionArgs: Array<out Any?>,
+    )
+
+    private suspend fun interceptWorkloadToken(authoritativePrincipalType: PrincipalType?): CapturedInterception {
+        val workloadResolution =
+            IdentityResolutionResult(
+                tenantId = "platform",
+                principalId = "service-crypto",
+                principalType = PrincipalType.WORKLOAD,
+                metadata = IdentityMetadata(resolvedFrom = ResolutionSource.TOKEN),
+            )
+
+        var capturedIdentityResolution: IdentityResolutionResult? = null
+        var capturedPrincipalInput: Any? = null
+        var capturedSessionArgs: Array<out Any?>? = null
+
+        val sessionInstance =
+            proxy<SessionInstance> { method, _ ->
+                when (method.name) {
+                    "getSessionId" -> "session-under-test"
+                    else -> error("Unexpected SessionInstance call: ${method.name}")
+                }
+            }
+        val sessionContextManager =
+            proxy<SessionContextManager> { method, arguments ->
+                if (method.name == "createOrGetFromId" && arguments?.size == 5) {
+                    capturedSessionArgs = arguments
+                    sessionInstance
+                } else {
+                    error("Unexpected SessionContextManager call: ${method.name}")
+                }
+            }
+        val tenantData =
+            object : TenantContextData {
+                override val tenantId: String = "platform"
+            }
+        val userContext =
+            proxy<UserContext> { method, _ ->
+                when (method.name) {
+                    "getTenant" -> tenantData
+                    else -> error("Unexpected UserContext call: ${method.name}")
+                }
+            }
+        val contextInstance =
+            proxy<UserContextInstance> { method, _ ->
+                when (method.name) {
+                    "getContext" -> userContext
+                    "getContextId" -> "user-context-under-test"
+                    "getSessionContextManager" -> sessionContextManager
+                    else -> error("Unexpected UserContextInstance call: ${method.name}")
+                }
+            }
+        val userContextManager =
+            proxy<UserContextManager> { method, arguments ->
+                if (method.name == "createOrGetFromResolvedInputs" && arguments?.size == 4) {
+                    capturedPrincipalInput = arguments[1]
+                    capturedIdentityResolution = arguments[2] as IdentityResolutionResult
+                    contextInstance
+                } else {
+                    error("Unexpected UserContextManager call: ${method.name}")
+                }
+            }
+
+        val logService = proxy<LogService> { _, _ -> null }
+        val appLogManager =
+            proxy<AppLogManager> { method, _ ->
+                when (method.name) {
+                    "withTag" -> logService
+                    else -> error("Unexpected AppLogManager call: ${method.name}")
+                }
+            }
+        val pipeline =
+            object : IdentityResolutionPipeline {
+                override suspend fun resolve(input: IdentityResolutionInput): IdentityResolutionResult = workloadResolution
+            }
+        val appGraph =
+            Proxy.newProxyInstance(
+                AppGraph::class.java.classLoader,
+                arrayOf(AppGraph::class.java, CoreApiAppExtensionGraph::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "getAppLogManager" -> appLogManager
+                    "getIdentityResolutionPipeline" -> pipeline
+                    "getUserContextManager" -> userContextManager
+                    else -> error("Unexpected AppGraph call: ${method.name}")
+                }
+            } as AppGraph
+
+        val attributes = Attributes()
+        attributes.put(
+            ValidatedJwtClaimsAttribute,
+            JwtClaimsInput(
+                claims =
+                    mapOf(
+                        "sub" to JsonPrimitive("service-crypto"),
+                        "azp" to JsonPrimitive("service-crypto"),
+                    ),
+                rawToken = "validated-workload-token",
+            ).markValidated(),
+        )
+        authoritativePrincipalType?.let { attributes.put(AuthoritativePrincipalTypeAttribute, it) }
+        val request =
+            proxy<ApplicationRequest> { method, _ ->
+                when (method.name) {
+                    "getHeaders" -> Headers.Empty
+                    else -> error("Unexpected ApplicationRequest call: ${method.name}")
+                }
+            }
+        val call =
+            proxy<ApplicationCall> { method, _ ->
+                when (method.name) {
+                    "getAttributes" -> attributes
+                    "getRequest" -> request
+                    else -> error("Unexpected ApplicationCall call: ${method.name}")
+                }
+            }
+
+        val interceptor =
+            UserContextInterceptor(
+                appGraph = appGraph,
+                tenantResolver = FixedTenantResolver("platform"),
+                principalResolver =
+                    object : PrincipalResolver {
+                        override fun resolve(call: ApplicationCall) = DefaultPrincipalInputString("service-crypto")
+                    },
+            )
+
+        interceptor.intercept(call)
+
+        return CapturedInterception(
+            identityResolution = requireNotNull(capturedIdentityResolution),
+            principalInput = requireNotNull(capturedPrincipalInput),
+            sessionArgs = requireNotNull(capturedSessionArgs),
+        )
+    }
 }
 
 private inline fun <reified T> proxy(crossinline handler: (method: Method, args: Array<out Any?>?) -> Any?): T =

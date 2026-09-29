@@ -284,7 +284,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 newHandler(capturedPayload = { captured = it }).issueCredential(
                     request = CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    context = makeContext(types = listOf("VerifiableCredential")).copy(
+                    context = makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(
                         validFrom = futureValidFrom,
                         validUntil = futureValidUntil,
                     ),
@@ -306,7 +306,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 newHandler(capturedPayload = { captured = it }).issueCredential(
                     request = CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    context = makeContext(types = listOf("VerifiableCredential")).copy(
+                    context = makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(
                         validFrom = futureValidFrom,
                         expirationInDays = 1,
                     ),
@@ -325,7 +325,7 @@ class VcLdJsonJwtFormatHandlerTest {
         runTest {
             var captured: JsonObject? = null
             val context =
-                makeContext(types = listOf("VerifiableCredential")).copy(
+                makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(
                     issuanceClockSkewInSeconds = 90,
                     expirationInDays = 1,
                 )
@@ -357,7 +357,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 newHandler(capturedPayload = { captured = it }).issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential")).copy(
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(
                         vcdmProperties = buildJsonObject {
                             putJsonObject("credentialSchema") {
                                 put("id", "https://issuer.example/schema")
@@ -413,7 +413,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 handler.issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential")).copy(
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(
                         vcdmProperties = buildJsonObject {
                             put("issuer", "https://attacker.example")
                         },
@@ -432,7 +432,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 newHandler(capturedPayload = { captured = it }, statusEnricher = enricher).issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential"), attributes = emptyMap()).copy(
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport"), attributes = emptyMap()).copy(
                         subject = "urn:proof-holder:v20",
                         credentialId = "https://example.com/credentials/v20",
                         statusListBinding = StatusListBinding(
@@ -485,7 +485,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 handler.issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential")),
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")),
                 )
 
             assertTrue(result.isOk)
@@ -508,7 +508,7 @@ class VcLdJsonJwtFormatHandlerTest {
                 )
             val context =
                 makeContext(
-                    types = listOf("VerifiableCredential"),
+                    types = listOf("VerifiableCredential", "DigitalProductPassport"),
                     attributes = mapOf("kid" to JsonPrimitive("attacker-kid"), "alg" to JsonPrimitive("none")),
                 ).copy(
                     signingKeyMode = SigningKeyMode.Did("jwk"),
@@ -558,7 +558,7 @@ class VcLdJsonJwtFormatHandlerTest {
                         additionalParameters = mapOf("kid" to JsonPrimitive("request-kid"), "alg" to JsonPrimitive("none")),
                     ),
                     makeContext(
-                        types = listOf("VerifiableCredential"),
+                        types = listOf("VerifiableCredential", "DigitalProductPassport"),
                         attributes = mapOf("kid" to JsonPrimitive("payload-kid"), "alg" to JsonPrimitive("none")),
                     ).copy(signingKeyMode = SigningKeyMode.JwkThumbprint),
                 )
@@ -588,7 +588,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 handler.issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential")).copy(signingKeyMode = SigningKeyMode.X5c),
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(signingKeyMode = SigningKeyMode.X5c),
                 )
 
             assertTrue(result.isOk)
@@ -663,7 +663,7 @@ class VcLdJsonJwtFormatHandlerTest {
                 val result =
                     handler.issueCredential(
                         CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                        makeContext(types = listOf("VerifiableCredential")).copy(signingKeyMode = mode),
+                        makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(signingKeyMode = mode),
                     )
                 assertTrue(result.isErr)
                 assertEquals("signing_key_material_unavailable", result.error.code)
@@ -685,7 +685,7 @@ class VcLdJsonJwtFormatHandlerTest {
                         schemaValidator = JsonLdSchemaValidator(schemaRegistry),
                     ).issueCredential(
                         CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                        makeContext(types = listOf("VerifiableCredential")).copy(
+                        makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(
                             signingKeyMode = SigningKeyMode.Did("jwk"),
                             signingVerificationMethodId = verificationMethodId,
                         ),
@@ -737,7 +737,7 @@ class VcLdJsonJwtFormatHandlerTest {
                     contextValidator = JsonLdContextValidator(poisonedLoader),
                     schemaValidator = JsonLdSchemaValidator(schemaRegistry),
                 )
-            val context = makeContext(types = listOf("VerifiableCredential"), extraContexts = null)
+            val context = makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport"), extraContexts = null)
             val result =
                 handler.issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
@@ -786,7 +786,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 handler.issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential")).copy(expirationInDays = -1),
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(expirationInDays = -1),
                 )
 
             assertTrue(result.isErr, "validUntil before validFrom must abort issuance")
@@ -809,7 +809,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 handler.issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential")).copy(issuerIdentifier = "issuer without a URI"),
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(issuerIdentifier = "issuer without a URI"),
                 )
             assertTrue(result.isErr)
             assertVcdmInvalidProperty(result.error, "issuer")
@@ -831,7 +831,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 handler.issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential")).copy(subject = "proof-subject-not-a-credential-id"),
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(subject = "proof-subject-not-a-credential-id"),
                 )
 
             assertTrue(result.isOk)
@@ -847,7 +847,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 newHandler(capturedPayload = { captured = it }).issueCredential(
                     request = CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    context = makeContext(types = listOf("VerifiableCredential"), attributes = emptyMap()).copy(
+                    context = makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport"), attributes = emptyMap()).copy(
                         credentialSubjects = listOf(
                             buildJsonObject {
                                 put("id", "https://example.com/subjects/one")
@@ -877,7 +877,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 newHandler(capturedPayload = { captured = it }).issueCredential(
                     request = CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    context = makeContext(types = listOf("VerifiableCredential")).copy(
+                    context = makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(
                         credentialSubjects = listOf(buildJsonObject { put("name", "explicit") }),
                     ),
                 )
@@ -894,7 +894,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 newHandler(capturedPayload = { captured = it }).issueCredential(
                     request = CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    context = makeContext(types = listOf("VerifiableCredential")).copy(credentialId = "not a URI"),
+                    context = makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(credentialId = "not a URI"),
                 )
             assertTrue(result.isErr)
             assertEquals("invalid_vcdm_identifier", result.error.code)
@@ -915,7 +915,7 @@ class VcLdJsonJwtFormatHandlerTest {
 
             val result = handler.issueCredential(
                 CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                makeContext(types = listOf("VerifiableCredential"), attributes = emptyMap()),
+                makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport"), attributes = emptyMap()),
             )
 
             assertTrue(result.isErr)
@@ -930,7 +930,7 @@ class VcLdJsonJwtFormatHandlerTest {
             val result =
                 handler.issueCredential(
                     CredentialRequest(format = CredentialFormat.JWT_VC_JSON_LD.value),
-                    makeContext(types = listOf("VerifiableCredential")).copy(
+                    makeContext(types = listOf("VerifiableCredential", "DigitalProductPassport")).copy(
                         holderKeyId = "did:example:holder-key#key-1",
                         holderBindingKey =
                             buildJsonObject {

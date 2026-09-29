@@ -54,6 +54,22 @@ internal suspend fun reserveCredentialStatus(
             ),
         )
     }
+    val requiredSpec =
+        when (context.credentialConfiguration.format) {
+            CredentialFormat.SD_JWT_VC.value -> StatusListSpec.TOKEN_STATUS_LIST
+            CredentialFormat.JWT_VC_JSON.value -> StatusListSpec.BITSTRING_STATUS_LIST
+            else -> null
+        }
+    if (requiredSpec != null && binding.spec != requiredSpec) {
+        return Err(
+            StatusListErrors.specUnsupportedForFormat(
+                context.credentialConfigurationId,
+                context.credentialConfiguration.format,
+                binding.spec,
+                requiredSpec,
+            ),
+        )
+    }
     if (context.credentialConfiguration.format == CredentialFormat.MSO_MDOC.value) {
         val reason =
             when {

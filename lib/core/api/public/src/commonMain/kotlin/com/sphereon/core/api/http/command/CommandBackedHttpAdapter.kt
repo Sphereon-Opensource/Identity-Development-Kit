@@ -525,7 +525,8 @@ abstract class CommandBackedHttpAdapter(
             endpoint.endpoint.pathPatterns.map { pattern ->
                 when {
                     mount.adapterBasePath.isEmpty() || mount.adapterBasePath == "/" -> pattern
-                    pattern == "/" -> mount.adapterBasePath
+                    // The route catalog mounts an empty pattern at the base path, exactly like "/".
+                    pattern.isEmpty() || pattern == "/" -> mount.adapterBasePath
                     else -> mount.adapterBasePath.trimEnd('/') + "/" + pattern.trimStart('/')
                 }
             }

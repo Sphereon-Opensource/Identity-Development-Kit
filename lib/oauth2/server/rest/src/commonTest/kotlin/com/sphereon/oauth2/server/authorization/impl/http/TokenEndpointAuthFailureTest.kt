@@ -24,10 +24,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * WP2 Task 2.6 — validates the RFC 6749 §5.2 behavior wired into `/token`, `/introspect`,
- * `/revoke`: 401 responses gain `WWW-Authenticate: Basic realm="oauth2"` iff the caller attempted
- * Basic auth. The helpers under test are invoked verbatim from the adapter's error paths
- * (see `TokenHttpEndpointCommandImpl` and peers).
+ * Validates challenge handling wired into `/token`, `/introspect`, and `/revoke`. Token endpoint
+ * non-HTTP token endpoint client-auth failures remain 400; a Basic-auth 401 carries a challenge.
+ * Introspection and revocation challenge every 401, including requests with no credentials.
+ * Existing scheme-specific challenges win.
  */
 class TokenEndpointAuthFailureTest {
     @Test
@@ -41,12 +41,13 @@ class TokenEndpointAuthFailureTest {
     }
 
     @Test
-    fun tokenEndpoint_postAuthFails_401NoWwwAuthenticate() {
+    fun tokenEndpoint_nonHttpClientAuthFailureRemains400WithoutChallenge() {
         val headers = mapOf("Content-Type" to "application/x-www-form-urlencoded")
         assertFalse(isBasicAuthorizationHeaderInternal(headers))
 
-        val failure = GenericHttpResponse(statusCode = 401, headers = emptyMap(), body = "")
+        val failure = GenericHttpResponse(statusCode = 400, headers = emptyMap(), body = "")
         val withoutHeader = failure.withWwwAuthenticateIfBasicInternal(basicWasAttempted = false)
+        assertEquals(400, withoutHeader.statusCode)
         assertNull(withoutHeader.headers["WWW-Authenticate"])
     }
 
@@ -66,5 +67,25 @@ class TokenEndpointAuthFailureTest {
         val ok = GenericHttpResponse(statusCode = 200, headers = mapOf("X" to "Y"), body = "{}")
         val result = ok.withWwwAuthenticateIfBasicInternal(basicWasAttempted = true)
         assertNull(result.headers["WWW-Authenticate"], "200 responses must not carry WWW-Authenticate")
+    }
+
+    @Test
+    fun unauthenticatedProtectedEndpoint401_addsBasicChallengeAndPreservesExistingChallenge() {
+        val unauthenticated = GenericHttpResponse(statusCode = 401, headers = emptyMap(), body = "{}")
+        assertEquals(
+            "Basic realm=\"oauth2\"",
+            unauthenticated.withWwwAuthenticateIfMissingInternal().headers["WWW-Authenticate"],
+        )
+
+        val dpop =
+            GenericHttpResponse(
+                statusCode = 401,
+                headers = mapOf("WWW-Authenticate" to "DPoP error=\"invalid_token\""),
+                body = "{}",
+            )
+        assertEquals(
+            "DPoP error=\"invalid_token\"",
+            dpop.withWwwAuthenticateIfMissingInternal().headers["WWW-Authenticate"],
+        )
     }
 }

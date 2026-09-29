@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-package com.sphereon.oauth2.server.authorization.impl.provider
+package com.sphereon.oauth2.server.authorization.provider
+
+import com.sphereon.oauth2.server.authorization.provider.AcceptLanguageNegotiation
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

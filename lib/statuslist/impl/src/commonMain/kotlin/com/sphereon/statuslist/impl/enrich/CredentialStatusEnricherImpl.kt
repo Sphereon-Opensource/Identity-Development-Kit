@@ -36,6 +36,7 @@ import com.sphereon.statuslist.spi.StatusClaimMergeTarget
 import com.sphereon.statuslist.spi.StatusEnrichmentContext
 import com.sphereon.statuslist.spi.StatusListDriver
 import com.sphereon.statuslist.spi.StatusReservationHandle
+import com.sphereon.statuslist.impl.envelope.BitstringStatusListEnvelope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Provider
@@ -137,6 +138,10 @@ class CredentialStatusEnricherImpl(
                             put("statusPurpose", purpose)
                             put("statusListIndex", index.toString())
                             put("statusListCredential", uri)
+                            if (list.bitsPerStatus > 1) {
+                                put("statusSize", list.bitsPerStatus)
+                                put("statusMessage", BitstringStatusListEnvelope.statusMessages(list.bitsPerStatus))
+                            }
                         }
                     claim to StatusClaimMergeTarget.VC_CREDENTIAL_STATUS
                 }

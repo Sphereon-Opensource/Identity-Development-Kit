@@ -33,6 +33,15 @@ import dev.zacsweers.metro.binding
  * to the only configured id. Multi-AS deployments fall back to
  * [OAuth2ServersConfig.defaultServer] when no discriminator matches.
  *
+ * Issuer matching is segment-aware: the issuer `/as/acme` covers `/as/acme` and `/as/acme/...`,
+ * never `/as/acme2`.
+ *
+ * A request under a sibling issuer path of a configured issuer (`/as/new` next to `/as/default`)
+ * names a server this view may not contain yet, so the configuration is reloaded from its backing
+ * stores once. When no server is hosted at that path after the reload the request resolves to a
+ * [IdkError.NOT_FOUND_ERROR]: serving it as the default server would answer under the wrong
+ * issuer. Requests outside issuer paths (`/token`, root `/.well-known/...`) keep the default server.
+ *
  * Tenant-aware routing strategies are contributed by higher layers via a
  * binding that replaces this default.
  */
@@ -43,17 +52,29 @@ class DefaultOAuth2ServerInstanceResolver(
     private val configProvider: OAuth2ServersConfigProvider,
 ) : OAuth2ServerInstanceResolver {
     override suspend fun resolve(request: GenericHttpRequest): IdkResult<String, IdkError> {
-        val all = configProvider.getConfig()
+        val requestUrl = request.requestUrl()
+        val current = configProvider.getConfig()
+        val all =
+            if (current.matchingServerId(requestUrl) == null && current.addressesUnknownSiblingIssuer(requestUrl)) {
+                configProvider.reloadConfig()
+            } else {
+                current
+            }
         val instances = all.servers
+
+        val match = all.matchingServerId(requestUrl)
+        if (match != null) {
+            return Ok(match)
+        }
+
+        if (all.addressesUnknownSiblingIssuer(requestUrl)) {
+            return Err(
+                IdkError.NOT_FOUND_ERROR(message = "No authorization server is hosted at '$requestUrl'"),
+            )
+        }
 
         if (instances.size == 1) {
             return Ok(instances.keys.single())
-        }
-
-        val requestUrl = request.requestUrl()
-        val match = instances.entries.firstOrNull { (_, cfg) -> matches(requestUrl, cfg) }
-        if (match != null) {
-            return Ok(match.key)
         }
 
         val defaultId = all.defaultServer
@@ -62,7 +83,7 @@ class DefaultOAuth2ServerInstanceResolver(
         }
 
         return Err(
-            IdkError.NOT_FOUND_ERROR(
+            IdkError.INVALID_STATE(
                 message =
                     "Cannot resolve OAuth2 AS instance for request URL '$requestUrl' " +
                         "(configured ids: ${instances.keys}, defaultServer '$defaultId' not in servers map).",
@@ -70,12 +91,37 @@ class DefaultOAuth2ServerInstanceResolver(
         )
     }
 
+    private fun OAuth2ServersConfig.matchingServerId(requestUrl: String): String? =
+        servers.entries.firstOrNull { (_, cfg) -> matches(requestUrl, cfg) }?.key
+
+    /**
+     * True when [requestUrl] sits directly under the parent path of a configured issuer without
+     * being under that issuer itself, e.g. `https://host/as/new/authorize` next to the configured
+     * `https://host/as/default`. Issuers at an origin root have no sibling paths.
+     */
+    private fun OAuth2ServersConfig.addressesUnknownSiblingIssuer(requestUrl: String): Boolean =
+        servers.values.any { cfg ->
+            val issuer = cfg.issuer?.trimEnd('/') ?: return@any false
+            val schemeEnd = issuer.indexOf("://")
+            if (schemeEnd < 0) return@any false
+            val pathStart = issuer.indexOf('/', schemeEnd + 3)
+            if (pathStart < 0) return@any false
+            val parent = issuer.substring(0, issuer.lastIndexOf('/'))
+            parent.length > pathStart && requestUrl.startsWith("$parent/") && !requestUrl.isUnderIssuer(issuer)
+        }
+
+    private fun String.isUnderIssuer(issuer: String): Boolean {
+        val base = issuer.trimEnd('/')
+        if (!startsWith(base)) return false
+        return length == base.length || this[base.length] == '/' || this[base.length] == '?'
+    }
+
     private fun matches(
         requestUrl: String,
         cfg: OAuth2ServerInstanceConfig,
     ): Boolean {
         cfg.issuer?.let { issuer ->
-            if (requestUrl.startsWith(issuer.trimEnd('/'))) return true
+            if (requestUrl.isUnderIssuer(issuer)) return true
         }
         cfg.issuerTemplate?.let { template ->
             if (templateMatches(template, requestUrl)) return true
@@ -135,5 +181,21 @@ private fun GenericHttpRequest.requestUrl(): String {
             ?: headers["X-FORWARDED-PROTO"]
     val scheme = if (proto.equals("https", ignoreCase = true)) "https" else "http"
     val host = headers["host"] ?: headers["Host"] ?: "localhost"
-    return "$scheme://$host$path"
+    return "$scheme://$host${issuerRelativePath(path)}"
 }
+
+private val WELL_KNOWN_METADATA_PATHS =
+    listOf(
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/openid-configuration",
+    )
+
+/**
+ * RFC 8414 section 3.1 inserts the well-known name between the host and the issuer path, so
+ * `/.well-known/oauth-authorization-server/as/acme` describes the issuer `/as/acme`. Removing the
+ * inserted name lets such a request match that issuer like every other request under it.
+ */
+private fun issuerRelativePath(path: String): String =
+    WELL_KNOWN_METADATA_PATHS.firstNotNullOfOrNull { wellKnown ->
+        path.takeIf { it.startsWith("$wellKnown/") }?.removePrefix(wellKnown)
+    } ?: path

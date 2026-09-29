@@ -58,6 +58,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -201,6 +202,11 @@ class StatusEnrichmentFailClosedTest {
             )
             assertEquals(credentialId, enricher.boundCredentialId)
             assertEquals(enricher.reservedHandle, enricher.boundHandle)
+            val contexts = recordingJwtService.lastPayload!!["vc"]!!.jsonObject["@context"]!!.jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(
+                listOf("https://www.w3.org/2018/credentials/v1", "https://www.w3.org/ns/credentials/status/v1"),
+                contexts,
+            )
         }
 
     @Test
@@ -285,6 +291,45 @@ class StatusEnrichmentFailClosedTest {
             assertTrue("jwt_vc_json" in result.error.message.defaultMessage)
         }
 
+    @Test
+    fun sdJwtVcRejectsABitstringStatusBinding() =
+        runTest {
+            val sdJwtConfig = CredentialConfigurationSupported(format = "dc+sd-jwt")
+            val context =
+                makeContext(
+                    StatusListBinding(
+                        statusListCorrelationId = "eupid-revocation",
+                        spec = StatusListSpec.BITSTRING_STATUS_LIST,
+                    ),
+                ).copy(credentialConfiguration = sdJwtConfig)
+            val enricher = RecordingStatusEnricher()
+
+            val result = reserveCredentialStatus(enricher, context)
+
+            assertTrue(result.isErr)
+            assertEquals("STATUSLIST_SPEC_UNSUPPORTED_FORMAT", result.error.code)
+            assertEquals(0, enricher.reserveCalls)
+        }
+
+    @Test
+    fun jwtVcJsonRejectsATokenStatusListBinding() =
+        runTest {
+            val context =
+                makeContext(
+                    StatusListBinding(
+                        statusListCorrelationId = "eupid-revocation",
+                        spec = StatusListSpec.TOKEN_STATUS_LIST,
+                    ),
+                )
+            val enricher = RecordingStatusEnricher()
+
+            val result = reserveCredentialStatus(enricher, context)
+
+            assertTrue(result.isErr)
+            assertEquals("STATUSLIST_SPEC_UNSUPPORTED_FORMAT", result.error.code)
+            assertEquals(0, enricher.reserveCalls)
+        }
+
     /**
      * JwtService recording the last signed payload so tests can assert what was (not) signed.
      * Produces a structurally valid compact JWT.
@@ -332,13 +377,15 @@ class StatusEnrichmentFailClosedTest {
 
     private class RecordingStatusEnricher : CredentialStatusEnricher {
         val reservedHandle = StatusReservationHandle(statusListId = "status-list-1", statusListIndex = 7)
+        var reserveCalls: Int = 0
         var boundHandle: StatusReservationHandle? = null
         var boundCredentialId: String? = null
         var cancelledHandle: StatusReservationHandle? = null
         var failBind: Boolean = false
 
-        override suspend fun reserve(context: StatusEnrichmentContext): IdkResult<ReservedStatus, IdkError> =
-            Ok(
+        override suspend fun reserve(context: StatusEnrichmentContext): IdkResult<ReservedStatus, IdkError> {
+            reserveCalls += 1
+            return Ok(
                 ReservedStatus(
                     handle = reservedHandle,
                     claim = kotlinx.serialization.json.buildJsonObject {
@@ -349,6 +396,7 @@ class StatusEnrichmentFailClosedTest {
                     mergeTarget = StatusClaimMergeTarget.VC_CREDENTIAL_STATUS,
                 ),
             )
+        }
 
         override suspend fun bind(
             handle: StatusReservationHandle,

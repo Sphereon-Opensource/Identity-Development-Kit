@@ -28,6 +28,7 @@ import com.sphereon.core.api.service.TypedServiceCommandAdapter
 import com.sphereon.di.session.SessionScope
 import com.sphereon.oauth2.common.config.OAuth2ServersConfigProvider
 import com.sphereon.oauth2.common.model.PkceMethod
+import com.sphereon.oauth2.common.model.GrantType
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeArgs
 import com.sphereon.oauth2.server.authorization.command.CreateAuthorizationCodeCommand
 import com.sphereon.oauth2.server.authorization.error.AuthorizationServerError
@@ -217,7 +218,9 @@ class CreateAuthorizationCodeCommandImpl(
             }
             val client =
                 clientLookup.value
-                    ?: resolvePublicClientFallback(session.clientId, configProvider)
+                    ?: session.admittedClient?.takeIf {
+                        it.clientId == session.clientId && GrantType.AUTHORIZATION_CODE in it.grantTypes
+                    }
                     ?: return Err(AuthorizationServerError.ClientNotFound(clientId = session.clientId))
 
             // Evaluators are SessionScope and resolve tenant from their own session-scoped
@@ -263,6 +266,8 @@ class CreateAuthorizationCodeCommandImpl(
                 scope = consent.grantedScopes?.joinToString(" "),
                 resource = session.resource,
                 defaultAccessTokenAudience = session.defaultAccessTokenAudience,
+                admittedClient = session.admittedClient,
+                admittedAudiences = session.admittedAudiences,
                 codeChallenge = session.codeChallenge,
                 codeChallengeMethod = pkceMethod,
                 dpopJkt = session.dpopJkt,

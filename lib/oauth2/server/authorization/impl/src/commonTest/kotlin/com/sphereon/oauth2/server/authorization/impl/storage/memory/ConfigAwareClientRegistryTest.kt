@@ -37,6 +37,7 @@ import com.sphereon.oauth2.server.authorization.impl.config.OAuth2ServersConfigB
 import com.sphereon.oauth2.server.authorization.impl.config.RecordingSessionLogService
 import com.sphereon.oauth2.server.authorization.impl.config.TestSessionExecution
 import com.sphereon.oauth2.server.authorization.impl.config.TypeAwarePrincipalConfigService
+import com.sphereon.oauth2.server.authorization.impl.command.clientauth.toVerifiedClientAuthorization
 import com.sphereon.oauth2.server.authorization.impl.testutil.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
@@ -285,6 +286,74 @@ class ConfigAwareClientRegistryTest {
 
             assertTrue(result.isErr)
             assertTrue(result.error.details.contains("tenant-owned"))
+        }
+
+    @Test
+    fun tokenExchangeAuthorityIsBoundOnlyFromServerConfigurationAndSurvivesLookup() =
+        runTest {
+            val secrets = resolvingOpaqueSecrets(emptyMap())
+            val execution =
+                TestSessionExecution(
+                    TypeAwarePrincipalConfigService(
+                        properties =
+                            mapOf(
+                                "oauth2.clients.operator.client-id" to "operator-cli",
+                                "oauth2.clients.operator.client-type" to "public",
+                                "oauth2.clients.operator.token-endpoint-auth-method" to "none",
+                                "oauth2.clients.operator.grant-types" to "authorization_code,urn:ietf:params:oauth:grant-type:token-exchange",
+                                "oauth2.clients.operator.token-exchange.mode" to "operator-delegation",
+                                "oauth2.clients.operator.token-exchange.audiences" to "enterprise-platform,enterprise-tenant-kms",
+                                "oauth2.clients.operator.token-exchange.provisioning" to "true",
+                                "oauth2.clients.plain.client-id" to "plain-client",
+                                "oauth2.clients.plain.client-type" to "public",
+                                "oauth2.clients.plain.token-endpoint-auth-method" to "none",
+                                "oauth2.clients.plain.grant-types" to "authorization_code",
+                            ),
+                        normalizeKeys = true,
+                    ),
+                )
+            val registry =
+                ConfigAwareClientRegistry(
+                    execution = execution,
+                    backingStorage = InMemoryOAuth2BackingStorageImpl(),
+                    configBinder = OAuth2ClientsConfigBinder(execution, secrets),
+                    asInstanceIdProvider =
+                        object : OAuth2ServerInstanceIdProvider {
+                            override fun currentAsInstanceId(): String? = null
+                        },
+                    serversConfigProvider = TestOAuth2ServersConfigProvider(OAuth2ServersConfig()),
+                    opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(secrets),
+                    clientRegistrationStore = InMemoryClientRegistrationStore(),
+                    clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),
+                )
+
+            val operator = assertNotNull(registry.getClient("operator-cli").value)
+            assertEquals(
+                mapOf("mode" to "operator-delegation", "audiences" to "enterprise-platform,enterprise-tenant-kms", "provisioning" to "true"),
+                operator.tokenExchangeAuthority,
+            )
+            assertTrue(operator.additionalMetadata.keys.none { it.contains("exchange") }, "authority is never issuance metadata")
+            assertEquals(operator.tokenExchangeAuthority, operator.toVerifiedClientAuthorization().tokenExchangeAuthority)
+            assertTrue(assertNotNull(registry.getClient("plain-client").value).tokenExchangeAuthority.isEmpty())
+
+            val selfGranted =
+                ClientRegistration(
+                    clientId = "dyn-self-granted",
+                    clientName = "self-granted",
+                    clientType = ClientType.PUBLIC,
+                    grantTypes = listOf(GrantType.TOKEN_EXCHANGE),
+                    tokenEndpointAuthMethod = ClientAuthenticationMethod.NONE,
+                    tokenExchangeAuthority = mapOf("mode" to "operator-delegation", "audiences" to "enterprise-platform", "provisioning" to "true"),
+                )
+            assertTrue(registry.registerClient(selfGranted).isErr, "dynamic registration cannot grant exchange authority")
+            assertNull(registry.getClient("dyn-self-granted").value)
+
+            val plain = assertNotNull(registry.registerClient(selfGranted.copy(tokenExchangeAuthority = emptyMap())).value)
+            assertTrue(
+                registry.updateClient(plain.clientId, plain.copy(tokenExchangeAuthority = mapOf("mode" to "workload"))).isErr,
+                "dynamic update cannot grant exchange authority",
+            )
+            assertTrue(assertNotNull(registry.getClient(plain.clientId).value).tokenExchangeAuthority.isEmpty())
         }
 
     @Test
@@ -909,7 +978,13 @@ class ConfigAwareClientRegistryTest {
                         object : OAuth2ServerInstanceIdProvider {
                             override fun currentAsInstanceId(): String? = null
                         },
-                    serversConfigProvider = TestOAuth2ServersConfigProvider(OAuth2ServersConfig()),
+                    serversConfigProvider =
+                        TestOAuth2ServersConfigProvider(
+                            OAuth2ServersConfig(
+                                defaultServer = SERVER_ID,
+                                servers = mapOf(SERVER_ID to OAuth2ServerInstanceConfig()),
+                            ),
+                        ),
                     opaqueInternalClientSecretVerifier = DefaultOpaqueInternalClientSecretVerifier(rejectingOpaqueSecrets),
                     clientRegistrationStore = store,
                     clientSecretHasher = ClientSecretHasher(defaultSecureRandom()),

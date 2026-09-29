@@ -41,8 +41,8 @@ import com.sphereon.oauth2.server.authorization.impl.http.loginSessionCookieHead
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
-import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
+import com.sphereon.oauth2.server.authorization.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.provider.UserAuthenticationProvider
 import com.sphereon.oauth2.server.authorization.provider.UserCredentials
 import com.sphereon.oauth2.server.authorization.storage.OidcLoginSession

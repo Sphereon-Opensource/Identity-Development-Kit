@@ -5,6 +5,7 @@ import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.encodeToBase64
 import com.sphereon.core.api.encodeToBase64Url
 import com.sphereon.core.api.error.IdkError
+import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.jose.JwaKeyType
 import com.sphereon.crypto.core.jose.Jwk
 import com.sphereon.crypto.core.kms.KmsProviderOperation
@@ -25,6 +26,50 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AzureProviderCertificateReferenceTest {
+    @Test
+    fun getKeyResolvesCertificateBackedUnversionedAlias() =
+        runTest {
+            var requestedAlias: String? = null
+            var requestedVersion: String? = "not-read"
+            val provider =
+                providerWithReader { alias, version ->
+                    requestedAlias = alias
+                    requestedVersion = version
+                    certificateRead(version = LATEST_VERSION)
+                }
+
+            try {
+                val result = provider.getKey(KeyInfo<Jwk>(alias = SENSITIVE_ALIAS))
+
+                assertEquals(SENSITIVE_ALIAS, requestedAlias)
+                assertEquals(null, requestedVersion)
+                assertEquals("$SENSITIVE_ALIAS:$LATEST_VERSION", result.alias)
+                val publicKey = result.key as Jwk
+                assertTrue(publicKey.x5c?.isNotEmpty() == true)
+                assertEquals(JwaKeyType.EC, publicKey.kty)
+            } finally {
+                provider.close()
+            }
+        }
+
+    @Test
+    fun getKeyGivesACertificateBackedKeyTheSameVersionedKidAsADirectKeyRead() =
+        runTest {
+            // External key registration needs a kid. A certificate-managed Key Vault key is read
+            // through its certificate, which carries no JWK kid of its own, so the provider must
+            // supply the key's `name:version` identity or the key cannot be registered.
+            val provider = providerWithReader { _, _ -> certificateRead(version = LATEST_VERSION) }
+
+            try {
+                val result = provider.getKey(KeyInfo<Jwk>(alias = SENSITIVE_ALIAS))
+
+                assertEquals("$SENSITIVE_ALIAS:$LATEST_VERSION", result.kid)
+                assertEquals("$SENSITIVE_ALIAS:$LATEST_VERSION", (result.key as Jwk).kid)
+            } finally {
+                provider.close()
+            }
+        }
+
     @Test
     fun publicGetCertificateResolvesLatestAliasToCanonicalPublicReference() =
         runTest {
@@ -207,6 +252,36 @@ class AzureProviderCertificateReferenceTest {
             }
 
         assertFalse(failure.message.orEmpty().contains("other.vault.azure.net"))
+    }
+
+    @Test
+    fun canonicalizesUrlBareVersionAndCanonicalCertificateIds() {
+        val vault = "https://configured.vault.azure.net/"
+        fun canonical(id: String?) =
+            canonicalAzureCertificateId(vault, ProviderCertificateLookup(alias = "signing-certificate", id = id))
+
+        assertEquals(
+            "signing-certificate:version1",
+            canonical("https://configured.vault.azure.net/certificates/signing-certificate/version1"),
+        )
+        assertEquals("signing-certificate:version1", canonical("version1"))
+        assertEquals("signing-certificate:version1", canonical("signing-certificate:version1"))
+        assertEquals(null, canonical(null))
+    }
+
+    @Test
+    fun canonicalizationRejectsOtherVaultAndOtherAlias() {
+        val vault = "https://configured.vault.azure.net"
+        listOf(
+            "https://other.vault.azure.net/certificates/signing-certificate/version1",
+            "https://configured.vault.azure.net/certificates/other-certificate/version1",
+            "other-certificate:version1",
+            "not a version",
+        ).forEach { id ->
+            assertFailsWith<IllegalArgumentException> {
+                canonicalAzureCertificateId(vault, ProviderCertificateLookup(alias = "signing-certificate", id = id))
+            }
+        }
     }
 
     @Test

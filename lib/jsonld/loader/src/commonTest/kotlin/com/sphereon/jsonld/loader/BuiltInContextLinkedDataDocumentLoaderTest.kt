@@ -95,6 +95,7 @@ class BuiltInContextLinkedDataDocumentLoaderTest {
             setOf(
                 WellKnownContexts.VCDM_1_1,
                 "https://www.w3.org/ns/credentials/v2",
+                WellKnownContexts.BITSTRING_STATUS_LIST_V1,
                 "https://w3id.org/security/data-integrity/v1",
                 "https://w3id.org/security/data-integrity/v2",
                 "https://vocabulary.uncefact.org/untp/",

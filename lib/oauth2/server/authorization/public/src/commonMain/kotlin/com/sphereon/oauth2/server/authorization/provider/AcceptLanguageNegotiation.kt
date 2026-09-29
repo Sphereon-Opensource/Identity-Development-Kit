@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.sphereon.oauth2.server.authorization.impl.provider
+package com.sphereon.oauth2.server.authorization.provider
 
 /**
  * RFC 7231 §5.3.5 Accept-Language negotiation.

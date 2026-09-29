@@ -22,7 +22,6 @@ import com.sphereon.oauth2.server.authorization.command.VerifiedClientAuthorizat
 import com.sphereon.oauth2.server.authorization.command.VerifyAuthorizationCodeGrantArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientAuthenticationArgs
 import com.sphereon.oauth2.server.authorization.command.VerifyClientCredentialsGrantArgs
-import com.sphereon.oauth2.server.authorization.command.VerifyTokenExchangeGrantArgs
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -42,11 +41,6 @@ class VerifiedClientAuthorizationBoundaryTest {
                 ),
                 VerifyClientCredentialsGrantArgs(clientId = "client"),
                 VerifyAuthorizationCodeGrantArgs(code = "code", redirectUri = "https://client.example/cb", clientId = "client"),
-                VerifyTokenExchangeGrantArgs(
-                    subjectToken = "token",
-                    subjectTokenType = "urn:ietf:params:oauth:token-type:access_token",
-                    clientId = "client",
-                ),
             )
 
         publicArgs.forEach { args ->

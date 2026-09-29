@@ -36,7 +36,7 @@ import com.sphereon.oauth2.server.authorization.impl.http.loginCsrfCookieValue
 import com.sphereon.oauth2.server.authorization.impl.http.oauth2ErrorResponse
 import com.sphereon.oauth2.server.authorization.impl.http.parseFormBody
 import com.sphereon.oauth2.server.authorization.impl.http.withSecurityHeaders
-import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
+import com.sphereon.oauth2.server.authorization.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.storage.PendingAuthorizationSessionStore
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject

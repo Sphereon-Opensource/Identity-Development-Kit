@@ -64,6 +64,8 @@ class VerifyPushedAuthorizationRequestRedirectUriTest {
                     execution = ctx.execution,
                     clientRegistry = StubClientRegistry(mapOf(CLIENT_ID to client)),
                     configProvider = StubOAuth2ServersConfigProvider(),
+                    credentialIssuerAudienceResolver = com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
+                    unregisteredClientAdmissionRule = com.sphereon.oauth2.server.authorization.impl.command.authorization.Oid4vciUnregisteredWalletAdmissionRule(),
                 )
 
             val result =
@@ -103,6 +105,8 @@ class VerifyPushedAuthorizationRequestRedirectUriTest {
                                 requireRedirectUriInPushedAuthorizationRequests = true,
                             ),
                         ),
+                    credentialIssuerAudienceResolver = com.sphereon.oauth2.server.authorization.impl.provider.NoCredentialIssuerAudienceResolver(),
+                    unregisteredClientAdmissionRule = com.sphereon.oauth2.server.authorization.impl.command.authorization.Oid4vciUnregisteredWalletAdmissionRule(),
                 )
 
             val result =

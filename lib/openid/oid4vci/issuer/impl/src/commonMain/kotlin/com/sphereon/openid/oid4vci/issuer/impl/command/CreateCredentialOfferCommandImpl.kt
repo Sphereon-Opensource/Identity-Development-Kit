@@ -43,6 +43,7 @@ import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferArgs
 import com.sphereon.openid.oid4vci.issuer.command.CreateCredentialOfferCommand
 import com.sphereon.openid.oid4vci.issuer.command.CreatedCredentialOffer
 import com.sphereon.openid.oid4vci.issuer.command.OfferUriLifecycle
+import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerProtocolConfig
 import com.sphereon.openid.oid4vci.issuer.config.requireCanonicalOid4vciIssuerInstanceId
 import com.sphereon.openid.oid4vci.issuer.impl.lifecycle.OfferLifecycleInitializer
@@ -71,6 +72,7 @@ class CreateCredentialOfferCommandImpl(
     private val asBridge: Oid4vciAuthorizationServerBridge,
     private val offerStore: CredentialOfferStore,
     private val sessionStore: CredentialIssuanceSessionStore,
+    private val issuerConfigProvider: Oid4vciIssuerConfigProvider,
     private val eventService: SessionEventService? = null,
     /**
      * Pre-flight coordinator: per-credential grant-policy validation, pipeline-configuration
@@ -137,6 +139,7 @@ class CreateCredentialOfferCommandImpl(
         args: CreateCredentialOfferArgs,
     ): IdkResult<CreatedCredentialOffer, IdkError> {
         validateRequestShape(args).getOrElse { return Err(it) }
+        validateCredentialConfigurationIds(args).getOrElse { return Err(it) }
 
         val now = clock.now()
         if (now.epochSeconds > Long.MAX_VALUE - args.offerTtlSeconds) {
@@ -203,6 +206,37 @@ class CreateCredentialOfferCommandImpl(
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "rate_limit is mandatory for a reusable offer"))
         }
         return Ok(Unit)
+    }
+
+    /**
+     * An offer may only reference credential configurations this issuer publishes; otherwise the
+     * wallet would receive an offer it can never redeem.
+     *
+     * The issuer may read its configuration from a snapshot that lags a configuration written a
+     * moment ago, possibly by another process. A miss therefore reloads the configuration once and
+     * checks again; only an id that is still unknown after the reload is refused.
+     */
+    private suspend fun validateCredentialConfigurationIds(args: CreateCredentialOfferArgs): IdkResult<Unit, IdkError> {
+        issuerConfigProvider.prepare()
+        var unknown = unknownCredentialConfigurationIds(args)
+        if (unknown.isNotEmpty()) {
+            issuerConfigProvider.reloadConfiguration()
+            unknown = unknownCredentialConfigurationIds(args)
+        }
+        if (unknown.isEmpty()) {
+            return Ok(Unit)
+        }
+        return Err(
+            IdkError.ILLEGAL_ARGUMENT_ERROR(
+                arg = "credential_configuration_ids",
+                message = "Unknown credential_configuration_id for this issuer: ${unknown.joinToString(", ")}",
+            ),
+        )
+    }
+
+    private fun unknownCredentialConfigurationIds(args: CreateCredentialOfferArgs): List<String> {
+        val known = issuerConfigProvider.credentialConfigurations.keys
+        return args.credentialConfigurationIds.filterNot { it in known }.distinct()
     }
 
     /**

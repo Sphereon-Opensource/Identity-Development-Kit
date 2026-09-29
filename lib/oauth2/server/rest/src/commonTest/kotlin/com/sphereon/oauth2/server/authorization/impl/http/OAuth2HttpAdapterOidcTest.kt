@@ -212,7 +212,8 @@ private fun discoveryAdapter(
     baseUrlResolver: OAuth2ServerBaseUrlResolver = DefaultOAuth2ServerBaseUrlResolver(),
 ): TestHttpAdapterRoute {
     val exec = execution()
-    val handleDiscoveryCommand = FakeHandleDiscoveryRequestCommand(configProvider)
+    val asInstanceIdProvider = idProvider()
+    val handleDiscoveryCommand = FakeHandleDiscoveryRequestCommand(configProvider, asInstanceIdProvider)
     val oauth2Metadata = OAuth2ServerMetadataHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider, baseUrlResolver)
     val openidMetadata = OpenidDiscoveryHttpEndpointCommandImpl(exec, handleDiscoveryCommand, configProvider, baseUrlResolver)
     val jwks = JwksHttpEndpointCommandImpl(exec, FakeHandleJwksRequestCommand())
@@ -222,7 +223,7 @@ private fun discoveryAdapter(
             execution = exec,
             endpointCommandRegistry = registry,
             asInstanceResolver = resolverFor(configProvider),
-            asInstanceIdProvider = idProvider(),
+            asInstanceIdProvider = asInstanceIdProvider,
             slugLookup = NoOpRoutableSlugLookup(),
             tenantIdProvider = DefaultResolvedTenantIdProvider(),
         )
@@ -379,6 +380,119 @@ class OAuth2HttpAdapterOidcTest {
                 body.jsonObject["issuer"]?.jsonPrimitive?.content,
             )
         }
+
+    @Test
+    fun rfc8414MetadataIsServedAtTheWellKnownInsertedLocationOfEveryHostedIssuer() =
+        runTest {
+            val configProvider =
+                FakeOAuth2ServersConfigProvider(
+                    OAuth2ServersConfig(
+                        defaultServer = "acme",
+                        servers =
+                            mapOf(
+                                "acme" to
+                                    OAuth2ServerInstanceConfig(
+                                        issuer = "https://acme.example.com/as/acme",
+                                        oidc = FeaturePolicy.SUPPORTED,
+                                    ),
+                                "wallet-proxy" to
+                                    OAuth2ServerInstanceConfig(
+                                        issuer = "https://acme.example.com/as/wallet-proxy",
+                                        oidc = FeaturePolicy.SUPPORTED,
+                                    ),
+                            ),
+                    ),
+                )
+
+            for (slug in listOf("acme", "wallet-proxy")) {
+                for (wellKnown in listOf("/.well-known/oauth-authorization-server", "/.well-known/openid-configuration")) {
+                    val response =
+                        dispatchForTest(
+                            listOf(discoveryAdapter(configProvider)),
+                            GenericHttpRequest(
+                                method = "GET",
+                                path = "$wellKnown/as/$slug",
+                                headers = mapOf("host" to "acme.example.com", "x-forwarded-proto" to "https"),
+                            ),
+                        )
+
+                    assertEquals(200, response.statusCode, "$wellKnown/as/$slug")
+                    val body = json.parseToJsonElement(response.body!!)
+                    assertEquals(
+                        "https://acme.example.com/as/$slug",
+                        body.jsonObject["issuer"]?.jsonPrimitive?.content,
+                        "$wellKnown/as/$slug must describe the issuer it is named after",
+                    )
+                }
+            }
+        }
+
+    @Test
+    fun discoveryForAnIssuerPathThatHostsNoServerIsNotFound() =
+        runTest {
+            val configProvider = FakeOAuth2ServersConfigProvider(hostedAcmeServers())
+
+            for (path in listOf(
+                "/.well-known/openid-configuration/as/unknown",
+                "/.well-known/oauth-authorization-server/as/acme2",
+            )) {
+                val response =
+                    dispatchForTest(
+                        listOf(discoveryAdapter(configProvider)),
+                        GenericHttpRequest(
+                            method = "GET",
+                            path = path,
+                            headers = mapOf("host" to "acme.example.com", "x-forwarded-proto" to "https"),
+                        ),
+                    )
+
+                assertEquals(404, response.statusCode, path)
+                val body = json.parseToJsonElement(response.body!!)
+                assertEquals("not_found", body.jsonObject["error"]?.jsonPrimitive?.content, path)
+            }
+
+            val pathIssuer =
+                dispatchForTest(
+                    listOf(pathIssuerDiscoveryAdapter(configProvider)),
+                    GenericHttpRequest(
+                        method = "GET",
+                        path = "/as/unknown/.well-known/openid-configuration",
+                        headers = mapOf("host" to "acme.example.com", "x-forwarded-proto" to "https"),
+                    ),
+                )
+            assertEquals(404, pathIssuer.statusCode)
+        }
+
+    @Test
+    fun rootDiscoveryStillServesTheDefaultServer() =
+        runTest {
+            val configProvider = FakeOAuth2ServersConfigProvider(hostedAcmeServers())
+
+            val response =
+                dispatchForTest(
+                    listOf(discoveryAdapter(configProvider)),
+                    GenericHttpRequest(
+                        method = "GET",
+                        path = "/.well-known/openid-configuration",
+                        headers = mapOf("host" to "acme.example.com", "x-forwarded-proto" to "https"),
+                    ),
+                )
+
+            assertEquals(200, response.statusCode)
+            val body = json.parseToJsonElement(response.body!!)
+            assertEquals("https://acme.example.com/as/acme", body.jsonObject["issuer"]?.jsonPrimitive?.content)
+        }
+
+    private fun hostedAcmeServers() =
+        OAuth2ServersConfig(
+            defaultServer = "acme",
+            servers =
+                mapOf(
+                    "acme" to OAuth2ServerInstanceConfig(issuer = "https://acme.example.com/as/acme", oidc = FeaturePolicy.SUPPORTED),
+                    "wallet-proxy" to
+                        OAuth2ServerInstanceConfig(issuer = "https://acme.example.com/as/wallet-proxy", oidc = FeaturePolicy.SUPPORTED),
+                ),
+        )
 
     @Test
     fun oidcDiscoveryReturns200WhenEnabled() =

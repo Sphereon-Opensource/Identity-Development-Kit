@@ -23,11 +23,9 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                // OAuth2 authorization-server contracts. Neutral HTTP endpoints still compile
-                // against authorization-impl helpers (AcceptLanguageNegotiation, LoginCsrfTokenizer);
-                // executable AS assemblies own final Metro graph selection over those bindings.
+                // OAuth2 authorization-server contracts. Executable AS assemblies supply the
+                // authorization implementation and own final Metro graph selection.
                 api(projects.libOauth2ServerAuthorizationPublic)
-                implementation(projects.libOauth2ServerAuthorizationImpl)
 
                 // OAuth2 common models and client/resource capabilities used by
                 // metadata, introspection, and user-info handlers.
@@ -65,6 +63,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(sphereonlib.org.jetbrains.kotlinx.coroutines.test)
+                implementation(projects.libOauth2ServerAuthorizationImpl)
             }
         }
     }

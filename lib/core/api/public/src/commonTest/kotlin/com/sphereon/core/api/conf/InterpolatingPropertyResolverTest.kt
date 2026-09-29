@@ -65,6 +65,61 @@ class InterpolatingPropertySourcesPropertyResolverTest {
     }
 
     @Test
+    fun deniedInterpolationNamesThePropertyAndWinningSource() {
+        val resolver = createResolver("oauth2.servers.default.webauthn.rp-id" to "\${env:UNDECLARED_BASE_DOMAIN}")
+
+        val failure = assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("oauth2.servers.default.webauthn.rp-id")
+        }
+
+        val message = failure.message.orEmpty()
+        assertTrue(message.contains("'oauth2.servers.default.webauthn.rp.id'"))
+        assertTrue(message.contains("'test-source'"))
+        assertTrue(message.contains("interpolation is not permitted for this configuration field"))
+        assertFalse(message.contains("'policy'"))
+        assertFalse(message.contains("UNDECLARED_BASE_DOMAIN"))
+    }
+
+    @Test
+    fun missingEnvironmentVariableIsReportedAsUnresolvedNotDenied() {
+        val source = ProtectedMutableMapPropertySource("test-source", ConfigLevel.APP)
+        source.addProperty("service.public-url", "\${env:IDK_TEST_UNSET_PUBLIC_URL}")
+        val resolver =
+            InterpolatingPropertySourcesPropertyResolver(
+                propertySources = DefaultPropertySources().apply { add(source) },
+                interpolator = DefaultPropertyInterpolator(),
+                resolverLevel = ConfigLevel.APP,
+                interpolationPolicyProvider =
+                    DefaultInterpolationPolicyProvider(mapOf("service.public-url" to InterpolationPolicy.APP_ENVIRONMENT)),
+            )
+
+        val failure = assertFailsWith<IllegalStateException> {
+            resolver.getPropertyAsString("service.public-url")
+        }
+
+        val message = failure.message.orEmpty()
+        assertTrue(message.contains("could not resolve a reference for property 'service.public.url'"), message)
+        assertTrue(message.contains("from source 'test-source'"), message)
+        assertTrue(message.contains("env:IDK_TEST_UNSET_PUBLIC_URL"), message)
+        assertFalse(message.contains("denied"), message)
+    }
+
+    @Test
+    fun deniedEntryInPrefixWalkNamesTheDeniedPropertyAndSource() {
+        val resolver =
+            createResolver(
+                "oauth2.servers.default.mode" to "HOSTED",
+                "oauth2.servers.default.webauthn.rp-id" to "platform.\${env:UNDECLARED_BASE_DOMAIN}",
+            )
+
+        val failure = assertFailsWith<IllegalStateException> {
+            resolver.getSubProperties(setOf("oauth2.servers"), stripPrefix = true)
+        }
+
+        assertTrue(failure.message.orEmpty().contains("'oauth2.servers.default.webauthn.rp.id' from source 'test-source'"))
+    }
+
+    @Test
     fun getPropertyReturnsNullForMissing() {
         val resolver = createResolver()
         val value = resolver.getProperty("missing", String::class)

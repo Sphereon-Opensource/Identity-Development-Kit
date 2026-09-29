@@ -138,6 +138,9 @@ data class AuthorizationSession(
     val applicationId: String? = null,
     /** Authentication route selected from durable hosted-resource and binding state. */
     val authenticationRoute: AuthenticationRouteDecision? = null,
+    /** Admission context for an unregistered OID4VCI wallet. */
+    val admittedClient: ClientRegistration? = null,
+    val admittedAudiences: List<String>? = null,
 )
 
 /**

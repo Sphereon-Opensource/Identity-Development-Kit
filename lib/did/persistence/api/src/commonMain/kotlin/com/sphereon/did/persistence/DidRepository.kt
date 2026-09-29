@@ -125,8 +125,20 @@ interface DidRepository {
 
     // ============ Child-row ops (IDK-19 sub-resource REST endpoints) ============
 
-    /** Upserts a verification method (insert on new `id`, replace otherwise). */
-    suspend fun saveVerificationMethod(vm: DidVerificationMethodRecord): IdkResult<Unit, IdkError>
+    /**
+     * Upserts a verification method (insert on new `id`, replace otherwise).
+     *
+     * [tenantId] is the tenant that owns the parent `did_record`: the tenant resolved for the
+     * executing request, never a session default. Routing dialects select that tenant's
+     * database with it, and EDK dialects reject a missing tenant with `ILLEGAL_ARGUMENT_ERROR`,
+     * as for the tenant-scoped deletes. The same applies to every other child-row and context
+     * write or read below. The single-store IDK Memory/SQLite dialects accept a null tenant
+     * (development only).
+     */
+    suspend fun saveVerificationMethod(
+        tenantId: String?,
+        vm: DidVerificationMethodRecord,
+    ): IdkResult<Unit, IdkError>
 
     /**
      * Removes a verification method and cascades to any relationships / key mappings.
@@ -142,8 +154,11 @@ interface DidRepository {
         verificationMethodId: String,
     ): IdkResult<Unit, IdkError>
 
-    /** Upserts a relationship row. */
-    suspend fun saveVerificationRelationship(rel: DidVerificationRelationshipRecord): IdkResult<Unit, IdkError>
+    /** Upserts a relationship row. See [saveVerificationMethod] for [tenantId]. */
+    suspend fun saveVerificationRelationship(
+        tenantId: String?,
+        rel: DidVerificationRelationshipRecord,
+    ): IdkResult<Unit, IdkError>
 
     /**
      * Removes a relationship row by id. See [deleteVerificationMethod] for tenant
@@ -154,8 +169,11 @@ interface DidRepository {
         relationshipId: String,
     ): IdkResult<Unit, IdkError>
 
-    /** Upserts a service. */
-    suspend fun saveService(service: DidServiceRecord): IdkResult<Unit, IdkError>
+    /** Upserts a service. See [saveVerificationMethod] for [tenantId]. */
+    suspend fun saveService(
+        tenantId: String?,
+        service: DidServiceRecord,
+    ): IdkResult<Unit, IdkError>
 
     /**
      * Removes a service by id. See [deleteVerificationMethod] for tenant isolation
@@ -166,8 +184,11 @@ interface DidRepository {
         serviceId: String,
     ): IdkResult<Unit, IdkError>
 
-    /** Upserts a key mapping. */
-    suspend fun saveKeyMapping(mapping: DidKeyMappingRecord): IdkResult<Unit, IdkError>
+    /** Upserts a key mapping. See [saveVerificationMethod] for [tenantId]. */
+    suspend fun saveKeyMapping(
+        tenantId: String?,
+        mapping: DidKeyMappingRecord,
+    ): IdkResult<Unit, IdkError>
 
     /**
      * Removes a key mapping by id. See [deleteVerificationMethod] for tenant isolation
@@ -178,8 +199,11 @@ interface DidRepository {
         mappingId: String,
     ): IdkResult<Unit, IdkError>
 
-    /** Upserts a controller entry. */
-    suspend fun saveController(controller: DidControllerRecord): IdkResult<Unit, IdkError>
+    /** Upserts a controller entry. See [saveVerificationMethod] for [tenantId]. */
+    suspend fun saveController(
+        tenantId: String?,
+        controller: DidControllerRecord,
+    ): IdkResult<Unit, IdkError>
 
     /**
      * Removes a controller entry by id. See [deleteVerificationMethod] for tenant
@@ -190,8 +214,11 @@ interface DidRepository {
         controllerId: String,
     ): IdkResult<Unit, IdkError>
 
-    /** Upserts an `alsoKnownAs` entry. */
-    suspend fun saveAlsoKnownAs(aka: DidAlsoKnownAsRecord): IdkResult<Unit, IdkError>
+    /** Upserts an `alsoKnownAs` entry. See [saveVerificationMethod] for [tenantId]. */
+    suspend fun saveAlsoKnownAs(
+        tenantId: String?,
+        aka: DidAlsoKnownAsRecord,
+    ): IdkResult<Unit, IdkError>
 
     /**
      * Removes an `alsoKnownAs` entry by id. See [deleteVerificationMethod] for tenant
@@ -202,8 +229,11 @@ interface DidRepository {
         akaId: String,
     ): IdkResult<Unit, IdkError>
 
-    /** Upserts an `equivalentId` entry. */
-    suspend fun saveEquivalentId(eq: DidEquivalentIdRecord): IdkResult<Unit, IdkError>
+    /** Upserts an `equivalentId` entry. See [saveVerificationMethod] for [tenantId]. */
+    suspend fun saveEquivalentId(
+        tenantId: String?,
+        eq: DidEquivalentIdRecord,
+    ): IdkResult<Unit, IdkError>
 
     /**
      * Removes an `equivalentId` entry by its row id (not the DID string). See
@@ -216,15 +246,20 @@ interface DidRepository {
 
     // ============ Context ops ============
 
-    /** Returns the ordered `@context` list for a DID. */
-    suspend fun getContexts(didRecordId: String): IdkResult<List<DidDocumentContextRecord>, IdkError>
+    /** Returns the ordered `@context` list for a DID. See [saveVerificationMethod] for [tenantId]. */
+    suspend fun getContexts(
+        tenantId: String?,
+        didRecordId: String,
+    ): IdkResult<List<DidDocumentContextRecord>, IdkError>
 
     /**
      * Atomically replaces every context row for [didRecordId] with [contexts]
      * (delete-then-insert). Separate from per-row operations because the `@context` array is
-     * a single ordered value whose mutation is always "replace the whole list".
+     * a single ordered value whose mutation is always "replace the whole list". See
+     * [saveVerificationMethod] for [tenantId].
      */
     suspend fun replaceContexts(
+        tenantId: String?,
         didRecordId: String,
         contexts: List<DidDocumentContextRecord>,
     ): IdkResult<Unit, IdkError>

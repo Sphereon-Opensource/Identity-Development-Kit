@@ -110,7 +110,6 @@ import kotlinx.serialization.json.put
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
 import kotlin.uuid.Uuid
-import com.sphereon.data.store.credential.design.model.SdPolicy as DesignSdPolicy
 
 /**
  * Orchestrates credential issuance per OID4VCI 1.0 Section 8.
@@ -779,24 +778,8 @@ class HandleCredentialRequestCommandImpl(
                 }
             }
 
-        // SD-JWT VC Type Metadata `sd` describes whether a claim is selectively disclosable:
-        // `always` MUST be SD, `allowed` MAY be SD, and `never` MUST remain in the clear.
-        // The issuer enum instead describes the concrete issuance action, so do not map these
-        // similarly named values by name.
         val sdPolicies: Map<String, SdPolicy> =
-            resolvedDesign
-                ?.design
-                ?.claims
-                ?.associate { claim ->
-                    val pathStr = Oid4vciDesignMapper.claimPathString(claim)
-                    val issuerPolicy =
-                        when (claim.sdPolicy) {
-                            DesignSdPolicy.ALWAYS -> SdPolicy.SELECTIVELY_DISCLOSABLE
-                            DesignSdPolicy.ALLOWED -> SdPolicy.SELECTIVELY_DISCLOSABLE
-                            DesignSdPolicy.NEVER -> SdPolicy.ALWAYS_DISCLOSED
-                        }
-                    pathStr to issuerPolicy
-                } ?: emptyMap()
+            resolvedDesign?.design?.claims?.let(::designIssuanceSdPolicies) ?: emptyMap()
 
         // Extract mandatory claims from resolved design
         val mandatoryClaims: Set<String> =
@@ -819,7 +802,7 @@ class HandleCredentialRequestCommandImpl(
 
         // 7. Resolve signing configuration for this credential type
         val signingConfig =
-            issuerConfigProvider.credentialSigningConfigs()[configId]
+            issuerConfigProvider.signingConfigReloadingOnMiss(configId)
                 ?: return Err(
                     IdkError.fromString(
                         code = "invalid_credential_configuration",

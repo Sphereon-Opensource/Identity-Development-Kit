@@ -45,8 +45,7 @@ import com.sphereon.oauth2.server.authorization.audit.OAuth2AuditEventType
 import com.sphereon.oauth2.server.authorization.impl.http.DefaultOAuth2ServerBaseUrlResolver
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestOAuth2ServersConfigProvider
 import com.sphereon.oauth2.server.authorization.impl.http.command.TestSessionExecution
-import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfKeyProvider
-import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizer
+import com.sphereon.oauth2.server.authorization.impl.provider.LoginCsrfTokenizerImpl
 import com.sphereon.oauth2.server.authorization.impl.storage.memory.InMemoryPendingAuthorizationSessionStore
 import com.sphereon.oauth2.server.authorization.model.AuthorizationSession
 import com.sphereon.oauth2.server.authorization.provider.AuthenticatedUser
@@ -54,6 +53,8 @@ import com.sphereon.oauth2.server.authorization.provider.AuthenticationContext
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationError
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationHint
 import com.sphereon.oauth2.server.authorization.provider.AuthenticationMethod
+import com.sphereon.oauth2.server.authorization.provider.LoginCsrfKeyProvider
+import com.sphereon.oauth2.server.authorization.provider.LoginCsrfTokenizer
 import com.sphereon.oauth2.server.authorization.provider.LoginPageAsset
 import com.sphereon.oauth2.server.authorization.provider.LoginPageContext
 import com.sphereon.oauth2.server.authorization.provider.LoginPageRenderer
@@ -109,7 +110,7 @@ class LoginHttpFlowTest {
     // Single tokenizer instance shared between the page (mints) and submit (verifies) commands
     // so the HMAC values agree across the tests' GET → POST round trip. Production wiring is
     // identical: AppScope-singleton tokenizer with one secret per AS process.
-    private val csrfTokenizer = LoginCsrfTokenizer(StubLoginCsrfKeyProvider())
+    private val csrfTokenizer: LoginCsrfTokenizer = LoginCsrfTokenizerImpl(StubLoginCsrfKeyProvider())
 
     private fun newLoginPageCommand(): LoginPageHttpEndpointCommandImpl =
         LoginPageHttpEndpointCommandImpl(

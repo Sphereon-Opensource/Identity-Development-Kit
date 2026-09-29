@@ -31,6 +31,12 @@ data class InternalClientConfig(
     val tenantId: String? = null,
     val defaultAccessTokenAudience: String? = null,
     val allowedAccessTokenAudiences: Set<String> = emptySet(),
+    /**
+     * Registration-controlled token-exchange authority. Attribute names and values are interpreted
+     * only by the deployment's token-exchange profile. They are bound from server-side
+     * configuration, are never accepted from dynamic registration and are never minted as claims.
+     */
+    val tokenExchangeAuthority: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -284,7 +290,6 @@ data class OAuth2ServerInstanceConfig(
     // Internal service-to-service clients (role → client configuration)
     val internalClients: Map<String, InternalClientConfig> = emptyMap(),
     // Public client policy for authorization code flow (OID4VCI wallets)
-    val publicClients: PublicClientConfig = PublicClientConfig(),
     // Browser-login session lifetimes (OIDC Core 1.0 §2 auth_time, prompt/max_age semantics)
     val session: SessionConfig = SessionConfig(),
     val webAuthn: WebAuthnLoginConfig = WebAuthnLoginConfig(),
@@ -405,26 +410,3 @@ data class SessionConfig(
         const val DEFAULT_ABSOLUTE_TTL_SECONDS: Int = 28800
     }
 }
-
-/**
- * Configuration for accepting public OAuth2 clients (e.g., OID4VCI wallets).
- *
- * Public clients use PKCE for security and do not authenticate with a client secret.
- */
-@JsExportCompat
-@Serializable
-data class PublicClientConfig(
-    val allowAny: Boolean = false,
-    val allowedClientIds: List<String> = emptyList(),
-    /**
-     * When `true`, public clients resolved via [allowAny] / [allowedClientIds] may present any
-     * redirect URI (the AS synthesises a registration with no registered URIs, effectively
-     * wildcard-accepting). Intended for OID4VCI wallet flows that use loopback or custom-scheme
-     * URIs the AS cannot pre-register.
-     *
-     * When `false` (default), the permissive public-client fallback is disabled entirely —
-     * [resolvePublicClient] returns `null`, forcing even public clients to be registered with
-     * real redirect URIs. OIDF conformance deployments MUST leave this `false`.
-     */
-    val permissiveRedirectUri: Boolean = false,
-)

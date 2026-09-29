@@ -42,6 +42,8 @@ import com.sphereon.oauth2.server.authorization.extension.AuthorizeRequestExtens
 import com.sphereon.oauth2.server.authorization.model.ClientRegistration
 import com.sphereon.oauth2.server.authorization.model.ClientType
 import com.sphereon.oauth2.server.authorization.storage.ClientRegistry
+import com.sphereon.oauth2.server.authorization.provider.CredentialIssuerAudienceResolver
+import com.sphereon.oauth2.server.authorization.provider.UnregisteredClientAdmissionRule
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.serialization.json.Json
@@ -79,6 +81,8 @@ class VerifyAuthorizationRequestCommandImpl(
     private val clientRegistry: ClientRegistry,
     private val serversConfigProvider: OAuth2ServersConfigProvider,
     private val authorizeExtensions: Set<AuthorizeRequestExtension>,
+    private val credentialIssuerAudienceResolver: CredentialIssuerAudienceResolver,
+    private val unregisteredClientAdmissionRule: UnregisteredClientAdmissionRule,
 ) : TypedServiceCommandAdapter<AuthorizationRequestData, VerifiedAuthorizationRequest, IdkError>(
         commandId = VerifyAuthorizationRequestCommand.COMMAND_ID,
         execution = execution,
@@ -103,7 +107,7 @@ class VerifyAuthorizationRequestCommandImpl(
         // Shared with the authorization endpoint's error-routing path (OAuth2Handlers) — see
         // [resolveTrustedRedirect]. All failures here are pre-redirect (redirect URI cannot be
         // trusted), so the HTTP adapter will serve them as JSON.
-        val resolution = resolveTrustedRedirect(request, clientRegistry, serversConfigProvider)
+        val resolution = resolveTrustedRedirect(request, clientRegistry, serversConfigProvider, unregisteredClientAdmissionRule, credentialIssuerAudienceResolver)
         val trusted =
             when (resolution) {
                 is RedirectResolution.RejectPreRedirect -> return Err(resolution.error)
@@ -387,6 +391,8 @@ class VerifyAuthorizationRequestCommandImpl(
                 parRequired = client.requirePushedAuthorizationRequests,
                 resolvedPkceMethod = resolvedPkceMethod,
                 responseMode = resolvedResponseMode,
+                admittedAudiences = trusted.admission?.audiences?.toList(),
+                admittedClient = trusted.admission?.client,
             ),
         )
     }

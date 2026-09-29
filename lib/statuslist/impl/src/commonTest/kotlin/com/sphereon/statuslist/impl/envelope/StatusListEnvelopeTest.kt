@@ -23,8 +23,12 @@ import com.sphereon.statuslist.StatusValues
 import com.sphereon.statuslist.impl.codec.StatusListCodec
 import com.sphereon.statuslist.spi.SignStatusListTokenArgs
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class StatusListEnvelopeTest {
     private fun args(
@@ -77,10 +81,44 @@ class StatusListEnvelopeTest {
 
             val credential = BitstringStatusListEnvelope.buildCredential(args(spec, StatusProofFormat.VC_JWT, encoded))
             val content = BitstringStatusListEnvelope.parse(credential)
-            assertEquals("revocation", content.statusPurpose)
+            assertEquals(listOf("revocation"), content.statusPurposes)
 
             val decoded = StatusListCodec.decode(content.encodedList, content.statusSize, spec)
             assertEquals(StatusValues.INVALID, decoded.get(200))
             assertEquals(StatusValues.VALID, decoded.get(0))
         }
+
+    @Test
+    fun bitstringCredentialDeclaresAllPurposes() =
+        runTest {
+            val spec = StatusListSpec.BITSTRING_STATUS_LIST
+            val bitset = com.sphereon.statuslist.impl.codec.StatusBitset.create(131_072, 2, StatusListCodec.bitOrderFor(spec))
+            val encoded = StatusListCodec.encode(bitset, spec)
+            val credential = BitstringStatusListEnvelope.buildCredential(
+                args(spec, StatusProofFormat.VC_JWT, encoded).copy(
+                    bitsPerStatus = 2,
+                    purposes = listOf(StatusPurpose.REVOCATION, StatusPurpose.SUSPENSION),
+                ),
+            )
+            val subject = credential["credentialSubject"]!!.jsonObject
+            assertEquals(listOf("revocation", "suspension"), subject["statusPurpose"]!!.jsonArray.map { it.jsonPrimitive.content })
+            assertEquals(2, subject["statusSize"]!!.jsonPrimitive.content.toInt())
+            assertNull(subject["statusMessage"])
+            assertEquals(listOf("revocation", "suspension"), BitstringStatusListEnvelope.parse(credential).statusPurposes)
+        }
+
+    @Test
+    fun bitstringMessagePurposeDeclaresStatusMessages() = runTest {
+        val spec = StatusListSpec.BITSTRING_STATUS_LIST
+        val bitset = com.sphereon.statuslist.impl.codec.StatusBitset.create(131_072, 2, StatusListCodec.bitOrderFor(spec))
+        val credential = BitstringStatusListEnvelope.buildCredential(
+            args(spec, StatusProofFormat.VC_JWT, StatusListCodec.encode(bitset, spec)).copy(
+                bitsPerStatus = 2,
+                purposes = listOf(StatusPurpose.MESSAGE),
+            ),
+        )
+        val subject = credential["credentialSubject"]!!.jsonObject
+        assertEquals(4, subject["statusMessages"]!!.jsonArray.size)
+        assertEquals(2, subject["statusSize"]!!.jsonPrimitive.content.toInt())
+    }
 }

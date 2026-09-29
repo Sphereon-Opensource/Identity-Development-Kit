@@ -558,13 +558,13 @@ abstract class DidRepositoryContract {
                         updatedAt = now,
                     ),
                 )
-            assertTrue(repo.replaceContexts(rec.id, newContexts) is Ok)
+            assertTrue(repo.replaceContexts(tenant, rec.id, newContexts) is Ok)
             val loaded = (repo.findByDid(tenant, rec.did) as Ok).value!!
             assertEquals(2, loaded.context.size)
             assertEquals("https://www.w3.org/ns/did/v1.1", loaded.context[0].contextUri)
             assertEquals("https://schema.org", loaded.context[1].contextUri)
             // Replace with empty — clears all.
-            assertTrue(repo.replaceContexts(rec.id, emptyList()) is Ok)
+            assertTrue(repo.replaceContexts(tenant, rec.id, emptyList()) is Ok)
             val emptied = (repo.findByDid(tenant, rec.did) as Ok).value!!
             assertEquals(0, emptied.context.size, "replaceContexts(emptyList) must clear all rows")
         }

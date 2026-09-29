@@ -89,7 +89,9 @@ internal object ActorClaimSerializer : KSerializer<ActorClaim> {
                 value.act?.let { actClaim ->
                     put("act", encoder.json.encodeToJsonElement(ActorClaimSerializer, actClaim))
                 }
-                value.additionalClaims.forEach { (key, jsonValue) -> put(key, jsonValue) }
+                value.additionalClaims.forEach { (key, jsonValue) ->
+                    if (key !in knownKeys) put(key, jsonValue)
+                }
             }
         encoder.encodeJsonElement(jsonObject)
     }
@@ -121,7 +123,9 @@ internal object MayActClaimSerializer : KSerializer<MayActClaim> {
         val jsonObject =
             buildJsonObject {
                 put("sub", JsonPrimitive(value.sub))
-                value.additionalClaims.forEach { (key, jsonValue) -> put(key, jsonValue) }
+                value.additionalClaims.forEach { (key, jsonValue) ->
+                    if (key !in knownKeys) put(key, jsonValue)
+                }
             }
         encoder.encodeJsonElement(jsonObject)
     }

@@ -2,6 +2,7 @@
 package com.sphereon.wallet.interaction.testfixture
 
 import com.sphereon.wallet.interaction.WalletCounterpartyTrustResolver
+import com.sphereon.wallet.interaction.WalletInteractionLaunchAuthority
 import com.sphereon.wallet.interaction.WalletInteractionPrivateSessionStore
 import com.sphereon.wallet.interaction.WalletInteractionProtocolAdapter
 import com.sphereon.wallet.interaction.WalletInteractionSensitiveInputAuthority
@@ -23,6 +24,7 @@ object WalletInteractionEngineTestFactory {
         sensitiveInputAuthority: WalletInteractionSensitiveInputAuthority,
         privateSessionStore: WalletInteractionPrivateSessionStore,
         sessionStore: WalletInteractionSessionStore,
+        launchAuthorities: Set<WalletInteractionLaunchAuthority>,
     ): DefaultWalletInteractionEngine =
         DefaultWalletInteractionEngine(
             adapters = adapters,
@@ -34,5 +36,6 @@ object WalletInteractionEngineTestFactory {
             sensitiveInputAuthority = sensitiveInputAuthority,
             privateSessionStore = privateSessionStore,
             sessionStore = sessionStore,
+            launchAuthorities = launchAuthorities,
         )
 }
