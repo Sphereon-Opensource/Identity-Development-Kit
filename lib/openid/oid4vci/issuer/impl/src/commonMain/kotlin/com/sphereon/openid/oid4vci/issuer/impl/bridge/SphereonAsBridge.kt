@@ -295,7 +295,9 @@ class SphereonAsBridge(
 
         val userinfoClaims =
             if (FederationTokenMetadata.isFederated(additionalClaims)) {
-                resolveUserinfoClaims(federation?.userinfo.orEmpty(), upstreamIssuer)
+                // Federated identity claims are always available to issuance. They reach a credential
+                // only through a credential claim definition that names them as its source.
+                federation?.userinfo?.takeIf { it.isNotEmpty() }
             } else {
                 resolveLocalUserinfoClaims(args.accessToken)
             }
@@ -392,40 +394,12 @@ class SphereonAsBridge(
     }
 
     /**
-     * Surface userinfo claims from the token's `additionalClaims` when the tenant has opted in via
-     * `tenant.idp.[<upstreamIssuer>].surface-userinfo-to-issuance=true`.
-     *
-     * The idpId key uses bracket-quoting because the upstream issuer is a URL: without it,
-     * `PropertyKeyNormalizer` mangles dots, colons, and slashes so the property can never resolve.
-     *
-     * Returns the filtered claim map (with protocol-reserved keys stripped) or `null` when
-     * the tenant has not opted in, the upstream issuer is unknown, or the filtered map is empty.
-     */
-    private fun resolveUserinfoClaims(
-        additionalClaims: Map<String, JsonElement>,
-        upstreamIssuer: String?,
-    ): Map<String, JsonElement>? {
-        upstreamIssuer ?: return null
-        val configService = execution.conf.conf(ConfigLevel.PRINCIPAL) as PrincipalConfigService
-        val surfaceUserinfo =
-            configService
-                .getPropertyAsString("tenant.idp.[$upstreamIssuer].surface-userinfo-to-issuance")
-                ?.toBoolean()
-                ?: false
-        if (!surfaceUserinfo) {
-            return null
-        }
-        return FederationTokenMetadata.filterUserinfo(additionalClaims).takeIf { it.isNotEmpty() }
-    }
-
-    /**
      * Surface the authenticated user's claims for a LOCAL (non-federated) access token by reading
      * the AS's own UserInfo for the token, when the tenant has opted in via
      * `oid4vci.issuer.surface-local-userinfo-to-issuance=true`.
      *
-     * For a local config-backed or database-backed AS there is no `upstream_iss`, so
-     * [resolveUserinfoClaims] returns null and the issuance pipeline's `AuthSessionClaimSource`
-     * would see no userinfo claims. The user's profile claims are deliberately NOT embedded in the
+     * For a local config-backed or database-backed AS there is no `upstream_iss`, so there are no
+     * federated identity claims. The user's profile claims are deliberately NOT embedded in the
      * access token (RFC 9068), but the AS resolves them by subject at the UserInfo endpoint. This
      * reads exactly that UserInfo (OIDC §5.3.2 — requires the `openid` scope on the token) and
      * surfaces the claims minus the `sub` field (already modeled as the dedicated subject).

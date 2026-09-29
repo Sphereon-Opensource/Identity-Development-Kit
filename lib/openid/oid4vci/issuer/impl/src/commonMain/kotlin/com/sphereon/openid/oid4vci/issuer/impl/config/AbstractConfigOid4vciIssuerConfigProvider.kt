@@ -38,6 +38,7 @@ import com.sphereon.openid.oid4vci.common.model.CredentialConfigurationSupported
 import com.sphereon.openid.oid4vci.common.model.KeyAttestationsRequired
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialRequestEncryption
 import com.sphereon.openid.oid4vci.common.model.MetadataCredentialResponseEncryption
+import com.sphereon.openid.oid4vci.issuer.config.CredentialClaimSource
 import com.sphereon.openid.oid4vci.issuer.config.CredentialSigningConfig
 import com.sphereon.openid.oid4vci.issuer.config.MissingRequiredClaimsPolicy
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
@@ -318,6 +319,27 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
             ?: credentialAuthorizationServerOverride(credentialConfigurationId)
                 ?.get("authorizationServerId")?.jsonPrimitive?.content)
             ?.takeIf(String::isNotBlank)?.let(Uuid::parse)
+
+    override fun credentialClaimSources(credentialConfigurationId: String): IdkResult<Map<String, CredentialClaimSource>, IdkError> {
+        val sources = mutableMapOf<String, CredentialClaimSource>()
+        for (claimName in discoverClaimNames(credentialConfigurationId)) {
+            val raw =
+                credentialClaimProperty(credentialConfigurationId, claimName, "source")
+                    ?.takeIf(String::isNotBlank)
+                    ?: continue
+            sources[claimName] =
+                CredentialClaimSource.parse(raw)
+                    ?: return Err(
+                        IdkError.fromString(
+                            code = "invalid_credential_configuration",
+                            message =
+                                "Credential configuration '$credentialConfigurationId' claim '$claimName' has " +
+                                    "unknown source '$raw'",
+                        ),
+                    )
+        }
+        return Ok(sources)
+    }
 
     override fun credentialAuthorizationServerAllowedGrants(credentialConfigurationId: String): Set<com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant>? =
         (credentialAuthorizationServerOverride(credentialConfigurationId)?.get("allowedGrantTypes") as? JsonArray)
@@ -711,7 +733,7 @@ abstract class AbstractConfigOid4vciIssuerConfigProvider(
      */
     private fun discoverClaimNames(configId: String): List<String> {
         val claimsPrefix = "credentials.[$configId].claims"
-        val attributeSuffixes = setOf("mandatory", "display")
+        val attributeSuffixes = setOf("mandatory", "display", "source")
         return namespaceSubProperties(claimsPrefix)
             .keys
             .mapNotNull { key ->

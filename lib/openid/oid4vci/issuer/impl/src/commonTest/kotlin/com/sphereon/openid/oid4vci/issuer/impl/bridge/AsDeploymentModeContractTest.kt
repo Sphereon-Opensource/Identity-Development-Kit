@@ -1012,35 +1012,29 @@ class AsDeploymentModeContractTest {
         }
 
     @Test
-    fun nestedFederationMetadataWinsAndProviderOptOutNeverUsesLocalUserinfo() = runTest {
+    fun nestedFederationMetadataWinsAndNeverUsesLocalUserinfo() = runTest {
         val issuer = "https://idp.example.test"
         val nested = JsonObject(mapOf(
             "upstream_iss" to JsonPrimitive(issuer),
             "upstream_sub" to JsonPrimitive("idp-user-42"),
             "userinfo" to JsonObject(mapOf("given_name" to JsonPrimitive("Ada"), "exp" to JsonPrimitive(1))),
         ))
-        for (optIn in listOf(true, false)) {
-            val (bridge, service) = createEmbeddedBridge(
-                asService = FakeAuthorizationServerService(Ok(TokenIntrospectionResponse(
-                    active = true, sub = "local-user", clientId = "wallet",
-                    additionalClaims = mapOf(
-                        "oidc.internal.federation_claims" to nested,
-                        "upstream_iss" to JsonPrimitive("https://conflicting.example.test"),
-                    ),
-                ))),
-                configProperties = mapOf(
-                    "tenant.idp.[$issuer].surface-userinfo-to-issuance" to optIn.toString(),
-                    "oid4vci.issuer.surface-local-userinfo-to-issuance" to "true",
+        val (bridge, service) = createEmbeddedBridge(
+            asService = FakeAuthorizationServerService(Ok(TokenIntrospectionResponse(
+                active = true, sub = "local-user", clientId = "wallet",
+                additionalClaims = mapOf(
+                    "oidc.internal.federation_claims" to nested,
+                    "upstream_iss" to JsonPrimitive("https://conflicting.example.test"),
                 ),
-            )
-            val result = bridge.validateAccessToken(tokenArgs("nested-federated-token"))
-            assertTrue(result.isOk)
-            assertEquals(issuer, result.value.upstreamIssuer)
-            assertEquals("idp-user-42", result.value.upstreamSubject)
-            if (optIn) assertEquals(mapOf("given_name" to JsonPrimitive("Ada")), result.value.userinfoClaims)
-            else assertNull(result.value.userinfoClaims)
-            assertEquals(0, service.userInfoCalls)
-        }
+            ))),
+            configProperties = mapOf("oid4vci.issuer.surface-local-userinfo-to-issuance" to "true"),
+        )
+        val result = bridge.validateAccessToken(tokenArgs("nested-federated-token"))
+        assertTrue(result.isOk)
+        assertEquals(issuer, result.value.upstreamIssuer)
+        assertEquals("idp-user-42", result.value.upstreamSubject)
+        assertEquals(mapOf("given_name" to JsonPrimitive("Ada")), result.value.userinfoClaims)
+        assertEquals(0, service.userInfoCalls)
     }
 
     @Test
@@ -1067,7 +1061,7 @@ class AsDeploymentModeContractTest {
         }
 
     @Test
-    fun validateAccessTokenSurfacesUserinfoClaimsWhenTenantOptIn() =
+    fun validateAccessTokenAlwaysSurfacesFederatedUserinfoClaims() =
         runTest {
             val idpIssuer = "https://enterprise-idp.example.com"
             val introspectionResponse =
@@ -1087,47 +1081,18 @@ class AsDeploymentModeContractTest {
             val (bridge, _) =
                 createEmbeddedBridge(
                     asService = FakeAuthorizationServerService(Ok(introspectionResponse)),
-                    configProperties = mapOf("tenant.idp.[$idpIssuer].surface-userinfo-to-issuance" to "true"),
                 )
 
             val result = bridge.validateAccessToken(tokenArgs("federated-token-with-ui"))
 
             assertTrue(result.isOk)
             val ctx = result.value
-            assertNotNull(ctx.userinfoClaims, "userinfoClaims should be populated when tenant opts in")
+            assertNotNull(ctx.userinfoClaims, "federated userinfo claims are available without a tenant opt-in")
             assertEquals(JsonPrimitive("user@enterprise.example.com"), ctx.userinfoClaims!!["email"])
             assertEquals(JsonPrimitive("Test"), ctx.userinfoClaims!!["given_name"])
             // Protocol claims are excluded from userinfoClaims
             assertNull(ctx.userinfoClaims!!["upstream_iss"])
             assertNull(ctx.userinfoClaims!!["upstream_sub"])
-        }
-
-    @Test
-    fun validateAccessTokenOmitsUserinfoClaimsWhenTenantNotOptIn() =
-        runTest {
-            val idpIssuer = "https://enterprise-idp.example.com"
-            val introspectionResponse =
-                TokenIntrospectionResponse(
-                    active = true,
-                    sub = "federated-user",
-                    clientId = "client-5",
-                    additionalClaims =
-                        mapOf<String, JsonElement>(
-                            "upstream_iss" to JsonPrimitive(idpIssuer),
-                            "email" to JsonPrimitive("user@enterprise.example.com"),
-                        ),
-                )
-
-            val (bridge, _) =
-                createEmbeddedBridge(
-                    asService = FakeAuthorizationServerService(Ok(introspectionResponse)),
-                    // No config property set — opt-in is absent
-                )
-
-            val result = bridge.validateAccessToken(tokenArgs("token-no-ui-opt-in"))
-
-            assertTrue(result.isOk)
-            assertNull(result.value.userinfoClaims, "userinfoClaims should be null when tenant has not opted in")
         }
 
     @Test

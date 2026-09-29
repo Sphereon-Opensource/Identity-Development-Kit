@@ -173,8 +173,13 @@ data class ValidatedTokenContext(
      * `null` for plain bearer tokens.
      */
     val cnfJkt: String? = null,
-    /** Userinfo claims surfaced by the AS (when it embeds userinfo in the token or via a userinfo lookup).
-     *  Null when the AS does not provide them or tenant config has not opted in. */
+    /**
+     * Identity claims of the authenticated user. For a federated login these are the upstream IdP's
+     * claims and they are always present when the IdP released any; for a local login they come
+     * from the AS UserInfo when the issuer opted in. They are available to issuance but never
+     * copied into a credential wholesale: a credential claim definition must name the claim as its
+     * source (see [com.sphereon.openid.oid4vci.issuer.config.CredentialClaimSource]).
+     */
     val userinfoClaims: Map<String, JsonElement>? = null,
     /** Authentication-context-class reference, for assurance-level decisions. */
     val acr: String? = null,

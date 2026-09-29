@@ -63,6 +63,7 @@ import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerConfigProvider
 import com.sphereon.openid.oid4vci.issuer.config.Oid4vciIssuerInstanceIdProvider
 import com.sphereon.openid.oid4vci.issuer.config.ResolveWalletProviderTrustArgs
 import com.sphereon.openid.oid4vci.issuer.config.requireCanonicalOid4vciIssuerInstanceId
+import com.sphereon.openid.oid4vci.issuer.config.resolveCredentialClaimSources
 import com.sphereon.openid.oid4vci.issuer.Oid4vciIssuerSessionEventTypes
 import com.sphereon.openid.oid4vci.issuer.impl.event.emitOid4vciSessionHistoryEvent
 import com.sphereon.openid.oid4vci.issuer.format.CredentialFormatHandler
@@ -733,12 +734,14 @@ class HandleCredentialRequestCommandImpl(
         val contributedCredentialId = effectiveContribution.credentialId
         val contributedCredentialSubjects = effectiveContribution.credentialSubjects
 
-        // 6. Merge attributes (priority: preSeeded → accumulated → contributed)
+        // 6. Merge attributes (priority: wallet-initiated config → claim sources → preSeeded →
+        // accumulated → contributed)
         val mergedAttributes = mutableMapOf<String, JsonElement>()
         if (session == null) {
             // Wallet-initiated authorization-code flows have no issuer-created offer/session.
             // Resolve attributes by authenticated subject through the explicit config-backed
-            // source, then let dynamically surfaced AS userinfo claims override that baseline.
+            // source. A local AS login's UserInfo, surfaced only on the issuer's explicit opt-in,
+            // overrides that baseline. Federated identity claims are never merged wholesale.
             mergedAttributes.putAll(
                 resolveConfiguredWalletInitiatedSubjectAttributes(
                     propertyResolver = propertyResolver,
@@ -747,8 +750,18 @@ class HandleCredentialRequestCommandImpl(
                     issuerInstanceId = instanceIdProvider.currentInstanceId(),
                 ).getOrElse { return Err(it) },
             )
-            tokenContext.userinfoClaims?.let { mergedAttributes.putAll(it) }
+            if (tokenContext.upstreamIssuer == null) {
+                tokenContext.userinfoClaims?.let { mergedAttributes.putAll(it) }
+            }
         }
+        // Federated identity claims reach the credential only where a claim definition of this
+        // credential configuration names them as its source. Offer data still wins over them.
+        mergedAttributes.putAll(
+            resolveCredentialClaimSources(
+                sources = issuerConfigProvider.credentialClaimSources(configId).getOrElse { return Err(it) },
+                token = tokenContext,
+            ),
+        )
         session?.preSeededAttributes?.let { mergedAttributes.putAll(it) }
         session?.accumulatedAttributes?.let { mergedAttributes.putAll(it) }
         mergedAttributes.putAll(effectiveContribution.attributes)

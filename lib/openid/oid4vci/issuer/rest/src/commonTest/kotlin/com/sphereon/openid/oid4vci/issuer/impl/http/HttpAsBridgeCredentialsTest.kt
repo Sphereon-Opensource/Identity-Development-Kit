@@ -315,7 +315,7 @@ class HttpAsBridgeCredentialsTest {
         }
 
     @Test
-    fun hostedFederationMetadataIsProjectedOnlyWithExactIssuerOptIn() = runTest {
+    fun hostedFederationMetadataIsAlwaysProjectedWithoutLocalFallback() = runTest {
         val issuer = "https://idp.example.test"
         val extensions = buildJsonObject {
             put("upstream_iss", "https://conflicting-flat.example.test")
@@ -331,39 +331,32 @@ class HttpAsBridgeCredentialsTest {
                 })
             })
         }
-        for (optIn in listOf(true, false)) {
-            val httpFactory = RecordingHttpClientFactory()
-            val bridge = HttpAsBridge(
-                execution = TestSessionExecution(principalConfigService = RecordingPrincipalConfigService(mapOf(
-                    "tenant.idp.[$issuer].surface-userinfo-to-issuance" to optIn.toString(),
-                    // A local-user opt-in must not bypass a federated provider's opt-out.
-                    HttpAsBridge.SURFACE_LOCAL_USERINFO_KEY to "true",
-                ))),
-                httpClientFactory = httpFactory,
-                verifyDpopProofCommand = UnusedVerifyDpopProofCommand,
-                dpopProofJtiCache = UnusedDpopProofJtiCache,
-                asBaseUrlResolver = FixedAsBaseUrlResolver,
-                asInternalClient = RecordingAsClient(extensions),
-                verifyJwtCommand = UnusedVerifyJwtCommand,
-            )
-            val result = bridge.validateAccessToken(ValidateAccessTokenArgs(
-                authorizationServer = Oid4vciAuthorizationServerTarget(
-                    id = "as", issuer = "https://as.example",
-                    deployment = Oid4vciAuthorizationServerDeployment.HOSTED,
-                    runtimeServerKey = "default", tokenEndpoint = "https://as.example/token",
-                ),
-                expectedAudience = "https://issuer.example", accessToken = "testtoken",
-            ))
-            assertTrue(result.isOk)
-            assertEquals(issuer, result.value.upstreamIssuer)
-            assertEquals("idp-user-42", result.value.upstreamSubject)
-            if (optIn) {
-                assertEquals(buildJsonObject { put("given_name", "Ada"); put("employee_id", "EMP-42") }, result.value.userinfoClaims)
-            } else {
-                assertNull(result.value.userinfoClaims)
-            }
-            assertEquals(0, httpFactory.createCalls, "Federated opt-out must not fall back to local UserInfo")
-        }
+        val httpFactory = RecordingHttpClientFactory()
+        val bridge = HttpAsBridge(
+            execution = TestSessionExecution(principalConfigService = RecordingPrincipalConfigService(mapOf(
+                // A local-user opt-in must not replace a federated login's claims.
+                HttpAsBridge.SURFACE_LOCAL_USERINFO_KEY to "true",
+            ))),
+            httpClientFactory = httpFactory,
+            verifyDpopProofCommand = UnusedVerifyDpopProofCommand,
+            dpopProofJtiCache = UnusedDpopProofJtiCache,
+            asBaseUrlResolver = FixedAsBaseUrlResolver,
+            asInternalClient = RecordingAsClient(extensions),
+            verifyJwtCommand = UnusedVerifyJwtCommand,
+        )
+        val result = bridge.validateAccessToken(ValidateAccessTokenArgs(
+            authorizationServer = Oid4vciAuthorizationServerTarget(
+                id = "as", issuer = "https://as.example",
+                deployment = Oid4vciAuthorizationServerDeployment.HOSTED,
+                runtimeServerKey = "default", tokenEndpoint = "https://as.example/token",
+            ),
+            expectedAudience = "https://issuer.example", accessToken = "testtoken",
+        ))
+        assertTrue(result.isOk)
+        assertEquals(issuer, result.value.upstreamIssuer)
+        assertEquals("idp-user-42", result.value.upstreamSubject)
+        assertEquals(buildJsonObject { put("given_name", "Ada"); put("employee_id", "EMP-42") }, result.value.userinfoClaims)
+        assertEquals(0, httpFactory.createCalls, "A federated login must not fall back to local UserInfo")
     }
 
     @Test
@@ -378,7 +371,6 @@ class HttpAsBridgeCredentialsTest {
             val httpFactory = RecordingHttpClientFactory()
             val bridge = HttpAsBridge(
                 execution = TestSessionExecution(principalConfigService = RecordingPrincipalConfigService(mapOf(
-                    "tenant.idp.[$issuer].surface-userinfo-to-issuance" to "true",
                     HttpAsBridge.SURFACE_LOCAL_USERINFO_KEY to "true",
                 ))),
                 httpClientFactory = httpFactory,
@@ -433,7 +425,6 @@ class HttpAsBridgeCredentialsTest {
         }
         val bridge = HttpAsBridge(
             execution = TestSessionExecution(principalConfigService = RecordingPrincipalConfigService(mapOf(
-                "tenant.idp.[$issuer].surface-userinfo-to-issuance" to "true",
             ))),
             httpClientFactory = UnusedHttpClientFactory,
             verifyDpopProofCommand = UnusedVerifyDpopProofCommand, dpopProofJtiCache = UnusedDpopProofJtiCache,

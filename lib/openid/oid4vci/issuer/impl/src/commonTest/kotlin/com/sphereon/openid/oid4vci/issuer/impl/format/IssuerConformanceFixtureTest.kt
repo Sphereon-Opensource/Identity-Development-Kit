@@ -181,10 +181,10 @@ class IssuerConformanceFixtureTest {
     // Helper methods
     // ========================================================================
 
-    private fun makeJwtVcJsonConfig(types: List<String>? = null) =
+    private fun makeJwtVcJsonConfig(types: List<String> = listOf("VerifiableCredential", "ExampleCredential")) =
         CredentialConfigurationSupported(
             format = "jwt_vc_json",
-            credentialDefinition = types?.let { CredentialDefinition(type = it) },
+            credentialDefinition = CredentialDefinition(type = types),
         )
 
     private fun makeSdJwtVcConfig(vct: String? = null) =
@@ -444,7 +444,7 @@ class IssuerConformanceFixtureTest {
             val fakeJwtService = FakeJwtService()
             val handler = JwtVcJsonFormatHandler(jwtService = fakeJwtService, kms = TestKmsMock(), issuerKeyIdResolver = StubIssuerKeyIdResolver)
 
-            val config = makeJwtVcJsonConfig(types = listOf("VerifiableCredential"))
+            val config = makeJwtVcJsonConfig()
             val context =
                 makeContext(
                     config = config,

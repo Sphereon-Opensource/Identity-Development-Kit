@@ -111,7 +111,7 @@ class CredentialSigningKeyRefusalTest {
             credentialConfiguration =
                 CredentialConfigurationSupported(
                     format = "jwt_vc_json",
-                    credentialDefinition = CredentialDefinition(type = listOf("VerifiableCredential")),
+                    credentialDefinition = CredentialDefinition(type = listOf("VerifiableCredential", "ExampleCredential")),
                 ),
             holderBindingKey = null,
             attributes = mapOf("given_name" to JsonPrimitive("Alice")),

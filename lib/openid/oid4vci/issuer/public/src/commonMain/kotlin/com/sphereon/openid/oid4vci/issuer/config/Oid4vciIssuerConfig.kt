@@ -92,6 +92,15 @@ interface Oid4vciIssuerConfigProvider {
     @JsExportIgnoreCompat
     fun credentialAuthorizationServerAllowedGrants(credentialConfigurationId: String): Set<com.sphereon.openid.oid4vci.issuer.authorization.Oid4vciAuthorizationGrant>? = null
 
+    /**
+     * Claim definitions of one credential configuration that name a [CredentialClaimSource], keyed
+     * by credential claim name. A configured source value that is not a known reference is an
+     * error, so issuance fails instead of silently dropping the claim.
+     */
+    @JsExportIgnoreCompat
+    fun credentialClaimSources(credentialConfigurationId: String): IdkResult<Map<String, CredentialClaimSource>, IdkError> =
+        Ok(emptyMap())
+
     val authorizationServers: List<String>?
     val display: List<DisplayProperties>?
 

@@ -310,13 +310,10 @@ class HttpAsBridge(
             val hosted = args.authorizationServer.deployment == Oid4vciAuthorizationServerDeployment.HOSTED
             val federated = hosted && FederationTokenMetadata.isFederated(extensionClaims)
             val federation = if (hosted) FederationTokenMetadata.read(extensionClaims) else null
+            // Federated identity claims are always available to issuance. They reach a credential
+            // only through a credential claim definition that names them as its source.
             val userinfoClaims = if (federated) {
-                federation?.let { context ->
-                    val enabled = configService.getPropertyAsString(
-                        "tenant.idp.[${context.upstreamIssuer}].surface-userinfo-to-issuance",
-                    )?.toBoolean() ?: false
-                    if (enabled) context.userinfo.takeIf { it.isNotEmpty() } else null
-                }
+                federation?.userinfo?.takeIf { it.isNotEmpty() }
             } else if (hosted) {
                 resolveLocalUserinfoClaims(args.accessToken)
             } else {
