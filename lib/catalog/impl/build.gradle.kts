@@ -24,6 +24,8 @@ kotlin {
                 api(projects.libCatalogPublic)
                 api(projects.libCatalogPersistenceApi)
                 api(projects.libCoreApiPublic)
+                implementation(projects.libCryptoCorePublic)
+                implementation(projects.libTrustEtsi)
                 api(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)
                 implementation(sphereonlib.software.amazon.app.platform.metro.impl)

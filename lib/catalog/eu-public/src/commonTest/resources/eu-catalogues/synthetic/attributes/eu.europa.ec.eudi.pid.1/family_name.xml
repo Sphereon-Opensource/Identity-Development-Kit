@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AttributeEntry xmlns="http://data.europa.eu/c9v/catalogueOfAttributes/v1#">
+    <AttributeIdentifier>family_name</AttributeIdentifier>
+    <AttributeRegistrationIdentifier>REG-ATTR-0001</AttributeRegistrationIdentifier>
+    <ReferenceBody>
+        <ReferenceBodyName>
+            <Name xml:lang="en">Synthetic Reference Body</Name>
+        </ReferenceBodyName>
+        <ReferenceBodyWebsite>https://reference.example.org</ReferenceBodyWebsite>
+    </ReferenceBody>
+    <VersionedAttributeList>
+        <VersionedAttribute>
+            <AttributeVersion>2</AttributeVersion>
+            <VersionedAttributeStatusInformation>
+                <VersionedAttributeStatus>http://data.europa.eu/c9v/EUCatalogueOfAttributes/VersionedAttributeStatus/inforce</VersionedAttributeStatus>
+                <StatusStartingDateAndTime>2026-09-01T00:00:00Z</StatusStartingDateAndTime>
+            </VersionedAttributeStatusInformation>
+            <AttributeInformation>
+                <AttributeName>
+                    <Name xml:lang="en">Family name</Name>
+                    <Name xml:lang="nl">Achternaam</Name>
+                </AttributeName>
+                <AttributeSemanticDescription>
+                    <SemanticDescription>
+                        <Name xml:lang="en">Current last name(s) or surname(s) of the user to whom the person identification data relates</Name>
+                    </SemanticDescription>
+                    <SemanticDescriptionPointer>https://concepts.example.org/family-name</SemanticDescriptionPointer>
+                </AttributeSemanticDescription>
+                <AttributeDataType>
+                    <DataType>https://types.example.org/string</DataType>
+                    <DataTypeSpecification>
+                        <SpecificationPointer>https://specs.example.org/family-name</SpecificationPointer>
+                        <FormatSyntaxBindings>
+                            <FormatSyntaxBinding>
+                                <MediaType>application/dc+sd-jwt</MediaType>
+                                <BindingDefinitionURI>https://schemas.example.org/pid.json</BindingDefinitionURI>
+                                <FormatSyntaxSpecificIdentifier>family_name</FormatSyntaxSpecificIdentifier>
+                            </FormatSyntaxBinding>
+                            <FormatSyntaxBinding>
+                                <MediaType>application/mdoc</MediaType>
+                                <FormatSyntaxSpecificIdentifier>eu.europa.ec.eudi.pid.1/family_name</FormatSyntaxSpecificIdentifier>
+                            </FormatSyntaxBinding>
+                        </FormatSyntaxBindings>
+                    </DataTypeSpecification>
+                </AttributeDataType>
+                <AuthenticSources>
+                    <AuthenticSource>
+                        <AuthenticSourceName>
+                            <Name xml:lang="en">Population register</Name>
+                        </AuthenticSourceName>
+                        <AuthenticSourceTerritory>NL</AuthenticSourceTerritory>
+                        <AuthenticSourceIdentifier>NL-BRP</AuthenticSourceIdentifier>
+                        <AuthenticSourceVerificationAccess>
+                            <VerificationEndpointsList>
+                                <VerificationEndpoint>
+                                    <VerificationEndpointURI>https://brp.example.org/verify</VerificationEndpointURI>
+                                    <VerificationEndpointDescription>
+                                        <Name xml:lang="en">Verification API of the population register</Name>
+                                    </VerificationEndpointDescription>
+                                    <VerificationEndpointResponseFormats>
+                                        <MediaType>application/json</MediaType>
+                                    </VerificationEndpointResponseFormats>
+                                </VerificationEndpoint>
+                            </VerificationEndpointsList>
+                            <VerificationAccessDescriptionURI>https://brp.example.org/access</VerificationAccessDescriptionURI>
+                        </AuthenticSourceVerificationAccess>
+                        <AuthenticSourceAttributeIdentifier>geslachtsnaam</AuthenticSourceAttributeIdentifier>
+                    </AuthenticSource>
+                </AuthenticSources>
+            </AttributeInformation>
+        </VersionedAttribute>
+        <VersionedAttribute>
+            <AttributeVersion>1</AttributeVersion>
+            <VersionedAttributeStatusInformation>
+                <VersionedAttributeStatus>http://data.europa.eu/c9v/EUCatalogueOfAttributes/VersionedAttributeStatus/deprecated</VersionedAttributeStatus>
+                <LinkedAttributeAndVersion>
+                    <LinkedAttributeVersion>2</LinkedAttributeVersion>
+                </LinkedAttributeAndVersion>
+            </VersionedAttributeStatusInformation>
+            <AttributeInformation>
+                <AttributeName>
+                    <Name xml:lang="en">Family name</Name>
+                </AttributeName>
+                <AttributeSemanticDescription>
+                    <SemanticDescription>
+                        <Name xml:lang="en">Last name of the user</Name>
+                    </SemanticDescription>
+                </AttributeSemanticDescription>
+                <AttributeDataType>
+                    <DataType>https://types.example.org/string</DataType>
+                </AttributeDataType>
+                <AuthenticSources>
+                    <AuthenticSource>
+                        <AuthenticSourceIdentifier>NL-BRP</AuthenticSourceIdentifier>
+                        <AuthenticSourceVerificationAccess>
+                            <VerificationAccessDescriptionURI>https://brp.example.org/access</VerificationAccessDescriptionURI>
+                        </AuthenticSourceVerificationAccess>
+                    </AuthenticSource>
+                </AuthenticSources>
+            </AttributeInformation>
+        </VersionedAttribute>
+    </VersionedAttributeList>
+</AttributeEntry>

@@ -140,6 +140,8 @@ data class AttestationSchemaRecord
         val documents: List<AttestationSchemaDocument> = emptyList(),
         val createdAt: Instant? = null,
         val updatedAt: Instant? = null,
+        /** CoS-only fields authored next to the SchemaMeta; null when the record carries none. */
+        val cos: CosSchemeFields? = null,
     )
 
 @JsExportCompat
@@ -202,4 +204,20 @@ data class CatalogImportReport
         val skipped: Int,
         val errors: List<String> = emptyList(),
         val schemaIds: List<String> = emptyList(),
+        val diagnostics: List<CatalogImportDiagnostic> = emptyList(),
+    )
+
+/**
+ * One diagnostic recorded during an import. Diagnostics describe what was observed (signature
+ * evidence, resolved trust-authority hints); they never grant or withdraw trust, which stays with
+ * the trust domain.
+ */
+@JsExportCompat
+@Serializable
+data class CatalogImportDiagnostic
+    @JvmOverloads
+    constructor(
+        val code: String,
+        val message: String,
+        val subject: String? = null,
     )

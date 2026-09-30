@@ -31,7 +31,10 @@ import com.sphereon.di.session.SessionScope
 import com.sphereon.trust.core.TrustDiagnosticReasonCodes
 import com.sphereon.trust.etsi.signature.xades.QualifyingProperties
 import com.sphereon.trust.etsi.signature.xades.XAdESParser
+import com.sphereon.trust.etsi.signature.xades.XADES_NS
+import com.sphereon.trust.etsi.signature.xmldsig.EnvelopedSignatureCoverage
 import com.sphereon.trust.etsi.signature.xmldsig.ReferenceValidator
+import com.sphereon.trust.etsi.signature.xmldsig.XmlDsigAlgorithms
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -121,6 +124,14 @@ class XmlUtilSignatureVerifier(
             }
         }
 
+        if (signatureNodes.length != 1) {
+            return XmlSignatureVerificationResult(
+                valid = false,
+                signaturePresent = true,
+                errorMessage = "The document must contain exactly one ds:Signature but contains ${signatureNodes.length}",
+            )
+        }
+
         val signatureElement =
             signatureNodes[0] as? Element
                 ?: return XmlSignatureVerificationResult(
@@ -197,10 +208,13 @@ class XmlUtilSignatureVerifier(
             }
 
             // Create KeyInfo with certificate
+            val signatureMethod =
+                signedInfo.getElementsByTagNameNS(XMLDSIG_NS, "SignatureMethod").let { if (it.length > 0) it[0] as? Element else null }
             val keyInfo =
                 KeyInfo<KeyType>(
                     key = null,
                     x5c = x509Certificates.toTypedArray(),
+                    signatureAlgorithm = XmlDsigAlgorithms.signatureAlgorithm(signatureMethod?.getAttribute("Algorithm")),
                 )
 
             // Canonicalize SignedInfo using proper Exclusive C14N
@@ -224,22 +238,53 @@ class XmlUtilSignatureVerifier(
                 )
             }
 
-            // Validate References in SignedInfo
+            // Validate References in SignedInfo. A failure to validate them is a failure, never a pass.
             val referenceResults =
                 try {
                     ReferenceValidator.validateReferences(signedInfo, document, signatureElement)
                 } catch (e: Exception) {
                     loggerSync.error("Reference validation failed", exception = e)
-                    emptyList()
+                    return XmlSignatureVerificationResult(
+                        valid = false,
+                        signaturePresent = true,
+                        signingCertificate = signingCertificate,
+                        certificateChain = chain,
+                        errorMessage = "Reference validation failed: ${e.message}",
+                    )
                 }
             val invalidRefs = referenceResults.filter { !it.valid }
-            if (invalidRefs.isNotEmpty()) {
+            if (referenceResults.isEmpty() || invalidRefs.isNotEmpty()) {
                 return XmlSignatureVerificationResult(
                     valid = false,
                     signaturePresent = true,
                     signingCertificate = signingCertificate,
                     certificateChain = chain,
-                    errorMessage = "Reference validation failed: ${invalidRefs.first().errorMessage}",
+                    errorMessage =
+                        if (referenceResults.isEmpty()) {
+                            "Reference validation failed: the signature has no ds:Reference"
+                        } else {
+                            "Reference validation failed: ${invalidRefs.first().errorMessage}"
+                        },
+                    referenceResults = referenceResults,
+                )
+            }
+
+            // Signature wrapping defence: the signature must be the only one, sit under the root and cover the whole
+            // document (and, when present, its own XAdES SignedProperties).
+            val carriesXades = signatureElement.getElementsByTagNameNS(XADES_NS, "QualifyingProperties").length > 0
+            val coverageErrors =
+                EnvelopedSignatureCoverage.violations(
+                    EnvelopedSignatureCoverage.inspect(root, signatureElement, signedInfo, referenceResults, signatureNodes.length),
+                    requireSignedPropertiesCovered = carriesXades,
+                    subject = "trust list",
+                )
+            if (coverageErrors.isNotEmpty()) {
+                return XmlSignatureVerificationResult(
+                    valid = false,
+                    signaturePresent = true,
+                    signingCertificate = signingCertificate,
+                    certificateChain = chain,
+                    errorMessage = "Signature does not cover the document: ${coverageErrors.joinToString("; ")}",
                     referenceResults = referenceResults,
                 )
             }

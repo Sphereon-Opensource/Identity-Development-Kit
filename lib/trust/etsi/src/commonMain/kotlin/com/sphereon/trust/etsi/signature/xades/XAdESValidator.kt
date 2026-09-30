@@ -24,14 +24,15 @@ import com.sphereon.core.compat.xml.c14n.ExclusiveC14N
 import com.sphereon.crypto.core.KeyInfo
 import com.sphereon.crypto.core.KeyType
 import com.sphereon.crypto.core.generic.DigestAlg
-import com.sphereon.crypto.core.generic.SignatureAlgorithm
 import com.sphereon.crypto.core.generic.hash
 import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.x509.X509VerificationRequest
 import com.sphereon.crypto.core.x509.X509VerifyService
 import com.sphereon.di.session.SessionScope
 import com.sphereon.trust.core.TrustDiagnosticReasonCodes
+import com.sphereon.trust.etsi.signature.xmldsig.EnvelopedSignatureCoverage
 import com.sphereon.trust.etsi.signature.xmldsig.ReferenceValidator
+import com.sphereon.trust.etsi.signature.xmldsig.XmlDsigAlgorithms
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
@@ -90,6 +91,21 @@ data class XAdESValidationResult(
     val errors: List<String> = emptyList(),
     val warnings: List<String> = emptyList(),
     val reasonCodes: List<String> = emptyList(),
+    /** Number of `ds:Signature` elements anywhere in the document. */
+    val signatureCount: Int = 0,
+    /** The validated `ds:Signature` is a direct child of the document root element. */
+    val signatureIsRootChild: Boolean = false,
+    /**
+     * The validated signature has a `ds:Reference` with `URI=""` and the enveloped-signature transform whose digest
+     * is valid, so the whole document (minus the signature) is signed.
+     */
+    val documentReferenceValid: Boolean = false,
+    /** Two elements of the document carry the same `Id`/`id`/`ID` value, which lets a `#id` Reference be redirected. */
+    val duplicateIds: Boolean = false,
+    /** A valid Reference of Type SignedProperties points at the signature's `xades:SignedProperties`. */
+    val signedPropertiesCovered: Boolean = false,
+    /** The QualifyingProperties carry a `xades:SigningCertificateV2`. */
+    val signingCertificateV2Present: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) {
@@ -173,16 +189,6 @@ class XAdESValidatorImpl(
             "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256" to DigestAlg.SHA256,
             "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384" to DigestAlg.SHA384,
             "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512" to DigestAlg.SHA512,
-        )
-
-    private val xmlSigAlgToSignatureAlg =
-        mapOf(
-            "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" to SignatureAlgorithm.RSA_SHA256,
-            "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384" to SignatureAlgorithm.RSA_SHA384,
-            "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512" to SignatureAlgorithm.RSA_SHA512,
-            "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256" to SignatureAlgorithm.ECDSA_SHA256,
-            "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384" to SignatureAlgorithm.ECDSA_SHA384,
-            "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512" to SignatureAlgorithm.ECDSA_SHA512,
         )
 
     private val digestAlgMap =
@@ -294,7 +300,7 @@ class XAdESValidatorImpl(
             // Extract signature algorithm from SignedInfo
             val sigMethodEl = firstChild(signedInfo, XMLDSIG_NS, "SignatureMethod")
             val sigAlgUri = sigMethodEl?.getAttribute("Algorithm")
-            val signatureAlgorithm = sigAlgUri?.let { xmlSigAlgToSignatureAlg[it] }
+            val signatureAlgorithm = XmlDsigAlgorithms.signatureAlgorithm(sigAlgUri)
 
             val keyInfo =
                 KeyInfo<KeyType>(
@@ -389,6 +395,15 @@ class XAdESValidatorImpl(
                     (signingCertValid != false) &&
                     (!options.requireXAdESProperties || xadesPresent)
 
+            val coverage =
+                EnvelopedSignatureCoverage.inspect(root, signatureElement, signedInfo, referenceResults, signatureNodes.length)
+            val signingCertificateV2Present =
+                !qualifyingProperties
+                    ?.signedProperties
+                    ?.signedSignatureProperties
+                    ?.signingCertificateV2
+                    .isNullOrEmpty()
+
             return XAdESValidationResult(
                 valid = overallValid,
                 signaturePresent = true,
@@ -404,6 +419,12 @@ class XAdESValidatorImpl(
                 errors = errors,
                 warnings = warnings,
                 reasonCodes = reasonCodes,
+                signatureCount = coverage.signatureCount,
+                signatureIsRootChild = coverage.signatureIsRootChild,
+                documentReferenceValid = coverage.documentReferenceValid,
+                duplicateIds = coverage.duplicateIds,
+                signedPropertiesCovered = coverage.signedPropertiesCovered,
+                signingCertificateV2Present = signingCertificateV2Present,
             )
         } catch (expected: Exception) {
             logger.error("XAdES validation failed", exception = expected)

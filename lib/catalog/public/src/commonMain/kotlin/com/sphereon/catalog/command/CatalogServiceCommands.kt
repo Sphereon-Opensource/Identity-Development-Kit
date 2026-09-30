@@ -33,7 +33,7 @@ interface ListCatalogsCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.catalogs.list"
+        const val COMMAND_ID = "catalog.attestation.list-catalogs"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -55,7 +55,7 @@ interface CreateCatalogCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.catalogs.create"
+        const val COMMAND_ID = "catalog.attestation.create-catalog"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
@@ -78,7 +78,7 @@ interface GetCatalogCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.catalogs.get"
+        const val COMMAND_ID = "catalog.attestation.get-catalog"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -100,7 +100,7 @@ interface UpdateCatalogCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.catalogs.update"
+        const val COMMAND_ID = "catalog.attestation.update-catalog"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.PUT,
@@ -123,7 +123,7 @@ interface PublishCatalogCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.catalogs.publish"
+        const val COMMAND_ID = "catalog.attestation.publish-catalog"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
@@ -145,7 +145,7 @@ interface DisableCatalogCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.catalogs.disable"
+        const val COMMAND_ID = "catalog.attestation.disable-catalog"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
@@ -167,7 +167,7 @@ interface ListSchemasCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.schemas.list"
+        const val COMMAND_ID = "catalog.attestation.list-schemas"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -189,7 +189,7 @@ interface GetCatalogTypeViewCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.types.view"
+        const val COMMAND_ID = "catalog.attestation.get-type-view"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -211,7 +211,7 @@ interface GetSchemaCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.schemas.get"
+        const val COMMAND_ID = "catalog.attestation.get-schema"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -233,7 +233,7 @@ interface CreateSchemaCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.schemas.create"
+        const val COMMAND_ID = "catalog.attestation.create-schema"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
@@ -256,7 +256,7 @@ interface UpdateSchemaCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.schemas.update"
+        const val COMMAND_ID = "catalog.attestation.update-schema"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.PUT,
@@ -279,7 +279,7 @@ interface DeleteSchemaCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.schemas.delete"
+        const val COMMAND_ID = "catalog.attestation.delete-schema"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.DELETE,
@@ -300,7 +300,7 @@ interface LinkSchemaCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.schemas.link"
+        const val COMMAND_ID = "catalog.attestation.link-schema"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
@@ -323,7 +323,7 @@ interface GetSchemaFormatCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.schemas.format"
+        const val COMMAND_ID = "catalog.attestation.get-schema-format"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -344,7 +344,7 @@ interface GetSchemaRulebookCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.schemas.rulebook"
+        const val COMMAND_ID = "catalog.attestation.get-schema-rulebook"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.GET,
@@ -365,7 +365,7 @@ interface ImportRemoteCatalogCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.imports.remote"
+        const val COMMAND_ID = "catalog.attestation.import-remote-catalog"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
@@ -388,7 +388,7 @@ interface ImportRulebooksCommand :
     override val httpEndpoint: HttpEndpointDescriptor get() = ENDPOINT
 
     companion object {
-        const val COMMAND_ID = "catalog.imports.rulebooks"
+        const val COMMAND_ID = "catalog.attestation.import-rulebooks"
         val ENDPOINT =
             HttpEndpointDescriptor(
                 method = HttpMethod.POST,
@@ -408,7 +408,7 @@ interface ResolveAttestationTypeCommand : ServiceCommand<ResolveAttestationTypeA
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "catalog.resolution.resolve"
+        const val COMMAND_ID = "catalog.attestation.resolve-attestation-type"
     }
 }
 
@@ -418,6 +418,6 @@ interface EvaluateCatalogVerificationCommand : ServiceCommand<EvaluateCatalogVer
     override val commandId: String get() = COMMAND_ID
 
     companion object {
-        const val COMMAND_ID = "catalog.verification.evaluate"
+        const val COMMAND_ID = "catalog.attestation.evaluate-verification"
     }
 }

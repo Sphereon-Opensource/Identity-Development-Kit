@@ -43,6 +43,7 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.runBlocking
+import java.net.InetAddress
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
@@ -70,6 +71,12 @@ class HttpClientFactoryJvmImpl(
     private var providerKeyStoresLoaded = false
 
     private val log = execution.log.logManager.withTag("HttpClientFactory")
+
+    /**
+     * DNS used to validate resolved addresses for policies that block address ranges. Replaceable so tests can
+     * simulate a host name that resolves to an internal address without touching real DNS.
+     */
+    internal var egressResolver: (String) -> List<InetAddress> = { host -> InetAddress.getAllByName(host).toList() }
 
     /**
      * Creates an HTTP client based on the specified options.
@@ -126,9 +133,7 @@ class HttpClientFactoryJvmImpl(
                 // Install URL validation for SSRF protection via request pipeline
                 val validationPolicy = urlValidation
                 if (validationPolicy != null) {
-                    client.requestPipeline.intercept(io.ktor.client.request.HttpRequestPipeline.Before) {
-                        validationPolicy.validate(context.url.build())
-                    }
+                    client.installUrlValidation(validationPolicy)
                 }
             }
         }
@@ -287,12 +292,25 @@ class HttpClientFactoryJvmImpl(
             val sslConfig = options.sslConfig
             val trustManagers = buildTrustManagers(sslConfig.server.ca)
             val sslContext = buildClientSslContext(sslConfig, trustManagers)
+            // A policy that blocks address ranges is enforced on the addresses the connection actually resolves to,
+            // not only on the host text, so names that map to internal addresses and DNS rebinding are refused.
+            val egressGuard =
+                options.urlValidation
+                    ?.takeIf { it.blockPrivateNetworks || it.blockRfc1918 || it.blockSharedNetworks }
+                    ?.let { policy -> EgressGuard(addressPolicy = { address -> EgressAddressPolicy.isAllowed(address, policy) }, resolver = egressResolver) }
             val httpClientEngine =
                 OkHttp.create {
                     config {
                         sslSocketFactory(sslContext.socketFactory, CompositeTrustManager(trustManagers))
-                        followRedirects(options.followRedirects)
-                        followSslRedirects(options.followRedirects)
+                        // With an egress guard, redirects are followed by the Ktor client only, so every hop passes
+                        // through URL validation and the engine's resolved-address check before it is connected to.
+                        val engineFollowsRedirects = options.followRedirects && egressGuard == null
+                        followRedirects(engineFollowsRedirects)
+                        followSslRedirects(engineFollowsRedirects)
+                        if (egressGuard != null) {
+                            dns(egressGuard.dns)
+                            addInterceptor(egressGuard.literalInterceptor)
+                        }
                         val versions = when (sslConfig.client.minimumTlsVersion) {
                             HttpMinimumTlsVersion.TLS_1_2 -> arrayOf(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
                             HttpMinimumTlsVersion.TLS_1_3 -> arrayOf(TlsVersion.TLS_1_3)

@@ -333,13 +333,19 @@ class JAdESValidatorImpl(
             val payload = json["payload"]?.jsonPrimitive?.content ?: ""
             val signature = json["signature"]?.jsonPrimitive?.content
 
+            // A JWS that mixes the flattened and general forms, or carries several signatures, is ambiguous about which
+            // signature covers the payload the caller consumes; only exactly one signature is accepted.
+            if (json["signatures"] != null && (protectedHeader != null || signature != null)) {
+                return null
+            }
+
             if (protectedHeader != null && signature != null) {
                 return ParsedJws(protectedHeader, payload, signature)
             }
 
-            // General JWS — use first signature
+            // General JWS with exactly one signature
             val signatures = json["signatures"]?.jsonArray
-            if (signatures != null && signatures.isNotEmpty()) {
+            if (signatures != null && signatures.size == 1) {
                 val firstSig = signatures[0].jsonObject
                 val sigProtected = firstSig["protected"]?.jsonPrimitive?.content ?: return null
                 val sigSignature = firstSig["signature"]?.jsonPrimitive?.content ?: return null

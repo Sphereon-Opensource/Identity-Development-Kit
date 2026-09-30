@@ -1,0 +1,10 @@
+Catalogue of Attributes and Catalogue of Schemes XML schemas, version 1.0.1
+  catalogue_of_attributes.xsd, catalogue_attribute.xsd  (CoA specification package coa_xsd.zip)
+  catalogue_of_schemes.xsd, catalogue_scheme.xsd        (CoS specification package cos_xsd.zip)
+They are copied unchanged from the packages published with the European Commission CoA and CoS specifications
+(retrieved 2026-09-29) and are used only to validate serialized test documents. The licence of the packages is the one
+of the published specifications; no separate licence file accompanies the archives.
+
+xml.xsd and xmldsig-core-schema.xsd are NOT the W3C files. They are small offline stand-ins written for these tests,
+because the catalogue schemas import http://www.w3.org/2001/xml.xsd and the W3C xmldsig schema by URL and the tests
+must not use the network. See the comment at the top of each file for what they declare.

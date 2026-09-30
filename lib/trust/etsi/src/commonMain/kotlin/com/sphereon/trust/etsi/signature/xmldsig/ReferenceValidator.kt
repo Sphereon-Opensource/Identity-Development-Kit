@@ -174,38 +174,35 @@ object ReferenceValidator {
             } // External references not supported
         }
 
+    /**
+     * The one element carrying [id]. An id that matches more than one element is rejected: a `#id` Reference that
+     * silently resolves to the first match lets an attacker plant a decoy element ahead of the signed one.
+     */
     private fun findElementById(
         document: Document,
         id: String,
         type: String?,
     ): Element? {
         val root = document.getDocumentElement() ?: return null
-        return findElementByIdRecursive(root, id)
+        val matches = mutableListOf<Element>()
+        collectElementsById(root, id, matches)
+        check(matches.size <= 1) { "Ambiguous reference: Id '$id' is carried by ${matches.size} elements" }
+        return matches.firstOrNull()
     }
 
-    private fun findElementByIdRecursive(
+    private fun collectElementsById(
         element: Element,
         id: String,
-    ): Element? {
-        // Check common id attributes
-        val elemId =
-            element.getAttribute("Id")
-                ?: element.getAttribute("id")
-                ?: element.getAttribute("ID")
-        if (elemId == id) {
-            return element
+        matches: MutableList<Element>,
+    ) {
+        if (EnvelopedSignatureCoverage.idOf(element) == id) {
+            matches.add(element)
         }
-
-        // Recurse into children
         for (child in element.getChildNodes()) {
             if (child is Element) {
-                val found = findElementByIdRecursive(child, id)
-                if (found != null) {
-                    return found
-                }
+                collectElementsById(child, id, matches)
             }
         }
-        return null
     }
 
     private data class Transform(

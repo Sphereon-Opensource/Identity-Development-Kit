@@ -12,6 +12,7 @@ import com.sphereon.catalog.model.AttestationSchemaDocument
 import com.sphereon.catalog.model.AttestationTypeKey
 import com.sphereon.catalog.model.CatalogListingWindow
 import com.sphereon.catalog.model.CatalogVerificationMode
+import com.sphereon.catalog.model.CosSchemeFields
 import com.sphereon.catalog.model.SchemaMeta
 import com.sphereon.catalog.model.SchemaUriRef
 import com.sphereon.catalog.model.TrustAuthority
@@ -103,6 +104,7 @@ data class CreateSchemaArgs
         val schema: SchemaMeta,
         val documents: List<AttestationSchemaDocument> = emptyList(),
         val listing: CatalogListingWindow? = null,
+        val cos: CosSchemeFields? = null,
     )
 
 @JsExportCompat
@@ -115,6 +117,8 @@ data class UpdateSchemaArgs
         val schema: SchemaMeta,
         val documents: List<AttestationSchemaDocument>? = null,
         val listing: CatalogListingWindow? = null,
+        /** Null keeps the stored CoS-only fields. */
+        val cos: CosSchemeFields? = null,
     )
 
 @JsExportCompat
@@ -136,6 +140,7 @@ data class LinkSchemaArgs
         val trustedAuthorities: List<TrustAuthority> = emptyList(),
         val documents: List<AttestationSchemaDocument> = emptyList(),
         val listing: CatalogListingWindow? = null,
+        val cos: CosSchemeFields? = null,
     )
 
 @JsExportCompat
@@ -168,6 +173,8 @@ data class ImportRemoteCatalogArgs
     constructor(
         val catalogId: String,
         val baseUrl: String,
+        /** Trust domain whose CATALOG_SIGNER anchors verify the remote listing. */
+        val domainId: String,
     )
 
 @JsExportCompat

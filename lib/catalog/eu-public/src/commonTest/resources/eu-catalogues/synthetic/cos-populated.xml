@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CatalogueOfSchemes xmlns="http://data.europa.eu/c9v/catalogueOfSchemes/v1#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+    <CatalogueInformation>
+        <CatalogueVersion>1</CatalogueVersion>
+        <CatalogueSequenceNumber>2</CatalogueSequenceNumber>
+        <CatalogueIdentifier>http://data.europa.eu/c9v/EUCatalogueOfSchemes</CatalogueIdentifier>
+        <CatalogueName>
+            <Name xml:lang="en">Synthetic catalogue of schemes</Name>
+            <Name xml:lang="nl">Synthetic catalogue of schemes (nl)</Name>
+        </CatalogueName>
+        <CatalogueOperator>
+            <CatalogueOperatorName>
+                <Name xml:lang="en">Synthetic Operator</Name>
+            </CatalogueOperatorName>
+            <CatalogueOperatorIdentifier>NTRXX-0000.000.000</CatalogueOperatorIdentifier>
+            <CatalogueOperatorAddress>
+                <PostalAddresses>
+                    <PostalAddress xml:lang="en">
+                        <StreetAddress>Example Street 1</StreetAddress>
+                        <Locality>Example City</Locality>
+                        <StateOrProvince>Example Province</StateOrProvince>
+                        <PostalCode>1000</PostalCode>
+                        <Country>BE</Country>
+                    </PostalAddress>
+                </PostalAddresses>
+                <ElectronicAddress>
+                    <URI>https://catalogue.example.org</URI>
+                    <URI>mailto:catalogue@example.org</URI>
+                </ElectronicAddress>
+            </CatalogueOperatorAddress>
+        </CatalogueOperator>
+        <CatalogueInformationURI>https://catalogue.example.org/info</CatalogueInformationURI>
+        <CatalogueEntriesStatusDeterminationApproach>
+            https://catalogue.example.org/status
+        </CatalogueEntriesStatusDeterminationApproach>
+        <CatalogueTerritory>EU</CatalogueTerritory>
+        <CatalogueLegalNotice>https://catalogue.example.org/legal</CatalogueLegalNotice>
+        <HistoricalInformationPeriod>65535</HistoricalInformationPeriod>
+        <CatalogueIssueDateAndTime>2026-09-01T00:00:00Z</CatalogueIssueDateAndTime>
+        <CatalogueDistributionPoint>
+            <DownloadURL>https://catalogue.example.org/catalogue.xml</DownloadURL>
+        </CatalogueDistributionPoint>
+    </CatalogueInformation>
+    <EAASchemeList>
+        <EAASchemeEntryReference>
+            <EAASchemeName>eu-pid</EAASchemeName>
+            <EAASchemeIdentifier>urn:example:scheme:pid</EAASchemeIdentifier>
+            <EAASchemeRegistrationIdentifier>REG-SCHEME-0001</EAASchemeRegistrationIdentifier>
+                    <ds:Reference URI="schemes/eu-pid.xml">
+                        <ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms>
+                        <ds:DigestMethod Algorithm="https://www.w3.org/TR/xmlenc-core1/#sec-SHA512"/>
+                        <ds:DigestValue>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==</ds:DigestValue>
+                    </ds:Reference>
+        </EAASchemeEntryReference>
+    </EAASchemeList>
+    <ds:Signature Id="id-synthetic"><ds:SignedInfo/><ds:SignatureValue>AAAA</ds:SignatureValue></ds:Signature>
+</CatalogueOfSchemes>

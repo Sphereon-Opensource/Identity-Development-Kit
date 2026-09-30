@@ -27,6 +27,15 @@ import io.ktor.http.Url
  *
  * When a request URL violates the policy, the client throws [UrlValidationException]
  * before the request is sent.
+ *
+ * The address flags ([blockPrivateNetworks], [blockRfc1918], [blockSharedNetworks]) are enforced in two places.
+ * [validate] checks the literal host of a URL, on every platform. On the JVM the [HttpClientFactory] additionally
+ * checks every address a host name RESOLVES to, inside the connection's own DNS lookup, so a name that maps to a
+ * loopback, private, link-local or metadata address, and a DNS rebinding answer, is refused at connect time. Every
+ * redirect hop is validated the same way before it is followed. The other targets (JS, wasmJs, Apple, Linux) do not
+ * expose the engine's resolver, so they only get the literal-host check; do not rely on those targets to stop a
+ * host name that resolves to an internal address. Use [ALLOW_PRIVATE] (or [NONE]) for clients that must reach
+ * internal services.
  */
 @JsExportCompat
 data class UrlValidationPolicy(
@@ -66,7 +75,7 @@ data class UrlValidationPolicy(
             validateExactTarget(approved = Url(approvedUri), requested = url)
         }
 
-        val host = url.host.lowercase()
+        val host = url.host.lowercase().trimEnd('.')
         if (host.isEmpty()) {
             throw UrlValidationException("URL has no host")
         }
@@ -125,6 +134,27 @@ data class UrlValidationPolicy(
                         ".localhost",
                         ".corp",
                         ".home.arpa",
+                    ),
+            )
+
+        /**
+         * Explicit opt-in for clients that legitimately reach internal services (local development, compose or cluster
+         * east-west calls, an in-network authorization server): loopback, RFC 1918 and shared ranges are allowed, both as
+         * literals and as resolved addresses. Userinfo is still refused and cloud metadata endpoints stay blocked by name.
+         */
+        val ALLOW_PRIVATE =
+            UrlValidationPolicy(
+                allowedSchemes = setOf("https", "http"),
+                blockUserInfo = true,
+                blockPrivateNetworks = false,
+                blockRfc1918 = false,
+                blockSharedNetworks = false,
+                blockedHosts =
+                    setOf(
+                        "metadata.google.internal",
+                        "metadata.azure.internal",
+                        "instance-data.ec2.internal",
+                        "169.254.169.254",
                     ),
             )
 
@@ -201,7 +231,7 @@ internal fun checkIpRanges(
     blockRfc1918: Boolean,
     blockSharedNetworks: Boolean,
 ): String? {
-    val normalized = host.removeSurrounding("[", "]")
+    val normalized = embeddedIpv4Literal(host.removeSurrounding("[", "]"))
 
     // IPv4
     val parts = normalized.split(".")
@@ -260,6 +290,23 @@ internal fun checkIpRanges(
     }
 
     return null
+}
+
+/**
+ * Unwraps an IPv4-mapped IPv6 literal (`::ffff:127.0.0.1` or `::ffff:7f00:1`) to its dotted IPv4 form so the IPv4
+ * range checks apply to it. Any other input is returned unchanged.
+ */
+private fun embeddedIpv4Literal(value: String): String {
+    val lower = value.lowercase()
+    if (!lower.startsWith("::ffff:")) return value
+    val rest = lower.removePrefix("::ffff:")
+    if ('.' in rest) return rest
+    val groups = rest.split(":")
+    if (groups.size != 2) return value
+    val high = groups[0].toIntOrNull(HEX_RADIX) ?: return value
+    val low = groups[1].toIntOrNull(HEX_RADIX) ?: return value
+    if (high !in 0..0xFFFF || low !in 0..0xFFFF) return value
+    return "${high shr 8}.${high and 0xFF}.${low shr 8}.${low and 0xFF}"
 }
 
 // IPv4 address range constants

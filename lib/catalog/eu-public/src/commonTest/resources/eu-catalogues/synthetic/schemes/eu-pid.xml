@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EAASchemeEntry xmlns="http://data.europa.eu/c9v/catalogueOfSchemes/v1#">
+    <EAASchemeName>eu-pid</EAASchemeName>
+    <EAASchemeOwnerInformation>
+        <EAASchemeOwnerName>
+            <Name xml:lang="en">Synthetic Scheme Owner</Name>
+        </EAASchemeOwnerName>
+        <EAASchemeOwnerIdentifier>NTRNL-12345678</EAASchemeOwnerIdentifier>
+        <EAASchemeOwnerAddress>
+            <PostalAddresses>
+                <PostalAddress xml:lang="nl">
+                    <StreetAddress>Voorbeeldstraat 1</StreetAddress>
+                    <Locality>Den Haag</Locality>
+                    <PostalCode>2500</PostalCode>
+                    <Country>NL</Country>
+                </PostalAddress>
+            </PostalAddresses>
+            <ElectronicAddress>
+                <URI>mailto:owner@example.org</URI>
+            </ElectronicAddress>
+        </EAASchemeOwnerAddress>
+    </EAASchemeOwnerInformation>
+    <EAASchemeIdentifier>urn:example:scheme:pid</EAASchemeIdentifier>
+    <VersionedEAASchemeList>
+        <VersionedEAAScheme>
+            <EAASchemeVersion>1.0</EAASchemeVersion>
+            <VersionedEAASchemeStatusInformation>
+                <VersionedEAASchemeStatus>http://data.europa.eu/c9v/EUCatalogueOfSchemes/VersionedEAASchemeStatus/inforce</VersionedEAASchemeStatus>
+            </VersionedEAASchemeStatusInformation>
+            <EAASchemeDocumentURI>https://schemes.example.org/pid/rulebook.pdf</EAASchemeDocumentURI>
+            <EAATypeList>
+                <EAAType>
+                    <EAATypeIdentifier>pid</EAATypeIdentifier>
+                    <EAATypeName>
+                        <Name xml:lang="en">Person identification data</Name>
+                    </EAATypeName>
+                    <EAATypeSchemeDefinition>
+                        <Name xml:lang="en">Attestation identifying a natural person</Name>
+                    </EAATypeSchemeDefinition>
+                    <EAATypeAttributeReferences>
+                        <AttributeReference>
+                            <AttributeDefinitionPointer>https://catalogue.example.org/attributes/eu.europa.ec.eudi.pid.1/family_name.xml</AttributeDefinitionPointer>
+                            <AttributeNamespace>eu.europa.ec.eudi.pid.1</AttributeNamespace>
+                            <AttributeIdentifier>family_name</AttributeIdentifier>
+                            <AttributeUniqueIdentifier>REG-ATTR-0001</AttributeUniqueIdentifier>
+                            <AttributeVersion>2</AttributeVersion>
+                        </AttributeReference>
+                        <AttributeReference>
+                            <CataloguePointer>
+                                <CatalogueLocation>https://catalogue.example.org/catalogue.xml</CatalogueLocation>
+                                <CatalogueIdentifier>http://data.europa.eu/c9v/EUCatalogueOfAttributes</CatalogueIdentifier>
+                            </CataloguePointer>
+                            <AttributeNamespace>eu.europa.ec.eudi.pid.1</AttributeNamespace>
+                            <AttributeIdentifier>birth_date</AttributeIdentifier>
+                        </AttributeReference>
+                    </EAATypeAttributeReferences>
+                    <EAATypeDataModelReference>https://schemes.example.org/pid/data-model</EAATypeDataModelReference>
+                    <FormatSyntaxBindings>
+                        <FormatSyntaxBinding>
+                            <MediaType>application/dc+sd-jwt</MediaType>
+                            <BindingDefinitionURI>https://schemes.example.org/pid/schema.json</BindingDefinitionURI>
+                            <BindingDefinitionDocumentURI>https://schemes.example.org/pid/binding.html</BindingDefinitionDocumentURI>
+                            <FormatSyntaxSpecificEAATypeIdentifier>urn:eudi:pid:1</FormatSyntaxSpecificEAATypeIdentifier>
+                        </FormatSyntaxBinding>
+                        <FormatSyntaxBinding>
+                            <MediaType>application/mdoc</MediaType>
+                            <FormatSyntaxSpecificEAATypeIdentifier>eu.europa.ec.eudi.pid.1</FormatSyntaxSpecificEAATypeIdentifier>
+                        </FormatSyntaxBinding>
+                    </FormatSyntaxBindings>
+                    <EAATypeExtensions>
+                        <Extension>
+                            <Critical>true</Critical>
+                            <EAATypeTrustModelTypes>
+                                <EAATypeTrustModelType>http://data.europa.eu/c9v/EUCatalogueOfSchemes/EAAType/TrustModel/PubEAA</EAATypeTrustModelType>
+                                <EAATypeTrustModelType>http://data.europa.eu/c9v/EUCatalogueOfSchemes/EAAType/TrustModel/QEAA</EAATypeTrustModelType>
+                            </EAATypeTrustModelTypes>
+                        </Extension>
+                    </EAATypeExtensions>
+                </EAAType>
+            </EAATypeList>
+        </VersionedEAAScheme>
+    </VersionedEAASchemeList>
+    <EAASchemeRegistrationIdentifier>REG-SCHEME-0001</EAASchemeRegistrationIdentifier>
+</EAASchemeEntry>

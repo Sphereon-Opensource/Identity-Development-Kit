@@ -18,10 +18,12 @@ package com.sphereon.oauth2.server.resource.model
 
 import com.sphereon.core.compat.JsExportCompat
 import com.sphereon.crypto.core.jose.Jwk
+import com.sphereon.di.context.VerifiedTenantAttribution
 import com.sphereon.oauth2.common.model.AuthenticationScheme
 import com.sphereon.oauth2.common.model.TokenIntrospectionResponse
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Instant
@@ -135,7 +137,14 @@ sealed interface TokenPayload {
          * rather than flattened to strings. Populated by the verifier from the parsed payload.
          */
         val additionalClaims: Map<String, JsonElement> = emptyMap(),
-    ) : TokenPayload
+    ) : TokenPayload, VerifiedTenantAttribution {
+        override val verifiedTenantId: String?
+            get() = (additionalClaims["tenant_id"] as? JsonPrimitive)
+                ?.takeIf { it.isString }
+                ?.content
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+    }
 
     /**
      * Token introspection response payload (RFC 7662)

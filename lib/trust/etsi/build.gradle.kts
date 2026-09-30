@@ -97,6 +97,8 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(sphereonlib.io.ktor.client.cio.jvm)
+                implementation(sphereonlib.org.bouncycastle.bcprov.jdk18on)
+                implementation(sphereonlib.org.bouncycastle.bcpkix.jdk18on)
             }
         }
         findByName("jsMain")?.dependencies {

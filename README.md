@@ -371,13 +371,13 @@ Full module reference: [docs.sphereon.com/idk/guides/modules](https://docs.spher
 
 ## Module index
 
-225 modules across 56 domains, generated from the verified module index (`docs/module-index/`): every abstract below passed the four-facet rubric, 44 checks per module.
+227 modules across 56 domains, generated from the verified module index (`docs/module-index/`): every abstract below passed the four-facet rubric, 44 checks per module.
 Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules).
 
 | Domain | Modules | Scope |
 |---|---:|---|
 | attribute | 2 | `attribute` provides flow-agnostic attribute wiring primitives. `attribute-flow-public` defines `AttributeBag`, `AttributePath`, and related flow-agnostic structures; `attribute-mapping-public` provides generic source→target attribute rename rules and an applier, reused across connectors and presentation flows. |
-| catalog | 6 | `catalog` manages **TS 11 attestation catalogs** (European eIDAS / trusted-list style catalogs). |
+| catalog | 8 | `catalog` manages **TS 11 attestation catalogs** (European eIDAS / trusted-list style catalogs). |
 | cbor | 2 | `cbor` implements the CBOR data model and runtime (RFC 8949), split into public API and impl. |
 | compression | 1 | Single-module domain: `lib-compression` provides GZIP / zlib / raw DEFLATE compression primitives used by status lists, JWE `zip` handling, and other compressed payloads. |
 | conf-settings | 1 | Single-module domain: `lib-conf-settings` — a `multiplatform-settings`-backed property source for configuration, usable on mobile/browser targets where file-based config is not available. |
@@ -434,10 +434,10 @@ Full narratives: [Module Reference](https://docs.sphereon.com/idk/guides/modules
 | wallet-ui | 2 | `wallet-ui` is the wallet’s Compose Multiplatform UI: `wallet-ui-compose` (screens and components) and `wallet-ui-navigation3` (Navigation 3 routing). |
 
 <details>
-<summary><b>Module ids by domain (225)</b></summary>
+<summary><b>Module ids by domain (227)</b></summary>
 
 - **attribute**: `lib-attribute-flow-public`, `lib-attribute-mapping-public`
-- **catalog**: `lib-catalog-impl`, `lib-catalog-persistence-api`, `lib-catalog-persistence-memory`, `lib-catalog-persistence-sqlite`, `lib-catalog-public`, `lib-catalog-ts11-public`
+- **catalog**: `lib-catalog-eu-impl`, `lib-catalog-eu-public`, `lib-catalog-impl`, `lib-catalog-persistence-api`, `lib-catalog-persistence-memory`, `lib-catalog-persistence-sqlite`, `lib-catalog-public`, `lib-catalog-ts11-public`
 - **cbor**: `lib-cbor-impl`, `lib-cbor-public`
 - **compression**: `lib-compression`
 - **conf-settings**: `lib-conf-settings`

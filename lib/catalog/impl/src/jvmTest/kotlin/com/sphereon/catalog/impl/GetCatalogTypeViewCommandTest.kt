@@ -154,9 +154,9 @@ class GetCatalogTypeViewCommandTest {
 
     private class Env {
         val store = InMemoryAttestationCatalogStore()
-        val createCatalog = CreateCatalogCommandImpl(TestSessionExecution, store)
-        val createSchema = CreateSchemaCommandImpl(TestSessionExecution, store)
-        val publish = PublishCatalogCommandImpl(TestSessionExecution, store)
+        val createCatalog = CreateCatalogCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
+        val createSchema = CreateSchemaCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
+        val publish = PublishCatalogCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
         val viewType = GetCatalogTypeViewCommandImpl(TestSessionExecution, store, NoOpIssuerBindingLookup())
         val resolve = ResolveAttestationTypeCommandImpl(TestSessionExecution, store)
     }

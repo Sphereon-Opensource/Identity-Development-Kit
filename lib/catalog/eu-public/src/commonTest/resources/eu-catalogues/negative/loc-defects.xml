@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListOfTrustedEntities xmlns="http://uri.etsi.org/019602/v1#" LOTETag="http://example.org/OtherTag">
+    <ListAndSchemeInformation>
+        <LoTEVersionIdentifier>1</LoTEVersionIdentifier>
+        <LoTESequenceNumber>1</LoTESequenceNumber>
+        <LoTEType>http://example.org/OtherList</LoTEType>
+        <SchemeOperatorName>
+            <Name xml:lang="en">Synthetic Operator</Name>
+        </SchemeOperatorName>
+        <StatusDeterminationApproach>http://example.org/approach</StatusDeterminationApproach>
+        <SchemeTerritory>BE</SchemeTerritory>
+        <HistoricalInformationPeriod>12</HistoricalInformationPeriod>
+        <PointersToOtherLoTE>
+            <OtherLoTEPointer>
+                <ServiceDigitalIdentities>
+                    <ServiceDigitalIdentity>
+                        <DigitalId>MIIB</DigitalId>
+                    </ServiceDigitalIdentity>
+                </ServiceDigitalIdentities>
+                <LoTELocation>https://catalogue.example.org/coa.xml</LoTELocation>
+                <AdditionalInformation>
+                    <OtherInformation>
+                        <LoTEType>http://data.europa.eu/c9v/EUCatalogueOfAttributes</LoTEType>
+                    </OtherInformation>
+                </AdditionalInformation>
+            </OtherLoTEPointer>
+            <OtherLoTEPointer>
+                <LoTELocation>ftp://catalogue.example.org/cos.xml</LoTELocation>
+                <AdditionalInformation>
+                    <OtherInformation>
+                        <LoTEType>http://data.europa.eu/c9v/EUCatalogueOfSchemes</LoTEType>
+                    </OtherInformation>
+                </AdditionalInformation>
+            </OtherLoTEPointer>
+        </PointersToOtherLoTE>
+        <ListIssueDateTime>2026-01-01T00:00:00Z</ListIssueDateTime>
+        <NextUpdate>
+            <dateTime>2026-12-31T00:00:00Z</dateTime>
+        </NextUpdate>
+    </ListAndSchemeInformation>
+</ListOfTrustedEntities>

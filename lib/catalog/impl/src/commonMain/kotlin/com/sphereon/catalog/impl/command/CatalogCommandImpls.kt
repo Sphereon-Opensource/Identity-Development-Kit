@@ -9,6 +9,9 @@
 
 package com.sphereon.catalog.impl.command
 
+import com.sphereon.catalog.authorization.CatalogAuthorization
+import com.sphereon.catalog.authorization.CatalogPermissionIds
+import com.sphereon.catalog.authorization.DenyAllCatalogAuthorization
 import com.sphereon.catalog.client.CatalogLinkedTypeSource
 import com.sphereon.catalog.client.CatalogRemoteClient
 import com.sphereon.catalog.client.CatalogSessionHydrator
@@ -49,10 +52,21 @@ import com.sphereon.catalog.command.UpdateSchemaArgs
 import com.sphereon.catalog.command.UpdateSchemaCommand
 import com.sphereon.catalog.impl.CatalogTypeViewAssembler
 import com.sphereon.catalog.impl.CatalogVerificationEvaluator
+import com.sphereon.catalog.impl.CosSchemeFieldsValidator
 import com.sphereon.catalog.impl.FormatDocumentValidator
 import com.sphereon.catalog.impl.RulebookCatalogMapper
 import com.sphereon.catalog.impl.SchemaMetaValidator
+import com.sphereon.catalog.client.CatalogRemoteSignatureEvidence
+import com.sphereon.catalog.client.CatalogRemoteTrustScope
 import com.sphereon.catalog.impl.client.NoOpCatalogSessionHydrator
+import com.sphereon.catalog.impl.publication.NoOpCatalogPublicationListener
+import com.sphereon.catalog.impl.publication.NoOpCatalogSlugGuard
+import com.sphereon.catalog.publication.CatalogPublication
+import com.sphereon.catalog.publication.CatalogPublicationListener
+import com.sphereon.catalog.publication.CatalogSlugGuard
+import com.sphereon.catalog.impl.client.TrustAuthorityHintResolver
+import com.sphereon.catalog.model.CatalogImportDiagnostic
+import com.sphereon.catalog.model.TrustAuthority
 import com.sphereon.catalog.model.AttestationCatalog
 import com.sphereon.catalog.model.AttestationCatalogList
 import com.sphereon.catalog.model.AttestationCatalogStatus
@@ -193,6 +207,8 @@ class ListCatalogsCommandImpl(
 class CreateCatalogCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
+    private val slugGuard: CatalogSlugGuard = NoOpCatalogSlugGuard(),
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<CreateCatalogArgs, AttestationCatalog, IdkError>(
         commandId = CreateCatalogCommand.COMMAND_ID,
         execution = execution,
@@ -209,6 +225,7 @@ class CreateCatalogCommandImpl(
         applyDuring: (CreateCatalogArgs) -> CreateCatalogArgs,
     ): IdkResult<AttestationCatalog, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.MANAGE, null).getOrElse { return Err(it) }
         SchemaMetaValidator.validateSlug(input.slug).getOrElse { return Err(it) }
         if (input.displayName.isBlank()) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "displayName is required"))
@@ -217,10 +234,12 @@ class CreateCatalogCommandImpl(
         if (existing != null) {
             return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(arg = input.slug, message = "Catalog slug already exists"))
         }
+        val id = newId()
+        slugGuard.requireAvailable(execution.tenantId, input.slug, id).getOrElse { return Err(it) }
         val instant = now()
         val catalog =
             AttestationCatalog(
-                id = newId(),
+                id = id,
                 slug = input.slug,
                 displayName = input.displayName,
                 description = input.description,
@@ -262,6 +281,8 @@ class GetCatalogCommandImpl(
 class UpdateCatalogCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
+    private val slugGuard: CatalogSlugGuard = NoOpCatalogSlugGuard(),
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<UpdateCatalogArgs, AttestationCatalog, IdkError>(
         commandId = UpdateCatalogCommand.COMMAND_ID,
         execution = execution,
@@ -278,6 +299,7 @@ class UpdateCatalogCommandImpl(
         applyDuring: (UpdateCatalogArgs) -> UpdateCatalogArgs,
     ): IdkResult<AttestationCatalog, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.MANAGE, input.catalogId).getOrElse { return Err(it) }
         val current =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, null, publishedOnly = false)
@@ -292,6 +314,7 @@ class UpdateCatalogCommandImpl(
             if (existing != null && existing.id != current.id) {
                 return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(arg = nextSlug, message = "Catalog slug already exists"))
             }
+            slugGuard.requireAvailable(execution.tenantId, nextSlug, current.id).getOrElse { return Err(it) }
         }
         val updated =
             current.copy(
@@ -311,6 +334,8 @@ class UpdateCatalogCommandImpl(
 class PublishCatalogCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
+    private val listener: CatalogPublicationListener = NoOpCatalogPublicationListener(),
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<CatalogIdArgs, AttestationCatalog, IdkError>(
         commandId = PublishCatalogCommand.COMMAND_ID,
         execution = execution,
@@ -327,15 +352,18 @@ class PublishCatalogCommandImpl(
         applyDuring: (CatalogIdArgs) -> CatalogIdArgs,
     ): IdkResult<AttestationCatalog, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.PUBLISH, input.catalogId).getOrElse { return Err(it) }
         val current =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, null, publishedOnly = false)
                 .getOrElse { return Err(it) }
-        if (current.status != AttestationCatalogStatus.DRAFT) {
-            return Err(illegalState("Only DRAFT catalogs can be published"))
+        // A disabled catalog can be made available again: publishing it serves a fresh signed listing and a new CoS revision.
+        if (current.status != AttestationCatalogStatus.DRAFT && current.status != AttestationCatalogStatus.DISABLED) {
+            return Err(illegalState("Only DRAFT or DISABLED catalogs can be published"))
         }
         val schemas = store.listSchemas(execution.tenantId, current.id).getOrElse { return Err(it) }
         val origin = publicOrigin(execution)
+        val hostedRecords = mutableListOf<AttestationSchemaRecord>()
         schemas.filter { !it.listing.isEmpty() }.forEach { record ->
             SchemaMetaValidator.validate(record.schema, requireId = true).getOrElse { return Err(it) }
             requireListedDocuments(record.schema, record.documents, record.listing).getOrElse { return Err(it) }
@@ -352,18 +380,31 @@ class PublishCatalogCommandImpl(
                             }
                         },
                 )
-            store
-                .saveSchema(execution.tenantId, record.copy(schema = hosted, updatedAt = now()))
-                .getOrElse { return Err(it) }
+            val hostedRecord = record.copy(schema = hosted, updatedAt = now())
+            store.saveSchema(execution.tenantId, hostedRecord).getOrElse { return Err(it) }
+            hostedRecords += hostedRecord
         }
-        return store.saveCatalog(
-            execution.tenantId,
-            current.copy(
-                status = AttestationCatalogStatus.PUBLISHED,
-                version = current.version + 1,
-                updatedAt = now(),
-            ),
-        )
+        val publication = CatalogPublication(current, hostedRecords, hostedPath(origin, "/public/catalogs/${current.slug}"))
+        val notified = listener.published(publication)
+        if (notified.isErr) {
+            // The listener may have claimed the slug or stored parts of its representation before it failed.
+            listener.disabled(current)
+            return Err(notified.error)
+        }
+        val saved =
+            store.saveCatalog(
+                execution.tenantId,
+                current.copy(
+                    status = AttestationCatalogStatus.PUBLISHED,
+                    version = current.version + 1,
+                    updatedAt = now(),
+                ),
+            )
+        if (saved.isErr) {
+            // The catalog keeps its DRAFT or DISABLED status, so its additional representations must not stay served.
+            listener.disabled(current)
+        }
+        return saved
     }
 }
 
@@ -372,6 +413,8 @@ class PublishCatalogCommandImpl(
 class DisableCatalogCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
+    private val listener: CatalogPublicationListener = NoOpCatalogPublicationListener(),
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<CatalogIdArgs, AttestationCatalog, IdkError>(
         commandId = DisableCatalogCommand.COMMAND_ID,
         execution = execution,
@@ -388,6 +431,7 @@ class DisableCatalogCommandImpl(
         applyDuring: (CatalogIdArgs) -> CatalogIdArgs,
     ): IdkResult<AttestationCatalog, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.PUBLISH, input.catalogId).getOrElse { return Err(it) }
         val current =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, null, publishedOnly = false)
@@ -395,14 +439,23 @@ class DisableCatalogCommandImpl(
         if (current.status != AttestationCatalogStatus.PUBLISHED) {
             return Err(illegalState("Only PUBLISHED catalogs can be disabled"))
         }
-        return store.saveCatalog(
-            execution.tenantId,
-            current.copy(
-                status = AttestationCatalogStatus.DISABLED,
-                version = current.version + 1,
-                updatedAt = now(),
-            ),
-        )
+        val disabled =
+            store
+                .saveCatalog(
+                    execution.tenantId,
+                    current.copy(
+                        status = AttestationCatalogStatus.DISABLED,
+                        version = current.version + 1,
+                        updatedAt = now(),
+                    ),
+                ).getOrElse { return Err(it) }
+        val stopped = listener.disabled(disabled)
+        if (stopped.isErr) {
+            // The additional representations are still served, so the catalog must stay PUBLISHED.
+            store.saveCatalog(execution.tenantId, disabled.copy(status = AttestationCatalogStatus.PUBLISHED, version = disabled.version + 1, updatedAt = now()))
+            return Err(stopped.error)
+        }
+        return Ok(disabled)
     }
 }
 
@@ -539,6 +592,7 @@ class GetCatalogTypeViewCommandImpl(
 class CreateSchemaCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<CreateSchemaArgs, SchemaMeta, IdkError>(
         commandId = CreateSchemaCommand.COMMAND_ID,
         execution = execution,
@@ -555,11 +609,13 @@ class CreateSchemaCommandImpl(
         applyDuring: (CreateSchemaArgs) -> CreateSchemaArgs,
     ): IdkResult<SchemaMeta, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.MANAGE, input.catalogId).getOrElse { return Err(it) }
         val catalog =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, null, publishedOnly = false)
                 .getOrElse { return Err(it) }
         SchemaMetaValidator.validate(input.schema, requireId = false).getOrElse { return Err(it) }
+        input.cos?.let { CosSchemeFieldsValidator.validate(it).getOrElse { error -> return Err(error) } }
         val instant = now()
         val listing = input.listing ?: CatalogListingWindow.open(instant)
         requireListedDocuments(input.schema, input.documents, listing).getOrElse { return Err(it) }
@@ -575,6 +631,7 @@ class CreateSchemaCommandImpl(
                     documents = input.documents,
                     createdAt = instant,
                     updatedAt = instant,
+                    cos = input.cos,
                 ),
             ).getOrElse { return Err(it) }
         return Ok(schema)
@@ -586,6 +643,7 @@ class CreateSchemaCommandImpl(
 class UpdateSchemaCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<UpdateSchemaArgs, SchemaMeta, IdkError>(
         commandId = UpdateSchemaCommand.COMMAND_ID,
         execution = execution,
@@ -602,12 +660,14 @@ class UpdateSchemaCommandImpl(
         applyDuring: (UpdateSchemaArgs) -> UpdateSchemaArgs,
     ): IdkResult<SchemaMeta, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.MANAGE, input.catalogId).getOrElse { return Err(it) }
         val catalog =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, null, publishedOnly = false)
                 .getOrElse { return Err(it) }
         val current = store.requireSchema(execution.tenantId, catalog, input.schemaId).getOrElse { return Err(it) }
         SchemaMetaValidator.validate(input.schema, requireId = false).getOrElse { return Err(it) }
+        input.cos?.let { CosSchemeFieldsValidator.validate(it).getOrElse { error -> return Err(error) } }
         // A linked type is driven by its design or credential configuration: its type identity
         // is fixed at link time and an update may only change listing, documents and metadata.
         if (current.provenance == CatalogSchemaProvenance.LINKED_DESIGN && input.schema.schemaURIs != current.schema.schemaURIs) {
@@ -623,7 +683,7 @@ class UpdateSchemaCommandImpl(
         store
             .saveSchema(
                 execution.tenantId,
-                current.copy(schema = schema, documents = documents, listing = listing, updatedAt = now()),
+                current.copy(schema = schema, documents = documents, listing = listing, updatedAt = now(), cos = input.cos ?: current.cos),
             ).getOrElse { return Err(it) }
         return Ok(schema)
     }
@@ -634,6 +694,7 @@ class UpdateSchemaCommandImpl(
 class DeleteSchemaCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<SchemaIdArgs, Unit, IdkError>(
         commandId = DeleteSchemaCommand.COMMAND_ID,
         execution = execution,
@@ -650,6 +711,7 @@ class DeleteSchemaCommandImpl(
         applyDuring: (SchemaIdArgs) -> SchemaIdArgs,
     ): IdkResult<Unit, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.MANAGE, input.catalogId).getOrElse { return Err(it) }
         val catalog =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, input.slug, publishedOnly = false)
@@ -666,6 +728,7 @@ class LinkSchemaCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
     private val linkedTypeSource: CatalogLinkedTypeSource,
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<LinkSchemaArgs, SchemaMeta, IdkError>(
         commandId = LinkSchemaCommand.COMMAND_ID,
         execution = execution,
@@ -682,6 +745,7 @@ class LinkSchemaCommandImpl(
         applyDuring: (LinkSchemaArgs) -> LinkSchemaArgs,
     ): IdkResult<SchemaMeta, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.MANAGE, input.catalogId).getOrElse { return Err(it) }
         val catalog =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, null, publishedOnly = false)
@@ -726,6 +790,7 @@ class LinkSchemaCommandImpl(
                 schemaURIs = schemaUris,
             )
         SchemaMetaValidator.validate(schema).getOrElse { return Err(it) }
+        input.cos?.let { CosSchemeFieldsValidator.validate(it).getOrElse { error -> return Err(error) } }
         val instant = now()
         // Membership only until a listing window is set. A link that names a listing (the admin
         // console's issuer import and "link a type" send one, open from now) is served at once;
@@ -745,6 +810,7 @@ class LinkSchemaCommandImpl(
                     documents = documents,
                     createdAt = instant,
                     updatedAt = instant,
+                    cos = input.cos,
                 ),
             ).getOrElse { return Err(it) }
         return Ok(schema)
@@ -854,6 +920,8 @@ class ImportRemoteCatalogCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
     private val remoteClient: CatalogRemoteClient,
+    private val hintResolver: TrustAuthorityHintResolver,
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<ImportRemoteCatalogArgs, CatalogImportReport, IdkError>(
         commandId = ImportRemoteCatalogCommand.COMMAND_ID,
         execution = execution,
@@ -870,18 +938,25 @@ class ImportRemoteCatalogCommandImpl(
         applyDuring: (ImportRemoteCatalogArgs) -> ImportRemoteCatalogArgs,
     ): IdkResult<CatalogImportReport, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.MANAGE, input.catalogId).getOrElse { return Err(it) }
         val catalog =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, null, publishedOnly = false)
                 .getOrElse { return Err(it) }
+        if (input.domainId.isBlank()) {
+            return Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "domainId is required to import a remote catalog"))
+        }
+        val trust = CatalogRemoteTrustScope(domainId = input.domainId, catalogId = catalog.id)
+        val diagnostics = mutableListOf<CatalogImportDiagnostic>()
         val incoming = mutableListOf<SchemaMeta>()
         var offset = 0
         val pageSize = 100
         do {
-            val page = remoteClient.listSchemas(input.baseUrl, pageSize, offset).getOrElse { return Err(it) }
-            incoming += page.data
-            offset += page.data.size
-            if (page.data.isEmpty() || offset >= page.total) break
+            val page = remoteClient.listSchemasScoped(input.baseUrl, pageSize, offset, trust).getOrElse { return Err(it) }
+            diagnostics += signatureDiagnostic("listing", page.signature)
+            incoming += page.value.data
+            offset += page.value.data.size
+            if (page.value.data.isEmpty() || offset >= page.value.total) break
         } while (true)
         val errors = mutableListOf<String>()
         val ids = mutableListOf<String>()
@@ -889,13 +964,14 @@ class ImportRemoteCatalogCommandImpl(
         var skipped = 0
         val existing = store.listSchemas(execution.tenantId, catalog.id).getOrElse { return Err(it) }
         val keptIds = mutableSetOf<String>()
+        val hints = mutableSetOf<TrustAuthority>()
         incoming.forEach { listed ->
             val fetched =
-                listed.id?.let { remoteClient.getSchema(input.baseUrl, it) }?.getOrElse {
+                listed.id?.let { remoteClient.getSchemaScoped(input.baseUrl, it, trust) }?.getOrElse {
                     errors += it.message.defaultMessage
                     skipped += 1
                     return@forEach
-                } ?: listed
+                }?.also { diagnostics += signatureDiagnostic("schema ${listed.id}", it.signature) }?.value ?: listed
             val structuralOk =
                 fetched.version.isNotBlank() &&
                     fetched.rulebookURI.isNotBlank() &&
@@ -906,6 +982,7 @@ class ImportRemoteCatalogCommandImpl(
                 errors += "Skipping schema ${fetched.id ?: fetched.version}: missing required SchemaMeta fields"
                 return@forEach
             }
+            hints += fetched.trustedAuthorities
             val documents = mutableListOf<com.sphereon.catalog.model.AttestationSchemaDocument>()
             fetched.schemaURIs.forEach { ref ->
                 val doc = remoteClient.fetchDocument(ref.uri)
@@ -983,9 +1060,28 @@ class ImportRemoteCatalogCommandImpl(
                 skipped = skipped,
                 errors = errors,
                 schemaIds = ids,
+                diagnostics = diagnostics.distinct() + hintResolver.resolve(hints),
             ),
         )
     }
+
+    private fun signatureDiagnostic(
+        subject: String,
+        signature: CatalogRemoteSignatureEvidence?,
+    ): CatalogImportDiagnostic =
+        if (signature == null) {
+            CatalogImportDiagnostic(
+                code = "catalog.remote.unsigned-accepted",
+                subject = subject,
+                message = "Unsigned remote response accepted because the trust domain policy allows it",
+            )
+        } else {
+            CatalogImportDiagnostic(
+                code = "catalog.remote.signature-verified",
+                subject = subject,
+                message = "JWS verified against a CATALOG_SIGNER anchor (issuer=${signature.issuer}, kid=${signature.keyId}, alg=${signature.algorithm})",
+            )
+        }
 }
 
 @Inject
@@ -993,6 +1089,7 @@ class ImportRemoteCatalogCommandImpl(
 class ImportRulebooksCommandImpl(
     execution: SessionExecution,
     private val store: AttestationCatalogStore,
+    private val authorization: CatalogAuthorization = DenyAllCatalogAuthorization,
 ) : TypedServiceCommandAdapter<ImportRulebooksArgs, CatalogImportReport, IdkError>(
         commandId = ImportRulebooksCommand.COMMAND_ID,
         execution = execution,
@@ -1009,6 +1106,7 @@ class ImportRulebooksCommandImpl(
         applyDuring: (ImportRulebooksArgs) -> ImportRulebooksArgs,
     ): IdkResult<CatalogImportReport, IdkError> {
         val input = applyDuring(args)
+        authorization.authorize(execution, CatalogPermissionIds.MANAGE, input.catalogId).getOrElse { return Err(it) }
         val catalog =
             store
                 .requireCatalog(execution.tenantId, input.catalogId, null, publishedOnly = false)

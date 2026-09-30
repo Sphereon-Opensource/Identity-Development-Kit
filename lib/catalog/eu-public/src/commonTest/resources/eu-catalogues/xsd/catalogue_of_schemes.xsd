@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Catalogue of Schemes – Specifications
+    Version: 1.0.1
+-->
+<xsd:schema
+    xmlns:cos="http://data.europa.eu/c9v/catalogueOfSchemes/v1#"
+    targetNamespace="http://data.europa.eu/c9v/catalogueOfSchemes/v1#"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+    elementFormDefault="qualified"
+    attributeFormDefault="unqualified">
+
+    <!-- Imports -->
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"
+                schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+    <xsd:import namespace="http://www.w3.org/2000/09/xmldsig#"
+                schemaLocation="http://www.w3.org/TR/2008/REC-xmldsig-core-20080610/xmldsig-core-schema.xsd"/>
+
+    <xsd:complexType name="MultiLangStringType">
+        <xsd:simpleContent>
+            <xsd:extension base="xsd:string">
+                <xsd:attribute ref="xml:lang" use="required"/>
+            </xsd:extension>
+        </xsd:simpleContent>
+    </xsd:complexType>
+
+    <xsd:complexType name="InternationalNamesType">
+        <xsd:sequence>
+            <xsd:element name="Name" type="cos:MultiLangStringType" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="Extension" type="cos:ExtensionType"/>
+    <xsd:complexType name="ExtensionType">
+        <xsd:sequence>
+			<xsd:element name="Critical" type="xsd:boolean"/>
+			<xsd:any namespace="##any" processContents="lax" minOccurs="1" maxOccurs="1"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="ExtensionsListType">
+        <xsd:sequence>
+            <xsd:element ref="cos:Extension" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:element name="PostalAddresses" type="cos:PostalAddressListType"/>
+    <xsd:complexType name="PostalAddressListType">
+        <xsd:sequence>
+            <xsd:element ref="cos:PostalAddress" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="PostalAddress" type="cos:PostalAddressType"/>
+    <xsd:complexType name="PostalAddressType">
+        <xsd:sequence>
+            <xsd:element name="StreetAddress"   type="xsd:string"/>
+            <xsd:element name="Locality"        type="xsd:string"/>
+            <xsd:element name="StateOrProvince" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="PostalCode"      type="xsd:string" minOccurs="0"/>
+            <xsd:element name="Country"         type="xsd:string"/>
+        </xsd:sequence>
+        <xsd:attribute ref="xml:lang" use="required"/>
+    </xsd:complexType>
+
+
+    <xsd:element name="ElectronicAddress" type="cos:ElectronicAddressType"/>
+    <xsd:complexType name="ElectronicAddressType">
+        <xsd:sequence>
+            <xsd:element name="URI" type="xsd:anyURI" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="CatalogueOperatorAddressType">
+        <xsd:sequence>
+            <xsd:element ref="cos:PostalAddresses"/>
+            <xsd:element ref="cos:ElectronicAddress"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="EAASchemeOwnerAddressType">
+        <xsd:sequence>
+            <xsd:element ref="cos:PostalAddresses"/>
+            <xsd:element ref="cos:ElectronicAddress"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:element name="CatalogueDistributionPoint" type="cos:CatalogueDistributionPointType"/>
+    <xsd:complexType name="CatalogueDistributionPointType">
+        <xsd:sequence>
+            <xsd:element name="HomePage"    type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="LandingPage" type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="DownloadURL" type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="AccessURL"   type="xsd:anyURI" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:element name="CatalogueOfSchemes" type="cos:CatalogueOfSchemesType"/>
+
+
+    <xsd:complexType name="CatalogueOfSchemesType">
+        <xsd:sequence>
+            <xsd:element ref="cos:CatalogueInformation"/>
+            <xsd:element ref="cos:EAASchemeList" minOccurs="0"/>
+            <xsd:element ref="ds:Signature" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:element name="CatalogueInformation" type="cos:CatalogueInformationType"/>
+    <xsd:complexType name="CatalogueInformationType">
+        <xsd:sequence>
+            <xsd:element name="CatalogueVersion"                            type="xsd:integer"/>
+            <xsd:element name="CatalogueSequenceNumber"                     type="xsd:positiveInteger"/>
+            <xsd:element name="CatalogueIdentifier"                         type="xsd:anyURI"/>
+            <xsd:element ref="cos:CatalogueName"/>
+            <xsd:element name="CatalogueOperator"                           type="cos:CatalogueOperatorType"/>
+            <xsd:element name="CatalogueInformationURI"                     type="xsd:anyURI"/>
+            <xsd:element name="CatalogueEntriesStatusDeterminationApproach" type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="CatalogueTerritory"                          type="xsd:string"/>
+            <xsd:element name="CatalogueLegalNotice"                        type="xsd:anyURI"/>
+            <xsd:element name="HistoricalInformationPeriod"                 type="xsd:nonNegativeInteger"/>
+            <xsd:element name="CatalogueIssueDateAndTime"                   type="xsd:dateTime"/>
+            <xsd:element ref="cos:CatalogueDistributionPoint"/>
+            <xsd:element name="CatalogueExtensions"                         type="cos:ExtensionsListType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="CatalogueName" type="cos:InternationalNamesType"/>
+
+    <xsd:complexType name="CatalogueOperatorType">
+        <xsd:sequence>
+            <xsd:element name="CatalogueOperatorName"       type="cos:InternationalNamesType"/>
+            <xsd:element name="CatalogueOperatorIdentifier" type="xsd:string"/>
+            <xsd:element name="CatalogueOperatorAddress"    type="cos:CatalogueOperatorAddressType"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:element name="EAASchemeList" type="cos:EAASchemeListType"/>
+    <xsd:complexType name="EAASchemeListType">
+        <xsd:sequence>
+            <xsd:element ref="cos:EAASchemeEntryReference" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="EAASchemeEntryReference" type="cos:EAASchemeEntryReferenceType"/>
+    <xsd:complexType name="EAASchemeEntryReferenceType">
+        <xsd:sequence>
+            <xsd:element name="EAASchemeName"             type="xsd:string"/>
+            <xsd:element name="EAASchemeIdentifier"       type="xsd:string" minOccurs="0"/>
+            <xsd:element name="EAASchemeRegistrationIdentifier" type="xsd:string" minOccurs="0"/>
+            <xsd:element ref="ds:Reference"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:element name="EAATypeTrustModelTypes" type="cos:EAATypeTrustModelTypesType"/>
+    <xsd:complexType name="EAATypeTrustModelTypesType">
+        <xsd:sequence>
+            <xsd:element name="EAATypeTrustModelType" type="xsd:anyURI" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+</xsd:schema>

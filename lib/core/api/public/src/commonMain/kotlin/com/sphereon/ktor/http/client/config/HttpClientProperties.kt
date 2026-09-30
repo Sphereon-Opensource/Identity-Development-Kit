@@ -249,6 +249,7 @@ fun HttpClientProperties.toOptions(
             ) {
                 "none" -> UrlValidationPolicy.NONE
                 "blockprivate" -> UrlValidationPolicy.BLOCK_PRIVATE
+                "allowprivate" -> UrlValidationPolicy.ALLOW_PRIVATE
                 else -> null
             }
         }

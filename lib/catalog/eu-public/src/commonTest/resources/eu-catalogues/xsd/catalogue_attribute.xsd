@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Catalogue of Attributes – Attribute file
+    Version: 1.0.1
+
+    This schema defines the structure of a standalone attribute file.
+    Each attribute file is referenced from the main catalogue via a
+    ds:Reference element within a NamespaceEntry, and contains the full
+    versioning history and content of a single attribute.
+-->
+<xsd:schema
+    targetNamespace="http://data.europa.eu/c9v/catalogueOfAttributes/v1#"
+    xmlns:cat="http://data.europa.eu/c9v/catalogueOfAttributes/v1#"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    elementFormDefault="qualified"
+    attributeFormDefault="unqualified">
+
+    <!-- Imports -->
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"
+                schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+
+    <xsd:include schemaLocation="catalogue_of_attributes.xsd"/>
+
+    <xsd:element name="AttributeEntry" type="cat:AttributeEntryType"/>
+
+    <xsd:complexType name="AttributeEntryType">
+        <xsd:sequence>
+            <xsd:element name="AttributeIdentifier"             type="xsd:string"/>
+            <xsd:element name="AttributeRegistrationIdentifier" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="ReferenceBody"                   type="cat:ReferenceBodyType"/>
+            <xsd:element ref="cat:VersionedAttributeList"/>
+            <xsd:element name="AttributeExtensions"             type="cat:ExtensionsListType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="ReferenceBodyType">
+        <xsd:sequence>
+            <xsd:element name="ReferenceBodyName"    type="cat:InternationalNamesType"/>
+            <xsd:element name="ReferenceBodyWebsite" type="xsd:anyURI"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:element name="VersionedAttributeList" type="cat:VersionedAttributeListType"/>
+    <xsd:complexType name="VersionedAttributeListType">
+        <xsd:sequence>
+            <xsd:element ref="cat:VersionedAttribute" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="VersionedAttribute" type="cat:VersionedAttributeType"/>
+    <xsd:complexType name="VersionedAttributeType">
+        <xsd:sequence>
+            <xsd:element name="AttributeVersion"                    type="xsd:string"/>
+            <xsd:element name="VersionedAttributeStatusInformation" type="cat:VersionedAttributeStatusInformationType" minOccurs="0"/>
+            <xsd:element name="AttributeInformation"                type="cat:AttributeInformationType"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="VersionedAttributeStatusInformationType">
+        <xsd:sequence>
+            <xsd:element name="VersionedAttributeStatus"  type="xsd:anyURI"/>
+            <xsd:element name="StatusStartingDateAndTime" type="xsd:dateTime" minOccurs="0"/>
+            <xsd:element name="LinkedAttributeAndVersion" type="cat:LinkedAttributeAndVersionType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="LinkedAttributeAndVersionType">
+        <xsd:sequence>
+            <xsd:element name="CatalogueIdentifier"                    type="xsd:string" minOccurs="0"/>
+            <xsd:element name="LinkedAttributeNamespace"               type="xsd:string" minOccurs="0"/>
+            <xsd:element name="LinkedAttributeIdentifier"              type="xsd:string" minOccurs="0"/>
+            <xsd:element name="LinkedAttributeRegistrationIdentifier"  type="xsd:string" minOccurs="0"/>
+            <xsd:element name="LinkedAttributeVersion"                 type="xsd:string"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="AttributeInformationType">
+        <xsd:sequence>
+            <xsd:element name="AttributeName"                    type="cat:InternationalNamesType"/>
+            <xsd:element name="AttributeSemanticDescription"     type="cat:AttributeSemanticDescriptionType"/>
+            <xsd:element name="AttributeDataType"                type="cat:AttributeDataTypeType"/>
+            <xsd:element name="AuthenticSources"                 type="cat:AuthenticSourcesListType"/>
+            <xsd:element name="AttributeInformationExtensions"   type="cat:ExtensionsListType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="AttributeSemanticDescriptionType">
+        <xsd:sequence>
+            <xsd:element name="SemanticDescription"        type="cat:InternationalNamesType"/>
+            <xsd:element name="SemanticDescriptionPointer" type="xsd:anyURI" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="AttributeDataTypeType">
+        <xsd:sequence>
+            <xsd:element name="DataType"              type="xsd:anyURI"/>
+            <xsd:element name="DataTypeSpecification" type="cat:DataTypeSpecificationType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="DataTypeSpecificationType">
+        <xsd:sequence>
+            <xsd:element name="SpecificationPointer" type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="FormatSyntaxBindings" type="cat:FormatSyntaxBindingsListType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="FormatSyntaxBindingsListType">
+        <xsd:sequence>
+            <xsd:element ref="cat:FormatSyntaxBinding" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="FormatSyntaxBinding" type="cat:FormatSyntaxBindingType"/>
+    <xsd:complexType name="FormatSyntaxBindingType">
+        <xsd:sequence>
+            <xsd:element name="MediaType"                      type="xsd:string"/>
+            <xsd:element name="BindingDefinitionURI"           type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="FormatSyntaxSpecificIdentifier" type="xsd:string"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="AuthenticSourcesListType">
+        <xsd:sequence>
+            <xsd:element ref="cat:AuthenticSource" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="AuthenticSource" type="cat:AuthenticSourceType"/>
+    <xsd:complexType name="AuthenticSourceType">
+        <xsd:sequence>
+            <xsd:element name="AuthenticSourceName"                type="cat:InternationalNamesType" minOccurs="0"/>
+            <xsd:element name="AuthenticSourceTerritory"           type="xsd:string" minOccurs="0"/>
+            <xsd:element name="AuthenticSourceIdentifier"          type="xsd:string"/>
+            <xsd:element name="AuthenticSourceVerificationAccess"  type="cat:AuthenticSourceVerificationAccessType"/>
+            <xsd:element name="AuthenticSourceAttributeIdentifier" type="xsd:string" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="AuthenticSourceVerificationAccessType">
+        <xsd:sequence>
+            <xsd:element name="VerificationEndpointsList"        type="cat:VerificationEndpointsListType" minOccurs="0"/>
+            <xsd:element name="VerificationAccessDescriptionURI" type="xsd:anyURI" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="VerificationEndpointsListType">
+        <xsd:sequence>
+            <xsd:element ref="cat:VerificationEndpoint" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="VerificationEndpoint" type="cat:VerificationEndpointType"/>
+    <xsd:complexType name="VerificationEndpointType">
+        <xsd:sequence>
+            <xsd:element name="VerificationEndpointURI"         type="xsd:anyURI"/>
+            <xsd:element name="VerificationEndpointDescription" type="cat:InternationalNamesType"/>
+            <xsd:element name="VerificationEndpointResponseFormats" type="cat:VerificationEndpointResponseFormatsType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="VerificationEndpointResponseFormatsType">
+        <xsd:sequence>
+            <xsd:element name="MediaType" type="xsd:string" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+</xsd:schema>

@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Catalogue of Schemes – Scheme file
+    Version: 1.0.1
+
+    This schema defines the structure of a standalone scheme file.
+    Each scheme file is referenced from the main catalogue via a
+    ds:Reference element within an EAASchemeEntry, and contains the full
+    versioning history and content of a single EAA scheme.
+-->
+<xsd:schema
+    targetNamespace="http://data.europa.eu/c9v/catalogueOfSchemes/v1#"
+    xmlns:cos="http://data.europa.eu/c9v/catalogueOfSchemes/v1#"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    elementFormDefault="qualified"
+    attributeFormDefault="unqualified">
+
+    <!-- Imports -->
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"
+                schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+
+    <xsd:include schemaLocation="catalogue_of_schemes.xsd"/>
+
+    <xsd:element name="EAASchemeEntry" type="cos:EAASchemeEntryType"/>
+
+
+    <xsd:complexType name="EAASchemeEntryType">
+        <xsd:sequence>
+            <xsd:element name="EAASchemeName"       type="xsd:string"/>
+            <xsd:element name="EAASchemeOwnerInformation" type="cos:EAASchemeOwnerInformationType"/>
+            <xsd:element name="EAASchemeIdentifier" type="xsd:string" minOccurs="0"/>
+            <xsd:element ref="cos:VersionedEAASchemeList"/>
+            <xsd:element name="EAASchemeRegistrationIdentifier" type="xsd:string" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+	
+
+    <xsd:complexType name="EAASchemeOwnerInformationType">
+        <xsd:sequence>
+            <xsd:element name="EAASchemeOwnerName"       type="cos:InternationalNamesType"/>
+            <xsd:element name="EAASchemeOwnerIdentifier" type="xsd:string"/>
+            <xsd:element name="EAASchemeOwnerAddress"    type="cos:EAASchemeOwnerAddressType"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:element name="VersionedEAASchemeList" type="cos:VersionedEAASchemeListType"/>
+    <xsd:complexType name="VersionedEAASchemeListType">
+        <xsd:sequence>
+            <xsd:element ref="cos:VersionedEAAScheme" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="VersionedEAAScheme" type="cos:VersionedEAASchemeType"/>
+    <xsd:complexType name="VersionedEAASchemeType">
+        <xsd:sequence>
+            <xsd:element name="EAASchemeVersion"                  type="xsd:string"/>
+            <xsd:element name="VersionedEAASchemeStatusInformation" type="cos:VersionedEAASchemeStatusInformationType"/>
+            <xsd:element name="EAASchemeDocumentURI"              type="xsd:anyURI"/>
+            <xsd:element name="EAATypeList"                       type="cos:EAATypeListType"/>
+            <xsd:element name="VersionedEAASchemeExtensions"      type="cos:ExtensionsListType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="VersionedEAASchemeStatusInformationType">
+        <xsd:sequence>
+            <xsd:element name="VersionedEAASchemeStatus"    type="xsd:anyURI"/>
+            <xsd:element name="StatusStartingDateAndTime"   type="xsd:dateTime" minOccurs="0"/>
+            <xsd:element name="LinkedEAASchemeAndVersion"   type="cos:LinkedEAASchemeAndVersionType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="LinkedEAASchemeAndVersionType">
+        <xsd:sequence>
+            <xsd:element name="CatalogueIdentifier"       type="xsd:string" minOccurs="0"/>
+            <xsd:element name="LinkedEAASchemeName"       type="xsd:string" minOccurs="0"/>
+            <xsd:element name="LinkedEAASchemeIdentifier" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="LinkedEAASchemeVersion"    type="xsd:string"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="EAATypeListType">
+        <xsd:sequence>
+            <xsd:element ref="cos:EAAType" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="EAAType" type="cos:EAATypeType"/>
+    <xsd:complexType name="EAATypeType">
+        <xsd:sequence>
+            <xsd:element name="EAATypeIdentifier"          type="xsd:string"/>
+            <xsd:element name="EAATypeName"          type="cos:InternationalNamesType"/>
+            <xsd:element name="EAATypeSchemeDefinition"    type="cos:InternationalNamesType"/>
+            <xsd:element name="EAATypeAttributeReferences" type="cos:AttributeReferencesListType"/>
+            <xsd:element name="EAATypeDataModelReference"  type="xsd:anyURI"/>
+            <xsd:element name="FormatSyntaxBindings"       type="cos:FormatSyntaxBindingsListType"/>
+            <xsd:element name="EAATypeExtensions"          type="cos:ExtensionsListType" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="AttributeReferencesListType">
+        <xsd:sequence>
+            <xsd:element ref="cos:AttributeReference" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="AttributeReference" type="cos:AttributeReferenceType"/>
+    <xsd:complexType name="AttributeReferenceType">
+        <xsd:sequence>
+            <xsd:element name="AttributeDefinitionPointer" type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="CataloguePointer"           type="cos:CataloguePointerType" minOccurs="0"/>
+            <xsd:element name="AttributeNamespace"         type="xsd:string"/>
+            <xsd:element name="AttributeIdentifier"        type="xsd:string"/>
+            <xsd:element name="AttributeUniqueIdentifier"  type="xsd:string" minOccurs="0"/>
+            <xsd:element name="AttributeVersion"           type="xsd:string" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="CataloguePointerType">
+        <xsd:sequence>
+            <xsd:element name="CatalogueLocation"   type="xsd:anyURI"/>
+            <xsd:element name="CatalogueIdentifier" type="xsd:string"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+
+    <xsd:complexType name="FormatSyntaxBindingsListType">
+        <xsd:sequence>
+            <xsd:element ref="cos:FormatSyntaxBinding" maxOccurs="unbounded"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:element name="FormatSyntaxBinding" type="cos:FormatSyntaxBindingType"/>
+    <xsd:complexType name="FormatSyntaxBindingType">
+        <xsd:sequence>
+            <xsd:element name="MediaType"                          type="xsd:string"/>
+            <xsd:element name="BindingDefinitionURI"               type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="BindingDefinitionDocumentURI"       type="xsd:anyURI" minOccurs="0"/>
+            <xsd:element name="FormatSyntaxSpecificEAATypeIdentifier" type="xsd:string" minOccurs="0"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+</xsd:schema>

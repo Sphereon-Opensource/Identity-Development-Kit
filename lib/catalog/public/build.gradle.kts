@@ -23,6 +23,7 @@ kotlin {
                 implementation(sphereonlib.co.touchlab.skie.configuration.annotations)
                 api(projects.libCoreApiPublic)
                 api(projects.libCatalogTs11Public)
+                api(projects.libCatalogEuPublic)
                 api(libs.bundles.app.platform.di)
                 api(sphereonlib.software.amazon.app.platform.metro.public)
                 api(sphereonlib.org.jetbrains.kotlinx.serialization.core)

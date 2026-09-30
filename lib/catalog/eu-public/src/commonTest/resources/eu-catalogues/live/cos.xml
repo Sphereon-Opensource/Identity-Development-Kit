@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><!--
+    eIDAS Dashboard – EU Catalogue of Schemes
+--><CatalogueOfSchemes xmlns="http://data.europa.eu/c9v/catalogueOfSchemes/v1#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+
+    <!-- ============================================================ -->
+    <!-- Catalogue information                                        -->
+    <!-- ============================================================ -->
+    <CatalogueInformation>
+
+        <CatalogueVersion>1</CatalogueVersion>
+        <CatalogueSequenceNumber>1</CatalogueSequenceNumber>
+
+        <CatalogueIdentifier>http://data.europa.eu/c9v/EUCatalogueOfSchemes</CatalogueIdentifier>
+
+        <CatalogueName>
+            <Name xml:lang="en">EU:Catalogue of schemes for the attestations of attributes</Name>
+            <Name xml:lang="bg">EU:каталога на схемите за удостоверенията за атрибути</Name>
+			<Name xml:lang="es">EU:Catálogo de sistemas para la declaración de atributos</Name>
+			<Name xml:lang="cs">EU:Katalog schémat pro potvrzování atributů</Name>
+			<Name xml:lang="da">EU:Katalog over ordninger for attestering af attributter</Name>
+			<Name xml:lang="de">EU:Katalog der Attributsbescheinigungsregelungen</Name>
+			<Name xml:lang="et">EU:Atribuutide tõendamise kavade kataloog</Name>
+			<Name xml:lang="el">EU:κατάλογο συστημάτων για την έκδοση των βεβαιώσεων χαρακτηριστικών</Name>
+			<Name xml:lang="fr">EU:Catalogue de programmes d’attestation d’attributs</Name>
+			<Name xml:lang="it">EU:Catalogo di regimi per gli attestati di attributi</Name>
+			<Name xml:lang="lv">EU:Atribūtu apliecināšanas shēmu katalogs</Name>
+			<Name xml:lang="lt">EU:Požymių liudijimų schemų katalogas</Name>
+			<Name xml:lang="hu">EU:Az attribútumtanúsítási rendszerek katalógusa</Name>
+			<Name xml:lang="mt">EU:Katalogu tal-iskemi għall-attestazzjoni tal-attributi</Name>
+			<Name xml:lang="nl">EU:catalogus van regelingen voor de attestering van attributen</Name>
+			<Name xml:lang="pl">EU:Katalog systemów poświadczania atrybutów</Name>
+			<Name xml:lang="pt">EU:Catálogo de sistemas de certificação de atributos</Name>
+			<Name xml:lang="ro">EU:Catalog al sistemelor de atestare a atributelor</Name>
+			<Name xml:lang="sk">EU:Katalóg schém osvedčovania atribútov</Name>
+			<Name xml:lang="sl">EU:Katalog shem za potrjevanje atributov</Name>
+			<Name xml:lang="fi">EU:Attribuuttitodistusten myöntämisjärjestelmien luettelolla</Name>
+			<Name xml:lang="sv">EU:Katalog med system för attributsintyg</Name>
+			<Name xml:lang="hr">EU:Az attribútumtanúsítási rendszerek katalógusa</Name>
+        </CatalogueName>
+
+        <CatalogueOperator>
+            <CatalogueOperatorName>
+                <Name xml:lang="en">European Commission</Name>
+				<Name xml:lang="bg">Европейска комисия</Name>
+				<Name xml:lang="es">Comisión Europea</Name>
+				<Name xml:lang="cs">Evropská komise</Name>
+				<Name xml:lang="da">Europa-Kommissionen</Name>
+				<Name xml:lang="de">Europäische Kommission</Name>
+				<Name xml:lang="et">Euroopa Komisjon</Name>
+				<Name xml:lang="el">Ευρωπαϊκή Επιτροπή</Name>
+				<Name xml:lang="fr">Commission européenne</Name>
+				<Name xml:lang="it">Commissione europea</Name>
+				<Name xml:lang="lv">Eiropas Komisija</Name>
+				<Name xml:lang="lt">Europos Komisija</Name>
+				<Name xml:lang="hu">Európai Bizottság</Name>
+				<Name xml:lang="mt">Il-Kummissjoni Ewropea</Name>
+				<Name xml:lang="nl">Europese Commissie</Name>
+				<Name xml:lang="pl">Komisja Europejska</Name>
+				<Name xml:lang="pt">Comissão Europeia</Name>
+				<Name xml:lang="ro">Comisia Europeană</Name>
+				<Name xml:lang="sk">Európska komisia</Name>
+				<Name xml:lang="sl">Evropska komisija</Name>
+				<Name xml:lang="fi">Euroopan komissio</Name>
+				<Name xml:lang="sv">Europeiska kommissionen</Name>
+				<Name xml:lang="hr">Europska komisija</Name>
+            </CatalogueOperatorName>
+            <CatalogueOperatorIdentifier>NTRBE-0949.383.342</CatalogueOperatorIdentifier>
+            <CatalogueOperatorAddress>
+                <PostalAddresses>
+                    <PostalAddress xml:lang="en">
+                        <StreetAddress>Rue de la Loi/Wetstraat 200</StreetAddress>
+                        <Locality>Brussels</Locality>
+                        <PostalCode>1040</PostalCode>
+                        <Country>BE</Country>
+                    </PostalAddress>
+                    <PostalAddress xml:lang="fr">
+						<StreetAddress>Rue de la Loi 200</StreetAddress>
+						<Locality>Bruxelles</Locality>
+						<PostalCode>1040</PostalCode>
+						<Country>BE</Country>
+					</PostalAddress>
+					<PostalAddress xml:lang="nl">
+						<StreetAddress>Wetstraat 200</StreetAddress>
+						<Locality>Brussel</Locality>
+						<PostalCode>1040</PostalCode>
+						<Country>BE</Country>
+					</PostalAddress>
+                </PostalAddresses>
+                <ElectronicAddress>
+                    <URI>https://eidas.ec.europa.eu/efda/wallet</URI>
+                    <URI>mailto:EU-TRUST@ec.europa.eu</URI>
+                </ElectronicAddress>
+            </CatalogueOperatorAddress>
+        </CatalogueOperator>
+
+        <CatalogueInformationURI>http://data.europa.eu/c9v/EUCatalogueOfSchemes/catalogueInformation</CatalogueInformationURI>
+
+        <CatalogueEntriesStatusDeterminationApproach>
+			http://data.europa.eu/c9v/EUCatalogueOfSchemes/statusDeterminationApproach
+        </CatalogueEntriesStatusDeterminationApproach>
+
+        <CatalogueTerritory>EU</CatalogueTerritory>
+
+        <CatalogueLegalNotice>https://commission.europa.eu/legal-notice</CatalogueLegalNotice>
+
+        <HistoricalInformationPeriod>65535</HistoricalInformationPeriod>
+
+        <CatalogueIssueDateAndTime>2026-08-18T00:00:00Z</CatalogueIssueDateAndTime>
+
+        <CatalogueDistributionPoint>
+            <DownloadURL>https://trust.tech.ec.europa.eu/catalogues/eu-catalogue-of-schemes.xml</DownloadURL>
+        </CatalogueDistributionPoint>
+
+    </CatalogueInformation>
+
+<ds:Signature Id="id-37b40c9d2a8b7275a493003a7e6687a0"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha512"/><ds:Reference Id="r-id-37b40c9d2a8b7275a493003a7e6687a0-1" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha512"/><ds:DigestValue>7PSTuTPvkz1vQvCV+PwfGPafJJjgm8ahM6/BT9PeWcl+wpELnEo7GXIjf1thr8soB+vKjuBkhX8HOHG0qwOTpA==</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#xades-id-37b40c9d2a8b7275a493003a7e6687a0"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha512"/><ds:DigestValue>4uE+UQi2q7ddzbdznlCOYwufJqfZchCY8GoghRLYs/rChK7F2O0zPIRAYaNy6rGqM9VbFdpNI160hciQgckhfg==</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue Id="value-id-37b40c9d2a8b7275a493003a7e6687a0">mlGJDVjtkaOq8voWxHF9CeNatGKSE/4u6CzreL6eF+/yF/utLwcdxIHasHFpOucmB8UrQwxnrK6l+VQDU68syDn2MV1bKmwsMXBtBlLAyrHcTaJi4LHxLX3WW+NTykBUnOBGgGNld3K9Hxh0hjMvWROHtvj0wnYwOhrpiKpVYm7SG6A0QbSVWhSysRf49aChyxP6PKmtGGu1E1N9R5o5jER4mZURtMMmxZeDvaHLlu7jVEviEzgZ8ZwQ6zpzRxaWYKE8XUdt5WLmISGl6MheBHwI8s0iEExT34IlostZwTA3aktVbhE2VmXt++kZYNxHmJNM/3CDqQQavdh5U/1joOuzu0lxmJZp+anwLx+vuwEf66+meFOc+WjOCe1gTcQWOV7TLfsNS/KhsYXz1bNmqeLKi7P2PywpN9A8BeQEBOgt5Ojur/Djc5wQHnT9FPDqpV/PxterSzk7Pcv9Oi2goifTe18ek1+/byRT6lQjjtIP+YmDfCBu35tK/oJepzKfgP6bxnJsv4i7aRBwXfp43N/AqCutz3Cf9FvnZaCGsdhNa3AYQ0A6iZyKWY9cjDsyE3n+NsTybGoaD9MPnSmUPvB9bmS7850DBwY3hIdalWr4DMKLPZ7fmdMvLyoZmu/ailxmnGnxz/gSmqr5xmIU0MDI52i/WQ+YYKcAPPJuoos=</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>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</ds:X509Certificate></ds:X509Data></ds:KeyInfo><ds:Object><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Target="#id-37b40c9d2a8b7275a493003a7e6687a0"><xades:SignedProperties Id="xades-id-37b40c9d2a8b7275a493003a7e6687a0"><xades:SignedSignatureProperties><xades:SigningTime>2026-08-18T09:33:41Z</xades:SigningTime><xades:SigningCertificateV2><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha512"/><ds:DigestValue>v4MzkrRD7PzzdTXdk55CPMzuMlnWq4x61kxoz/K+9U+sPWVTshgdFeGcmMN3v+IMOFqL5Xa4no6/tEBRS0ba+g==</ds:DigestValue></xades:CertDigest><xades:IssuerSerialV2>MHswY6RhMF8xCzAJBgNVBAYTAlBUMSowKAYDVQQKDCFEaWdpdGFsU2lnbiBDZXJ0aWZpY2Fkb3JhIERpZ2l0YWwxJDAiBgNVBAMMG0RJR0lUQUxTSUdOIFFVQUxJRklFRCBDQSBHMQIUMkdxaYjTAuT2WRKfmeup7zDClNg=</xades:IssuerSerialV2></xades:Cert></xades:SigningCertificateV2></xades:SignedSignatureProperties><xades:SignedDataObjectProperties><xades:DataObjectFormat ObjectReference="#r-id-37b40c9d2a8b7275a493003a7e6687a0-1"><xades:MimeType>text/xml</xades:MimeType></xades:DataObjectFormat></xades:SignedDataObjectProperties></xades:SignedProperties></xades:QualifyingProperties></ds:Object></ds:Signature></CatalogueOfSchemes>

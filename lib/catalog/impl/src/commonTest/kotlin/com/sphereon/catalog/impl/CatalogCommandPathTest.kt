@@ -9,8 +9,21 @@
 
 package com.sphereon.catalog.impl
 
+import com.sphereon.catalog.client.CatalogRemoteTrustScope
+import com.sphereon.catalog.client.VerifiedRemoteBody
+import com.sphereon.catalog.client.CatalogRemoteSignatureEvidence
+import com.sphereon.catalog.model.TrustAuthority
+import com.sphereon.catalog.model.TrustFrameworkType
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierOptsOrResult
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierOpts
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierResult
+import com.sphereon.crypto.resolution.extern.ExternalIdentifierService
+import com.sphereon.crypto.resolution.IIdentifierMethod
+import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.catalog.client.CatalogLinkedTypeSource
 import com.sphereon.catalog.client.CatalogRemoteClient
+import com.sphereon.catalog.impl.client.TrustAuthorityHintEgress
+import com.sphereon.catalog.impl.client.TrustAuthorityHintResolver
 import com.sphereon.catalog.client.LinkedTypeSnapshot
 import com.sphereon.catalog.command.CatalogIdArgs
 import com.sphereon.catalog.command.CreateCatalogArgs
@@ -35,6 +48,11 @@ import com.sphereon.catalog.impl.command.ImportRulebooksCommandImpl
 import com.sphereon.catalog.impl.command.LinkSchemaCommandImpl
 import com.sphereon.catalog.impl.command.ListSchemasCommandImpl
 import com.sphereon.catalog.impl.command.PublishCatalogCommandImpl
+import com.sphereon.catalog.model.AttestationCatalog
+import com.sphereon.catalog.publication.CatalogPublication
+import com.sphereon.catalog.publication.CatalogPublicationListener
+import com.sphereon.catalog.publication.CatalogSlugGuard
+import com.sphereon.catalog.store.AttestationCatalogStore
 import com.sphereon.catalog.impl.command.ResolveAttestationTypeCommandImpl
 import com.sphereon.catalog.impl.command.UpdateCatalogCommandImpl
 import com.sphereon.catalog.impl.command.UpdateSchemaCommandImpl
@@ -52,9 +70,8 @@ import com.sphereon.catalog.model.CatalogVerificationOutcome
 import com.sphereon.catalog.model.PaginatedSchemaList
 import com.sphereon.catalog.model.SchemaMeta
 import com.sphereon.catalog.model.SchemaUriRef
-import com.sphereon.catalog.model.TrustAuthority
-import com.sphereon.catalog.model.TrustFrameworkType
 import com.sphereon.catalog.persistence.memory.InMemoryAttestationCatalogStore
+import com.sphereon.core.api.Err
 import com.sphereon.core.api.IdkResult
 import com.sphereon.core.api.Ok
 import com.sphereon.core.api.conf.AppConfigService
@@ -66,7 +83,6 @@ import com.sphereon.core.api.context.ContextConfig
 import com.sphereon.core.api.context.IdkScope
 import com.sphereon.core.api.context.SessionExecution
 import com.sphereon.core.api.error.IdkError
-import com.sphereon.core.api.error.IdkErrorType
 import com.sphereon.core.api.log.AsyncLogService
 import com.sphereon.core.api.log.LogMessage
 import com.sphereon.core.api.log.LogService
@@ -78,6 +94,7 @@ import com.sphereon.core.api.session.EmptyInterceptorChain
 import com.sphereon.di.context.NoOpSessionContext
 import com.sphereon.di.session.SessionContext
 import com.sphereon.di.session.SessionContextManager
+import dev.zacsweers.metro.Provider
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -669,7 +686,7 @@ class CatalogCommandPathTest {
             val env = Env()
             val created = env.createCatalog.execute(CreateCatalogArgs("nolink-pid", "NoLink")).value
             val linked =
-                LinkSchemaCommandImpl(TestSessionExecution, env.store, DefaultCatalogLinkedTypeSource()).execute(
+                LinkSchemaCommandImpl(TestSessionExecution, env.store, DefaultCatalogLinkedTypeSource(), authorization = AllowAllCatalogAuthorization).execute(
                     LinkSchemaArgs(
                         catalogId = created.id,
                         vctId = "missing",
@@ -722,8 +739,8 @@ class CatalogCommandPathTest {
                             "https://example.test/rulebook" to CatalogDocument("text/markdown", "# rb".encodeToByteArray()),
                         ),
                 )
-            val importer = ImportRemoteCatalogCommandImpl(TestSessionExecution, env.store, client)
-            val report = importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/public/catalogs/x/api/v1"))
+            val importer = ImportRemoteCatalogCommandImpl(TestSessionExecution, env.store, client, TrustAuthorityHintResolver(emptySet()), authorization = AllowAllCatalogAuthorization)
+            val report = importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/public/catalogs/x/api/v1", "domain-a"))
             assertTrue(report.isOk)
             assertEquals(2, report.value.imported)
             val management = env.listSchemas.execute(ListSchemasArgs(catalogId = created.id, listedOnly = false))
@@ -733,11 +750,91 @@ class CatalogCommandPathTest {
             val stored = env.store.listSchemas("acme", created.id).value
             assertTrue(stored!!.any { it.documents.any { doc -> doc.kind == CatalogDocumentKind.RULEBOOK } })
             val firstIds = stored.map { it.schema.id }.toSet()
-            val again = importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/public/catalogs/x/api/v1"))
+            val again = importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/public/catalogs/x/api/v1", "domain-a"))
             assertTrue(again.isOk)
             val afterUpsert = env.store.listSchemas("acme", created.id).value!!
             assertEquals(firstIds, afterUpsert.map { it.schema.id }.toSet())
             assertEquals(2, afterUpsert.size)
+        }
+
+    @Test
+    fun importRemoteRecordsSignatureDiagnosticsAndPassesTrustScope() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("imp-signed", "Signed")).value
+            val client = ScopedRecordingClient(listOf(schema("https://example.test/vct/good").copy(id = "good")))
+            val importer = ImportRemoteCatalogCommandImpl(TestSessionExecution, env.store, client, TrustAuthorityHintResolver(emptySet()), authorization = AllowAllCatalogAuthorization)
+            val report = importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/api/v1", "domain-a"))
+            assertTrue(report.isOk)
+            assertEquals(listOf(CatalogRemoteTrustScope("domain-a", created.id)), client.scopes.distinct())
+            val codes = report.value.diagnostics.map { it.code }
+            assertTrue("catalog.remote.signature-verified" in codes, codes.toString())
+        }
+
+    @Test
+    fun importRemoteFailsClosedWhenTheClientRejectsTheListing() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("imp-rejected", "Rejected")).value
+            val client = ScopedRecordingClient(listOf(schema().copy(id = "good")), reject = true)
+            val importer = ImportRemoteCatalogCommandImpl(TestSessionExecution, env.store, client, TrustAuthorityHintResolver(emptySet()), authorization = AllowAllCatalogAuthorization)
+            val report = importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/api/v1", "domain-a"))
+            assertTrue(report.isErr)
+            assertEquals(0, env.store.listSchemas("acme", created.id).value!!.size)
+        }
+
+    @Test
+    fun importRemoteRequiresADomain() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("imp-nodomain", "No domain")).value
+            val client = ScopedRecordingClient(emptyList())
+            val importer = ImportRemoteCatalogCommandImpl(TestSessionExecution, env.store, client, TrustAuthorityHintResolver(emptySet()), authorization = AllowAllCatalogAuthorization)
+            assertTrue(importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/api/v1", " ")).isErr)
+            assertTrue(client.scopes.isEmpty())
+        }
+
+    @Test
+    fun trustAuthorityHintsAreDispatchedToTheMatchingIdentifierMethods() =
+        runTest {
+            val seen = mutableListOf<ExternalIdentifierOpts>()
+            val resolver = TrustAuthorityHintResolver(setOf(RecordingIdentifierService(seen)), Provider { TrustAuthorityHintEgress { true } })
+            val diagnostics =
+                resolver.resolve(
+                    listOf(
+                        TrustAuthority(TrustFrameworkType.etsi_tl, "https://tl.example/tsl.xml"),
+                        TrustAuthority(TrustFrameworkType.etsi_tl, "https://lote.example/lote.json", isLOTE = true),
+                        TrustAuthority(TrustFrameworkType.openid_federation, "https://fed.example"),
+                        TrustAuthority(TrustFrameworkType.aki, "c2tpLW9ubHk"),
+                    ),
+                )
+            assertEquals(4, diagnostics.size)
+            assertEquals(listOf("etsi_tsl", "etsi_tsl", "ENTITY_ID"), seen.map { it.method?.methodName })
+            assertTrue(diagnostics.all { it.code == TrustAuthorityHintResolver.UNRESOLVED }, diagnostics.toString())
+            assertTrue(diagnostics[1].message.contains("LoTE"))
+            val none =
+                TrustAuthorityHintResolver(emptySet(), Provider { TrustAuthorityHintEgress { true } }).resolve(
+                    listOf(TrustAuthority(TrustFrameworkType.etsi_tl, "https://x.example")),
+                )
+            assertEquals(TrustAuthorityHintResolver.UNSUPPORTED, none.single().code)
+        }
+
+    @Test
+    fun trustAuthorityHintUrlsAreNotFetchedWithoutAnEgressPolicy() =
+        runTest {
+            val seen = mutableListOf<ExternalIdentifierOpts>()
+            val hints =
+                listOf(
+                    TrustAuthority(TrustFrameworkType.etsi_tl, "http://169.254.169.254/latest/meta-data"),
+                    TrustAuthority(TrustFrameworkType.openid_federation, "https://localhost:8443"),
+                )
+            val denied = TrustAuthorityHintResolver(setOf(RecordingIdentifierService(seen))).resolve(hints)
+            assertTrue(seen.isEmpty(), "no request may be made for a hint URL of an unsigned listing")
+            assertTrue(denied.all { it.code == TrustAuthorityHintResolver.SKIPPED }, denied.toString())
+
+            val refusing = TrustAuthorityHintResolver(setOf(RecordingIdentifierService(seen)), Provider { TrustAuthorityHintEgress { false } }).resolve(hints)
+            assertTrue(seen.isEmpty())
+            assertTrue(refusing.all { it.code == TrustAuthorityHintResolver.SKIPPED })
         }
 
     @Test
@@ -753,10 +850,10 @@ class CatalogCommandPathTest {
                             schema("https://example.test/vct/drop").copy(id = "drop"),
                         ),
                 )
-            val importer = ImportRemoteCatalogCommandImpl(TestSessionExecution, env.store, client)
-            importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/public/catalogs/x/api/v1"))
+            val importer = ImportRemoteCatalogCommandImpl(TestSessionExecution, env.store, client, TrustAuthorityHintResolver(emptySet()), authorization = AllowAllCatalogAuthorization)
+            importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/public/catalogs/x/api/v1", "domain-a"))
             client.schemas.removeAll { it.id == "drop" }
-            importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/public/catalogs/x/api/v1"))
+            importer.execute(ImportRemoteCatalogArgs(created.id, "https://remote.test/public/catalogs/x/api/v1", "domain-a"))
             val stored = env.store.listSchemas("acme", created.id).value!!
             assertEquals(2, stored.size)
             assertTrue(
@@ -853,18 +950,189 @@ class CatalogCommandPathTest {
             )
         }
 
+    @Test
+    fun aPublicationListenerSeesTheHostedRecordsBeforeTheCatalogIsPublishedAndFailsThePublication() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("listened", "Listened")).value
+            env.createSchema.execute(CreateSchemaArgs(created.id, schema("https://example.test/vct/pid"), documents()))
+
+            val failing = RecordingPublicationListener(fail = true)
+            val refused = PublishCatalogCommandImpl(TestSessionExecution, env.store, failing, authorization = AllowAllCatalogAuthorization).execute(CatalogIdArgs(created.id))
+            assertTrue(refused.isErr)
+            assertEquals(AttestationCatalogStatus.DRAFT, env.store.findCatalogById("acme", created.id).value?.status, "a failing listener leaves the catalog a draft")
+
+            val listener = RecordingPublicationListener()
+            val published = PublishCatalogCommandImpl(TestSessionExecution, env.store, listener, authorization = AllowAllCatalogAuthorization).execute(CatalogIdArgs(created.id)).value
+            assertEquals(AttestationCatalogStatus.PUBLISHED, published.status)
+            val seen = listener.published.single()
+            assertEquals("listened", seen.catalog.slug)
+            assertEquals("/public/catalogs/listened", seen.publicUrl)
+            assertTrue(seen.records.single().schema.rulebookURI.contains("/public/catalogs/listened/"), "the listener gets the hosted URIs")
+
+            DisableCatalogCommandImpl(TestSessionExecution, env.store, listener, authorization = AllowAllCatalogAuthorization).execute(CatalogIdArgs(created.id)).value
+            assertEquals(listOf("listened"), listener.disabled.map { it.slug })
+        }
+
+    @Test
+    fun aSlugGuardCanRefuseTheSlugOfANewOrRenamedCatalog() =
+        runTest {
+            val env = Env()
+            val asked = mutableListOf<Triple<String, String, String>>()
+            val guard =
+                CatalogSlugGuard { tenantId, slug, catalogId ->
+                    asked += Triple(tenantId, slug, catalogId)
+                    if (slug.startsWith("held-")) Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "held by another catalogue")) else Ok(Unit)
+                }
+            val create = CreateCatalogCommandImpl(TestSessionExecution, env.store, guard, authorization = AllowAllCatalogAuthorization)
+            val update = UpdateCatalogCommandImpl(TestSessionExecution, env.store, guard, authorization = AllowAllCatalogAuthorization)
+
+            assertTrue(create.execute(CreateCatalogArgs("held-by-authored", "Refused")).isErr)
+            assertTrue(env.store.findCatalogBySlug("acme", "held-by-authored").value == null, "a refused slug creates nothing")
+
+            val created = create.execute(CreateCatalogArgs("free-slug", "Free")).value
+            assertEquals("free-slug", created.slug)
+            assertEquals(created.id, asked.last().third, "the guard learns which catalog wants the slug")
+
+            val renamed = update.execute(UpdateCatalogArgs(created.id, "Free", null, false, slug = "held-now"))
+            assertTrue(renamed.isErr)
+            assertEquals("free-slug", env.store.findCatalogById("acme", created.id).value?.slug)
+        }
+
+    /** A store that refuses to save a catalog in the given status; everything else goes to the in-memory store. */
+    private class StatusRefusingStore(
+        private val delegate: InMemoryAttestationCatalogStore,
+        private val refuse: AttestationCatalogStatus,
+    ) : AttestationCatalogStore by delegate {
+        override suspend fun saveCatalog(
+            tenantId: String,
+            catalog: AttestationCatalog,
+        ): IdkResult<AttestationCatalog, IdkError> =
+            if (catalog.status == refuse) Err(IdkError.SERVICE_UNAVAILABLE_ERROR(message = "store refused")) else delegate.saveCatalog(tenantId, catalog)
+    }
+
+    @Test
+    fun aListenerFailureDuringPublishCompensatesSoNoRepresentationStaysServed() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("compensated", "Compensated")).value
+            env.createSchema.execute(CreateSchemaArgs(created.id, schema("https://example.test/vct/pid"), documents()))
+            val listener = RecordingPublicationListener(fail = true)
+
+            val refused = PublishCatalogCommandImpl(TestSessionExecution, env.store, listener, authorization = AllowAllCatalogAuthorization).execute(CatalogIdArgs(created.id))
+
+            assertTrue(refused.isErr)
+            assertEquals(listOf("compensated"), listener.disabled.map { it.slug }, "the listener is told to undo whatever it stored")
+            assertEquals(AttestationCatalogStatus.DRAFT, env.store.findCatalogById("acme", created.id).value?.status)
+        }
+
+    @Test
+    fun aFailedCatalogSaveAfterTheListenerSucceededCompensatesTheListener() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("save-fails", "Save fails")).value
+            env.createSchema.execute(CreateSchemaArgs(created.id, schema("https://example.test/vct/pid"), documents()))
+            val listener = RecordingPublicationListener()
+            val store = StatusRefusingStore(env.store, AttestationCatalogStatus.PUBLISHED)
+
+            val refused = PublishCatalogCommandImpl(TestSessionExecution, store, listener, authorization = AllowAllCatalogAuthorization).execute(CatalogIdArgs(created.id))
+
+            assertTrue(refused.isErr)
+            assertEquals(1, listener.published.size)
+            assertEquals(listOf("save-fails"), listener.disabled.map { it.slug }, "the CoS representation is not left served for a catalog that is still a draft")
+            assertEquals(AttestationCatalogStatus.DRAFT, env.store.findCatalogById("acme", created.id).value?.status)
+        }
+
+    @Test
+    fun aListenerFailureDuringDisableKeepsTheCatalogPublished() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("stays-up", "Stays up")).value
+            env.createSchema.execute(CreateSchemaArgs(created.id, schema("https://example.test/vct/pid"), documents()))
+            env.publish.execute(CatalogIdArgs(created.id)).value
+            val failing =
+                object : CatalogPublicationListener {
+                    override suspend fun published(publication: CatalogPublication): IdkResult<Unit, IdkError> = Ok(Unit)
+
+                    override suspend fun disabled(catalog: AttestationCatalog): IdkResult<Unit, IdkError> =
+                        Err(IdkError.SERVICE_UNAVAILABLE_ERROR(message = "cannot stop serving"))
+                }
+
+            val refused = DisableCatalogCommandImpl(TestSessionExecution, env.store, failing, authorization = AllowAllCatalogAuthorization).execute(CatalogIdArgs(created.id))
+
+            assertTrue(refused.isErr)
+            assertEquals(AttestationCatalogStatus.PUBLISHED, env.store.findCatalogById("acme", created.id).value?.status, "still served, so still PUBLISHED")
+        }
+
+    @Test
+    fun aDisabledCatalogCanBePublishedAgainButAPublishedOneCannot() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("republished", "Republished")).value
+            env.createSchema.execute(CreateSchemaArgs(created.id, schema("https://example.test/vct/pid"), documents()))
+            val listener = RecordingPublicationListener()
+            val publish = PublishCatalogCommandImpl(TestSessionExecution, env.store, listener, authorization = AllowAllCatalogAuthorization)
+            val disable = DisableCatalogCommandImpl(TestSessionExecution, env.store, listener, authorization = AllowAllCatalogAuthorization)
+
+            val first = publish.execute(CatalogIdArgs(created.id)).value
+            assertEquals(AttestationCatalogStatus.PUBLISHED, first.status)
+            assertTrue(publish.execute(CatalogIdArgs(created.id)).isErr, "a published catalog is not published twice")
+
+            assertEquals(AttestationCatalogStatus.DISABLED, disable.execute(CatalogIdArgs(created.id)).value.status)
+            val again = publish.execute(CatalogIdArgs(created.id)).value
+
+            assertEquals(AttestationCatalogStatus.PUBLISHED, again.status)
+            assertTrue(again.version > first.version)
+            assertEquals(2, listener.published.size, "the publication listener builds the representations again")
+            assertEquals("republished", listener.published.last().catalog.slug)
+        }
+
+    @Test
+    fun aFailedRepublishLeavesTheCatalogDisabledAndUndoesTheListener() =
+        runTest {
+            val env = Env()
+            val created = env.createCatalog.execute(CreateCatalogArgs("stays-off", "Stays off")).value
+            env.createSchema.execute(CreateSchemaArgs(created.id, schema("https://example.test/vct/pid"), documents()))
+            env.publish.execute(CatalogIdArgs(created.id)).value
+            env.disable.execute(CatalogIdArgs(created.id)).value
+            val failing = RecordingPublicationListener(fail = true)
+
+            val refused = PublishCatalogCommandImpl(TestSessionExecution, env.store, failing, authorization = AllowAllCatalogAuthorization).execute(CatalogIdArgs(created.id))
+
+            assertTrue(refused.isErr)
+            assertEquals(AttestationCatalogStatus.DISABLED, env.store.findCatalogById("acme", created.id).value?.status)
+            assertEquals(listOf("stays-off"), failing.disabled.map { it.slug })
+        }
+
+    private class RecordingPublicationListener(
+        private val fail: Boolean = false,
+    ) : CatalogPublicationListener {
+        val published = mutableListOf<CatalogPublication>()
+        val disabled = mutableListOf<AttestationCatalog>()
+
+        override suspend fun published(publication: CatalogPublication): IdkResult<Unit, IdkError> {
+            published += publication
+            return if (fail) Err(IdkError.ILLEGAL_ARGUMENT_ERROR(message = "listener refused")) else Ok(Unit)
+        }
+
+        override suspend fun disabled(catalog: AttestationCatalog): IdkResult<Unit, IdkError> {
+            disabled += catalog
+            return Ok(Unit)
+        }
+    }
+
     private class Env {
         val store = InMemoryAttestationCatalogStore()
-        val createCatalog = CreateCatalogCommandImpl(TestSessionExecution, store)
-        val updateCatalog = UpdateCatalogCommandImpl(TestSessionExecution, store)
-        val createSchema = CreateSchemaCommandImpl(TestSessionExecution, store)
-        val updateSchema = UpdateSchemaCommandImpl(TestSessionExecution, store)
-        val publish = PublishCatalogCommandImpl(TestSessionExecution, store)
-        val disable = DisableCatalogCommandImpl(TestSessionExecution, store)
+        val createCatalog = CreateCatalogCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
+        val updateCatalog = UpdateCatalogCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
+        val createSchema = CreateSchemaCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
+        val updateSchema = UpdateSchemaCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
+        val publish = PublishCatalogCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
+        val disable = DisableCatalogCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
         val listSchemas = ListSchemasCommandImpl(TestSessionExecution, store)
         val getSchema = GetSchemaCommandImpl(TestSessionExecution, store)
-        val link = LinkSchemaCommandImpl(TestSessionExecution, store, FakeLinkedTypeSource())
-        val importRulebooks = ImportRulebooksCommandImpl(TestSessionExecution, store)
+        val link = LinkSchemaCommandImpl(TestSessionExecution, store, FakeLinkedTypeSource(), authorization = AllowAllCatalogAuthorization)
+        val importRulebooks = ImportRulebooksCommandImpl(TestSessionExecution, store, authorization = AllowAllCatalogAuthorization)
         val resolve = ResolveAttestationTypeCommandImpl(TestSessionExecution, store)
         val evaluate = EvaluateCatalogVerificationCommandImpl(TestSessionExecution, store)
     }
@@ -968,6 +1236,80 @@ class CatalogCommandPathTest {
         ): IdkResult<SchemaMeta, IdkError> = Ok(pages.first().data.first { it.id == schemaId })
 
         override suspend fun fetchDocument(uri: String): IdkResult<CatalogDocument, IdkError> = Ok(documents.getValue(uri))
+
+        override suspend fun listSchemasScoped(
+            baseUrl: String,
+            limit: Int,
+            offset: Int,
+            trust: CatalogRemoteTrustScope,
+        ): IdkResult<VerifiedRemoteBody<PaginatedSchemaList>, IdkError> =
+            listSchemas(baseUrl, limit, offset).map { VerifiedRemoteBody(it, null) }
+
+        override suspend fun getSchemaScoped(
+            baseUrl: String,
+            schemaId: String,
+            trust: CatalogRemoteTrustScope,
+        ): IdkResult<VerifiedRemoteBody<SchemaMeta>, IdkError> =
+            getSchema(baseUrl, schemaId).map { VerifiedRemoteBody(it, null) }
+    }
+
+    private class ScopedRecordingClient(
+        private val schemas: List<SchemaMeta>,
+        private val reject: Boolean = false,
+    ) : CatalogRemoteClient {
+        val scopes = mutableListOf<CatalogRemoteTrustScope>()
+        private val evidence = CatalogRemoteSignatureEvidence("https://remote.test", "kid-1", "ES256")
+
+        override suspend fun listSchemas(baseUrl: String, limit: Int, offset: Int): IdkResult<PaginatedSchemaList, IdkError> = error("unscoped fetch must not be used")
+
+        override suspend fun getSchema(baseUrl: String, schemaId: String): IdkResult<SchemaMeta, IdkError> = error("unscoped fetch must not be used")
+
+        override suspend fun listSchemasScoped(
+            baseUrl: String,
+            limit: Int,
+            offset: Int,
+            trust: CatalogRemoteTrustScope,
+        ): IdkResult<VerifiedRemoteBody<PaginatedSchemaList>, IdkError> {
+            scopes += trust
+            if (reject) return Err(IdkError.SERVICE_UNAVAILABLE_ERROR(message = "signature not trusted"))
+            return Ok(
+                VerifiedRemoteBody(
+                    PaginatedSchemaList(schemas.size, limit, offset, schemas.drop(offset).take(limit)),
+                    evidence,
+                ),
+            )
+        }
+
+        override suspend fun getSchemaScoped(
+            baseUrl: String,
+            schemaId: String,
+            trust: CatalogRemoteTrustScope,
+        ): IdkResult<VerifiedRemoteBody<SchemaMeta>, IdkError> {
+            scopes += trust
+            return Ok(VerifiedRemoteBody(schemas.first { it.id == schemaId }, evidence))
+        }
+
+        override suspend fun fetchDocument(uri: String): IdkResult<CatalogDocument, IdkError> =
+            Ok(CatalogDocument("application/json", "{\"vct\":\"$uri\"}".encodeToByteArray()))
+    }
+
+    private class RecordingIdentifierService(
+        private val seen: MutableList<ExternalIdentifierOpts>,
+    ) : ExternalIdentifierService {
+        override val supportedIdentifierMethods: List<IIdentifierMethod> = emptyList()
+
+        override suspend fun isSupportedIdentifier(identifier: Any): Boolean = true
+
+        override suspend fun isSupportedIdentifierMethod(identifierMethod: IIdentifierMethod): Boolean = true
+
+        override suspend fun isSupportedOpts(opts: ExternalIdentifierOptsOrResult): Boolean = true
+
+        override suspend fun asSupportedOpts(opts: ExternalIdentifierOptsOrResult) = Ok(opts as ExternalIdentifierOpts)
+
+        override suspend fun resolve(opts: ExternalIdentifierOptsOrResult): IdkResult<ExternalIdentifierResult, IdkErrorType> {
+            seen += opts as ExternalIdentifierOpts
+            return Err(IdkError.SERVICE_UNAVAILABLE_ERROR(message = "offline"))
+        }
     }
 
     private class MutableRemoteClient(
@@ -983,6 +1325,21 @@ class CatalogCommandPathTest {
             baseUrl: String,
             schemaId: String
         ): IdkResult<SchemaMeta, IdkError> = Ok(schemas.first { it.id == schemaId })
+
+        override suspend fun listSchemasScoped(
+            baseUrl: String,
+            limit: Int,
+            offset: Int,
+            trust: CatalogRemoteTrustScope,
+        ): IdkResult<VerifiedRemoteBody<PaginatedSchemaList>, IdkError> =
+            listSchemas(baseUrl, limit, offset).map { VerifiedRemoteBody(it, null) }
+
+        override suspend fun getSchemaScoped(
+            baseUrl: String,
+            schemaId: String,
+            trust: CatalogRemoteTrustScope,
+        ): IdkResult<VerifiedRemoteBody<SchemaMeta>, IdkError> =
+            getSchema(baseUrl, schemaId).map { VerifiedRemoteBody(it, null) }
 
         override suspend fun fetchDocument(uri: String): IdkResult<CatalogDocument, IdkError> =
             Ok(

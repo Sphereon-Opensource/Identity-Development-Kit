@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CatalogueOfAttributes xmlns="http://data.europa.eu/c9v/catalogueOfAttributes/v1#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+    <CatalogueInformation>
+        <CatalogueVersion>1</CatalogueVersion>
+        <CatalogueSequenceNumber>2</CatalogueSequenceNumber>
+        <CatalogueIdentifier>http://data.europa.eu/c9v/EUCatalogueOfAttributes</CatalogueIdentifier>
+        <CatalogueName>
+            <Name xml:lang="en">Synthetic catalogue of attributes</Name>
+            <Name xml:lang="nl">Synthetic catalogue of attributes (nl)</Name>
+        </CatalogueName>
+        <CatalogueOperator>
+            <CatalogueOperatorName>
+                <Name xml:lang="en">Synthetic Operator</Name>
+            </CatalogueOperatorName>
+            <CatalogueOperatorIdentifier>NTRXX-0000.000.000</CatalogueOperatorIdentifier>
+            <CatalogueOperatorAddress>
+                <PostalAddresses>
+                    <PostalAddress xml:lang="en">
+                        <StreetAddress>Example Street 1</StreetAddress>
+                        <Locality>Example City</Locality>
+                        <StateOrProvince>Example Province</StateOrProvince>
+                        <PostalCode>1000</PostalCode>
+                        <Country>BE</Country>
+                    </PostalAddress>
+                </PostalAddresses>
+                <ElectronicAddress>
+                    <URI>https://catalogue.example.org</URI>
+                    <URI>mailto:catalogue@example.org</URI>
+                </ElectronicAddress>
+            </CatalogueOperatorAddress>
+        </CatalogueOperator>
+        <CatalogueInformationURI>https://catalogue.example.org/info</CatalogueInformationURI>
+        <CatalogueEntriesStatusDeterminationApproach>
+            https://catalogue.example.org/status
+        </CatalogueEntriesStatusDeterminationApproach>
+        <CatalogueTerritory>EU</CatalogueTerritory>
+        <CatalogueLegalNotice>https://catalogue.example.org/legal</CatalogueLegalNotice>
+        <HistoricalInformationPeriod>65535</HistoricalInformationPeriod>
+        <CatalogueIssueDateAndTime>2026-09-01T00:00:00Z</CatalogueIssueDateAndTime>
+        <CatalogueDistributionPoint>
+            <DownloadURL>https://catalogue.example.org/catalogue.xml</DownloadURL>
+        </CatalogueDistributionPoint>
+    </CatalogueInformation>
+    <Namespaces>
+        <Namespace>
+            <NamespaceIdentifier>eu.europa.ec.eudi.pid.1</NamespaceIdentifier>
+            <NamespaceEntries>
+                <NamespaceEntry>
+                    <AttributeIdentifier>family_name</AttributeIdentifier>
+                    <AttributeRegistrationIdentifier>REG-ATTR-0001</AttributeRegistrationIdentifier>
+                    <ds:Reference URI="attributes/eu.europa.ec.eudi.pid.1/family_name.xml">
+                        <ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms>
+                        <ds:DigestMethod Algorithm="https://www.w3.org/TR/xmlenc-core1/#sec-SHA512"/>
+                        <ds:DigestValue>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==</ds:DigestValue>
+                    </ds:Reference>
+                </NamespaceEntry>
+                <NamespaceEntry>
+                    <AttributeIdentifier>birth_date</AttributeIdentifier>
+                    <AttributeRegistrationIdentifier>REG-ATTR-0002</AttributeRegistrationIdentifier>
+                    <ds:Reference URI="attributes/eu.europa.ec.eudi.pid.1/birth_date.xml">
+                        <ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms>
+                        <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha512"/>
+                        <ds:DigestValue>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==</ds:DigestValue>
+                    </ds:Reference>
+                </NamespaceEntry>
+            </NamespaceEntries>
+        </Namespace>
+    </Namespaces>
+    <ds:Signature Id="id-synthetic"><ds:SignedInfo/><ds:SignatureValue>AAAA</ds:SignatureValue></ds:Signature>
+</CatalogueOfAttributes>

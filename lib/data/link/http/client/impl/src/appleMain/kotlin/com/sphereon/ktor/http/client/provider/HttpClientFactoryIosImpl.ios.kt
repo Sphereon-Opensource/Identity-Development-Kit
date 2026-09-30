@@ -244,9 +244,7 @@ class HttpClientFactoryIosImpl(
             }.also { client ->
                 val validationPolicy = urlValidation
                 if (validationPolicy != null) {
-                    client.requestPipeline.intercept(io.ktor.client.request.HttpRequestPipeline.Before) {
-                        validationPolicy.validate(context.url.build())
-                    }
+                    client.installUrlValidation(validationPolicy)
                 }
             }
         }

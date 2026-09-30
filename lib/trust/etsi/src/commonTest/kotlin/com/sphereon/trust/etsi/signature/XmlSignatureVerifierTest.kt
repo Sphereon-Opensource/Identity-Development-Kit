@@ -49,7 +49,7 @@ class XmlSignatureVerifierTest {
 
             assertFalse(result.reasonCodes.contains(TrustDiagnosticReasonCodes.SIGNER_CHAIN_INVALID))
             assertFalse(result.reasonCodes.contains(TrustDiagnosticReasonCodes.EMBEDDED_CERTIFICATE_NOT_TRUSTED))
-            assertTrue(result.errorMessage == "Signature validation failed")
+            assertTrue(result.valid, "the live EU LOTL must validate through the resolver gate: ${result.errorMessage}")
         }
 
     @Test

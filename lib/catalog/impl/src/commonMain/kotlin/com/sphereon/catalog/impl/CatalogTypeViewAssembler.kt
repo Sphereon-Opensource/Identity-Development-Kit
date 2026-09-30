@@ -92,6 +92,7 @@ class CatalogTypeViewAssembler(
             rulebookMediaType =
                 record.documents.firstOrNull { it.kind == CatalogDocumentKind.RULEBOOK }?.mediaType,
             listing = record.listing,
+            cos = record.cos,
         )
     }
 

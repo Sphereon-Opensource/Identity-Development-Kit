@@ -599,6 +599,8 @@ includeProject("lib-mdoc-reader", "lib/mdoc/reader")
 // TS 11 attestation catalogs
 includeProject("lib-catalog-public", "lib/catalog/public")
 includeProject("lib-catalog-ts11-public", "lib/catalog/ts11-public")
+includeProject("lib-catalog-eu-public", "lib/catalog/eu-public")
+includeProject("lib-catalog-eu-impl", "lib/catalog/eu-impl")
 includeProject("lib-catalog-impl", "lib/catalog/impl")
 includeProject("lib-catalog-persistence-api", "lib/catalog/persistence/api")
 includeProject("lib-catalog-persistence-memory", "lib/catalog/persistence/memory")

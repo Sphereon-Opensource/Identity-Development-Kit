@@ -38,7 +38,7 @@ import com.sphereon.identity.resolution.service.IdentityResolver
  * Type-existence check used by unit tests and explicit callers. It is **not** contributed
  * into the [IdentityResolver] set: stuffing a SchemaMeta id into `internalIdentityId`
  * would abort [com.sphereon.identity.resolution.command.ResolveIdentityCommand] for DIDs
- * and emails. Production type gating is [catalog.verification.evaluate] from the
+ * and emails. Production type gating is [catalog.attestation.evaluate-verification] from the
  * OID4VP trust-domain validator.
  */
 class CatalogAttestationTypeResolver(

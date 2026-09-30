@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Offline stand-in for the W3C xmldsig-core-schema.xsd. It declares the structure the catalogue schemas refer to
+  (ds:Signature and ds:Reference) with the same element names, order and attributes; the content of SignedInfo, KeyInfo
+  and Object is not checked (lax), because signature verification is the job of the XAdES validator.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+           targetNamespace="http://www.w3.org/2000/09/xmldsig#" elementFormDefault="qualified">
+    <xs:complexType name="LaxContentType" mixed="true">
+        <xs:sequence>
+            <xs:any processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:anyAttribute processContents="lax"/>
+    </xs:complexType>
+    <xs:element name="Signature">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="SignedInfo" type="ds:LaxContentType"/>
+                <xs:element name="SignatureValue" type="ds:LaxContentType"/>
+                <xs:element name="KeyInfo" type="ds:LaxContentType" minOccurs="0"/>
+                <xs:element name="Object" type="ds:LaxContentType" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+            <xs:attribute name="Id" type="xs:ID" use="optional"/>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="Reference">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="Transforms" minOccurs="0">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="Transform" maxOccurs="unbounded">
+                                <xs:complexType mixed="true">
+                                    <xs:sequence>
+                                        <xs:any processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+                                    </xs:sequence>
+                                    <xs:attribute name="Algorithm" type="xs:anyURI" use="required"/>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="DigestMethod">
+                    <xs:complexType mixed="true">
+                        <xs:sequence>
+                            <xs:any processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+                        </xs:sequence>
+                        <xs:attribute name="Algorithm" type="xs:anyURI" use="required"/>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="DigestValue" type="xs:base64Binary"/>
+            </xs:sequence>
+            <xs:attribute name="Id" type="xs:ID" use="optional"/>
+            <xs:attribute name="URI" type="xs:anyURI" use="optional"/>
+            <xs:attribute name="Type" type="xs:anyURI" use="optional"/>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

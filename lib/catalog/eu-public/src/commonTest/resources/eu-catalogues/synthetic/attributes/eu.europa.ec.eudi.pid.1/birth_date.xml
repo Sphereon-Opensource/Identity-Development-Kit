@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AttributeEntry xmlns="http://data.europa.eu/c9v/catalogueOfAttributes/v1#">
+    <AttributeIdentifier>birth_date</AttributeIdentifier>
+    <AttributeRegistrationIdentifier>REG-ATTR-0002</AttributeRegistrationIdentifier>
+    <ReferenceBody>
+        <ReferenceBodyName>
+            <Name xml:lang="en">Synthetic Reference Body</Name>
+        </ReferenceBodyName>
+        <ReferenceBodyWebsite>https://reference.example.org</ReferenceBodyWebsite>
+    </ReferenceBody>
+    <VersionedAttributeList>
+        <VersionedAttribute>
+            <AttributeVersion>1</AttributeVersion>
+            <VersionedAttributeStatusInformation>
+                <VersionedAttributeStatus>http://data.europa.eu/c9v/EUCatalogueOfAttributes/VersionedAttributeStatus/inforce</VersionedAttributeStatus>
+            </VersionedAttributeStatusInformation>
+            <AttributeInformation>
+                <AttributeName>
+                    <Name xml:lang="en">Date of birth</Name>
+                </AttributeName>
+                <AttributeSemanticDescription>
+                    <SemanticDescription>
+                        <Name xml:lang="en">Day, month and year on which the user was born</Name>
+                    </SemanticDescription>
+                </AttributeSemanticDescription>
+                <AttributeDataType>
+                    <DataType>https://types.example.org/full-date</DataType>
+                    <DataTypeSpecification>
+                        <FormatSyntaxBindings>
+                            <FormatSyntaxBinding>
+                                <MediaType>application/dc+sd-jwt</MediaType>
+                                <FormatSyntaxSpecificIdentifier>birthdate</FormatSyntaxSpecificIdentifier>
+                            </FormatSyntaxBinding>
+                        </FormatSyntaxBindings>
+                    </DataTypeSpecification>
+                </AttributeDataType>
+                <AuthenticSources>
+                    <AuthenticSource>
+                        <AuthenticSourceIdentifier>NL-BRP</AuthenticSourceIdentifier>
+                        <AuthenticSourceVerificationAccess>
+                            <VerificationAccessDescriptionURI>https://brp.example.org/access</VerificationAccessDescriptionURI>
+                        </AuthenticSourceVerificationAccess>
+                    </AuthenticSource>
+                </AuthenticSources>
+            </AttributeInformation>
+        </VersionedAttribute>
+    </VersionedAttributeList>
+    <AttributeExtensions>
+        <Extension>
+            <Critical>true</Critical>
+            <eIDASAnnexVIAttribute>
+                <eIDASAnnexVIAttributeType>3</eIDASAnnexVIAttributeType>
+            </eIDASAnnexVIAttribute>
+        </Extension>
+        <Extension>
+            <Critical>false</Critical>
+            <vendorHint xmlns="urn:example:vendor">ignorable</vendorHint>
+        </Extension>
+    </AttributeExtensions>
+</AttributeEntry>

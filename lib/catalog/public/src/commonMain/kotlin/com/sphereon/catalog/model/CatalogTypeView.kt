@@ -28,6 +28,7 @@ data class CatalogTypeView
         val formatSummaries: List<CatalogFormatSummary> = emptyList(),
         val rulebookMediaType: String? = null,
         val listing: CatalogListingWindow = CatalogListingWindow.ALWAYS,
+        val cos: CosSchemeFields? = null,
     )
 
 @JsExportCompat
