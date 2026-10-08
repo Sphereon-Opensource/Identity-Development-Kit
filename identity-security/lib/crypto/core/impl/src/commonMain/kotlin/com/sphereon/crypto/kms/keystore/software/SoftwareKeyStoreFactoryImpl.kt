@@ -50,6 +50,7 @@ class SoftwareKeyStoreFactoryImpl(
         when (app.platformInfo.osFamily) {
             PlatformInfo.OsFamily.IOS -> PredefinedKeyStoreTypes.APPLE.keyStoreType
             PlatformInfo.OsFamily.JS, PlatformInfo.OsFamily.WASM_JS -> PredefinedKeyStoreTypes.FILE.keyStoreType
+            PlatformInfo.OsFamily.ANDROID -> PredefinedKeyStoreTypes.BKS.keyStoreType
             else -> PredefinedKeyStoreTypes.PKCS12.keyStoreType
         }
 

@@ -15,6 +15,7 @@ import com.sphereon.crypto.core.kms.KeyManagerService
 import com.sphereon.crypto.core.kms.KeyStoreConfig
 import com.sphereon.crypto.kms.keystore.software.AppleKeyStoreConfig
 import com.sphereon.crypto.kms.keystore.software.EncryptedFileKeyStoreConfig
+import com.sphereon.crypto.kms.keystore.software.BksKeyStoreConfig
 import com.sphereon.crypto.kms.keystore.software.Pkcs12KeyStoreConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderConfig
 import com.sphereon.crypto.kms.provider.software.SoftwareKmsProviderFactory
@@ -108,8 +109,16 @@ class SoftwareKmsProviderRegistrar(
                             path = configured.path,
                             password = configured.password,
                         )
-                    PlatformInfo.OsFamily.JVM, PlatformInfo.OsFamily.ANDROID ->
+                    PlatformInfo.OsFamily.JVM ->
                         Pkcs12KeyStoreConfig(
+                            id = providerId,
+                            path = configured.path,
+                            password = configured.password,
+                        )
+                    // Android's PKCS#12 store holds private keys only; the wallet also keeps secret
+                    // keys (credential body encryption), which the BKS format holds.
+                    PlatformInfo.OsFamily.ANDROID ->
+                        BksKeyStoreConfig(
                             id = providerId,
                             path = configured.path,
                             password = configured.password,

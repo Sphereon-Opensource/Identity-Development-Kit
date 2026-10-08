@@ -285,6 +285,8 @@ data class WalletTrustSource(
     val type: WalletTrustSourceType,
     val identifier: String,
     val labelKey: String? = null,
+    /** Name under which this source recognises the counterparty, such as the name the holder gave a recognised organisation. */
+    val displayName: String? = null,
 ) {
     init {
         requireWalletInteractionLocalizationKey("labelKey", labelKey)
@@ -300,6 +302,12 @@ enum class WalletTrustSourceType {
     OPENID_FEDERATION,
     DCQL_TRUSTED_AUTHORITY,
     REMEMBERED_USER_DECISION,
+
+    /** Admitted by a trust domain of the organisation that runs this wallet. */
+    TRUST_DOMAIN,
+
+    /** Admitted by an anchor the holder keeps in this wallet profile. */
+    WALLET_TRUST_ANCHOR,
 }
 
 @Serializable

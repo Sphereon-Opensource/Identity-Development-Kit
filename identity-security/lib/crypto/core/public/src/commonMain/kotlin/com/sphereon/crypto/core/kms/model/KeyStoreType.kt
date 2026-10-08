@@ -34,6 +34,9 @@ interface IWithKeyStoreType {
 enum class PredefinedKeyStoreTypes : IWithKeyStoreType {
     MEMORY,
     PKCS12,
+
+    /** BouncyCastle keystore: holds secret keys where the platform PKCS#12 store cannot (Android). */
+    BKS,
     JKS,
     APPLE,
     FILE,

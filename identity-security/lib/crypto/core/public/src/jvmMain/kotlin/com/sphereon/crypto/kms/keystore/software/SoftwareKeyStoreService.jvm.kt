@@ -185,9 +185,10 @@ actual class SoftwareKeyStoreService actual constructor(
         with(this.config) {
             require(
                 keyStoreType == PredefinedKeyStoreTypes.PKCS12.keyStoreType ||
+                    keyStoreType == PredefinedKeyStoreTypes.BKS.keyStoreType ||
                     keyStoreType == PredefinedKeyStoreTypes.JKS.keyStoreType,
             ) {
-                "A software keystore needs to be of config type ${PredefinedKeyStoreTypes.PKCS12.keyStoreType} or ${PredefinedKeyStoreTypes.JKS.keyStoreType}"
+                "A software keystore needs to be of config type ${PredefinedKeyStoreTypes.PKCS12.keyStoreType}, ${PredefinedKeyStoreTypes.BKS.keyStoreType} or ${PredefinedKeyStoreTypes.JKS.keyStoreType}"
             }
 
             val providerPath = path

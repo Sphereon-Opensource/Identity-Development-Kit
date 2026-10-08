@@ -39,6 +39,7 @@ object KeyStoreLoaderFactory {
         mapOf(
             PredefinedKeyStoreTypes.JKS.keyStoreType to JksLoader(),
             PredefinedKeyStoreTypes.PKCS12.keyStoreType to Pkcs12Loader(),
+            PredefinedKeyStoreTypes.BKS.keyStoreType to BksLoader(),
         )
     private val keyStoreCache = atomic<Map<KeyStoreCacheKey, KeyStore>>(emptyMap())
     private val inFlightLoads = atomic<Map<KeyStoreCacheKey, CompletableDeferred<KeyStore>>>(emptyMap())

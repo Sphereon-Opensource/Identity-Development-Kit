@@ -56,18 +56,21 @@ class SoftwareKeystoreSerializationRegistration(
             polymorphic(KeyStoreConfig::class) {
                 subclass(EncryptedFileKeyStoreConfig::class, EncryptedFileKeyStoreConfig.serializer())
                 subclass(Pkcs12KeyStoreConfig::class, Pkcs12KeyStoreConfig.serializer())
+                subclass(BksKeyStoreConfig::class, BksKeyStoreConfig.serializer())
                 subclass(JksKeyStoreConfig::class, JksKeyStoreConfig.serializer())
                 subclass(AppleKeyStoreConfig::class, AppleKeyStoreConfig.serializer())
             }
             polymorphic(SoftwareKeyStoreConfig::class) {
                 subclass(EncryptedFileKeyStoreConfig::class, EncryptedFileKeyStoreConfig.serializer())
                 subclass(Pkcs12KeyStoreConfig::class, Pkcs12KeyStoreConfig.serializer())
+                subclass(BksKeyStoreConfig::class, BksKeyStoreConfig.serializer())
                 subclass(JksKeyStoreConfig::class, JksKeyStoreConfig.serializer())
                 subclass(AppleKeyStoreConfig::class, AppleKeyStoreConfig.serializer())
             }
             polymorphic(AbstractKeyStoreConfig::class) {
                 subclass(EncryptedFileKeyStoreConfig::class, EncryptedFileKeyStoreConfig.serializer())
                 subclass(Pkcs12KeyStoreConfig::class, Pkcs12KeyStoreConfig.serializer())
+                subclass(BksKeyStoreConfig::class, BksKeyStoreConfig.serializer())
                 subclass(JksKeyStoreConfig::class, JksKeyStoreConfig.serializer())
                 subclass(AppleKeyStoreConfig::class, AppleKeyStoreConfig.serializer())
             }

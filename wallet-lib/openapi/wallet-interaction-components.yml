@@ -1156,6 +1156,8 @@ components:
         - OPENID_FEDERATION
         - DCQL_TRUSTED_AUTHORITY
         - REMEMBERED_USER_DECISION
+        - TRUST_DOMAIN
+        - WALLET_TRUST_ANCHOR
 
     WalletTrustSource:
       type: object
@@ -1170,6 +1172,12 @@ components:
           type: string
           nullable: true
           description: Dotted lowercase localization key.
+        displayName:
+          type: string
+          nullable: true
+          description: >
+            Name under which this source recognises the counterparty, such as the name the holder
+            gave an organisation the wallet recognises. Absent when the source names nobody.
 
     WalletTrustStatus:
       type: string

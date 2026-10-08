@@ -34,7 +34,11 @@ data class WalletPartyPresentation(
 
 /** One positive trust mechanism or no mechanism. ETSI and OpenID Federation never stack. */
 @Serializable
-enum class WalletTrustMechanismPresentation { ETSI_TRUSTED_LIST, OPENID_FEDERATION, NONE }
+enum class WalletTrustMechanismPresentation { ETSI_TRUSTED_LIST, OPENID_FEDERATION, TRUST_DOMAIN, WALLET_TRUST_ANCHOR, NONE }
+
+/** Whether a trust domain admitted the counterparty. */
+@Serializable
+enum class WalletTrustAdmissionPresentation { NAMED_DOMAIN, NOT_ADMITTED, FAIL_CLOSED, ABSENT }
 
 @Serializable
 enum class WalletTrustStatusPresentation { TRUSTED, UNKNOWN, WARNING, BLOCKED }
@@ -86,6 +90,7 @@ data class WalletTrustPresentation(
     val signals: List<WalletTrustSignalPresentation>,
     val markedTrustedByUser: Boolean,
     val chain: WalletTrustChainPresentation? = null,
+    val admission: WalletTrustAdmissionPresentation = WalletTrustAdmissionPresentation.ABSENT,
 )
 
 @Serializable

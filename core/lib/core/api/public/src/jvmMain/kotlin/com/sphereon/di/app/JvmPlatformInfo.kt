@@ -27,5 +27,10 @@ import dev.zacsweers.metro.binding
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class, binding = binding<PlatformInfo>(), replaces = [CommonPlatformInfo::class])
 class JvmPlatformInfo : PlatformInfo {
-    override val osFamily = PlatformInfo.OsFamily.JVM
+    // Android apps link the jvm variant; their runtime still reports itself through the VM properties.
+    override val osFamily = if (isAndroidRuntime()) PlatformInfo.OsFamily.ANDROID else PlatformInfo.OsFamily.JVM
 }
+
+internal fun isAndroidRuntime(): Boolean =
+    System.getProperty("java.vm.name").equals("Dalvik", ignoreCase = true) ||
+        System.getProperty("java.vm.vendor")?.contains("Android", ignoreCase = true) == true

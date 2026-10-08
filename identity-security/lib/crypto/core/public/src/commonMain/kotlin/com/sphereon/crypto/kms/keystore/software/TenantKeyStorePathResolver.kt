@@ -72,7 +72,7 @@ object TenantKeyStorePathResolver {
     /**
      * Returns a copy of [config] with [SoftwareKeyStoreConfig.path] resolved per-tenant.
      *
-     * Only the concrete [Pkcs12KeyStoreConfig] and [JksKeyStoreConfig] persist to files; other
+     * Only the concrete [Pkcs12KeyStoreConfig], [BksKeyStoreConfig] and [JksKeyStoreConfig] persist to files; other
      * software configs (e.g. Apple keychain) are returned unchanged.
      */
     fun withResolvedPath(
@@ -82,6 +82,7 @@ object TenantKeyStorePathResolver {
         val resolved = resolvePath(config, tenantId)
         return when (config) {
             is Pkcs12KeyStoreConfig -> config.copy(path = resolved)
+            is BksKeyStoreConfig -> config.copy(path = resolved)
             is JksKeyStoreConfig -> config.copy(path = resolved)
             else -> config
         }

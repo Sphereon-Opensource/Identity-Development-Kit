@@ -141,7 +141,7 @@ private fun projection(state: WalletInteractionState): WalletInteractionScreenPr
         WalletInteractionStatus.CounterpartyNotice,
         WalletInteractionStatus.TrustReview,
         -> WalletInteractionScreenProjection.PartyReview(
-            state.counterparty.toPresentation(),
+            state.counterparty.toPresentation(state.trust),
             state.trust.toPresentation(),
             state.counterpartyEncounter.toPresentation(),
             state.offerPresentation(),
@@ -158,7 +158,7 @@ private fun projection(state: WalletInteractionState): WalletInteractionScreenPr
         WalletInteractionStatus.AuthorizationRequired ->
             state.authorizationHandoffRef?.let { ref ->
                 WalletInteractionScreenProjection.AuthorizationHandoff(
-                    state.counterparty.toPresentation(),
+                    state.counterparty.toPresentation(state.trust),
                     WalletSensitiveInputRefPresentation(ref.value),
                 )
             } ?: WalletInteractionScreenProjection.Unavailable(state.status.toPresentation(), "wallet_interaction_authorization_handoff_ref_missing")
@@ -198,7 +198,7 @@ private fun projection(state: WalletInteractionState): WalletInteractionScreenPr
         WalletInteractionStatus.DisclosureConsent -> {
             val disclosure = state.disclosure
             WalletInteractionScreenProjection.Disclosure(
-                verifier = disclosure?.verifier.toPresentation(),
+                verifier = disclosure?.verifier.toPresentation(state.trust),
                 info = disclosure?.requestedClaims.orEmpty().map { it.toPresentation() },
                 selectedCredentialIds = disclosure?.selectedCredentialIds.orEmpty(),
                 privacy =
@@ -311,7 +311,12 @@ private fun WalletInteractionStatus.toPresentation(): WalletInteractionStatusPre
         WalletInteractionStatus.Failed -> WalletInteractionStatusPresentation.FAILED
     }
 
-private fun WalletCounterpartySummary?.toPresentation(): WalletPartyPresentation? =
+/**
+ * A party presentation. When the protocol supplied no name of its own, the shown name is the name
+ * under which a source that recognised the party knows it, such as the name the holder gave an
+ * organisation the wallet recognises; an unrecognised party keeps its identifier.
+ */
+private fun WalletCounterpartySummary?.toPresentation(trust: com.sphereon.wallet.interaction.WalletCounterpartyTrustSummary?): WalletPartyPresentation? =
     this?.partyId?.let { stablePartyId ->
         WalletPartyPresentation(
             partyId = stablePartyId,
@@ -321,7 +326,10 @@ private fun WalletCounterpartySummary?.toPresentation(): WalletPartyPresentation
                     WalletCounterpartyRole.VERIFIER -> WalletPartyRolePresentation.VERIFIER
                     WalletCounterpartyRole.MDOC_READER -> WalletPartyRolePresentation.MDOC_READER
                 },
-            displayName = this.displayName,
+            displayName =
+                this.displayName.takeIf { this.displayNameSource != null }
+                    ?: trust?.takeIf { it.status == WalletTrustStatus.TRUSTED }?.sources?.firstNotNullOfOrNull { it.displayName?.takeIf(String::isNotBlank) }
+                    ?: this.displayName,
             legalName = null,
             domain = null,
             logoUri = this.logoUri,
@@ -334,7 +342,7 @@ private fun WalletCounterpartySummary?.toPresentation(): WalletPartyPresentation
 
 private fun WalletInteractionState.receiveTerminalContext(): WalletReceiveTerminalContextPresentation? {
     val offer = offerPresentation() ?: return null
-    val issuer = offer.issuer ?: counterparty.toPresentation() ?: return null
+    val issuer = offer.issuer ?: counterparty.toPresentation(trust) ?: return null
     val encounter = counterpartyEncounter.toPresentation() ?: return null
     if (issuer.role != WalletPartyRolePresentation.ISSUER) return null
     return WalletReceiveTerminalContextPresentation(
@@ -367,6 +375,8 @@ private fun com.sphereon.wallet.interaction.WalletCounterpartyTrustSummary?.toPr
     val sources = this?.sources.orEmpty()
     val hasEtsi = sources.any { it.type == WalletTrustSourceType.EUDI_TRUSTED_LIST }
     val hasFederation = sources.any { it.type == WalletTrustSourceType.OPENID_FEDERATION }
+    val hasTrustDomain = sources.any { it.type == WalletTrustSourceType.TRUST_DOMAIN }
+    val hasWalletAnchor = sources.any { it.type == WalletTrustSourceType.WALLET_TRUST_ANCHOR }
     require(!(hasEtsi && hasFederation)) { "wallet_trust_multiple_primary_mechanisms" }
     return WalletTrustPresentation(
         status =
@@ -388,8 +398,11 @@ private fun com.sphereon.wallet.interaction.WalletCounterpartyTrustSummary?.toPr
             when {
                 hasEtsi -> WalletTrustMechanismPresentation.ETSI_TRUSTED_LIST
                 hasFederation -> WalletTrustMechanismPresentation.OPENID_FEDERATION
+                hasTrustDomain -> WalletTrustMechanismPresentation.TRUST_DOMAIN
+                hasWalletAnchor -> WalletTrustMechanismPresentation.WALLET_TRUST_ANCHOR
                 else -> WalletTrustMechanismPresentation.NONE
             },
+        admission = this?.domainAdmission.toAdmissionPresentation(),
         signals =
             sources.map {
                 WalletTrustSignalPresentation(
@@ -441,7 +454,7 @@ private fun WalletCredentialBranding.toFace(issuer: WalletCounterpartySummary?):
 private fun WalletInteractionState.offerPresentation(): WalletCredentialOfferPresentation? {
     val offer = credentialOffer ?: return null
     return WalletCredentialOfferPresentation(
-        issuer = offer.issuer.toPresentation(),
+        issuer = offer.issuer.toPresentation(trust),
         offeredCredentials =
             offer.branding.map { branding ->
                 WalletOfferedCredentialPresentation(
@@ -537,4 +550,12 @@ private fun WalletInteractionState.screenTitleArguments(): Map<String, String> =
         credentialOffer?.issuer?.displayName?.let { put("issuerDisplayName", it) }
         adapterId?.let { put("adapterId", it) }
         protocol?.name?.let { put("protocol", it) }
+    }
+
+private fun com.sphereon.wallet.interaction.WalletTrustDomainAdmission?.toAdmissionPresentation(): WalletTrustAdmissionPresentation =
+    when (this?.outcome) {
+        com.sphereon.wallet.interaction.WalletTrustDomainAdmissionOutcome.ADMITTED_NAMED_DOMAIN -> WalletTrustAdmissionPresentation.NAMED_DOMAIN
+        com.sphereon.wallet.interaction.WalletTrustDomainAdmissionOutcome.NOT_ADMITTED -> WalletTrustAdmissionPresentation.NOT_ADMITTED
+        com.sphereon.wallet.interaction.WalletTrustDomainAdmissionOutcome.FAIL_CLOSED -> WalletTrustAdmissionPresentation.FAIL_CLOSED
+        null -> WalletTrustAdmissionPresentation.ABSENT
     }

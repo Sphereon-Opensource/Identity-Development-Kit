@@ -72,6 +72,7 @@ object SoftwareKeyStoreConfigSerializer : JsonContentPolymorphicSerializer<KeySt
         return when (type) {
             PredefinedKeyStoreTypes.FILE.keyStoreType -> EncryptedFileKeyStoreConfig.serializer()
             PredefinedKeyStoreTypes.PKCS12.keyStoreType -> Pkcs12KeyStoreConfig.serializer()
+            PredefinedKeyStoreTypes.BKS.keyStoreType -> BksKeyStoreConfig.serializer()
             PredefinedKeyStoreTypes.JKS.keyStoreType -> JksKeyStoreConfig.serializer()
             PredefinedKeyStoreTypes.APPLE.keyStoreType -> AppleKeyStoreConfig.serializer()
             else -> KeyStoreConfigImpl.serializer()
@@ -209,6 +210,131 @@ Pkcs12KeyStoreConfig
             }
 
             other as Pkcs12KeyStoreConfig
+
+            if (enabled != other.enabled) {
+                return false
+            }
+            if (order != other.order) {
+                return false
+            }
+            if (persist != other.persist) {
+                return false
+            }
+            if (id != other.id) {
+                return false
+            }
+            if (defaultConfigValues != other.defaultConfigValues) {
+                return false
+            }
+            if (password != other.password) {
+                return false
+            }
+            if (path != other.path) {
+                return false
+            }
+            if (keystoreRoot != other.keystoreRoot) {
+                return false
+            }
+            if (!bytes.contentEquals(other.bytes)) {
+                return false
+            }
+            if (accessMode != other.accessMode) {
+                return false
+            }
+            if (keyVisibility != other.keyVisibility) {
+                return false
+            }
+            if (keyStoreType != other.keyStoreType) {
+                return false
+            }
+            if (overwriteAlias != other.overwriteAlias) {
+                return false
+            }
+            if (type != other.type) {
+                return false
+            }
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = enabled.hashCode()
+            result = 31 * result + order
+            result = 31 * result + persist.hashCode()
+            result = 31 * result + id.hashCode()
+            result = 31 * result + defaultConfigValues.hashCode()
+            result = 31 * result + password.hashCode()
+            result = 31 * result + (path?.hashCode() ?: 0)
+            result = 31 * result + (keystoreRoot?.hashCode() ?: 0)
+            result = 31 * result + (bytes?.contentHashCode() ?: 0)
+            result = 31 * result + accessMode.hashCode()
+            result = 31 * result + keyVisibility.hashCode()
+            result = 31 * result + keyStoreType.hashCode()
+            result = 31 * result + type.hashCode()
+            result = 31 * result + overwriteAlias.hashCode()
+            return result
+        }
+    }
+
+/** File keystore in the BouncyCastle BKS format, for platforms whose PKCS#12 store cannot hold secret keys. */
+@JsExportCompat
+@Serializable
+@SerialName("bks")
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("BksKeyStoreConfig", exact = true)
+data class
+BksKeyStoreConfig
+    @JvmOverloads
+    constructor(
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val id: String = "bks",
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val enabled: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val order: Int = Order.MEDIUM.orderValue,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        @SerialName("defaultConfigValues")
+        override val defaultConfigValues: Map<String, String> = emptyMap(),
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val password: String,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val path: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val keystoreRoot: String? = null,
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        override val bytes: ByteArray? = null,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("accessMode")
+        override val accessMode: String = KeyStoreAccessMode.READ_WRITE.accessMode,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("keyVisibility")
+        override val keyVisibility: String = KeyVisibility.PRIVATE.keyVisibility,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        override val persist: Boolean = true,
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @SerialName("overwriteAlias")
+        override val overwriteAlias: Boolean = true,
+    ) : AbstractSoftwareKeyStoreConfig() {
+        @OptIn(InternalSerializationApi::class)
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        @Transient
+        override val keyStoreType: String = PredefinedKeyStoreTypes.BKS.keyStoreType
+
+        // get the discriminator as a field (the field name, objectName, is unimportant)
+        // this must be a delegated field so there's no backing field, so kxs ignores it
+        @OptIn(InternalSerializationApi::class)
+        val type: String
+            get() = this::class.serializer().descriptor.serialName
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) {
+                return true
+            }
+            if (other == null || this::class != other::class) {
+                return false
+            }
+
+            other as BksKeyStoreConfig
 
             if (enabled != other.enabled) {
                 return false

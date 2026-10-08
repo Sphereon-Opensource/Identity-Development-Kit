@@ -17,7 +17,7 @@
 package com.sphereon.conf.theme.ui.compose.card
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,7 +64,8 @@ fun Card(
             elevation = elevation,
             border = border,
         ) {
-            Box(Modifier.padding(contentPadding ?: PaddingValues(parseDp(tokens.padding)))) {
+            // Children stack top to bottom, as in a Material card; a Box would draw them over each other.
+            Column(Modifier.padding(contentPadding ?: PaddingValues(parseDp(tokens.padding)))) {
                 content()
             }
         }
@@ -76,7 +77,8 @@ fun Card(
             elevation = elevation,
             border = border,
         ) {
-            Box(Modifier.padding(contentPadding ?: PaddingValues(parseDp(tokens.padding)))) {
+            // Children stack top to bottom, as in a Material card; a Box would draw them over each other.
+            Column(Modifier.padding(contentPadding ?: PaddingValues(parseDp(tokens.padding)))) {
                 content()
             }
         }

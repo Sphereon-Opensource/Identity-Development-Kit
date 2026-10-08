@@ -328,3 +328,8 @@ class JksLoader : BaseKeyStoreLoader(PredefinedKeyStoreTypes.JKS.keyStoreType)
  * Loader implementation for PKCS#12 keystores.
  */
 class Pkcs12Loader : BaseKeyStoreLoader(PredefinedKeyStoreTypes.PKCS12.keyStoreType)
+
+/**
+ * Loader implementation for BouncyCastle BKS keystores (Android ships the provider).
+ */
+class BksLoader : BaseKeyStoreLoader(PredefinedKeyStoreTypes.BKS.keyStoreType)

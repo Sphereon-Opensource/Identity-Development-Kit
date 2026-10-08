@@ -33,7 +33,7 @@ class WalletSafePresentationModelsTest {
     @Test
     fun trustMechanismsAreExactlyTheSettledMutuallyExclusiveSet() {
         assertEquals(
-            listOf("ETSI_TRUSTED_LIST", "OPENID_FEDERATION", "NONE"),
+            listOf("ETSI_TRUSTED_LIST", "OPENID_FEDERATION", "TRUST_DOMAIN", "WALLET_TRUST_ANCHOR", "NONE"),
             WalletTrustMechanismPresentation.entries.map { it.name },
         )
     }
